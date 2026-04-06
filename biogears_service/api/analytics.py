@@ -336,6 +336,28 @@ def compute_health_score(user_id: str, history_dir: Path) -> Dict[str, Any]:
             "status": "Normal" if s == 1.0 else ("Low" if float(rr) < 12 else "High")
         }
 
+    # SpO2: BioGears returns OxygenSaturation as a 0–1 fraction.
+    # Convert to percentage before scoring against 94–100% normal range.
+    spo2_raw = latest.get("OxygenSaturation", None)
+    if spo2_raw is not None:
+        spo2_pct = float(spo2_raw) * 100.0
+        s = _score_value(spo2_pct, 94.0, 100.0)
+        components["spo2"] = {
+            "value": round(spo2_pct, 1), "unit": "%",
+            "score": round(s * 100), "normal": "94–100",
+            "status": "Normal" if s == 1.0 else ("Low" if spo2_pct < 94 else "High")
+        }
+
+    # CoreTemperature: normal human range 36.5–37.5°C.
+    core_temp = latest.get("CoreTemperature", None)
+    if core_temp is not None:
+        s = _score_value(float(core_temp), 36.5, 37.5)
+        components["core_temp"] = {
+            "value": round(float(core_temp), 2), "unit": "°C",
+            "score": round(s * 100), "normal": "36.5–37.5",
+            "status": "Normal" if s == 1.0 else ("Low" if float(core_temp) < 36.5 else "High")
+        }
+
     if not components:
         return {"score": None, "error": "No recognizable vital columns in session."}
 
@@ -359,6 +381,101 @@ def compute_health_score(user_id: str, history_dir: Path) -> Dict[str, Any]:
         "components": components,
         "based_on_session": csv_files[0].name,
         "disclaimer": "This is a physiological simulation score, not a medical diagnosis.",
+    }
+
+
+# ---------------------------------------------------------------------------
+# 13. ORGAN HEALTH SCORES  (Anatomical grouping for the Twin UI)
+# ---------------------------------------------------------------------------
+def compute_organ_scores(user_id: str, history_dir: Path) -> Dict[str, Any]:
+    """
+    Groups BioGears vitals into anatomical systems for the digital twin markers.
+    Uses weighted averages of component scores (0-100).
+    """
+    res = compute_health_score(user_id, history_dir)
+    if "error" in res:
+        return res
+
+    comp = res["components"]
+    
+    # ── Heart (HR + BP) ──────────────────────────────────────────────────────
+    hr_s  = comp.get("heart_rate", {}).get("score", 100)
+    sys_s = comp.get("systolic_bp", {}).get("score", 100)
+    dia_s = comp.get("diastolic_bp", {}).get("score", 100)
+    heart_score = round(hr_s * 0.4 + sys_s * 0.3 + dia_s * 0.3)
+
+    # ── Lungs (SpO2 + RR) ────────────────────────────────────────────────────
+    # SpO2 is now correctly scored in compute_health_score above.
+    spo2_s = comp.get("spo2", {}).get("score", 95)  # default 95 if not present
+    resp_s = comp.get("respiration", {}).get("score", 100)
+    lungs_score = round(spo2_s * 0.6 + resp_s * 0.4)
+
+    # ── Gut (Glucose + metabolic stability) ──────────────────────────────────
+    gluc_s = comp.get("glucose", {}).get("score", 100)
+    # CoreTemp stability is also a gut/metabolic marker
+    temp_s = comp.get("core_temp", {}).get("score", 100)
+    gut_score = round(gluc_s * 0.7 + temp_s * 0.3)
+    # Soft cap: gut score shouldn't exceed 100
+    gut_score = min(gut_score, 100)
+
+    # ── Brain (CoreTemperature stability) ─────────────────────────────────────
+    # CoreTemperature tightly reflects autonomic nervous system balance.
+    # Normal: 36.5–37.5°C. Deviations indicate thermoregulatory stress.
+    temp_s = comp.get("core_temp", {}).get("score", 90)
+    # HR also contributes — sustained elevated HR correlates with cognitive load.
+    brain_score = round(temp_s * 0.6 + hr_s * 0.4)
+
+    return {
+        "user_id": user_id,
+        "scores": {
+            "heart": {"score": heart_score, "status": "good" if heart_score > 80 else ("warning" if heart_score > 60 else "critical")},
+            "lungs": {"score": lungs_score, "status": "good" if lungs_score > 80 else ("warning" if lungs_score > 60 else "critical")},
+            "gut":   {"score": gut_score,   "status": "good" if gut_score > 80 else ("warning" if gut_score > 60 else "critical")},
+            "brain": {"score": brain_score, "status": "good" if brain_score > 80 else ("warning" if brain_score > 60 else "critical")},
+            "liver": {"score": 95,          "status": "good"}, # Placeholder
+            "legs":  {"score": 90,          "status": "good"}, # Placeholder
+        },
+        "overall_health_score": res["score"]
+    }
+
+
+# ---------------------------------------------------------------------------
+# 14. HISTORICAL PROGRESS (Weekly/Monthly Trend Lines)
+# ---------------------------------------------------------------------------
+def compute_historical_progress(user_id: str, history_dir: Path, timespan: str = "month") -> Dict[str, Any]:
+    """
+    Returns a time-ordered series of health scores and key vitals for charting.
+    timespan: 'week' (last 7 sessions) or 'month' (last 30 sessions).
+    """
+    user_path = history_dir / user_id
+    if not user_path.exists():
+        return {"error": "No history found"}
+
+    limit = 7 if timespan == "week" else 30
+    csv_files = sorted(user_path.glob("vitals_*.csv"), key=os.path.getmtime)[-limit:]
+    
+    progress = []
+    for f in csv_files:
+        df = _clean_df(f)
+        if df is None: continue
+        
+        # Calculate a mini-health score for this session
+        latest = df.iloc[-1]
+        hr = float(latest.get("HeartRate", 72))
+        hr_s = _score_value(hr, 60, 100) * 100
+        
+        timestamp = datetime.datetime.fromtimestamp(f.stat().st_mtime).isoformat()
+        progress.append({
+            "timestamp": timestamp,
+            "health_score": round(hr_s), # Simplified for trend
+            "heart_rate": round(hr, 1),
+            "glucose": round(float(latest.get("Glucose-BloodConcentration", 90)), 1)
+        })
+
+    return {
+        "user_id": user_id,
+        "timespan": timespan,
+        "data": progress
     }
 
 

@@ -209,14 +209,30 @@ def _build_vitals_from_df(df: pd.DataFrame) -> dict:
         "blood_pressure":   f"{int(_safe('SystolicArterialPressure'))}/{int(_safe('DiastolicArterialPressure'))}" if _safe("SystolicArterialPressure") is not None else None,
         "glucose":          round(_safe("Glucose-BloodConcentration"), 2) if _safe("Glucose-BloodConcentration") is not None else None,
         "respiration":      round(_safe("RespirationRate"), 1)    if _safe("RespirationRate") is not None else None,
-        "spo2":             round(_safe("OxygenSaturation"), 3)   if _safe("OxygenSaturation") is not None else None,
+        "spo2":             round(_safe("OxygenSaturation") * 100, 1)     if _safe("OxygenSaturation") is not None else None,
         "core_temperature": round(_safe("CoreTemperature"), 2)    if _safe("CoreTemperature") is not None else None,
         "cardiac_output":   round(_safe("CardiacOutput"), 2)      if _safe("CardiacOutput") is not None else None,
+        # ── Extended Vitals ───────────────────────────────────────────
+        "map":              round(_safe("MeanArterialPressure"), 1) if _safe("MeanArterialPressure") is not None else None,
+        "stroke_volume":    round(_safe("HeartStrokeVolume"), 1)    if _safe("HeartStrokeVolume") is not None else None,
+        "tidal_volume":     round(_safe("TidalVolume"), 1)         if _safe("TidalVolume") is not None else None,
+        "arterial_ph":      round(_safe("ArterialBloodPH"), 2)     if _safe("ArterialBloodPH") is not None else None,
+        "exercise_level":   round(_safe("AchievedExerciseLevel"), 3) if _safe("AchievedExerciseLevel") is not None else None,
     }
+
 
 def _run_batch_sync_blocking(user_id: str, events: list) -> dict:
     """Runs the BioGears batch simulation. Returns a result dict or raises."""
-    # ── Rate limit check (3 simulations per hour per user) ─────────────────
+    _t0 = time.time()
+    def _elapsed(): return f"{round(time.time() - _t0, 1)}s"
+
+    logger.info(f"")
+    logger.info(f"{'#'*55}")
+    logger.info(f"📋  SIMULATION REQUEST  [{user_id}]  {len(events)} event(s)")
+    logger.info(f"{'#'*55}")
+
+    # ── [1/6] Rate limit check ───────────────────────────────────────────────
+    logger.info(f"[1/6] [{user_id}] Rate limit check...")
     _check_rate_limit(user_id)
 
     state_file = USER_STATES_DIR / f"{user_id}.xml"
@@ -231,7 +247,8 @@ def _run_batch_sync_blocking(user_id: str, events: list) -> dict:
         if not e.get('timestamp'):
             e['timestamp'] = now_ts + (e.get('time_offset') or 0)
 
-    # ── Validate before touching the engine ───────────────────────────────
+    # ── [2/6] Validate events ────────────────────────────────────────────────
+    logger.info(f"[2/6] [{user_id}] Validating {len(event_dicts)} event(s)...")
     errors = sim_validator.validate_events(event_dicts)
     if errors:
         raise HTTPException(status_code=422, detail={"validation_errors": errors})
@@ -245,16 +262,23 @@ def _run_batch_sync_blocking(user_id: str, events: list) -> dict:
     user_weight_kg = float(meta.get("weight", 70.0))
     gap_seconds = time.time() - os.path.getmtime(str(state_file))
 
+    # ── [3/6] Build scenario XML ─────────────────────────────────────────────
+    logger.info(f"[3/6] [{user_id}] Building scenario XML... ({_elapsed()})")
     path, run_id, csv_prefix = scenario_builder.build_batch_reconstruction(
         user_id, str(state_file), sorted_events, user_weight_kg=user_weight_kg
     )
+    logger.info(f"      [{user_id}] Scenario ready → {Path(path).name}")
 
+    # ── [4/6] Run BioGears engine ─────────────────────────────────────────────
+    logger.info(f"[4/6] [{user_id}] Handing off to BioGears engine... ({_elapsed()})")
     if not engine_runner.run_biogears(path, user_id=user_id):
         log = engine_runner.get_latest_log(user_id)
         raise HTTPException(status_code=500,
                             detail={"message": "Engine execution failed.",
                                     "log_snippet": (log or "")[-500:]})
 
+    # ── [5/6] Capture results ─────────────────────────────────────────────────
+    logger.info(f"[5/6] [{user_id}] Capturing CSV output... ({_elapsed()})")
     user_hist_path = USER_HISTORY_DIR / user_id
     user_hist_path.mkdir(parents=True, exist_ok=True)
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -264,7 +288,7 @@ def _run_batch_sync_blocking(user_id: str, events: list) -> dict:
     target_filename = f"{csv_prefix}Results.csv"
     found = False
     logger.info(f"🔎 Scanning for: {target_filename}")
-    for attempt in range(6):
+    for attempt in range(12):  # up to 12 attempts × 1s = 12s max
         possible_files = list(BIOGEARS_BIN_DIR.rglob(target_filename))
         if possible_files:
             ps = possible_files[0]
@@ -278,7 +302,7 @@ def _run_batch_sync_blocking(user_id: str, events: list) -> dict:
                 logger.warning(f"⏳ File locked, retrying... ({e})")
         if found:
             break
-        time.sleep(2)
+        time.sleep(1)  # poll every 1s (was 2s × 6 = 12s worst-case; now 1s × 12 = same cap, faster response)
 
     if not found:
         raise HTTPException(status_code=500, detail="Engine output file missing.")
@@ -292,6 +316,9 @@ def _run_batch_sync_blocking(user_id: str, events: list) -> dict:
             logger.info("🔄 State synchronized.")
         except Exception as e:
             logger.warning(f"⚠️ State sync skipped: {e}")
+
+    # ── [6/6] Analytics & report ─────────────────────────────────────────────
+    logger.info(f"[6/6] [{user_id}] Running analytics and generating report... ({_elapsed()})")
 
     # Fix for BioGears extra column bug: tell pandas not to use col 0 as index
     df = pd.read_csv(dest_csv, index_col=False)
@@ -327,6 +354,14 @@ def _run_batch_sync_blocking(user_id: str, events: list) -> dict:
         )
         logger.warning(f"⏳ Data gap for {user_id}: {gap_hours}h since last sync (capped at 8h advance)")
 
+    total_elapsed = round(time.time() - _t0, 1)
+    logger.info(f"")
+    logger.info(f"{'#'*55}")
+    logger.info(f"🏁  SIMULATION DONE  [{user_id}]  total={total_elapsed}s")
+    logger.info(f"    HR={vitals.get('heart_rate')} bpm | Glucose={vitals.get('glucose')} mg/dL | BP={vitals.get('blood_pressure')}")
+    logger.info(f"{'#'*55}")
+    logger.info(f"")
+
     return {
         "status": "success",
         "vitals": vitals,
@@ -343,6 +378,53 @@ def _run_batch_sync_blocking(user_id: str, events: list) -> dict:
 # ---------------------------------------------------------------------------
 # ENDPOINTS
 # ---------------------------------------------------------------------------
+
+# ── 0. ROOT & HEALTH ───────────────────────────────────────────────────────────
+
+@app.get("/", include_in_schema=False)
+def root():
+    """Friendly root endpoint — useful when someone opens the URL in a browser."""
+    return {
+        "name":        "BioGears Digital Twin API",
+        "version":     "4.0.0",
+        "status":      "online",
+        "description": "Physiological simulation engine for the VitalTwin health app.",
+        "docs":        "/docs",
+        "health":      "/health",
+        "endpoints": {
+            "register":           "POST /register",
+            "simulate":           "POST /sync/batch",
+            "health_score":       "GET  /health-score/{user_id}",
+            "recovery_readiness": "GET  /analytics/recovery-readiness/{user_id}",
+            "cvd_risk":           "GET  /analytics/cvd-risk/{user_id}",
+            "profiles":           "GET  /profiles",
+        }
+    }
+
+
+@app.get("/health", summary="Server health ping — use this to test connectivity")
+def health_check():
+    """
+    Returns both a lightweight connectivity ping AND system component checks.
+    No API key required — safe for use as an uptime monitor / mobile 'Test Connection'.
+    """
+    checks = {}
+    checks["engine_binary"]  = BIOGEARS_BIN_DIR.exists()
+    checks["states_dir"]     = USER_STATES_DIR.exists()
+    checks["history_dir"]    = USER_HISTORY_DIR.exists()
+    checks["scenarios_dir"]  = SCENARIO_API_DIR.exists()
+    checks["twin_count"]     = len(list(USER_STATES_DIR.glob("*.xml"))) if USER_STATES_DIR.exists() else 0
+    checks["in_memory_jobs"] = len(_jobs)
+    all_ok = all(v for k, v in checks.items() if isinstance(v, bool))
+    return {
+        "status":  "healthy" if all_ok else "degraded",
+        "version": "4.0.0",
+        "engine":  "BioGears",
+        "message": "BioGears Digital Twin API is running.",
+        "timestamp": datetime.datetime.now().isoformat(),
+        "checks":  checks,
+    }
+
 
 # ── 1. SUBSTANCES ────────────────────────────────────────────────────────────
 
@@ -486,13 +568,17 @@ def register(data: RegistrationRequest):
         logger.warning(f"❌ Registration validation failed for {data.user_id}: {reg_errors}")
         raise HTTPException(status_code=422, detail={"validation_errors": reg_errors})
 
-    # ── 2. Guard: prevent accidental overwrite of an existing twin ────────────
+    # ── 2. Overwrite existing twin if recalibrating ────────────
     existing_state = USER_STATES_DIR / f"{data.user_id}.xml"
     if existing_state.exists():
-        raise HTTPException(
-            status_code=409,
-            detail=f"Twin '{data.user_id}' already exists. Delete it first or choose a different ID."
-        )
+        logger.info(f"⚠️ Twin '{data.user_id}' already exists. Overwriting with new calibration.")
+        try:
+            os.remove(str(existing_state))
+            history_folder = USER_HISTORY_DIR / data.user_id
+            if history_folder.exists():
+                shutil.rmtree(str(history_folder))
+        except Exception as e:
+            logger.warning(f"Failed to clean up old twin data for '{data.user_id}': {e}")
 
     path = scenario_builder.build_registration_scenario(
         data.user_id, data.age, data.weight, data.height,
@@ -728,6 +814,47 @@ def predict_recovery(data: PredictRequest):
 
 
 # ── GREEN TIER: ANALYTICS ENDPOINTS ──────────────────────────────────────────
+
+@app.get("/analytics/organ-scores/{user_id}", dependencies=[Depends(require_api_key)],
+         summary="Get organ-specific health scores for the Twin markers")
+def get_organ_scores(user_id: str):
+    return analytics.compute_organ_scores(user_id, USER_HISTORY_DIR)
+
+
+@app.get("/analytics/vitals-progress/{user_id}", dependencies=[Depends(require_api_key)],
+         summary="Get historical progress trends (weeks/months)")
+def get_vitals_progress(user_id: str, timespan: str = "month"):
+    return analytics.compute_historical_progress(user_id, USER_HISTORY_DIR, timespan)
+
+
+@app.post("/sync/undo/{user_id}", dependencies=[Depends(require_api_key)],
+          summary="Revert Twin state to the previous successful simulation")
+def undo_last_simulation(user_id: str):
+    """
+    Reverts the twin's XML state file to the most recent backup.
+    This effectively 'undos' the last simulation run.
+    """
+    state_file = USER_STATES_DIR / f"{user_id}.xml"
+    bak_dir = USER_STATES_DIR / "backups" / user_id
+    
+    if not bak_dir.exists():
+        raise HTTPException(status_code=404, detail="No backups found for this twin.")
+        
+    backups = sorted(bak_dir.glob(f"{user_id}_*.xml"), key=os.path.getmtime, reverse=True)
+    if len(backups) < 2:
+        # Index 0 is the backup of the current state. We need Index 1.
+        raise HTTPException(status_code=404, detail="Not enough history to undo.")
+        
+    target_bak = backups[1] # The one before the current state
+    try:
+        shutil.copy2(str(target_bak), str(state_file))
+        # Optional: remove the latest CSV result if we want to be very clean
+        logger.info(f"⏪ Undo successful for {user_id}. Reverted to {target_bak.name}")
+        return {"status": "success", "message": "State reverted successfully."}
+    except Exception as e:
+        logger.error(f"Undo failed: {e}")
+        raise HTTPException(status_code=500, detail="Reversion failed.")
+
 
 @app.get("/metrics/{user_id}", dependencies=[Depends(require_api_key)],
          summary="Compute BMI, BSA, ideal weight and other body metrics")
@@ -997,29 +1124,7 @@ def get_engine_log(user_id: str):
     }
 
 
-# ── HEALTH CHECK ──────────────────────────────────────────────────────────────
-
-@app.get("/health", summary="System health check — no auth required")
-def health_check():
-    """
-    Returns the health status of all system components.
-    Suitable for uptime monitors — no API key required.
-    """
-    checks = {}
-    checks["engine_binary"]  = BIOGEARS_BIN_DIR.exists()
-    checks["states_dir"]     = USER_STATES_DIR.exists()
-    checks["history_dir"]    = USER_HISTORY_DIR.exists()
-    checks["scenarios_dir"]  = SCENARIO_API_DIR.exists()
-    checks["twin_count"]     = len(list(USER_STATES_DIR.glob("*.xml"))) if USER_STATES_DIR.exists() else 0
-    checks["in_memory_jobs"] = len(_jobs)
-
-    all_ok = all(v for k, v in checks.items() if isinstance(v, bool))
-    return {
-        "status": "healthy" if all_ok else "degraded",
-        "timestamp": datetime.datetime.now().isoformat(),
-        "checks": checks,
-    }
-
+# NOTE: /health endpoint is defined earlier in the file (line ~405) — no duplicate here.
 
 # ── CVD RISK SCORE ────────────────────────────────────────────────────────────
 

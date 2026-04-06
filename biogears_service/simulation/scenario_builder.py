@@ -402,36 +402,43 @@ def build_batch_reconstruction(user_id, state_path, events: list, user_weight_kg
     engine_clock = os.path.getmtime(state_path)
     current_time = time.time()
     
-    # Target time is the first event, or now if there are no events
-    target_time = events[0].get("timestamp", current_time) if events else current_time
+    # Priority: 1. Absolute timestamp, 2. Time-offset relative to 'now', 3. Just 'now'
+    first_ev = events[0] if events else None
+    if first_ev and first_ev.get("timestamp"):
+        target_time = float(first_ev["timestamp"])
+    elif first_ev and first_ev.get("time_offset") is not None:
+        target_time = engine_clock + float(first_ev["time_offset"])
+    else:
+        target_time = current_time
     
     # Catch up full missing days iteratively to reset physiology to baseline
-    while target_time - engine_clock >= 86400:
+    while (target_time - engine_clock) >= 86400:
         actions_xml += _catchup_routine_xml(user_weight_kg)
         engine_clock += 86400
 
-    gap_seconds = int(target_time - engine_clock)
+    gap_remaining = int(target_time - engine_clock)
     
-    if gap_seconds > 10:
-        actions_xml += f"        <!-- Basal gap: {gap_seconds}s since last sync to first event -->\n"
-        actions_xml += _advance_xml(gap_seconds)
-        engine_clock += gap_seconds
+    if gap_remaining > 30:
+        actions_xml += f"        <!-- Basal gap: {gap_remaining}s since last sync to first event -->\n"
+        actions_xml += _advance_xml(gap_remaining)
+        engine_clock += gap_remaining
 
     last_substance_time = -99999
 
-    for event in sorted(events, key=lambda x: x.get("timestamp", 0)):
-        ev_ts = event.get("timestamp", engine_clock)
+    for event in sorted(events, key=lambda x: float(x.get("timestamp") or 0)):
+        ev_ts = float(event.get("timestamp") or (engine_clock + (event.get("time_offset") or 0)))
         wait_time = int(ev_ts - engine_clock)
         if wait_time > 0:
             actions_xml += _advance_xml(wait_time)
             engine_clock += wait_time
+
 
         etype = event["event_type"]
         val   = event.get("value", 0)
 
         if etype == "exercise":
             intensity       = float(val)
-            duration_sec    = int(event.get("duration_seconds") or 1800)
+            duration_sec    = int(float(event.get("duration_seconds") or 1800))
             duration_sec    = max(60, min(duration_sec, 14400))
             actions_xml    += _exercise_xml(intensity)
             actions_xml    += _advance_xml(duration_sec)
@@ -439,7 +446,7 @@ def build_batch_reconstruction(user_id, state_path, events: list, user_weight_kg
             actions_xml    += _exercise_xml(0.0)
 
         elif etype == "sleep":
-            hours       = max(0.25, min(float(val), 12.0))
+            hours       = max(0.25, min(float(val or 0), 12.0))
             sleep_sec   = int(hours * 3600)
             actions_xml += '        <Action xsi:type="SleepData" Sleep="On"/>\n'
             actions_xml += _advance_xml(sleep_sec)
@@ -448,7 +455,7 @@ def build_batch_reconstruction(user_id, state_path, events: list, user_weight_kg
 
         elif etype == "meal":
             actions_xml += _meal_xml(
-                calories  = float(val),
+                calories  = float(val or 0),
                 meal_type = event.get("meal_type", "balanced"),
                 carb_g    = event.get("carb_g"),
                 fat_g     = event.get("fat_g"),
@@ -456,12 +463,12 @@ def build_batch_reconstruction(user_id, state_path, events: list, user_weight_kg
             )
 
         elif etype == "water":
-            actions_xml += _water_xml(float(val))
+            actions_xml += _water_xml(float(val or 0))
 
         elif etype == "substance":
-            is_stacked   = (ev_ts - last_substance_time) < 14400
+            is_stacked   = (ev_ts - (last_substance_time or 0)) < 14400
             sub_name     = event.get("substance_name", "Caffeine")
-            actions_xml += _substance_xml(sub_name, float(val), is_stacked)
+            actions_xml += _substance_xml(sub_name, float(val or 0), is_stacked)
             last_substance_time = ev_ts
 
         elif etype == "environment":
@@ -469,8 +476,8 @@ def build_batch_reconstruction(user_id, state_path, events: list, user_weight_kg
             actions_xml += _environment_xml(env_name)
 
         elif etype == "stress":                          
-            intensity    = max(0.0, min(1.0, float(val)))
-            dur          = int(event.get("duration_seconds", 300))
+            intensity    = max(0.0, min(1.0, float(val or 0)))
+            dur          = int(float(event.get("duration_seconds") or 300))
             actions_xml += _stress_xml(intensity)
             actions_xml += _advance_xml(dur)
             engine_clock += dur
@@ -480,12 +487,12 @@ def build_batch_reconstruction(user_id, state_path, events: list, user_weight_kg
             actions_xml += _stress_xml(0.0)
 
         elif etype == "alcohol":
-            actions_xml += _alcohol_xml(float(val), weight_kg=user_weight_kg)
+            actions_xml += _alcohol_xml(float(val or 0), weight_kg=user_weight_kg)
             actions_xml += _advance_xml(1800)
             engine_clock += 1800
 
         elif etype == "fast":
-            hours = max(1.0, min(48.0, float(val)))
+            hours = max(1.0, min(48.0, float(val or 0)))
             fast_sec = int(hours * 3600)
             actions_xml += _fasting_xml(hours)
             engine_clock += fast_sec  # _fasting_xml advances exactly fast_sec internally

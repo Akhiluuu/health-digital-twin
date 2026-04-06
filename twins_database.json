@@ -1,73 +1,116 @@
 {
-  "test_twin_001": {
-    "age": 30,
-    "sex": "Male",
-    "weight": 80.0,
-    "height": 180.0,
-    "body_fat": 0.2,
-    "resting_hr": 70.0,
-    "systolic_bp": 120.0,
-    "diastolic_bp": 80.0,
-    "conditions": [],
-    "registered_at": "2026-03-22T23:24:41.253261",
-    "is_smoker": false,
-    "has_anemia": false,
-    "has_type1_diabetes": false,
-    "has_type2_diabetes": false
-  },
-  "UHI_0001": {
-    "age": 45,
-    "sex": "Male",
-    "weight": 70.0,
-    "height": 170.0,
-    "body_fat": 0.2,
-    "resting_hr": 72.0,
-    "systolic_bp": 114.0,
-    "diastolic_bp": 73.5,
-    "conditions": [],
-    "registered_at": "2026-03-23T00:00:45.721325",
-    "is_smoker": false,
-    "has_anemia": false,
-    "has_type1_diabetes": false,
-    "has_type2_diabetes": false
-  },
-  "UHI0123": {
-    "age": 30,
-    "sex": "Male",
-    "weight": 75.0,
-    "height": 180.0,
-    "body_fat": 0.18,
-    "resting_hr": 72.0,
-    "systolic_bp": 115.0,
-    "diastolic_bp": 75.0,
-    "conditions": [
-      "Smoker / COPD",
-      "Chronic Anemia",
-      "Type 1 Diabetes",
-      "Type 2 Diabetes"
-    ],
-    "registered_at": "2026-03-23T00:12:54.714351",
-    "is_smoker": true,
-    "has_anemia": true,
-    "has_type1_diabetes": true,
-    "has_type2_diabetes": true
-  },
-  "U000": {
-    "age": 30,
-    "sex": "Male",
-    "weight": 75.0,
-    "height": 180.0,
-    "body_fat": 0.18,
-    "resting_hr": 72.0,
-    "systolic_bp": 115.0,
-    "diastolic_bp": 75.0,
-    "conditions": [
-      "Type 1 Diabetes"
-    ],
-    "registered_at": "2026-03-23T00:42:27.178002",
-    "is_smoker": false,
-    "has_anemia": false,
-    "has_type1_diabetes": true,
-    "has_type2_diabetes": false
-  }
+    "test_twin_001": {
+        "age": 30,
+        "sex": "Male",
+        "weight": 80.0,
+        "height": 180.0,
+        "body_fat": 0.2,
+        "resting_hr": 70.0,
+        "systolic_bp": 120.0,
+        "diastolic_bp": 80.0,
+        "conditions": [],
+        "registered_at": "2026-03-22T23:24:41.253261",
+        "is_smoker": false,
+        "has_anemia": false,
+        "has_type1_diabetes": false,
+        "has_type2_diabetes": false
+    },
+    "UHI_0001": {
+        "age": 45,
+        "sex": "Male",
+        "weight": 70.0,
+        "height": 170.0,
+        "body_fat": 0.2,
+        "resting_hr": 72.0,
+        "systolic_bp": 114.0,
+        "diastolic_bp": 73.5,
+        "conditions": [],
+        "registered_at": "2026-03-23T00:00:45.721325",
+        "is_smoker": false,
+        "has_anemia": false,
+        "has_type1_diabetes": false,
+        "has_type2_diabetes": false
+    },
+    "UHI0123": {
+        "age": 30,
+        "sex": "Male",
+        "weight": 75.0,
+        "height": 180.0,
+        "body_fat": 0.18,
+        "resting_hr": 72.0,
+        "systolic_bp": 115.0,
+        "diastolic_bp": 75.0,
+        "conditions": [
+            "Smoker / COPD",
+            "Chronic Anemia",
+            "Type 1 Diabetes",
+            "Type 2 Diabetes"
+        ],
+        "registered_at": "2026-03-23T00:12:54.714351",
+        "is_smoker": true,
+        "has_anemia": true,
+        "has_type1_diabetes": true,
+        "has_type2_diabetes": true
+    },
+    "U000": {
+        "age": 30,
+        "sex": "Male",
+        "weight": 75.0,
+        "height": 180.0,
+        "body_fat": 0.18,
+        "resting_hr": 72.0,
+        "systolic_bp": 115.0,
+        "diastolic_bp": 75.0,
+        "conditions": [
+            "Type 1 Diabetes"
+        ],
+        "registered_at": "2026-03-23T00:42:27.178002",
+        "is_smoker": false,
+        "has_anemia": false,
+        "has_type1_diabetes": true,
+        "has_type2_diabetes": false
+    },
+    "temp_user": {
+        "age": 30,
+        "sex": "Male",
+        "weight": 70.0,
+        "height": 170.0,
+        "body_fat": 0.2,
+        "resting_hr": 72.0,
+        "systolic_bp": 114.0,
+        "diastolic_bp": 73.5,
+        "conditions": [],
+        "registered_at": "2026-04-03T14:30:12.315139",
+        "is_smoker": false,
+        "has_anemia": false,
+        "has_type1_diabetes": false,
+        "has_type2_diabetes": false,
+        "hba1c": null,
+        "ethnicity": "Other"
+    },
+    "akhil_reddy_9594": {
+        "age": 30,
+        "sex": "Male",
+        "weight": 80.0,
+        "height": 180.0,
+        "body_fat": 0.15000000000000002,
+        "resting_hr": 80.0,
+        "systolic_bp": 120.0,
+        "diastolic_bp": 80.0,
+        "conditions": [
+            "Chronic Anemia",
+            "Type 1 Diabetes"
+        ],
+        "registered_at": "2026-04-03T15:57:57.708383",
+        "is_smoker": false,
+        "has_anemia": true,
+        "has_type1_diabetes": true,
+        "has_type2_diabetes": false,
+        "hba1c": 5.0,
+        "ethnicity": "South Asian"
+    },
+    "clinical_test_01": {
+        "reg_time": "2026-04-06T10:45:17.092820",
+        "conditions": []
+    }
 }

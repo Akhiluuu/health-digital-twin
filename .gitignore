@@ -11,18 +11,24 @@ venv/
 biogears_service/engine/
 
 # Patient engine state files (personal data - never commit)
+clinical_data/states/
+clinical_data/history/
 user_states/
-
-# Simulation output CSVs (personal data)
 user_history/
+
+# Simulation runtime output
+biogears_service/runtime/
+biogears_service/simulation_results/
+biogears_service/__pycache__/
 
 # Generated health reports (images)
 reports/
 
 # Logs
 logs/
+*.log
 
-# Database
+# Database (runtime - not committed)
 twins_database.json
 
 # Scenarios generated at runtime
@@ -37,7 +43,11 @@ desktop.ini
 .vscode/
 .idea/
 
+# Large archives - never commit zip files to Git
+*.zip
+*.tar.gz
+*.rar
+
 # Test artifacts
-*.log
 test_*.py
 debug_*.py

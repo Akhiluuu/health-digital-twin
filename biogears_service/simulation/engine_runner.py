@@ -1,16 +1,19 @@
 """
-engine_runner.py — BioGears subprocess launcher (v2).
+engine_runner.py — BioGears subprocess launcher (v3).
 
-Improvements vs v1:
-  - Logs engine stderr to BASE_DIR/logs/engine_{user_id}_{ts}.log
-  - Configurable timeout (default 120 s) — kills subprocess if exceeded
-  - Returns {success, log_path} dict (backward compat: dict is truthy on success)
+Improvements vs v2:
+  - Real-time stdout streaming (no more silent 5-minute wait)
+  - Progress heartbeat every 30s so you can see it's still running
+  - Key BioGears lines (Time, Completed, Error) printed at INFO level
+  - Configurable timeout via ENGINE_TIMEOUT_SECONDS env var
 """
 
 import os
 import subprocess
 import datetime
 import logging
+import threading
+import time
 from pathlib import Path
 
 from biogears_service.simulation.config import (
@@ -21,13 +24,19 @@ logger = logging.getLogger("DigitalTwin.Engine")
 
 ENGINE_TIMEOUT_SECONDS = int(os.environ.get("ENGINE_TIMEOUT_SECONDS", "600"))
 
+# BioGears output lines shown at INFO level (everything else at DEBUG)
+_IMPORTANT_PREFIXES = (
+    "Time:", "Simulation Time", "Completed", "Error", "Warning",
+    "Physiology", "Patient", "Loading", "Running", "[Fatal]", "[ERROR]",
+)
+
 
 class EngineResult:
     """Dict-like result that is truthy when the engine succeeded."""
     def __init__(self, success: bool, log_path: str, return_code: int):
-        self.success       = success
-        self.log_path      = log_path
-        self.return_code   = return_code
+        self.success     = success
+        self.log_path    = log_path
+        self.return_code = return_code
 
     def __bool__(self):
         return self.success
@@ -36,23 +45,32 @@ class EngineResult:
         return f"EngineResult(success={self.success}, rc={self.return_code})"
 
 
+def _heartbeat(user_id: str, stop_evt: threading.Event, interval: int = 30):
+    """Background thread: prints a progress line every `interval` seconds."""
+    elapsed = 0
+    while not stop_evt.wait(interval):
+        elapsed += interval
+        logger.info(f"⏳  [{user_id}] BioGears still running... ({elapsed}s elapsed)")
+
+
 def run_biogears(scenario_path: str, user_id: str = "unknown") -> EngineResult:
     """
     Launches BioGears CLI for the given scenario file.
-
-    Args:
-        scenario_path: Absolute path to the scenario XML.
-        user_id:       Used only for log file naming.
-
-    Returns:
-        EngineResult — truthy if engine exited with code 0 within timeout.
+    Streams stdout in real-time and logs a heartbeat every 30s.
     """
-    ts        = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    log_path  = LOGS_DIR / f"engine_{user_id}_{ts}.log"
+    ts           = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    log_path     = LOGS_DIR / f"engine_{user_id}_{ts}.log"
     rel_scenario = os.path.relpath(scenario_path, BIOGEARS_BIN_DIR)
-    command   = f'"{BIOGEARS_EXECUTABLE.name}" Scenario "{rel_scenario}"'
+    command      = f'"{BIOGEARS_EXECUTABLE.name}" Scenario "{rel_scenario}"'
 
-    logger.info(f"🚀 Engine launch | user={user_id} | scenario={rel_scenario}")
+    logger.info("")
+    logger.info("=" * 55)
+    logger.info(f"🚀  [{user_id}] BioGears engine STARTING")
+    logger.info(f"    Scenario : {rel_scenario}")
+    logger.info(f"    Timeout  : {ENGINE_TIMEOUT_SECONDS}s max")
+    logger.info("=" * 55)
+
+    start_time = time.time()
 
     try:
         proc = subprocess.Popen(
@@ -62,34 +80,75 @@ def run_biogears(scenario_path: str, user_id: str = "unknown") -> EngineResult:
             text=True,
             shell=True,
             cwd=str(BIOGEARS_BIN_DIR),
+            bufsize=1,      # line-buffered → real-time output
         )
 
+        # ── Start heartbeat thread ───────────────────────────────────────────
+        stop_heartbeat   = threading.Event()
+        heartbeat_thread = threading.Thread(
+            target=_heartbeat,
+            args=(user_id, stop_heartbeat, 30),
+            daemon=True,
+        )
+        heartbeat_thread.start()
+
+        # ── Stream stdout lines in real-time ─────────────────────────────────
         output_lines = []
+        timed_out    = False
+        deadline     = start_time + ENGINE_TIMEOUT_SECONDS
+
         try:
-            stdout, _ = proc.communicate(timeout=ENGINE_TIMEOUT_SECONDS)
-            output_lines = stdout.splitlines()
-            for line in output_lines:
-                logger.debug(f"⚙️  {line}")
-        except subprocess.TimeoutExpired:
-            proc.kill()
-            proc.communicate()
-            logger.error(f"⏰ Engine timeout after {ENGINE_TIMEOUT_SECONDS}s — killed.")
-            _write_log(log_path, output_lines + [f"[TIMEOUT after {ENGINE_TIMEOUT_SECONDS}s]"])
+            for line in proc.stdout:
+                line = line.rstrip()
+                if not line:
+                    continue
+                output_lines.append(line)
+
+                # Enforce deadline on each line read
+                if time.time() > deadline:
+                    proc.kill()
+                    proc.communicate()
+                    timed_out = True
+                    break
+
+                # Important lines → INFO, rest → DEBUG
+                stripped = line.strip()
+                if any(stripped.startswith(p) for p in _IMPORTANT_PREFIXES):
+                    logger.info(f"⚙️   [{user_id}] {stripped}")
+                else:
+                    logger.debug(f"     {stripped}")
+
+        except Exception as read_err:
+            logger.warning(f"⚠️  Stream read error: {read_err}")
+        finally:
+            stop_heartbeat.set()
+            heartbeat_thread.join(timeout=3)
+
+        elapsed = round(time.time() - start_time, 1)
+
+        if timed_out:
+            logger.error(f"⏰  [{user_id}] Engine TIMEOUT after {elapsed}s — killed.")
+            _write_log(log_path, output_lines + [f"[TIMEOUT after {elapsed}s]"])
             return EngineResult(success=False, log_path=str(log_path), return_code=-1)
 
-        _write_log(log_path, output_lines)
-        rc = proc.returncode
+        proc.wait(timeout=10)
+        rc      = proc.returncode
         success = (rc == 0)
 
+        _write_log(log_path, output_lines)
+
+        logger.info("=" * 55)
         if success:
-            logger.info(f"✅ Engine finished OK | log={log_path}")
+            logger.info(f"✅  [{user_id}] Engine FINISHED OK  ({elapsed}s)")
         else:
-            logger.error(f"❌ Engine exited rc={rc} | log={log_path}")
+            logger.error(f"❌  [{user_id}] Engine FAILED rc={rc}  ({elapsed}s) | log={log_path}")
+        logger.info("=" * 55)
+        logger.info("")
 
         return EngineResult(success=success, log_path=str(log_path), return_code=rc)
 
     except Exception as e:
-        logger.error(f"❌ Engine launch exception: {e}")
+        logger.error(f"❌  [{user_id}] Engine launch exception: {e}")
         _write_log(log_path, [f"[LAUNCH ERROR] {e}"])
         return EngineResult(success=False, log_path=str(log_path), return_code=-2)
 
@@ -98,7 +157,7 @@ def _write_log(path: Path, lines: list):
     try:
         Path(path).write_text("\n".join(lines), encoding="utf-8")
     except Exception:
-        pass  # Log writing is best-effort
+        pass  # Best-effort
 
 
 def get_latest_log(user_id: str) -> str | None:
