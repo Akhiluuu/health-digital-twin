@@ -125,7 +125,7 @@ def validate_events(events: List[Dict[str, Any]]) -> List[str]:
             errors.append(f"{label}: Unknown event_type '{etype}'. Valid types: {known}.")
             continue   # Skip per-type checks for unknown types
 
-        if int(offset) < 0:
+        if offset is not None and int(offset) < 0:
             errors.append(f"{label}: time_offset cannot be negative (got {offset}).")
 
         # ── Per-type checks ────────────────────────────────────────────────

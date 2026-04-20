@@ -38,15 +38,15 @@ def run_path_checker():
         "Scenario API": SCENARIO_API_DIR,
         "Reports Folder": REPORTS_DIR
     }
-    print("\n" + "="*50 + "\n🔍 BIOGEARS SYSTEM PATH CHECK\n" + "="*50)
+    print("\n" + "="*50 + "\n[BIOGEARS] SYSTEM PATH CHECK\n" + "="*50)
     all_pass = True
     for name, path in paths.items():
         exists = Path(path).exists()
-        print(f"{name.ljust(20)}: {'✅ PASS' if exists else '❌ FAIL'} ({path})")
+        print(f"{name.ljust(20)}: {'PASS' if exists else 'FAIL'} ({path})")
         if not exists:
             try:
                 Path(path).mkdir(parents=True, exist_ok=True)
-                print(f"   ∟ 🛠️ Auto-created: {name}")
+                print(f"   >> Auto-created: {name}")
             except:
                 all_pass = False
     return all_pass

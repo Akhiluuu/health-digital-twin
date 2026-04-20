@@ -5,7 +5,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // ─── Configuration ────────────────────────────────────────────────────────────
 
-const DEFAULT_BASE_URL = 'http://10.66.213.41:8000';  // Using Host IP instead of 10.0.2.2 for reliability
+const DEFAULT_BASE_URL = 'http://10.239.133.79:8000';  // Your laptop's local Wi-Fi IP
 const BASE_URL_KEY = '@biogears_base_url';
 
 export async function getBiogearsBaseUrl(): Promise<string> {
