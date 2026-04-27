@@ -5,18 +5,18 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // ─── Configuration ────────────────────────────────────────────────────────────
 
-const DEFAULT_BASE_URL = 'http://10.239.133.79:8000';  // Your laptop's local Wi-Fi IP
+const DEFAULT_BASE_URL = 'http://10.172.0.79:8000';  // Your laptop's local Wi-Fi IP
 const BASE_URL_KEY = '@biogears_base_url';
 
 export async function getBiogearsBaseUrl(): Promise<string> {
   try {
     const stored = await AsyncStorage.getItem(BASE_URL_KEY);
     const url = stored || DEFAULT_BASE_URL;
-    
+
     if (url.includes('10.0.2.2') && !stored) {
       console.warn('[BioGears] WARNING: Using 10.0.2.2 which often fails on Windows. Consider using 10.66.213.41');
     }
-    
+
     console.log(`[BioGears] Using Base URL: ${url}`);
     return url;
   } catch {
@@ -209,7 +209,7 @@ async function apiFetch<T>(path: string, options?: RequestInit, timeoutMs = 3000
 /**
  * Health check — lightweight ping, use to test connectivity
  */
-export async function healthCheck(): Promise<{ status: string; version: string; engine: string; checks?: Record<string,any> }> {
+export async function healthCheck(): Promise<{ status: string; version: string; engine: string; checks?: Record<string, any> }> {
   return apiFetch('/health', undefined, 5000);
 }
 

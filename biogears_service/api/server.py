@@ -5,7 +5,7 @@ from fastapi.responses import StreamingResponse, Response
 from fastapi.security.api_key import APIKeyHeader
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
-import shutil, os, math
+import shutil, os, math, json, threading
 import datetime
 import time
 import uuid
@@ -20,7 +20,8 @@ from pathlib import Path
 from biogears_service.simulation import scenario_builder, engine_runner, result_parser, visualizer
 from biogears_service.simulation.config import (
     USER_STATES_DIR, BIO_OUTPUT_DIR, SCENARIO_API_DIR,
-    BASE_DIR, BIOGEARS_BIN_DIR, USER_HISTORY_DIR, REPORTS_DIR, LOGS_DIR
+    BASE_DIR, BIOGEARS_BIN_DIR, USER_HISTORY_DIR, REPORTS_DIR, LOGS_DIR,
+    JOBS_STORE_PATH
 )
 from biogears_service.simulation.substance_registry import ROUTE_GROUPS
 from biogears_service.simulation import validator as sim_validator
@@ -86,9 +87,61 @@ async def require_api_key(key: str = Depends(api_key_header)):
         raise HTTPException(status_code=403, detail="Invalid or missing API key. Set X-API-Key header.")
 
 # ---------------------------------------------------------------------------
-# IN-MEMORY JOB STORE  (job_id -> {status, result, error})
+# PERSISTENT JOB STORE  (file-backed JSON, survives server restarts)
 # ---------------------------------------------------------------------------
-_jobs: Dict[str, Dict[str, Any]] = {}
+# Jobs are saved to JOBS_STORE_PATH so a reload/crash doesn't wipe results.
+# Thread-safe via _jobs_lock. Jobs older than JOB_TTL_SECONDS are pruned.
+# ---------------------------------------------------------------------------
+_jobs_lock     = threading.Lock()
+JOB_TTL_SECONDS = 7200  # 2 hours
+
+
+def _load_jobs() -> Dict[str, Dict[str, Any]]:
+    """Read the job store from disk. Returns empty dict on any error."""
+    try:
+        if JOBS_STORE_PATH.exists():
+            return json.loads(JOBS_STORE_PATH.read_text(encoding="utf-8"))
+    except Exception as e:
+        logger.warning(f"Job store read error (returning empty): {e}")
+    return {}
+
+
+def _save_jobs(jobs: Dict[str, Dict[str, Any]]) -> None:
+    """Persist the job store to disk atomically."""
+    try:
+        tmp = JOBS_STORE_PATH.with_suffix(".tmp")
+        tmp.write_text(json.dumps(jobs, default=str), encoding="utf-8")
+        tmp.replace(JOBS_STORE_PATH)
+    except Exception as e:
+        logger.warning(f"Job store write error: {e}")
+
+
+def _get_job(job_id: str) -> Optional[Dict[str, Any]]:
+    with _jobs_lock:
+        return _load_jobs().get(job_id)
+
+
+def _set_job(job_id: str, data: Dict[str, Any]) -> None:
+    with _jobs_lock:
+        jobs = _load_jobs()
+        jobs[job_id] = data
+        _save_jobs(jobs)
+
+
+def _prune_old_jobs() -> None:
+    """Remove jobs older than JOB_TTL_SECONDS. Called once on startup."""
+    with _jobs_lock:
+        jobs = _load_jobs()
+        cutoff = time.time() - JOB_TTL_SECONDS
+        pruned = {jid: j for jid, j in jobs.items()
+                  if float(j.get("created_at", 0)) >= cutoff}
+        removed = len(jobs) - len(pruned)
+        if removed:
+            logger.info(f"🗑️  Pruned {removed} expired job(s) from store.")
+        _save_jobs(pruned)
+
+
+_prune_old_jobs()
 
 # ---------------------------------------------------------------------------
 # PER-USER RATE LIMITING  (max 3 simulations per hour per user)
@@ -422,7 +475,8 @@ def health_check():
     checks["history_dir"]    = USER_HISTORY_DIR.exists()
     checks["scenarios_dir"]  = SCENARIO_API_DIR.exists()
     checks["twin_count"]     = len(list(USER_STATES_DIR.glob("*.xml"))) if USER_STATES_DIR.exists() else 0
-    checks["in_memory_jobs"] = len(_jobs)
+    with _jobs_lock:
+        checks["persisted_jobs"] = len(_load_jobs())
     all_ok = all(v for k, v in checks.items() if isinstance(v, bool))
     return {
         "status":  "healthy" if all_ok else "degraded",
@@ -671,18 +725,25 @@ def sync_single(data: SingleSyncRequest):
 # ── 6. ASYNC SIMULATION ───────────────────────────────────────────────────────
 
 def _background_sync(job_id: str, user_id: str, events: list):
-    """Background task: run simulation and update job store on completion."""
-    _jobs[job_id]["status"] = "running"
+    """Background task: run simulation and persist result to job store."""
+    # Mark as running
+    job = _get_job(job_id) or {}
+    job["status"] = "running"
+    _set_job(job_id, job)
+
     try:
         result = _run_batch_sync_blocking(user_id, events)
-        _jobs[job_id]["status"] = "done"
-        _jobs[job_id]["result"] = result
+        job["status"] = "done"
+        job["result"] = result
+        _set_job(job_id, job)
     except HTTPException as e:
-        _jobs[job_id]["status"] = "failed"
-        _jobs[job_id]["error"] = e.detail
+        job["status"] = "failed"
+        job["error"]  = e.detail
+        _set_job(job_id, job)
     except Exception as e:
-        _jobs[job_id]["status"] = "failed"
-        _jobs[job_id]["error"] = str(e)
+        job["status"] = "failed"
+        job["error"]  = str(e)
+        _set_job(job_id, job)
 
 
 @app.post("/simulate/async", dependencies=[Depends(require_api_key)],
@@ -691,17 +752,24 @@ def simulate_async(data: AsyncSyncRequest, background_tasks: BackgroundTasks):
     """
     Kicks off a background simulation and immediately returns a job_id.
     Poll GET /jobs/{job_id} to check progress and retrieve results.
+    Job state is persisted to disk so it survives server reloads.
     """
     state_file = USER_STATES_DIR / f"{data.user_id}.xml"
     if not state_file.exists():
         raise HTTPException(status_code=404, detail=f"Twin '{data.user_id}' not found.")
 
     job_id = str(uuid.uuid4())
-    _jobs[job_id] = {"status": "pending", "user_id": data.user_id, "result": None, "error": None}
+    _set_job(job_id, {
+        "status":     "pending",
+        "user_id":    data.user_id,
+        "result":     None,
+        "error":      None,
+        "created_at": time.time(),
+    })
 
     background_tasks.add_task(_background_sync, job_id, data.user_id, data.events)
 
-    logger.info(f"🔄 Async job {job_id} queued for {data.user_id}")
+    logger.info(f"🔄 Async job {job_id} queued for {data.user_id} (persisted)")
     return {"job_id": job_id, "status": "pending", "poll_url": f"{BASE_URL}/jobs/{job_id}"}
 
 
@@ -710,21 +778,28 @@ def simulate_async(data: AsyncSyncRequest, background_tasks: BackgroundTasks):
 def get_job_status(job_id: str):
     """
     Returns the current status of a background simulation job.
+    Job state is read from the persistent file store so it survives reloads.
 
     - **pending** → queued, not started yet
     - **running** → BioGears engine is executing
     - **done** → finished, `result` contains vitals and report_url
     - **failed** → something went wrong, `error` contains the reason
     """
-    job = _jobs.get(job_id)
+    job = _get_job(job_id)
     if not job:
-        raise HTTPException(status_code=404, detail=f"Job '{job_id}' not found.")
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                f"Job '{job_id}' not found. "
+                "It may have expired (jobs are kept for 2 hours) or the ID is incorrect."
+            )
+        )
     return {
-        "job_id": job_id,
-        "status": job["status"],
+        "job_id":  job_id,
+        "status":  job["status"],
         "user_id": job["user_id"],
-        "result": job.get("result"),
-        "error": job.get("error"),
+        "result":  job.get("result"),
+        "error":   job.get("error"),
     }
 
 
