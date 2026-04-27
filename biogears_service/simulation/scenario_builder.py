@@ -386,68 +386,149 @@ def build_registration_scenario(user_id, age, weight, height, sex, body_fat,
 
 # ── PUBLIC: Batch reconstruction ─────────────────────────────────────────────
 def build_batch_reconstruction(user_id, state_path, events: list, user_weight_kg: float = 70.0):
+    """
+    Builds a BioGears scenario that reconstructs the user's physiology from their
+    logged events, correctly handling past-event timestamps.
+
+    KEY FIX: If events are timestamped BEFORE the engine state's creation time
+    (e.g. twin created at 12:00 PM, but events logged for 6:00 AM that same day),
+    the engine rewinds to midnight of the earliest event's day and plays the full
+    timeline forward from there. This ensures physiological state at each event
+    time is accurate — glucose, HR, and BP all reflect what happened earlier.
+    """
+    import logging as _logging
+    _log = _logging.getLogger("DigitalTwin.ScenarioBuilder")
+
     run_id        = f"{user_id}_{int(time.time())}"
     scenario_file = SCENARIO_API_DIR / f"batch_{run_id}.xml"
     abs_state_in  = Path(state_path).absolute().as_posix()
     abs_state_out = (BIOGEARS_BIN_DIR / f"batch_{user_id}.xml").as_posix()
+    csv_prefix    = f"batch_{run_id}"
 
-    csv_prefix = f"batch_{run_id}"
+    # ── Resolve all event timestamps upfront ────────────────────────────────
+    now_ts       = time.time()
+    engine_mtime = os.path.getmtime(state_path)  # when the state file was last saved
 
-    # ── Circadian phase: inject time-of-day physiological baseline ───────────
-    # This ensures HR/BP already reflect whether it's morning surge, daytime, or night
-    wall_hour = datetime.datetime.now().hour
-    actions_xml = _circadian_phase_xml(wall_hour)
+    event_dicts = []
+    for ev in events:
+        ts = float(ev.get("timestamp") or 0)
+        if ts <= 0:
+            # fallback: time_offset relative to now, or just now
+            ts = now_ts + float(ev.get("time_offset") or 0)
+        ev_copy = dict(ev)
+        ev_copy["timestamp"] = ts
+        event_dicts.append(ev_copy)
 
-    # ── Basal gap / Missed Day Routine ───────────────────────────────────────
-    engine_clock = os.path.getmtime(state_path)
-    current_time = time.time()
-    
-    # Priority: 1. Absolute timestamp, 2. Time-offset relative to 'now', 3. Just 'now'
-    first_ev = events[0] if events else None
-    if first_ev and first_ev.get("timestamp"):
-        target_time = float(first_ev["timestamp"])
-    elif first_ev and first_ev.get("time_offset") is not None:
-        target_time = engine_clock + float(first_ev["time_offset"])
+    sorted_events = sorted(event_dicts, key=lambda x: float(x["timestamp"]))
+
+    # ── Determine the true simulation start time ─────────────────────────────
+    # If the earliest event is BEFORE the engine state was created, we must
+    # reconstruct backward to midnight of that event's day so that the engine
+    # advances through the correct physiological timeline.
+    earliest_ev_ts  = float(sorted_events[0]["timestamp"]) if sorted_events else now_ts
+    latest_ev_ts    = float(sorted_events[-1]["timestamp"]) if sorted_events else now_ts
+
+    if earliest_ev_ts < engine_mtime:
+        # ── PAST-EVENT PATH: events are before twin creation ─────────────────
+        # Reset to midnight of the earliest event's LOCAL calendar day so the
+        # engine has a physiologically valid "start of day" anchor.
+        earliest_dt      = datetime.datetime.fromtimestamp(earliest_ev_ts)
+        midnight_dt      = earliest_dt.replace(hour=0, minute=0, second=0, microsecond=0)
+        midnight_ts      = midnight_dt.timestamp()
+
+        engine_clock = midnight_ts
+        _log.info(
+            f"[{user_id}] PAST-EVENT RECONSTRUCTION: earliest event is "
+            f"{earliest_dt.strftime('%H:%M')} but twin was created at "
+            f"{datetime.datetime.fromtimestamp(engine_mtime).strftime('%H:%M')}. "
+            f"Rewinding engine clock to midnight ({midnight_dt.strftime('%Y-%m-%d 00:00')})."
+        )
+
+        # Circadian phase at midnight = parasympathetic (sleep / night baseline)
+        actions_xml = _circadian_phase_xml(0)  # hour=0 → nighttime baseline
+
+        # Advance engine from midnight to the first event with a sleep-like basal state
+        # (person was asleep from midnight up to whenever they woke and started logging)
+        pre_event_gap = int(earliest_ev_ts - midnight_ts)
+        if pre_event_gap > 60:
+            # Simulate sleep from midnight to ~first-event time for proper basal state
+            sleep_hours = min(pre_event_gap / 3600.0, 9.0)  # cap sleep at 9h
+            sleep_sec   = int(sleep_hours * 3600)
+            _log.info(f"[{user_id}] Injecting {sleep_hours:.1f}h sleep (midnight → first event).")
+            actions_xml += '        <Action xsi:type="SleepData" Sleep="On"/>\n'
+            actions_xml += _advance_xml(sleep_sec)
+            actions_xml += '        <Action xsi:type="SleepData" Sleep="Off"/>\n'
+            engine_clock += sleep_sec
+
+            # Small morning wakeup buffer (15 min basal settle after sleep)
+            remaining_to_first = int(earliest_ev_ts - engine_clock)
+            if remaining_to_first > 60:
+                actions_xml += _advance_xml(remaining_to_first)
+                engine_clock += remaining_to_first
     else:
-        target_time = current_time
-    
-    # Catch up full missing days iteratively to reset physiology to baseline
-    while (target_time - engine_clock) >= 86400:
-        actions_xml += _catchup_routine_xml(user_weight_kg)
-        engine_clock += 86400
+        # ── NORMAL PATH: events are at/after twin creation ───────────────────
+        engine_clock = engine_mtime
+        wall_hour    = datetime.datetime.now().hour
+        actions_xml  = _circadian_phase_xml(wall_hour)
 
-    gap_remaining = int(target_time - engine_clock)
-    
-    if gap_remaining > 30:
-        actions_xml += f"        <!-- Basal gap: {gap_remaining}s since last sync to first event -->\n"
-        actions_xml += _advance_xml(gap_remaining)
-        engine_clock += gap_remaining
+        # Catch up full missing days before the first event
+        while (earliest_ev_ts - engine_clock) >= 86400:
+            actions_xml  += _catchup_routine_xml(user_weight_kg)
+            engine_clock += 86400
 
+        gap_to_first = int(earliest_ev_ts - engine_clock)
+        if gap_to_first > 30:
+            actions_xml  += f"        <!-- Basal gap: {gap_to_first}s since last sync to first event -->\n"
+            actions_xml  += _advance_xml(gap_to_first)
+            engine_clock += gap_to_first
+
+    # ── Log engine timeline for debugging ───────────────────────────────────
+    _log.info(
+        f"[{user_id}] ENGINE TIMELINE:"
+        f" start={datetime.datetime.fromtimestamp(engine_clock).strftime('%H:%M:%S')}"
+        f" | first_event={datetime.datetime.fromtimestamp(earliest_ev_ts).strftime('%H:%M:%S')}"
+        f" | last_event={datetime.datetime.fromtimestamp(latest_ev_ts).strftime('%H:%M:%S')}"
+        f" | now={datetime.datetime.fromtimestamp(now_ts).strftime('%H:%M:%S')}"
+    )
+
+    # ── Replay each event at its correct engine time ─────────────────────────
     last_substance_time = -99999
 
-    for event in sorted(events, key=lambda x: float(x.get("timestamp") or 0)):
-        ev_ts = float(event.get("timestamp") or (engine_clock + (event.get("time_offset") or 0)))
+    for event in sorted_events:
+        ev_ts     = float(event["timestamp"])
         wait_time = int(ev_ts - engine_clock)
-        if wait_time > 0:
-            actions_xml += _advance_xml(wait_time)
-            engine_clock += wait_time
 
+        if wait_time > 0:
+            actions_xml  += _advance_xml(wait_time)
+            engine_clock += wait_time
+        elif wait_time < 0:
+            # Event is behind engine clock — skip with warning (shouldn't happen after sort)
+            _log.warning(
+                f"[{user_id}] Skipping event '{event.get('event_type')}' at "
+                f"{datetime.datetime.fromtimestamp(ev_ts).strftime('%H:%M')} — "
+                f"already past engine clock ({datetime.datetime.fromtimestamp(engine_clock).strftime('%H:%M')})."
+            )
+            continue
 
         etype = event["event_type"]
         val   = event.get("value", 0)
+        _log.info(
+            f"[{user_id}] ▶ {etype.upper():12s} val={val} "
+            f"@ engine_t={datetime.datetime.fromtimestamp(engine_clock).strftime('%H:%M:%S')}"
+        )
 
         if etype == "exercise":
-            intensity       = float(val)
-            duration_sec    = int(float(event.get("duration_seconds") or 1800))
-            duration_sec    = max(60, min(duration_sec, 14400))
-            actions_xml    += _exercise_xml(intensity)
-            actions_xml    += _advance_xml(duration_sec)
-            engine_clock   += duration_sec
-            actions_xml    += _exercise_xml(0.0)
+            intensity    = float(val)
+            duration_sec = int(float(event.get("duration_seconds") or 1800))
+            duration_sec = max(60, min(duration_sec, 14400))
+            actions_xml += _exercise_xml(intensity)
+            actions_xml += _advance_xml(duration_sec)
+            engine_clock += duration_sec
+            actions_xml += _exercise_xml(0.0)
 
         elif etype == "sleep":
-            hours       = max(0.25, min(float(val or 0), 12.0))
-            sleep_sec   = int(hours * 3600)
+            hours        = max(0.25, min(float(val or 0), 12.0))
+            sleep_sec    = int(hours * 3600)
             actions_xml += '        <Action xsi:type="SleepData" Sleep="On"/>\n'
             actions_xml += _advance_xml(sleep_sec)
             actions_xml += '        <Action xsi:type="SleepData" Sleep="Off"/>\n'
@@ -466,18 +547,18 @@ def build_batch_reconstruction(user_id, state_path, events: list, user_weight_kg
             actions_xml += _water_xml(float(val or 0))
 
         elif etype == "substance":
-            is_stacked   = (ev_ts - (last_substance_time or 0)) < 14400
-            sub_name     = event.get("substance_name", "Caffeine")
+            is_stacked  = (ev_ts - (last_substance_time or 0)) < 14400
+            sub_name    = event.get("substance_name", "Caffeine")
             actions_xml += _substance_xml(sub_name, float(val or 0), is_stacked)
             last_substance_time = ev_ts
 
         elif etype == "environment":
-            env_name     = event.get("environment_name", "StandardEnvironment")
+            env_name    = event.get("environment_name", "StandardEnvironment")
             actions_xml += _environment_xml(env_name)
 
-        elif etype == "stress":                          
-            intensity    = max(0.0, min(1.0, float(val or 0)))
-            dur          = int(float(event.get("duration_seconds") or 300))
+        elif etype == "stress":
+            intensity   = max(0.0, min(1.0, float(val or 0)))
+            dur         = int(float(event.get("duration_seconds") or 300))
             actions_xml += _stress_xml(intensity)
             actions_xml += _advance_xml(dur)
             engine_clock += dur
@@ -492,22 +573,28 @@ def build_batch_reconstruction(user_id, state_path, events: list, user_weight_kg
             engine_clock += 1800
 
         elif etype == "fast":
-            hours = max(1.0, min(48.0, float(val or 0)))
+            hours    = max(1.0, min(48.0, float(val or 0)))
             fast_sec = int(hours * 3600)
-            actions_xml += _fasting_xml(hours)
+            actions_xml  += _fasting_xml(hours)
             engine_clock += fast_sec  # _fasting_xml advances exactly fast_sec internally
 
-    # Final stabilisation or catch-up to present time
-    final_gap = int(time.time() - engine_clock)
+    # ── Final stabilisation: advance engine to present time ──────────────────
+    # Cap at 8 hours to avoid excessive compute, but do NOT use the old 4h cap.
+    # 8 hours matches the documented basal-gap cap in the rest of the codebase.
+    final_gap = int(now_ts - engine_clock)
+    _log.info(f"[{user_id}] Final gap to 'now': {final_gap}s ({round(final_gap/3600, 1)}h)")
+
     if final_gap > 10:
         while final_gap >= 86400:
-            actions_xml += _catchup_routine_xml(user_weight_kg)
+            actions_xml  += _catchup_routine_xml(user_weight_kg)
             engine_clock += 86400
-            final_gap -= 86400
-        # Cap remaining daytime gap to 4 hours to avoid starvation before next meal is inevitably logged
-        actions_xml += _advance_xml(min(final_gap, 14400))
+            final_gap    -= 86400
+        # Cap at 8 hours (28800s) — physiologically sufficient, avoids very long compute
+        capped_gap = min(final_gap, 28800)
+        if capped_gap > 0:
+            actions_xml += _advance_xml(capped_gap)
     else:
-        # Minimum baseline padding for engine
+        # Minimum baseline padding so BioGears writes at least a few data rows
         actions_xml += _advance_xml(60)
 
     data_req = _DATA_REQUESTS.format(prefix=csv_prefix)
@@ -519,6 +606,7 @@ def build_batch_reconstruction(user_id, state_path, events: list, user_weight_kg
         + _scenario_footer()
     )
     scenario_file.write_text(xml, encoding="utf-8")
+    _log.info(f"[{user_id}] Scenario written → {scenario_file.name}")
     return str(scenario_file.absolute()), run_id, csv_prefix
 
 
