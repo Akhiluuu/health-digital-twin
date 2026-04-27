@@ -246,7 +246,7 @@ export default function Review() {
           <Text style={[styles.finishBtnText, { color: "#fff" }]}>
             {saving ? "Saving..." : "Launch My Dashboard"}
           </Text>
-          {!saving && <Text style={styles.finishBtnArrow}>🚀</Text>}
+          {!saving && <Text style={styles.finishBtnArrow}></Text>}
         </TouchableOpacity>
 
       </ScrollView>

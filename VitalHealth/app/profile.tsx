@@ -918,8 +918,8 @@ export default function ProfileScreen() {
             style={[styles.codeActionBtn, { backgroundColor: colors.purple }]}
             onPress={() => {
               Share.share({
-                message: `Join me on VitalTwin! Use my invite code: ${myInviteCode} to link our health data.`,
-                title: "VitalTwin Invite Code",
+                message: `Join me on VitalHealth! Use my invite code: ${myInviteCode} to link our health data.`,
+                title: "VitalHealth Invite Code",
               });
             }}
           >
@@ -1376,7 +1376,7 @@ export default function ProfileScreen() {
             </View>
 
             <Text style={[styles.addMemberSubtitle, { color: colors.subText }]}>
-              Enter their name and VitalTwin Health ID to link your health data.
+              Enter their name and VitalHealth Health ID to link your health data.
             </Text>
 
             <TextInput
@@ -1417,7 +1417,7 @@ export default function ProfileScreen() {
             <View style={[styles.howItWorks, { backgroundColor: colors.familyBg, borderColor: colors.familyBorder }]}>
               <Text style={[styles.howItWorksTitle, { color: colors.text }]}>How it works</Text>
               {[
-                "1. Ask your family member to open VitalTwin",
+                "1. Ask your family member to open VitalHealth",
                 "2. Go to Profile → Family Health → copy their Health ID",
                 "3. Enter their Health ID here",
                 "4. Both of you can now view each other's health data ✓",

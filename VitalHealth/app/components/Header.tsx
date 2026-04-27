@@ -21,7 +21,7 @@ interface HeaderProps {
 }
 
 export default function Header({
-  title = "VitalTwin",
+  title = "VitalHealth",
   showBack = false,
   showProfile = true,
   showSOS = true,

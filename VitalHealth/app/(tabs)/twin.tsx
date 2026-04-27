@@ -5,6 +5,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator, Alert, Animated, Dimensions, FlatList,
+  GestureResponderEvent,
   KeyboardAvoidingView, Modal, Platform, Pressable,
   ScrollView, StyleSheet, Text, TextInput,
   TouchableOpacity, View,
@@ -96,32 +97,394 @@ function SimStepper({ progress, status }: { progress: string; status: string }) 
 
 // ─── Time Picker ─────────────────────────────────────────────────────────────
 
-function TimePicker({ value, onChange, accent = '#38bdf8' }: { value: string; onChange: (t: string) => void; accent?: string }) {
-  const [h, m] = (value || currentTime()).split(':').map(Number);
+// ─── Clock Time Picker ────────────────────────────────────────────────────────
+// Replace your existing TimePicker component with this entire block
+
+
+const CLOCK_SIZE = 260;
+const CLOCK_R    = CLOCK_SIZE / 2;
+const DOT_R      = 22; // radius of the number dot
+
+function polarToXY(angleDeg: number, r: number) {
+  const rad = ((angleDeg - 90) * Math.PI) / 180;
+  return { x: CLOCK_R + r * Math.cos(rad), y: CLOCK_R + r * Math.sin(rad) };
+}
+
+function xyToAngle(x: number, y: number): number {
+  const dx = x - CLOCK_R;
+  const dy = y - CLOCK_R;
+  let angle = Math.atan2(dy, dx) * (180 / Math.PI) + 90;
+  if (angle < 0) angle += 360;
+  return angle;
+}
+
+function angleToHour(angle: number): number {
+  const h = Math.round(angle / 30) % 12;
+  return h === 0 ? 12 : h;
+}
+
+function angleToMinute(angle: number): number {
+  return Math.round(angle / 6) % 60;
+}
+
+type ClockMode = 'hour' | 'minute';
+
+function ClockFace({
+  mode,
+  hour,
+  minute,
+  ampm,
+  accent,
+  onHourChange,
+  onMinuteChange,
+}: {
+  mode: ClockMode;
+  hour: number;
+  minute: number;
+  ampm: 'AM' | 'PM';
+  accent: string;
+  onHourChange: (h: number) => void;
+  onMinuteChange: (m: number) => void;
+}) {
+  const clockRef = useRef<View>(null);
+  const [clockLayout, setClockLayout] = useState({ x: 0, y: 0 });
+  const handAnim = useRef(new Animated.Value(0)).current;
+
+  const currentAngle =
+    mode === 'hour'
+      ? ((hour % 12) / 12) * 360
+      : (minute / 60) * 360;
+
+  useEffect(() => {
+    Animated.spring(handAnim, {
+      toValue: currentAngle,
+      useNativeDriver: false,
+      tension: 80,
+      friction: 10,
+    }).start();
+  }, [currentAngle]);
+
+  const handleTouch = (evt: GestureResponderEvent) => {
+    const { locationX, locationY } = evt.nativeEvent;
+    const angle = xyToAngle(locationX, locationY);
+    if (mode === 'hour') onHourChange(angleToHour(angle));
+    else onMinuteChange(angleToMinute(angle));
+  };
+
+  // Hour numbers 1–12 arranged in circle
+  const HOURS = [12, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
+  // Minute markers: every 5 mins shown as number
+  const MINUTES = Array.from({ length: 12 }, (_, i) => i * 5);
+
+  const handPos = polarToXY(currentAngle, CLOCK_R - 44);
+
   return (
-    <View style={ss.timePicker}>
-      <View style={ss.timeColumn}>
-        <TouchableOpacity onPress={() => onChange(`${pad((h - 1 + 24) % 24)}:${pad(m)}`)}>
-          <Ionicons name="chevron-up" size={18} color={accent} />
-        </TouchableOpacity>
-        <Text style={[ss.timeText, { color: accent }]}>{pad(h)}</Text>
-        <TouchableOpacity onPress={() => onChange(`${pad((h + 1) % 24)}:${pad(m)}`)}>
-          <Ionicons name="chevron-down" size={18} color={accent} />
-        </TouchableOpacity>
-      </View>
-      <Text style={[ss.timeColon, { color: accent }]}>:</Text>
-      <View style={ss.timeColumn}>
-        <TouchableOpacity onPress={() => onChange(`${pad(h)}:${pad((m - 5 + 60) % 60)}`)}>
-          <Ionicons name="chevron-up" size={18} color={accent} />
-        </TouchableOpacity>
-        <Text style={[ss.timeText, { color: accent }]}>{pad(m)}</Text>
-        <TouchableOpacity onPress={() => onChange(`${pad(h)}:${pad((m + 5) % 60)}`)}>
-          <Ionicons name="chevron-down" size={18} color={accent} />
-        </TouchableOpacity>
-      </View>
+    <View
+      ref={clockRef}
+      style={[clockStyles.face, { width: CLOCK_SIZE, height: CLOCK_SIZE, borderRadius: CLOCK_R }]}
+      onStartShouldSetResponder={() => true}
+      onMoveShouldSetResponder={() => true}
+      onResponderGrant={handleTouch}
+      onResponderMove={handleTouch}
+    >
+      {/* Center dot */}
+      <View style={[clockStyles.centerDot, { backgroundColor: accent }]} />
+
+      {/* Hand line — rendered as a thin rectangle rotated */}
+      <Animated.View
+        style={[
+          clockStyles.hand,
+          {
+            backgroundColor: accent,
+            transform: [
+              { rotate: handAnim.interpolate({ inputRange: [0, 360], outputRange: ['0deg', '360deg'] }) },
+            ],
+          },
+        ]}
+      />
+
+      {/* Hand end circle */}
+      <View
+        style={[
+          clockStyles.handEnd,
+          {
+            backgroundColor: accent,
+            left: handPos.x - DOT_R,
+            top: handPos.y - DOT_R,
+          },
+        ]}
+      />
+
+      {/* Numbers */}
+      {(mode === 'hour' ? HOURS : MINUTES).map((num, i) => {
+        const angle = i * 30;
+        const pos = polarToXY(angle, CLOCK_R - 44);
+        const isSelected =
+          mode === 'hour'
+            ? num === hour
+            : num === minute;
+        return (
+          <TouchableOpacity
+            key={num}
+            style={[
+              clockStyles.numDot,
+              {
+                left: pos.x - DOT_R,
+                top:  pos.y - DOT_R,
+                width: DOT_R * 2,
+                height: DOT_R * 2,
+                borderRadius: DOT_R,
+                backgroundColor: isSelected ? accent : 'transparent',
+              },
+            ]}
+            onPress={() => {
+              if (mode === 'hour') onHourChange(num);
+              else onMinuteChange(num);
+            }}
+            activeOpacity={0.8}
+          >
+            <Text style={[clockStyles.numTxt, isSelected && { color: '#fff' }]}>
+              {mode === 'minute' ? String(num).padStart(2, '0') : num}
+            </Text>
+          </TouchableOpacity>
+        );
+      })}
     </View>
   );
 }
+
+// ─── Main TimePicker component ────────────────────────────────────────────────
+// This REPLACES your existing TimePicker entirely
+
+function TimePicker({
+  value,
+  onChange,
+  accent = '#38bdf8',
+}: {
+  value: string;
+  onChange: (t: string) => void;
+  accent?: string;
+}) {
+  const [modalVisible, setModalVisible] = useState(false);
+
+  // Parse current value
+  const parseTime = (v: string) => {
+    const [hStr, mStr] = (v || currentTime()).split(':');
+    const h24 = parseInt(hStr, 10);
+    const m   = parseInt(mStr, 10);
+    const isPM = h24 >= 12;
+    const h12 = h24 % 12 === 0 ? 12 : h24 % 12;
+    return { hour: h12, minute: m, ampm: (isPM ? 'PM' : 'AM') as 'AM' | 'PM' };
+  };
+
+  const parsed = parseTime(value);
+  const [hour,   setHour]   = useState(parsed.hour);
+  const [minute, setMinute] = useState(parsed.minute);
+  const [ampm,   setAmpm]   = useState<'AM' | 'PM'>(parsed.ampm);
+  const [mode,   setMode]   = useState<ClockMode>('hour');
+
+  const openModal = () => {
+    const p = parseTime(value);
+    setHour(p.hour); setMinute(p.minute); setAmpm(p.ampm);
+    setMode('hour');
+    setModalVisible(true);
+  };
+
+  const confirm = () => {
+    let h24 = hour % 12;
+    if (ampm === 'PM') h24 += 12;
+    onChange(`${pad(h24)}:${pad(minute)}`);
+    setModalVisible(false);
+  };
+
+  // Format display label
+  const displayTime = () => {
+    const p = parseTime(value);
+    return `${p.hour}:${pad(p.minute)} ${p.ampm}`;
+  };
+
+  return (
+    <>
+      {/* Tappable time display — replaces old chevron UI */}
+      <TouchableOpacity
+        onPress={openModal}
+        style={[clockStyles.timeDisplay, { borderColor: accent + '60', backgroundColor: accent + '15' }]}
+        activeOpacity={0.8}
+      >
+        <Text style={[clockStyles.timeDisplayTxt, { color: accent }]}>{displayTime()}</Text>
+        <Ionicons name="time-outline" size={16} color={accent} />
+      </TouchableOpacity>
+
+      <Modal visible={modalVisible} transparent animationType="fade">
+        <View style={clockStyles.overlay}>
+          <View style={clockStyles.sheet}>
+
+            {/* ── Digital display at top ── */}
+            <View style={[clockStyles.digitalRow, { backgroundColor: '#1e293b' }]}>
+              {/* Hour */}
+              <TouchableOpacity onPress={() => setMode('hour')}>
+                <Text style={[
+                  clockStyles.digitalNum,
+                  { color: mode === 'hour' ? accent : '#94a3b8' },
+                ]}>
+                  {String(hour).padStart(2, '0')}
+                </Text>
+              </TouchableOpacity>
+
+              <Text style={[clockStyles.digitalColon, { color: accent }]}>:</Text>
+
+              {/* Minute */}
+              <TouchableOpacity onPress={() => setMode('minute')}>
+                <Text style={[
+                  clockStyles.digitalNum,
+                  { color: mode === 'minute' ? accent : '#94a3b8' },
+                ]}>
+                  {pad(minute)}
+                </Text>
+              </TouchableOpacity>
+
+              {/* AM / PM */}
+              <View style={clockStyles.ampmCol}>
+                {(['AM', 'PM'] as const).map(period => (
+                  <TouchableOpacity
+                    key={period}
+                    onPress={() => setAmpm(period)}
+                    style={[
+                      clockStyles.ampmBtn,
+                      ampm === period && { backgroundColor: accent },
+                    ]}
+                  >
+                    <Text style={[
+                      clockStyles.ampmTxt,
+                      { color: ampm === period ? '#fff' : '#64748b' },
+                    ]}>
+                      {period}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+
+            {/* ── Mode label ── */}
+            <Text style={clockStyles.modeLabel}>
+              {mode === 'hour' ? 'SELECT HOUR' : 'SELECT MINUTE'}
+            </Text>
+
+            {/* ── Clock face ── */}
+            <View style={{ alignItems: 'center', marginVertical: 10 }}>
+              <ClockFace
+                mode={mode}
+                hour={hour}
+                minute={minute}
+                ampm={ampm}
+                accent={accent}
+                onHourChange={(h) => { setHour(h); setMode('minute'); }}
+                onMinuteChange={setMinute}
+              />
+            </View>
+
+            {/* ── Actions ── */}
+            <View style={clockStyles.actions}>
+              <TouchableOpacity onPress={() => setModalVisible(false)} style={clockStyles.cancelBtn}>
+                <Text style={{ color: '#64748b', fontWeight: '700', fontSize: 15 }}>CANCEL</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={confirm} style={clockStyles.okBtn}>
+                <Text style={[clockStyles.okTxt, { color: accent }]}>OK</Text>
+              </TouchableOpacity>
+            </View>
+
+          </View>
+        </View>
+      </Modal>
+    </>
+  );
+}
+
+// ─── Clock styles ─────────────────────────────────────────────────────────────
+
+const clockStyles = StyleSheet.create({
+  // Tappable trigger
+  timeDisplay: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    paddingHorizontal: 14, paddingVertical: 8,
+    borderRadius: 12, borderWidth: 1.5,
+  },
+  timeDisplayTxt: { fontSize: 18, fontWeight: '800', letterSpacing: 1 },
+
+  // Modal
+  overlay: {
+    flex: 1, backgroundColor: 'rgba(0,0,0,0.75)',
+    justifyContent: 'center', alignItems: 'center', padding: 20,
+  },
+  sheet: {
+    width: '100%', maxWidth: 340,
+    backgroundColor: '#0f172a',
+    borderRadius: 28, overflow: 'hidden',
+  },
+
+  // Digital row
+  digitalRow: {
+    flexDirection: 'row', alignItems: 'center',
+    justifyContent: 'center', gap: 4,
+    paddingHorizontal: 24, paddingVertical: 20,
+  },
+  digitalNum: { fontSize: 56, fontWeight: '300', letterSpacing: -2, minWidth: 70, textAlign: 'center' },
+  digitalColon: { fontSize: 48, fontWeight: '300', marginHorizontal: 4, marginBottom: 8 },
+
+  ampmCol: { flexDirection: 'column', gap: 4, marginLeft: 12 },
+  ampmBtn: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8 },
+  ampmTxt: { fontSize: 14, fontWeight: '700' },
+
+  modeLabel: {
+    textAlign: 'center', fontSize: 11, fontWeight: '700',
+    color: '#475569', letterSpacing: 1.5, marginTop: 4,
+  },
+
+  // Clock face
+  face: {
+    backgroundColor: '#1e293b',
+    position: 'relative',
+  },
+
+  centerDot: {
+    position: 'absolute',
+    width: 10, height: 10, borderRadius: 5,
+    left: CLOCK_R - 5, top: CLOCK_R - 5,
+    zIndex: 10,
+  },
+
+  hand: {
+    position: 'absolute',
+    width: 2,
+    height: CLOCK_R - 44,
+    left: CLOCK_R - 1,
+    top: 44,
+    transformOrigin: 'bottom center',
+    zIndex: 5,
+  },
+
+  handEnd: {
+    position: 'absolute',
+    width: DOT_R * 2, height: DOT_R * 2, borderRadius: DOT_R,
+    zIndex: 6, alignItems: 'center', justifyContent: 'center',
+  },
+
+  numDot: {
+    position: 'absolute',
+    alignItems: 'center', justifyContent: 'center',
+    zIndex: 7,
+  },
+  numTxt: { fontSize: 15, fontWeight: '600', color: '#cbd5e1' },
+
+  // Actions
+  actions: {
+    flexDirection: 'row', justifyContent: 'flex-end',
+    gap: 8, padding: 16, paddingTop: 8,
+  },
+  cancelBtn: { paddingHorizontal: 16, paddingVertical: 10 },
+  okBtn:     { paddingHorizontal: 16, paddingVertical: 10 },
+  okTxt:     { fontWeight: '800', fontSize: 15 },
+});
 
 // ─── Reusable sub-components ──────────────────────────────────────────────────
 
@@ -1435,10 +1798,7 @@ const ss = StyleSheet.create({
   addBtnTxt: { color: '#fff', fontWeight: '700', fontSize: 15 },
   timeRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10 },
   timeLbl: { fontSize: 12, fontWeight: '500' },
-  timePicker: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  timeColumn: { alignItems: 'center', gap: 2 },
-  timeText: { fontSize: 20, fontWeight: '800', minWidth: 28, textAlign: 'center' },
-  timeColon: { fontSize: 20, fontWeight: '800' },
+  
 
   // Slider
   sliderLabel: { fontSize: 12 },

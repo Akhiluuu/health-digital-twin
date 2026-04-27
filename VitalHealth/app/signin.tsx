@@ -4,6 +4,7 @@ import {
   ActivityIndicator,
   Animated,
   Easing,
+  findNodeHandle,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -14,6 +15,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import Svg, { Path, Line } from "react-native-svg";
 
 import {
   fetchSignInMethodsForEmail,
@@ -24,6 +26,29 @@ import { useTheme } from "../context/ThemeContext";
 import { setLoggedIn } from "../services/authStorage";
 import { sendLoginEmail } from "../services/emailService";
 import { auth } from "../services/firebase";
+
+// ─── Eye Icon (password visible) ───────────────────────────────────────────
+function EyeIcon({ color = "#64748b", size = 20 }: { color?: string; size?: number }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill={color}>
+      <Path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5C21.27 7.61 17 4.5 12 4.5z" />
+      <Path d="M12 8.5a3.5 3.5 0 1 1 0 7 3.5 3.5 0 0 1 0-7z" fill="white" />
+      <Path d="M12 10a2 2 0 1 1 0 4 2 2 0 0 1 0-4z" fill={color} />
+    </Svg>
+  );
+}
+
+// ─── Eye-Off Icon (password hidden) ────────────────────────────────────────
+function EyeOffIcon({ color = "#64748b", size = 20 }: { color?: string; size?: number }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill={color}>
+      <Path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5C21.27 7.61 17 4.5 12 4.5z" />
+      <Path d="M12 8.5a3.5 3.5 0 1 1 0 7 3.5 3.5 0 0 1 0-7z" fill="white" />
+      <Path d="M12 10a2 2 0 1 1 0 4 2 2 0 0 1 0-4z" fill={color} />
+      <Line x1="3" y1="3" x2="21" y2="21" stroke={color} strokeWidth="2.5" strokeLinecap="round" />
+    </Svg>
+  );
+}
 
 export default function SignIn() {
 
@@ -57,7 +82,6 @@ export default function SignIn() {
   const [showPass,     setShowPass]     = useState(false);
   const [loading,      setLoading]      = useState(false);
 
-  // ✅ Forgot password states
   const [forgotModalVisible, setForgotModalVisible] = useState(false);
   const [forgotEmail,        setForgotEmail]        = useState("");
   const [forgotLoading,      setForgotLoading]      = useState(false);
@@ -65,6 +89,26 @@ export default function SignIn() {
   const orb1Y = useRef(new Animated.Value(0)).current;
   const orb2Y = useRef(new Animated.Value(0)).current;
   const orb3Y = useRef(new Animated.Value(0)).current;
+
+  const scrollRef = useRef<ScrollView>(null);
+
+  // ✅ FIX: Refs now point to TextInput (native component), not wrapper View
+  const emailInputRef = useRef<TextInput>(null);
+  const passInputRef  = useRef<TextInput>(null);
+
+  // ✅ FIX: measureLayout called on TextInput ref → native component ✓
+  const scrollToField = (fieldRef: React.RefObject<TextInput>) => {
+    if (!fieldRef.current || !scrollRef.current) return;
+    const scrollNode = findNodeHandle(scrollRef.current);
+    if (!scrollNode) return;
+    fieldRef.current.measureLayout(
+      scrollNode,
+      (_x, y) => {
+        scrollRef.current?.scrollTo({ y: y - 24, animated: true });
+      },
+      () => {}
+    );
+  };
 
   useEffect(() => {
     const makeLoop = (anim: Animated.Value, duration: number, delay: number) =>
@@ -122,7 +166,6 @@ export default function SignIn() {
     router.replace("/(tabs)");
   };
 
-  // ✅ Forgot password handler
   const handleForgotPassword = async () => {
     if (!forgotEmail.trim()) {
       alert("Please enter your email address.");
@@ -148,10 +191,13 @@ export default function SignIn() {
   return (
     <KeyboardAvoidingView
       style={{ flex: 1 }}
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
+      keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 24}
     >
       <ScrollView
-        keyboardShouldPersistTaps="always"
+        ref={scrollRef}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="interactive"
         contentContainerStyle={{ flexGrow: 1 }}
         showsVerticalScrollIndicator={false}
       >
@@ -185,11 +231,19 @@ export default function SignIn() {
             </View>
 
             {/* EMAIL */}
+            {/* ✅ FIX: wrapper View has no ref; TextInput carries the ref */}
             <View style={styles.fieldWrapper}>
               <Text style={[styles.fieldLabel, { color: colors.subText }]}>Email Address</Text>
-              <View style={[styles.inputWrapper, { backgroundColor: colors.card, borderColor: colors.border }, emailFocused && styles.inputFocused]}>
+              <View
+                style={[
+                  styles.inputWrapper,
+                  { backgroundColor: colors.card, borderColor: colors.border },
+                  emailFocused && styles.inputFocused,
+                ]}
+              >
                 <Text style={styles.inputIcon}>✉️</Text>
                 <TextInput
+                  ref={emailInputRef}                          // ✅ ref on TextInput
                   placeholder="you@example.com"
                   placeholderTextColor={colors.subText}
                   value={email}
@@ -199,18 +253,29 @@ export default function SignIn() {
                   autoCapitalize="none"
                   autoCorrect={false}
                   blurOnSubmit={false}
-                  onFocus={() => setEmailFocused(true)}
+                  onFocus={() => {
+                    setEmailFocused(true);
+                    scrollToField(emailInputRef);              // ✅ pass TextInput ref
+                  }}
                   onBlur={() => setEmailFocused(false)}
                 />
               </View>
             </View>
 
             {/* PASSWORD */}
+            {/* ✅ FIX: wrapper View has no ref; TextInput carries the ref */}
             <View style={styles.fieldWrapper}>
               <Text style={[styles.fieldLabel, { color: colors.subText }]}>Password</Text>
-              <View style={[styles.inputWrapper, { backgroundColor: colors.card, borderColor: colors.border }, passFocused && styles.inputFocused]}>
+              <View
+                style={[
+                  styles.inputWrapper,
+                  { backgroundColor: colors.card, borderColor: colors.border },
+                  passFocused && styles.inputFocused,
+                ]}
+              >
                 <Text style={styles.inputIcon}>🔒</Text>
                 <TextInput
+                  ref={passInputRef}                           // ✅ ref on TextInput
                   placeholder="••••••••"
                   placeholderTextColor={colors.subText}
                   value={password}
@@ -219,13 +284,18 @@ export default function SignIn() {
                   style={[styles.input, { color: colors.text }]}
                   autoCorrect={false}
                   blurOnSubmit={false}
-                  onFocus={() => setPassFocused(true)}
+                  onFocus={() => {
+                    setPassFocused(true);
+                    scrollToField(passInputRef);               // ✅ pass TextInput ref
+                  }}
                   onBlur={() => setPassFocused(false)}
                 />
                 <TouchableOpacity onPress={() => setShowPass(!showPass)} style={styles.eyeBtn}>
-                  <Text style={[styles.eyeIcon, { color: colors.subText }]}>
-                    {showPass ? "🙈" : "👁️"}
-                  </Text>
+                  {showPass ? (
+                    <EyeIcon color={colors.subText} size={20} />
+                  ) : (
+                    <EyeOffIcon color={colors.subText} size={20} />
+                  )}
                 </TouchableOpacity>
               </View>
             </View>
@@ -273,7 +343,7 @@ export default function SignIn() {
 
           </View>
 
-          {/* ✅ FORGOT PASSWORD MODAL */}
+          {/* FORGOT PASSWORD MODAL */}
           <Modal visible={forgotModalVisible} transparent animationType="slide">
             <View style={styles.overlay}>
               <View style={[styles.modal, { backgroundColor: theme === "light" ? "#ffffff" : "#0f172a" }]}>
@@ -343,7 +413,6 @@ const styles = StyleSheet.create({
   inputIcon:       { fontSize: 15, marginRight: 10 },
   input:           { flex: 1, fontSize: 15 },
   eyeBtn:          { padding: 6 },
-  eyeIcon:         { fontSize: 16 },
   forgotRow:       { alignItems: "flex-end", marginBottom: 24 },
   forgotText:      { fontSize: 13 },
   loginBtn:        { height: 52, backgroundColor: "#2563eb", borderRadius: 14, flexDirection: "row", alignItems: "center", justifyContent: "center" },
@@ -355,7 +424,7 @@ const styles = StyleSheet.create({
   signupText:      { textAlign: "center" },
   signupHighlight: { fontWeight: "700" },
 
-  // ✅ Modal styles
+  // Modal styles
   overlay:         { flex: 1, backgroundColor: "#00000088", justifyContent: "center", padding: 24 },
   modal:           { borderRadius: 16, padding: 24, gap: 12 },
   modalTitle:      { fontSize: 18, fontWeight: "700", marginBottom: 4 },

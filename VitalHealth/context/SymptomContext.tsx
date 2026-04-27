@@ -197,15 +197,23 @@ export function SymptomsProvider({
       const normalizedActive = normalizeActiveSymptoms(firebaseActive || []);
       const normalizedHistory = normalizeHistorySymptoms(firebaseHistory || []);
 
-      const mergedActive = [...localActive, ...normalizedActive].filter(
-        (item, index, self) =>
-          index === self.findIndex((t) => t.id === item.id)
-      );
+      
 
-      const mergedHistory = [...localHistory, ...normalizedHistory].filter(
-        (item, index, self) =>
-          index === self.findIndex((t) => t.id === item.id)
-      );
+      // ✅ FIRST create history
+const mergedHistory = [...localHistory, ...normalizedHistory].filter(
+  (item, index, self) =>
+    index === self.findIndex((t) => t.id === item.id)
+);
+
+// ✅ THEN create active
+const mergedActive = [...localActive, ...normalizedActive]
+  .filter(
+    (item, index, self) =>
+      index === self.findIndex((t) => t.id === item.id)
+  )
+  .filter(
+    (item) => !(mergedHistory || []).some((h) => h.id === item.id)
+  );
 
       setActiveSymptoms(mergedActive);
       setHistorySymptoms(mergedHistory);

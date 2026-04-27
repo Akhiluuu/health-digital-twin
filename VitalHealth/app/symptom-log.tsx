@@ -63,6 +63,7 @@ export default function SymptomLogScreen() {
   const { theme } = useTheme();
 
   const [showModal, setShowModal] = useState(false);
+  const [symptomName, setSymptomName] = useState("");
   const [customSymptom, setCustomSymptom] = useState("");
 
   const colors =
@@ -103,26 +104,33 @@ export default function SymptomLogScreen() {
    * Starts diagnosis for custom symptoms
    */
   const handleCustomDiagnosis = () => {
-  if (!customSymptom.trim()) {
-    Alert.alert("Input Required", "Please describe your health issue.");
-    return;
-  }
+    if (!symptomName.trim()) {
+      Alert.alert("Input Required", "Please enter a name for your symptom.");
+      return;
+    }
 
-  const symptomText = customSymptom.trim();
+    if (!customSymptom.trim()) {
+      Alert.alert("Input Required", "Please describe your health issue.");
+      return;
+    }
 
-  setShowModal(false);
+    const symptomText = customSymptom.trim();
 
-  // Navigate to AI Health page inside Tabs
-  router.push({
-    pathname: "/(tabs)/ai-health",
-    params: {
-      symptom: symptomText,
-      source: "symptom-log",
-    },
-  });
+    setShowModal(false);
 
-  setCustomSymptom("");
-};
+    // Navigate to AI Health page inside Tabs
+    router.push({
+      pathname: "/(tabs)/ai-health",
+      params: {
+        symptom: symptomText,
+        symptomName: symptomName.trim(),
+        source: "symptom-log",
+      },
+    });
+
+    setSymptomName("");
+    setCustomSymptom("");
+  };
 
   return (
     <View style={[styles.container, { backgroundColor: colors.bg }]}>
@@ -191,6 +199,29 @@ export default function SymptomLogScreen() {
               Use your own words. Voice input can be added for hands-free narration.
             </Text>
 
+            {/* SYMPTOM NAME INPUT */}
+            <Text style={[styles.inputLabel, { color: colors.sub }]}>
+              SYMPTOM NAME
+            </Text>
+            <TextInput
+              placeholder="e.g. Eye twitch, Chest tightness..."
+              placeholderTextColor={colors.sub}
+              value={symptomName}
+              onChangeText={setSymptomName}
+              style={[
+                styles.nameInput,
+                {
+                  color: colors.text,
+                  borderColor: colors.border,
+                  backgroundColor: colors.bg,
+                },
+              ]}
+            />
+
+            {/* SYMPTOM DESCRIPTION INPUT */}
+            <Text style={[styles.inputLabel, { color: colors.sub }]}>
+              DESCRIPTION
+            </Text>
             <TextInput
               placeholder="e.g. Muscle twitching in left eyelid..."
               placeholderTextColor={colors.sub}
@@ -213,7 +244,11 @@ export default function SymptomLogScreen() {
                   styles.cancelButton,
                   { borderColor: colors.border },
                 ]}
-                onPress={() => setShowModal(false)}
+                onPress={() => {
+                  setShowModal(false);
+                  setSymptomName("");
+                  setCustomSymptom("");
+                }}
               >
                 <Text style={{ color: colors.text }}>Cancel</Text>
               </TouchableOpacity>
@@ -319,7 +354,22 @@ const styles = StyleSheet.create({
 
   modalSubtitle: {
     fontSize: 13,
-    marginBottom: 12,
+    marginBottom: 16,
+  },
+
+  inputLabel: {
+    fontSize: 11,
+    fontWeight: "600",
+    letterSpacing: 2,
+    marginBottom: 6,
+  },
+
+  nameInput: {
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 12,
+    height: 48,
+    marginBottom: 14,
   },
 
   input: {

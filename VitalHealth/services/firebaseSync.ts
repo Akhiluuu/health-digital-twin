@@ -10,6 +10,7 @@ import {
   collection,
   deleteDoc,
   doc,
+  getDoc,   // ✅ ADDED
   getDocs,
   serverTimestamp,
   setDoc
@@ -267,30 +268,62 @@ export async function syncAddSymptom(symptom: {
   }
 }
 
-
 /**
  * Mark symptom as resolved in Firebase.
  */
 export async function syncResolveSymptom(
-  id:         number,
+  id: number,
   resolvedAt: number,
-  duration:   number
+  duration: number
 ): Promise<void> {
   try {
     const uid = await getUserId();
-    if (!uid) return;
 
-    // ✅ Use setDoc with merge so it works even if document doesn't exist
-    await setDoc(doc(symptomsCol(uid), String(id)), {
-      active:     false,
-      resolvedAt,
-      duration,
-      updatedAt:  serverTimestamp(),
-    }, { merge: true });
+    if (!uid) {
+      // ✅ queue retry (IMPORTANT)
+      pendingSyncs.push(() => syncResolveSymptom(id, resolvedAt, duration));
+      return;
+    }
 
-    console.log("✅ Symptom resolved in Firebase:", id);
+    const symptomRef = doc(symptomsCol(uid), String(id));
+
+    // ✅ fetch ONLY this symptom (efficient)
+    const snap = await getDoc(symptomRef);
+
+    if (!snap.exists()) {
+      console.log("⚠️ Symptom not found:", id);
+      return;
+    }
+
+    const existing = snap.data();
+
+    // 🔹 Step 2: Add to HISTORY collection
+    await setDoc(
+  doc(symptomHistCol(uid), String(id)),
+  {
+    ...existing,
+    active: false,
+    resolvedAt,
+    duration,
+    syncedAt: serverTimestamp(),
+  },
+  { merge: true } // ✅ safer
+);
+
+    // 🔹 Step 3: DELETE from ACTIVE collection
+    try {
+  await deleteDoc(symptomRef);
+} catch (e) {
+  console.log("⚠️ Delete failed, retrying later:", e);
+  pendingSyncs.push(() => syncResolveSymptom(id, resolvedAt, duration));
+}
+
+    console.log("🔥 Removed from active + added to history:", id);
   } catch (e) {
-    console.log("⚠️ syncResolveSymptom failed (non-critical):", e);
+    console.log("⚠️ syncResolveSymptom failed:", e);
+
+    // ✅ retry later
+    pendingSyncs.push(() => syncResolveSymptom(id, resolvedAt, duration));
   }
 }
 

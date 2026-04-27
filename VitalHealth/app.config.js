@@ -1,30 +1,33 @@
 export default {
   expo: {
     name: "VitalHealth",
-    slug: "vitaltwin",
+    slug: "vitalhealth",
     version: "1.0.0",
     orientation: "portrait",
-    icon: "./assets/images/icon.png",
+
+    // ✅ NEW APP ICON
+    icon: "./assets/images/vitalhealth-icon.png",
+
     scheme: "vitalhealth",
     userInterfaceStyle: "automatic",
-
-    // ✅ Required for reanimated + stable Notifee background handling
     newArchEnabled: true,
 
     assetBundlePatterns: ["**/*"],
-    owner: "monish_k",
+    owner: "monish2005",
 
     /////////////////////////////////////////////////////////
     // IOS CONFIGURATION
     /////////////////////////////////////////////////////////
     ios: {
       supportsTablet: true,
-      bundleIdentifier: "com.monish2005.vitaltwin",
+      bundleIdentifier: "com.monish2005.vitalhealth",
       infoPlist: {
         NSCameraUsageDescription:
           "Allow VitalHealth to access your camera for heart rate measurement.",
         NSMicrophoneUsageDescription:
-          "Microphone access may be required by the camera system.",
+          "Allow VitalHealth to use your microphone for voice input and health assistance.",
+        NSSpeechRecognitionUsageDescription:
+          "Allow VitalHealth to convert your speech into text.",
         NSMotionUsageDescription:
           "Allow VitalHealth to access motion sensors for step counting.",
         NSHealthShareUsageDescription:
@@ -43,26 +46,21 @@ export default {
     // ANDROID CONFIGURATION
     /////////////////////////////////////////////////////////
     android: {
-      package: "com.monish2005.vitaltwin",
+      package: "com.monish2005.vitalhealth",
       versionCode: 11,
 
+      // ✅ FIXED ICON (NO ZOOM / PERFECT FIT)
       adaptiveIcon: {
-        backgroundColor: "#E6F4FE",
-        foregroundImage:
-          "./assets/images/android-icon-foreground.png",
+        foregroundImage: "./assets/images/vitalhealth-icon.png",
+        backgroundColor: "#ffffff",
       },
 
-      /////////////////////////////////////////////////////
-      // ✅ NOTIFICATION CONFIG (IMPORTANT)
-      /////////////////////////////////////////////////////
+      // ✅ Notification icon (must be simple white icon ideally)
       notification: {
-        icon: "./assets/images/icon.png",
+        icon: "./assets/images/vitalhealth-icon.png",
         color: "#4CAF50",
       },
 
-      /////////////////////////////////////////////////////
-      // ✅ REQUIRED PERMISSIONS
-      /////////////////////////////////////////////////////
       permissions: [
         "CAMERA",
         "FLASHLIGHT",
@@ -71,22 +69,25 @@ export default {
         "WAKE_LOCK",
         "VIBRATE",
         "INTERNET",
-
+        "RECORD_AUDIO",
         "FOREGROUND_SERVICE",
         "FOREGROUND_SERVICE_DATA_SYNC",
-
         "RECEIVE_BOOT_COMPLETED",
-
         "POST_NOTIFICATIONS",
-
         "USE_EXACT_ALARM",
         "SCHEDULE_EXACT_ALARM",
       ],
 
-      /////////////////////////////////////////////////////
-      // ✅ FIX: Allow background services properly
-      /////////////////////////////////////////////////////
       usesCleartextTraffic: true,
+    },
+
+    /////////////////////////////////////////////////////////
+    // SPLASH SCREEN (APP OPEN LOGO)
+    /////////////////////////////////////////////////////////
+    splash: {
+      image: "./assets/images/vitalhealth-icon.png",
+      resizeMode: "contain", // ✅ VERY IMPORTANT (no zoom)
+      backgroundColor: "#ffffff",
     },
 
     /////////////////////////////////////////////////////////
@@ -94,11 +95,13 @@ export default {
     /////////////////////////////////////////////////////////
     plugins: [
       "expo-router",
+      "@react-native-voice/voice",
+      "./plugins/withExcludeOldSupportLib",
 
       [
         "expo-splash-screen",
         {
-          image: "./assets/images/splash-icon.png",
+          image: "./assets/images/vitalhealth-icon.png",
           resizeMode: "contain",
           backgroundColor: "#ffffff",
         },
@@ -130,7 +133,7 @@ export default {
       ],
 
       /////////////////////////////////////////////////////
-      // ✅ BUILD PROPERTIES (CRITICAL FOR NOTIFEE)
+      // BUILD PROPERTIES
       /////////////////////////////////////////////////////
       [
         "expo-build-properties",
@@ -140,18 +143,16 @@ export default {
             targetSdkVersion: 35,
             minSdkVersion: 24,
 
+            useAndroidX: true,
+            enableJetifier: true,
+
             extraMavenRepos: [
               "$rootDir/../node_modules/@notifee/react-native/android/libs",
             ],
 
             enableProguardInReleaseBuilds: true,
-
-            // ✅ FIX: Stability for Notifee background execution
             kotlinVersion: "2.1.20",
 
-            ///////////////////////////////////////////////////
-            // 🔥 IMPORTANT: Prevent background task crash
-            ///////////////////////////////////////////////////
             packagingOptions: {
               pickFirst: ["**/*.so"],
             },
@@ -175,7 +176,7 @@ export default {
     /////////////////////////////////////////////////////////
     extra: {
       eas: {
-        projectId: "b6fe37d0-985e-4458-9790-a30dc86ba92b",
+        projectId: "fc2ee98e-01ac-4835-b1d2-c774309193c9",
       },
     },
   },

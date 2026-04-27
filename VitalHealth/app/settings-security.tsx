@@ -2,11 +2,12 @@ import React, { useState } from "react";
 import {
   View, Text, StyleSheet, TouchableOpacity,
   Alert, Modal, TextInput, ActivityIndicator,
+  Switch
 } from "react-native";
 import Header from "./components/Header";
 import { useTheme } from "../context/ThemeContext";
 
-// ✅ Use Firebase JS SDK instead of @react-native-firebase
+// Firebase
 import { auth } from "../services/firebase";
 import {
   sendPasswordResetEmail,
@@ -17,12 +18,17 @@ import {
 
 export default function Security() {
   const { theme } = useTheme();
+
   const [modalVisible, setModalVisible] = useState(false);
   const [modalType, setModalType] = useState<"change" | "forgot" | null>(null);
+
   const [email, setEmail] = useState("");
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [loading, setLoading] = useState(false);
+
+  // ✅ NEW STATE for Sync Toggle
+  const [syncEnabled, setSyncEnabled] = useState(false);
 
   const colors = theme === "light"
     ? { bg: "#f8fafc", card: "#ffffff", text: "#020617", border: "#e2e8f0", accent: "#64748b", input: "#f1f5f9" }
@@ -96,11 +102,27 @@ export default function Security() {
   return (
     <View style={[styles.container, { backgroundColor: colors.bg }]}>
       <Header />
+
       <View style={styles.content}>
         <Item label="Change Password" type="change" />
         <Item label="Forgot Password" type="forgot" />
+
+        {/* ✅ NEW SYNC DATA OPTION */}
+        <View style={[styles.item, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <Text style={[styles.text, { color: colors.text }]}>Sync Data</Text>
+          <Switch
+            value={syncEnabled}
+            onValueChange={(value) => {
+              setSyncEnabled(value);
+              Alert.alert("Sync Data", value ? "Sync Enabled" : "Sync Disabled");
+            }}
+            thumbColor={syncEnabled ? "#3b82f6" : "#ccc"}
+          />
+        </View>
+
       </View>
 
+      {/* MODAL */}
       <Modal visible={modalVisible} transparent animationType="slide">
         <View style={styles.overlay}>
           <View style={[styles.modal, { backgroundColor: colors.card }]}>
@@ -169,21 +191,59 @@ export default function Security() {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   content: { paddingTop: 110 },
+
   item: {
-    padding: 18, borderBottomWidth: 1,
-    flexDirection: "row", justifyContent: "space-between", alignItems: "center",
+    padding: 18,
+    borderBottomWidth: 1,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
   },
+
   text: { fontSize: 16, fontWeight: "500" },
-  overlay: { flex: 1, backgroundColor: "#00000088", justifyContent: "center", padding: 24 },
-  modal: { borderRadius: 16, padding: 24, gap: 12 },
-  modalTitle: { fontSize: 18, fontWeight: "700", marginBottom: 8 },
+
+  overlay: {
+    flex: 1,
+    backgroundColor: "#00000088",
+    justifyContent: "center",
+    padding: 24
+  },
+
+  modal: {
+    borderRadius: 16,
+    padding: 24,
+    gap: 12
+  },
+
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+    marginBottom: 8
+  },
+
   input: {
-    borderWidth: 1, borderRadius: 10, padding: 14, fontSize: 15,
+    borderWidth: 1,
+    borderRadius: 10,
+    padding: 14,
+    fontSize: 15,
   },
+
   button: {
-    backgroundColor: "#3b82f6", padding: 14,
-    borderRadius: 10, alignItems: "center", marginTop: 4,
+    backgroundColor: "#3b82f6",
+    padding: 14,
+    borderRadius: 10,
+    alignItems: "center",
+    marginTop: 4,
   },
-  buttonText: { color: "#fff", fontWeight: "600", fontSize: 15 },
-  cancel: { alignItems: "center", paddingTop: 8 },
+
+  buttonText: {
+    color: "#fff",
+    fontWeight: "600",
+    fontSize: 15
+  },
+
+  cancel: {
+    alignItems: "center",
+    paddingTop: 8
+  },
 });

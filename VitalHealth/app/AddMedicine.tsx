@@ -204,7 +204,7 @@ export default function AddMedicine() {
         </Text>
 
         <TextInput
-          placeholder="e.g. 500mg"
+          placeholder="e.g. 500mg or 10ml"
           placeholderTextColor={c.sub}
           style={[
             styles.input,
