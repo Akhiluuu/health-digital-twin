@@ -244,9 +244,14 @@ section "Step 8/10 — Systemd services"
 # ══════════════════════════════════════════════════════════════════════════════
 
 # ── Patch service files with the actual project path ──────────────────────────
-# (Service files reference /home/ubuntu/health-digital-twin by default)
+# (Service files reference /home/ubuntu/health-digital-twin and user ubuntu by default)
+CURRENT_USER=$(whoami)
+CURRENT_GROUP=$(id -gn)
+
 for SVC_TEMPLATE in digitaltwin.service healthbot.service; do
-    sed "s|/home/ubuntu/health-digital-twin|${PROJECT_DIR}|g" \
+    sed -e "s|/home/ubuntu/health-digital-twin|${PROJECT_DIR}|g" \
+        -e "s|User=ubuntu|User=${CURRENT_USER}|g" \
+        -e "s|Group=ubuntu|Group=${CURRENT_GROUP}|g" \
         "$DEPLOY_DIR/$SVC_TEMPLATE" \
         > "/tmp/$SVC_TEMPLATE"
     sudo cp "/tmp/$SVC_TEMPLATE" "/etc/systemd/system/$SVC_TEMPLATE"
