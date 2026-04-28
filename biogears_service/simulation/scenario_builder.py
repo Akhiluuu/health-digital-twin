@@ -321,12 +321,11 @@ def _scenario_header(state_path: str, data_requests: str) -> str:
         ' xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">\n'
         f'    <EngineStateFile>{state_path}</EngineStateFile>\n'
         f'{data_requests}\n'
-        '    <Actions>\n'
     )
 
 
 def _scenario_footer() -> str:
-    return '    </Actions>\n</Scenario>'
+    return '</Scenario>'
 
 
 def _serialize_state_xml(output_path: str) -> str:
@@ -451,10 +450,8 @@ def build_registration_scenario(user_id, age, weight, height, sex, body_fat,
         f'        <PatientFile>{abs_patient}</PatientFile>\n'
         f'{conditions_block}'
         '    </InitialParameters>\n'
-        '    <Actions>\n'
         '        <Action xsi:type="AdvanceTimeData"><Time value="120" unit="s"/></Action>\n'
         f'        <Action xsi:type="SerializeStateData" Type="Save"><Filename>{abs_state_out}</Filename></Action>\n'
-        '    </Actions>\n'
         '</Scenario>'
     )
     scenario_path.write_text(s_xml, encoding="utf-8")

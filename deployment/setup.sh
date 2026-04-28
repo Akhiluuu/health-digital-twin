@@ -174,6 +174,17 @@ else
     wget -q --show-progress -O /tmp/biogears.tgz "$BIOGEARS_URL"
     tar -xzf /tmp/biogears.tgz --strip-components=1 -C "$RUNTIME_DIR"
     rm /tmp/biogears.tgz
+    
+    # Symlink binaries and required data files to root so the engine can locate them
+    cd "$RUNTIME_DIR"
+    ln -sf bin/bg-cli bg-cli
+    ln -sf bin/bg-scenario bg-scenario
+    ln -sf share/biogears/7.3.2/xsd xsd
+    for item in share/biogears/7.3.2/data/*; do
+        ln -sf "$item" "$(basename "$item")"
+    done
+    cd "$PROJECT_DIR"
+    
     ok "BioGears runtime downloaded and extracted."
 fi
 

@@ -74,14 +74,25 @@ def run_biogears(scenario_path: str, user_id: str = "unknown") -> EngineResult:
 
     start_time = time.time()
 
+    # Inject LD_LIBRARY_PATH so bg-cli can find libbiogears.so.7.3 and libboost_filesystem.so
+    env = os.environ.copy()
+    lib_path = f"{BIOGEARS_BIN_DIR}/lib:{BIOGEARS_BIN_DIR}/bin"
+    if "LD_LIBRARY_PATH" in env:
+        env["LD_LIBRARY_PATH"] = f"{lib_path}:{env['LD_LIBRARY_PATH']}"
+    else:
+        env["LD_LIBRARY_PATH"] = lib_path
+
     try:
         proc = subprocess.Popen(
             command,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             shell=True,
             cwd=str(BIOGEARS_BIN_DIR),
+            env=env,
             bufsize=1,      # line-buffered → real-time output
         )
 

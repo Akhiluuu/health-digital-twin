@@ -73,3 +73,7 @@ healthbot/model/*.gguf
 healthbot/__pycache__/
 healthbot/**/__pycache__/
 healthbot/*.pyc
+biogears_runtime/
+healthbot_venv/
+health_ai
+venv/
