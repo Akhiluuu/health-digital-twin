@@ -10,7 +10,6 @@ venv/
 
 # BioGears engine binaries (too large for git — transfer via scp)
 biogears_service/engine/
-biogears_runtime/
 
 # Patient engine state files (personal health data — NEVER commit)
 clinical_data/states/
