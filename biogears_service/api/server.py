@@ -79,7 +79,7 @@ app.mount("/view-reports", StaticFiles(directory=str(REPORT_DIR)), name="reports
 # ---------------------------------------------------------------------------
 # Set env var DIGITAL_TWIN_API_KEY to enable API key protection.
 # If not set, all endpoints are open (dev mode).
-API_KEY_ENV = os.environ.get("DIGITAL_TWIN_API_KEY", "")
+API_KEY_ENV = os.environ.get("DIGITAL_TWIN_API_KEY", "70d04318406695d0221ca63b51cd390bddf272bf30059ea5cdbec08bafc7c67c")
 api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 
 async def require_api_key(key: str = Depends(api_key_header)):
