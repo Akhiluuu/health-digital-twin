@@ -61,7 +61,9 @@ def run_biogears(scenario_path: str, user_id: str = "unknown") -> EngineResult:
     ts           = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     log_path     = LOGS_DIR / f"engine_{user_id}_{ts}.log"
     rel_scenario = os.path.relpath(scenario_path, BIOGEARS_BIN_DIR)
-    command      = f'"{BIOGEARS_EXECUTABLE.name}" Scenario "{rel_scenario}"'
+    # Use "./" prefix so the shell resolves the binary relative to BIOGEARS_BIN_DIR
+    # (bg-cli is not on $PATH, only present in that directory).
+    command      = f'"./{BIOGEARS_EXECUTABLE.name}" Scenario "{rel_scenario}"'
 
     logger.info("")
     logger.info("=" * 55)
@@ -133,19 +135,32 @@ def run_biogears(scenario_path: str, user_id: str = "unknown") -> EngineResult:
 
         proc.wait(timeout=10)
         rc      = proc.returncode
-        success = (rc == 0)
+
+        # ── Detect "silent failure": engine exits 0 but state was not produced ─
+        # BioGears exits 0 even when it fails to parse the scenario XML.
+        # We detect this by looking for the failure string in stdout output.
+        engine_failed = any(
+            "Error while processing" in line or
+            "Unable to load" in line or
+            "no declaration found" in line
+            for line in output_lines
+        )
+        success = (rc == 0) and not engine_failed
 
         _write_log(log_path, output_lines)
 
         logger.info("=" * 55)
         if success:
             logger.info(f"✅  [{user_id}] Engine FINISHED OK  ({elapsed}s)")
+        elif engine_failed:
+            logger.error(f"❌  [{user_id}] Engine SCENARIO ERROR ({elapsed}s) | log={log_path}")
         else:
             logger.error(f"❌  [{user_id}] Engine FAILED rc={rc}  ({elapsed}s) | log={log_path}")
         logger.info("=" * 55)
         logger.info("")
 
         return EngineResult(success=success, log_path=str(log_path), return_code=rc)
+
 
     except Exception as e:
         logger.error(f"❌  [{user_id}] Engine launch exception: {e}")

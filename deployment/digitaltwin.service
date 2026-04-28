@@ -1,0 +1,41 @@
+[Unit]
+Description=BioGears Digital Twin API — VitalHealth
+Documentation=https://github.com/YOUR_ORG/health-digital-twin
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu/health-digital-twin
+
+# Load all environment variables from .env
+EnvironmentFile=/home/ubuntu/health-digital-twin/.env
+
+# 4 workers: leaves 4 cores free for BioGears simulation subprocess
+# Increase --workers if you add more RAM / dedicated simulation cores
+ExecStart=/home/ubuntu/health-digital-twin/venv/bin/uvicorn \
+    biogears_service.api.server:app \
+    --host 127.0.0.1 \
+    --port 8000 \
+    --workers 4 \
+    --log-level info \
+    --access-log
+
+# Auto-restart on crash; back off if it keeps crashing
+Restart=always
+RestartSec=5
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=digitaltwin
+
+# Basic security hardening
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

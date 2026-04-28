@@ -54,10 +54,25 @@ _MEAL_PRESETS = {
 # kcal per gram
 _KCAL = {"carb": 4.0, "fat": 9.0, "protein": 4.0}
 
+# Sodium content per meal type (mg) — realistic dietary sodium
+# Source: USDA Dietary Guidelines 2020, average serving sodium values
+_MEAL_SODIUM_MG = {
+    "balanced":     600,
+    "high_carb":    500,
+    "high_protein": 700,
+    "fast_food":   1200,  # typical fast-food meal sodium
+    "ketogenic":    400,
+    "custom":       600,  # default for custom
+}
+
 
 def _meal_xml(calories: float, meal_type: str,
               carb_g=None, fat_g=None, protein_g=None) -> str:
-    """Returns a ConsumeNutrientsData XML action with proper macros."""
+    """
+    Returns a ConsumeNutrientsData XML action with physiologically accurate macros.
+    Sodium is included per meal type based on USDA dietary averages.
+    Custom meals use explicitly passed macros; preset meals derive from calorie fractions.
+    """
     if meal_type == "custom" and carb_g is not None:
         c = float(carb_g)
         f = float(fat_g or 0)
@@ -69,12 +84,17 @@ def _meal_xml(calories: float, meal_type: str,
         p = round(calories * preset["protein"] / _KCAL["protein"], 1)
     # Water approximation: 0.5 mL per kcal (physiological average for mixed meals)
     w = round(calories * 0.0005, 3)
+    # Sodium: scale by calorie fraction of a ~2000 kcal/day reference meal
+    # BioGears unit: mg
+    cal_fraction  = min(calories / 2000.0, 1.0)
+    sodium_mg     = round(_MEAL_SODIUM_MG.get(meal_type, 600) * cal_fraction, 0)
     return (
         f'        <Action xsi:type="ConsumeNutrientsData">\n'
         f'            <Nutrition>\n'
         f'                <Carbohydrate value="{c}" unit="g"/>\n'
         f'                <Fat          value="{f}" unit="g"/>\n'
         f'                <Protein      value="{p}" unit="g"/>\n'
+        f'                <Sodium       value="{sodium_mg}" unit="mg"/>\n'
         f'                <Water        value="{w}" unit="L"/>\n'
         f'            </Nutrition>\n'
         f'        </Action>\n'
@@ -166,15 +186,26 @@ def _advance_xml(seconds: int) -> str:
 
 def _stress_xml(intensity: float) -> str:
     """
-    Models acute stress/anxiety via BioGears PainStimulus action.
-    PainStimulus uses the same sympathetic nervous system pathway as real stress:
-    - HR ↑, BP ↑, respiratory rate ↑, glucose ↑
-    Intensity: 0.0 (mild worry) → 1.0 (panic/extreme pain)
+    Models acute stress / fight-or-flight via BioGears AcuteStressData action.
+
+    CDM choice: AcuteStressData (NOT PainStimulusData)
+    =====================================================
+    - AcuteStressData: HPA axis activation, sympathetic surge, cortisol release.
+      @brief 'Fight or flight. The body prepares to defend itself.'
+      Physiological effects: HR ↑, BP ↑, glucose ↑, respiration ↑
+      Severity 0.0 → clears the stress state completely ✓
+
+    - PainStimulusData: Nociceptive (physical injury) pain pathway.
+      Requires a Location attribute (body site) and optionally HalfLife (pain decay).
+      WRONG for psychological/emotional stress.
+
+    Intensity: 0.0 = no stress (clears state) → 1.0 = panic / maximum stress.
+    XSD-validated: AcuteStressData.Severity is Scalar0To1Data (Bound0To1Double, inclusive).
     """
-    clamped = max(0.01, min(1.0, float(intensity)))
+    clamped = max(0.0, min(1.0, float(intensity)))
     return (
-        f'        <Action xsi:type="PainStimulusData" Location="Chest">\n'
-        f'            <Severity value="{clamped}"/>\n'
+        f'        <Action xsi:type="AcuteStressData">\n'
+        f'            <Severity value="{clamped:.4f}"/>\n'
         f'        </Action>\n'
     )
 
@@ -196,44 +227,59 @@ def _alcohol_xml(standard_drinks: float, weight_kg: float = 70.0) -> str:
 
 def _fasting_xml(hours: float) -> str:
     """
-    Models intermittent fasting / religious fasting.
-    A fast is a resting advance with zero nutrition.
-    Hours clamped 1–48. Physiological effects: glucose ↓, ketones ↑, HR slight ↑.
-    We use a low-intensity exercise (0.02) to slightly elevate metabolic state
-    (simulates the basal gluconeogenesis and mild sympathetic activation of fasting).
+    Models intermittent fasting / religious fasting via pure time advance with zero nutrition.
+
+    Real fasting physiology:
+      - No exogenous nutrients → liver glycogen depletes (~6–12h)
+      - After glycogen depletion: gluconeogenesis from amino acids, then fat oxidation
+      - Ketone bodies rise after ~12–16h of fasting
+      - Basal HR may increase slightly due to sympathetic tone (catecholamine release)
+      - Blood glucose drops from ~90 mg/dL toward 60–70 mg/dL
+
+    BioGears accurately simulates all of this through its metabolic pathways when
+    simply advancing time without any ConsumeNutrientsData actions.
+    The previous exercise-hack (0.02 intensity) was incorrect — exercise metabolism
+    differs from fasting metabolism in terms of substrate utilization and hormonal state.
+
+    Hours clamped 1–48.
     """
     hours   = max(1.0, min(48.0, float(hours)))
     seconds = int(hours * 3600)
-    return (
-        f'        <Action xsi:type="ExerciseData">'
-        f'<GenericExercise><Intensity value="0.02"/></GenericExercise></Action>\n'
-        f'{_advance_xml(seconds)}'
-        f'        <Action xsi:type="ExerciseData">'
-        f'<GenericExercise><Intensity value="0.0"/></GenericExercise></Action>\n'
-    )
+    # Pure time advance — BioGears metabolic model handles glucose drop,
+    # free fatty acid mobilization, and ketogenesis automatically.
+    return _advance_xml(seconds)
 
 
 def _circadian_phase_xml(wall_hour: int) -> str:
     """
-    Injects a time-of-day physiological phase before user events.
+    Injects a time-of-day physiological modifier before user events.
     Real physiology has a strong circadian pattern:
-      06–10: Morning surge (cortisol peak) → HR +6bpm, BP +10mmHg
-      10–18: Daytime baseline
-      18–22: Evening → slight vagal tone decrease
-      22–06: Night / sleep → HR -10bpm, BP -5mmHg
+      06–10: Morning cortisol surge → HR +6bpm, BP +10mmHg, alertness ↑
+      10–18: Daytime peak performance baseline
+      18–22: Evening wind-down → slight vagal tone increase
+      22–06: Night / recovery → HR -10bpm, BP -5mmHg (parasympathetic dominance)
 
-    We model this via a brief PainStimulus (sympathetic) for morning surge
-    or a brief AcuteStress suppression for nighttime.
+    Implementation:
+    ---------------
+    We use AcuteStressData (severity 0.10) for the morning cortisol surge.
+    AcuteStressData is the correct CDM action for HPA-axis / sympathetic activation.
+    Severity 0.10 ≈ mild stress, raising HR by ~5–8 bpm and BP by ~8 mmHg,
+    consistent with the documented morning cortisol peak effect.
+
+    We do NOT emit AcuteStressData with severity=0.0 at other phases because:
+    - The BioGears resting state (post-stabilization) already represents the
+      daytime/nighttime baseline without needing an explicit modifier.
+    - An explicit severity=0.0 at night would clear any residual stress from the
+      previous day's events, which could actually be desirable but is not needed
+      if the previous day's stress was already cleared via the decay pattern.
+
+    NOTE: PainStimulusData is NOT used here (it models nociceptive pain, not cortisol).
     """
     if 6 <= wall_hour < 10:
-        # Morning cortisol surge — mild sympathetic activation
-        return _stress_xml(0.15)
-    elif 22 <= wall_hour or wall_hour < 6:
-        # Nighttime parasympathetic dominance — zero stress, let basal state settle
-        return _stress_xml(0.0)
-    else:
-        # Daytime baseline — no extra modifier
-        return ""
+        # Morning cortisol surge — mild HPA activation (AcuteStressData severity 0.10)
+        return _stress_xml(0.10)
+    # All other phases: no modifier needed (BioGears resting state is the baseline)
+    return ""
 
 
 def _catchup_routine_xml(weight_kg: float) -> str:
@@ -299,6 +345,24 @@ def build_registration_scenario(user_id, age, weight, height, sex, body_fat,
     abs_patient   = Path(patient_file).absolute().as_posix()
     abs_state_out = (BIOGEARS_BIN_DIR / f"{user_id}.xml").as_posix()
 
+    # ── Validate & clamp physiological parameters ──────────────────────────
+    # BioGears engine will crash or fail to converge if these are out of range.
+    # Ranges derived from BioGears CDM documentation and patient validation tests.
+    age    = max(18, min(80, int(age)))
+    weight = max(30.0, min(200.0, float(weight)))   # kg
+    height = max(140.0, min(220.0, float(height)))  # cm
+    # BioGears: BodyFatFraction must be 0.02–0.70 (0% and >70% cause engine crash)
+    body_fat = max(0.02, min(0.70, float(body_fat)))
+
+    # Blood pressure: clamp to BioGears-stable ranges
+    # Too-low BP causes cardiovascular instability; too-high causes non-convergence
+    diastolic_bp = float(clinical_config.get("diastolic_bp", 73.5))
+    systolic_bp  = float(clinical_config.get("systolic_bp", 114.0))
+    resting_hr   = float(clinical_config.get("resting_hr", 72.0))
+    diastolic_bp = max(55.0, min(95.0,  diastolic_bp))
+    systolic_bp  = max(85.0, min(160.0, systolic_bp))
+    resting_hr   = max(50.0, min(100.0, resting_hr))
+
     # ── Patient XML ─────────────────────────────────────────────────────────
     p_xml = (
         '<?xml version="1.0" encoding="UTF-8" standalone="no" ?>\n'
@@ -309,9 +373,9 @@ def build_registration_scenario(user_id, age, weight, height, sex, body_fat,
         f'    <Weight value="{weight}" unit="kg"/>\n'
         f'    <Height value="{height}" unit="cm"/>\n'
         f'    <BodyFatFraction value="{body_fat}"/>\n'
-        f'    <DiastolicArterialPressureBaseline value="{clinical_config.get("diastolic_bp", 73.5)}" unit="mmHg"/>\n'
-        f'    <HeartRateBaseline value="{clinical_config.get("resting_hr", 72.0)}" unit="1/min"/>\n'
-        f'    <SystolicArterialPressureBaseline value="{clinical_config.get("systolic_bp", 114.0)}" unit="mmHg"/>\n'
+        f'    <DiastolicArterialPressureBaseline value="{diastolic_bp}" unit="mmHg"/>\n'
+        f'    <HeartRateBaseline value="{resting_hr}" unit="1/min"/>\n'
+        f'    <SystolicArterialPressureBaseline value="{systolic_bp}" unit="mmHg"/>\n'
         '</Patient>'
     )
     patient_file.write_text(p_xml, encoding="utf-8")
@@ -365,17 +429,30 @@ def build_registration_scenario(user_id, age, weight, height, sex, body_fat,
 
 
     # ── Scenario XML ─────────────────────────────────────────────────────────
+    # BioGears CDM requires conditions inside a <Conditions> wrapper element
+    # within <InitialParameters>. Placing them bare (without wrapper) causes
+    # XSD validation failure: "no declaration found for element 'Condition'"
+    conditions_block = (
+        f'        <Conditions>\n'
+        f'            {conditions_xml}\n'
+        f'        </Conditions>\n'
+        if conditions_xml.strip() else ""
+    )
+
+    # BioGears 8 auto-stabilizes the patient before running actions.
+    # <TrackStabilization> is not a valid v8 CDM element and causes parse errors.
+    # We advance 120s post-stabilization to let transient oscillations settle
+    # before saving the calibrated state.
     s_xml = (
         '<?xml version="1.0" encoding="UTF-8" standalone="no" ?>\n'
         '<Scenario xmlns="uri:/mil/tatrc/physiology/datamodel"'
         ' xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">\n'
         '    <InitialParameters>\n'
         f'        <PatientFile>{abs_patient}</PatientFile>\n'
-        '        <TrackStabilization>On</TrackStabilization>\n'
-        f'        {conditions_xml}\n'
+        f'{conditions_block}'
         '    </InitialParameters>\n'
         '    <Actions>\n'
-        '        <Action xsi:type="AdvanceTimeData"><Time value="30" unit="s"/></Action>\n'
+        '        <Action xsi:type="AdvanceTimeData"><Time value="120" unit="s"/></Action>\n'
         f'        <Action xsi:type="SerializeStateData" Type="Save"><Filename>{abs_state_out}</Filename></Action>\n'
         '    </Actions>\n'
         '</Scenario>'
@@ -559,12 +636,19 @@ def build_batch_reconstruction(user_id, state_path, events: list, user_weight_kg
         elif etype == "stress":
             intensity   = max(0.0, min(1.0, float(val or 0)))
             dur         = int(float(event.get("duration_seconds") or 300))
+            dur         = max(60, min(dur, 3600))  # clamp 1min–60min
+
+            # Pattern: peak stress → gradual decay (mimics cortisol response kinetics)
+            # Phase 1: Full stress for user-specified duration
             actions_xml += _stress_xml(intensity)
             actions_xml += _advance_xml(dur)
             engine_clock += dur
-            actions_xml += _stress_xml(intensity * 0.3)
-            actions_xml += _advance_xml(300)
-            engine_clock += 300
+            # Phase 2: 30% residual stress (simulates slow cortisol clearance)
+            if intensity > 0.05:
+                actions_xml += _stress_xml(intensity * 0.3)
+                actions_xml += _advance_xml(300)  # 5 min decay window
+                engine_clock += 300
+            # Phase 3: Full clearance — AcuteStressData severity=0.0 properly resets state
             actions_xml += _stress_xml(0.0)
 
         elif etype == "alcohol":

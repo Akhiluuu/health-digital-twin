@@ -4,13 +4,15 @@ __pycache__/
 *.pyo
 *.pyd
 venv/
+.venv/
 .env
 *.egg-info/
 
-# BioGears engine binary (too large for git, install separately)
+# BioGears engine binaries (too large for git — transfer via scp)
 biogears_service/engine/
+biogears_runtime/
 
-# Patient engine state files (personal data - never commit)
+# Patient engine state files (personal health data — NEVER commit)
 clinical_data/states/
 clinical_data/history/
 user_states/
@@ -21,18 +23,28 @@ biogears_service/runtime/
 biogears_service/simulation_results/
 biogears_service/__pycache__/
 
-# Generated health reports (images)
+# Generated health reports
 reports/
 
 # Logs
 logs/
 *.log
+server_log.txt
 
-# Database (runtime - not committed)
+# Runtime databases / job stores
+twins_database.db
 twins_database.json
+biogears_service/jobs_store.json
 
-# Scenarios generated at runtime
+# Server backups
+backups/
+
+# Scenarios generated at runtime by BioGears
 Scenarios/
+
+# Test / scratch XML artifacts
+test_*.xml
+debug_*.xml
 
 # OS
 .DS_Store
@@ -43,7 +55,7 @@ desktop.ini
 .vscode/
 .idea/
 
-# Large archives - never commit zip files to Git
+# Large archives
 *.zip
 *.tar.gz
 *.rar
@@ -51,3 +63,7 @@ desktop.ini
 # Test artifacts
 test_*.py
 debug_*.py
+
+# VitalHealth secrets — never commit
+VitalHealth/.env
+VitalHealth/.env.local
