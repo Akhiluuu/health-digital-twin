@@ -167,12 +167,13 @@ BGCLI="$RUNTIME_DIR/bg-cli"
 if [[ -f "$BGCLI" ]]; then
     ok "BioGears runtime already present at $RUNTIME_DIR"
 else
-    warn "BioGears runtime not found — downloading official Linux v7.4.0 release..."
+    warn "BioGears runtime not found — downloading official Linux v7.3.2 release..."
     mkdir -p "$RUNTIME_DIR"
-    BIOGEARS_URL="https://github.com/BioGearsEngine/core/releases/download/v7.4.0/BioGears-7.4.0-Linux.tar.gz"
-    wget -q --show-progress -O /tmp/biogears.tar.gz "$BIOGEARS_URL"
-    tar -xzf /tmp/biogears.tar.gz --strip-components=1 -C "$RUNTIME_DIR"
-    rm /tmp/biogears.tar.gz
+    BIOGEARS_URL="https://github.com/BioGearsEngine/core/releases/download/7.3.2/Biogears-7.3.2-ubuntu_16.04-gcc5.tgz"
+                  
+    wget -q --show-progress -O /tmp/biogears.tgz "$BIOGEARS_URL"
+    tar -xzf /tmp/biogears.tgz --strip-components=1 -C "$RUNTIME_DIR"
+    rm /tmp/biogears.tgz
     ok "BioGears runtime downloaded and extracted."
 fi
 
@@ -269,7 +270,10 @@ fi
 # ══════════════════════════════════════════════════════════════════════════════
 section "Step 9/10 — Nginx reverse proxy"
 # ══════════════════════════════════════════════════════════════════════════════
-sudo cp "$DEPLOY_DIR/nginx.conf" /etc/nginx/sites-available/digitaltwin
+# Patch the project path into nginx.conf (same placeholder as service files)
+sed "s|/home/ubuntu/health-digital-twin|${PROJECT_DIR}|g" \
+    "$DEPLOY_DIR/nginx.conf" > /tmp/digitaltwin.nginx.conf
+sudo cp /tmp/digitaltwin.nginx.conf /etc/nginx/sites-available/digitaltwin
 sudo ln -sf /etc/nginx/sites-available/digitaltwin /etc/nginx/sites-enabled/digitaltwin
 sudo rm -f /etc/nginx/sites-enabled/default
 
