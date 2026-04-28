@@ -1,4 +1,0 @@
-2026-02-12 10:36 <WARNING>  [0s] Multiple Renal Clearances specified, but not the same. RenalDynamics will override Systemic. 
-2026-02-12 10:36 <ERROR>  [0s] Patient file could not be read : Scenarios/API/init_TEST_USER_001.xml
- 
-2026-02-12 10:36 <ERROR>  [0s] Unable to initialize engine 

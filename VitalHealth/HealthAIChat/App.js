@@ -34,7 +34,7 @@ const KEY_SERVER_IP   = '@hai_server_ip';
 const KEY_SERVER_PORT = '@hai_server_port';
 const KEY_DOCUMENTS   = '@hai_documents';
 const KEY_CHUNKS      = '@hai_chunks';
-const DEFAULT_PORT    = '8000';
+const DEFAULT_PORT    = '8001';
 const TOP_K           = 5;
 
 // ─── Light green theme ────────────────────────────────────────────────────────
@@ -387,7 +387,7 @@ function ServerConfigModal({ visible, ip, port, onSave, onClose }) {
             style={s.fieldInput}
             value={localPort}
             onChangeText={setLocalPort}
-            placeholder="8000"
+            placeholder="8001"
             placeholderTextColor={C.placeholder}
             keyboardType="numeric"
           />
@@ -688,7 +688,9 @@ function ChatScreen({ serverIp, serverPort, connected, setConnected, allChunks, 
 
     try {
       let aiReply;
+      let topChunks = [];
       if (allChunks.length > 0) {
+        // Embed query locally then retrieve top-K chunks
         const embRes = await fetch(`${baseUrl}/embed-query`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -696,23 +698,16 @@ function ChatScreen({ serverIp, serverPort, connected, setConnected, allChunks, 
         });
         if (!embRes.ok) throw new Error(`Embed failed: ${embRes.status}`);
         const { embedding: queryEmb } = await embRes.json();
-        const topChunks = retrieveTopK(queryEmb, allChunks, TOP_K);
-        const genRes = await fetch(`${baseUrl}/generate/${PROFILE_ID}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ query, chunks: topChunks, history }),
-        });
-        if (!genRes.ok) throw new Error(`Generate failed: ${genRes.status}`);
-        aiReply = (await genRes.json()).response;
-      } else {
-        const res = await fetch(`${baseUrl}/query/${PROFILE_ID}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ query, history }),
-        });
-        if (!res.ok) throw new Error(`Query failed: ${res.status}`);
-        aiReply = (await res.json()).response;
+        topChunks = retrieveTopK(queryEmb, allChunks, TOP_K);
       }
+      // Always call POST /generate — server handles empty chunks gracefully
+      const genRes = await fetch(`${baseUrl}/generate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query, chunks: topChunks, history }),
+      });
+      if (!genRes.ok) throw new Error(`Generate failed (${genRes.status}): ${await genRes.text()}`);
+      aiReply = (await genRes.json()).response;
       addMsg('assistant', aiReply || 'No response from server.');
       historyRef.current = [...history, query, aiReply].slice(-10);
       setConnected(true);

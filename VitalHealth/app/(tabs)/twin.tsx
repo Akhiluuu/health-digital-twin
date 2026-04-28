@@ -19,6 +19,9 @@ import { useBiogearsTwin } from '../../context/BiogearsTwinContext';
 import { useTheme } from '../../context/ThemeContext';
 import { colors as themeColors } from '../../theme/colors';
 import Header from '../components/Header';
+import CircadianClock    from '../../components/twin/CircadianClock';
+import QuickAddRow       from '../../components/twin/QuickAddRow';
+import BodyMap           from '../../components/twin/BodyMap';
 
 const { width: W } = Dimensions.get('window');
 
@@ -52,6 +55,7 @@ function clamp(val: number, min: number, max: number) {
 // ─── Event tab definitions ────────────────────────────────────────────────────
 
 type EventTab = 'meal' | 'exercise' | 'sleep' | 'water' | 'substance' | 'stress' | 'other';
+type DashTab  = 'overview' | 'organs' | 'trends';
 
 const EVENT_TABS: { id: EventTab; label: string; icon: string; accent: string }[] = [
   { id: 'meal',      label: 'Meal',      icon: '🍽️', accent: '#f59e0b' },
@@ -634,6 +638,7 @@ export default function TwinScreen() {
 
   // ── Mode ──────────────────────────────────────────────────────────────────
   const [mode, setMode] = useState<'dashboard' | 'routine'>('dashboard');
+  const [dashTab, setDashTab] = useState<DashTab>('overview');  // dashboard inner tab
   const fabAnim = useRef(new Animated.Value(0)).current;
 
   const switchMode = (next: 'dashboard' | 'routine') => {
@@ -663,7 +668,7 @@ export default function TwinScreen() {
     { label: 'Ketogenic', value: 'ketogenic' },
     { label: 'Custom', value: 'custom' },
   ];
-  const [mealType, setMealType]     = useState('balanced');
+  const [mealType, setMealType]     = useState<'balanced' | 'high_carb' | 'high_protein' | 'fast_food' | 'ketogenic' | 'custom'>('balanced');
   const [mealKcal, setMealKcal]     = useState('500');
   const [mealCarb, setMealCarb]     = useState('');
   const [mealFat,  setMealFat]      = useState('');
@@ -839,8 +844,13 @@ export default function TwinScreen() {
     setPendingSimName('');
     setSimNameModal(false);
     switchMode('dashboard');
+    setDashTab('overview'); // jump to overview so user sees the progress overlay
     try { await runSimulation(); }
-    catch (e: any) { Alert.alert('Simulation Failed', e.message); }
+    catch (e: any) {
+      // Error is already stored in simulationError state (shown in-page).
+      // Do NOT show an Alert — the SimProgressOverlay handles the failed state.
+      console.warn('[Twin] Simulation error:', e.message);
+    }
   };
 
   const handleLoadRoutine = (routineId: string, name: string) => {
@@ -1279,28 +1289,23 @@ export default function TwinScreen() {
   // DASHBOARD
   // ────────────────────────────────────────────────────────────────────────────
 
-  const renderDashboard = () => {
+  // ─── Dashboard inner-tab renderers ──────────────────────────────────────────
+
+  const renderOverviewTab = () => {
     const v = lastVitals;
-    const simRunning = simulationStatus === 'running' || simulationStatus === 'queued';
+    const bp = parseBP(v?.blood_pressure);
+
+    // Per-vital status helper
+    const vStatus = (val: number | null | undefined, lo: number, hi: number) =>
+      val == null ? null : val < lo ? '#f59e0b' : val > hi ? '#ef4444' : '#10b981';
 
     return (
-      <ScrollView style={{ flex: 1 }}
-        contentContainerStyle={{ padding: 16, paddingTop: insets.top + 62, paddingBottom: 100 }}
-        showsVerticalScrollIndicator={false}>
-
-        {/* Simulation progress */}
-        {simRunning && (
-          <View style={[ss.simBox, { backgroundColor: c.card, borderColor: '#38bdf8' }]}>
-            <SimStepper progress={simulationProgress} status={simulationStatus} />
-            <Text style={[ss.simMsg, { color: c.sub }]}>{simulationProgress}</Text>
-            <ActivityIndicator color="#38bdf8" style={{ marginTop: 8 }} />
-          </View>
-        )}
-
+      <>
+        {/* Simulation error banner (never an Alert popup) */}
         {simulationStatus === 'failed' && (
           <View style={[ss.errorBox, { backgroundColor: '#ef444420' }]}>
             <Ionicons name="warning" size={18} color="#ef4444" />
-            <Text style={ss.errorTxt}>{simulationError || 'Simulation failed'}</Text>
+            <Text style={ss.errorTxt}>{simulationError || 'Simulation failed — check server logs.'}</Text>
           </View>
         )}
 
@@ -1311,6 +1316,9 @@ export default function TwinScreen() {
             <Text style={ss.interactionTxt}>{lastInteractionWarnings[0]}</Text>
           </View>
         )}
+
+        {/* Circadian Clock */}
+        <CircadianClock />
 
         {/* Health Score */}
         {healthScore && (
@@ -1328,27 +1336,42 @@ export default function TwinScreen() {
           </LinearGradient>
         )}
 
+        {/* Quick Add row */}
+        <QuickAddRow addEvent={addEvent} />
+
         {/* Vitals Grid */}
         <Text style={[ss.section, { color: c.text }]}>Simulation Vitals</Text>
-        {v ? (() => {
-          const bp = parseBP(v.blood_pressure);
-          return (
-            <View style={ss.vitalsGrid}>
-              <VitalCard label="Heart Rate" value={v.heart_rate ? Math.round(v.heart_rate) : null} unit="bpm" icon="🫀" color="#ef4444" normal="60–100" c={c} />
-              <VitalCard label="Systolic BP" value={bp.sys ? Math.round(bp.sys) : null} unit="mmHg" icon="🩸" color="#f59e0b" normal="90–120" c={c} />
-              <VitalCard label="Diastolic BP" value={bp.dia ? Math.round(bp.dia) : null} unit="mmHg" icon="🩸" color="#f97316" normal="60–80" c={c} />
-              <VitalCard label="Glucose" value={v.glucose ? Math.round(v.glucose) : null} unit="mg/dL" icon="🍬" color="#6366f1" normal="70–140" c={c} />
-              <VitalCard label="SpO₂" value={v.spo2 ? Math.round(v.spo2) : null} unit="%" icon="🫁" color="#38bdf8" normal="94–100" c={c} />
-              <VitalCard label="Resp. Rate" value={v.respiration ? Math.round(v.respiration) : null} unit="br/min" icon="💨" color="#10b981" normal="12–20" c={c} />
-              {v.map != null && <VitalCard label="MAP" value={Math.round(v.map || 0)} unit="mmHg" icon="📈" color="#a78bfa" normal="70–100" c={c} />}
-              {v.core_temperature != null && <VitalCard label="Core Temp" value={(v.core_temperature || 0).toFixed(1)} unit="°C" icon="🌡️" color="#fb923c" normal="36.5–37.5" c={c} />}
-            </View>
-          );
-        })() : (
+        {v ? (
+          <View style={ss.vitalsGrid}>
+            {[
+              { label: 'Heart Rate',   val: v.heart_rate   ? Math.round(v.heart_rate)   : null, unit: 'bpm',    icon: '🫀', color: '#ef4444', lo: 60, hi: 100 },
+              { label: 'Systolic BP',  val: bp.sys          ? Math.round(bp.sys!)         : null, unit: 'mmHg',   icon: '🩸', color: '#f59e0b', lo: 90, hi: 120 },
+              { label: 'Diastolic BP', val: bp.dia          ? Math.round(bp.dia!)         : null, unit: 'mmHg',   icon: '🩸', color: '#f97316', lo: 60, hi: 80  },
+              { label: 'Glucose',      val: v.glucose       ? Math.round(v.glucose)       : null, unit: 'mg/dL',  icon: '🍬', color: '#6366f1', lo: 70, hi: 140 },
+              { label: 'SpO₂',         val: v.spo2          ? Math.round(v.spo2)          : null, unit: '%',      icon: '🫁', color: '#38bdf8', lo: 94, hi: 100 },
+              { label: 'Resp. Rate',   val: v.respiration   ? Math.round(v.respiration)   : null, unit: 'br/min', icon: '💨', color: '#10b981', lo: 12, hi: 20  },
+              ...(v.map            != null ? [{ label: 'MAP',       val: Math.round(v.map!),                unit: 'mmHg', icon: '📈', color: '#a78bfa', lo: 70, hi: 100 }] : []),
+              ...(v.core_temperature != null ? [{ label: 'Core Temp', val: Number((v.core_temperature!).toFixed(1)), unit: '°C', icon: '🌡️', color: '#fb923c', lo: 36.5, hi: 37.5 }] : []),
+            ].map(({ label, val, unit, icon, color, lo, hi }) => {
+              const dot = vStatus(val, lo, hi);
+              return (
+                <View key={label} style={[ss.vitalCard, { borderColor: color + '40', backgroundColor: c.card }]}>
+                  <View style={ss.vitalTopRow}>
+                    <Text style={ss.vitalIcon}>{icon}</Text>
+                    {dot && <View style={[ss.statusDot, { backgroundColor: dot }]} />}
+                  </View>
+                  <Text style={[ss.vitalValue, { color }]}>{val ?? '—'}</Text>
+                  <Text style={[ss.vitalUnit,  { color: c.sub }]}>{unit}</Text>
+                  <Text style={[ss.vitalLabel, { color: c.sub }]}>{label}</Text>
+                </View>
+              );
+            })}
+          </View>
+        ) : (
           <View style={[ss.emptyCard, { backgroundColor: c.card }]}>
             <Text style={{ fontSize: 40 }}>🔬</Text>
             <Text style={[ss.emptyTitle, { color: c.text }]}>No Simulation Yet</Text>
-            <Text style={[ss.emptySub, { color: c.sub }]}>Tap + to log your routine and run a simulation</Text>
+            <Text style={[ss.emptySub,  { color: c.sub }]}>Tap + to log your routine and run a simulation</Text>
           </View>
         )}
 
@@ -1364,16 +1387,41 @@ export default function TwinScreen() {
           </>
         )}
 
-        {/* Organ Scores */}
-        {organScores?.scores && (
+        {/* Macro Rings */}
+        {todayMacros.calories > 0 && (
           <>
-            <Text style={[ss.section, { color: c.text }]}>Organ Health</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-              {(Object.keys(organScores.scores) as string[]).map(name => {
-                const data = organScores.scores[name];
-                return <OrganCard key={name} name={name} score={data.score} status={data.status} c={c} />;
+            <Text style={[ss.section, { color: c.text }]}>Today's Nutrition</Text>
+            <View style={[ss.macroRingsCard, { backgroundColor: c.card }]}>
+              {/* Calorie ring (large) */}
+              <View style={ss.macroRingWrap}>
+                <View style={[ss.macroOuterRing, { borderColor: '#f59e0b40', width: 100, height: 100, borderRadius: 50 }]}>
+                  <View style={[ss.macroInnerRing, { backgroundColor: c.card, width: 72, height: 72, borderRadius: 36 }]}>
+                    <Text style={[ss.macroRingVal, { color: '#f59e0b' }]}>{Math.round(todayMacros.calories)}</Text>
+                    <Text style={[ss.macroRingUnit, { color: c.sub }]}>kcal</Text>
+                  </View>
+                </View>
+                <Text style={[ss.macroRingLabel, { color: c.sub }]}>Calories</Text>
+              </View>
+              {/* Mini rings */}
+              {[
+                { label: 'Carbs',   val: todayMacros.carbs,   color: '#f59e0b', target: 250 },
+                { label: 'Protein', val: todayMacros.protein, color: '#10b981', target: 60  },
+                { label: 'Fat',     val: todayMacros.fat,     color: '#ef4444', target: 65  },
+              ].map(m => {
+                const pct = Math.min(m.val / m.target, 1);
+                return (
+                  <View key={m.label} style={ss.macroRingWrap}>
+                    <View style={[ss.macroOuterRing, { borderColor: m.color + '40', width: 76, height: 76, borderRadius: 38 }]}>
+                      <View style={[ss.macroInnerRing, { backgroundColor: c.card, width: 54, height: 54, borderRadius: 27 }]}>
+                        <Text style={[ss.macroRingVal, { color: m.color, fontSize: 14 }]}>{Math.round(m.val)}g</Text>
+                        <Text style={[ss.macroRingUnit, { color: c.sub }]}>{Math.round(pct * 100)}%</Text>
+                      </View>
+                    </View>
+                    <Text style={[ss.macroRingLabel, { color: c.sub }]}>{m.label}</Text>
+                  </View>
+                );
               })}
-            </ScrollView>
+            </View>
           </>
         )}
 
@@ -1390,7 +1438,7 @@ export default function TwinScreen() {
             {recoveryReadiness && (
               <View style={[ss.analyticsCard, { backgroundColor: c.card, flex: 1 }]}>
                 <Text style={[ss.analyticsTitle, { color: c.sub }]}>Recovery</Text>
-                <Text style={[ss.analyticsValue, { color: recoveryReadiness.status === 'Ready' ? '#10b981' : recoveryReadiness.status === 'Caution' ? '#f59e0b' : '#ef4444' }]}>
+                <Text style={[ss.analyticsValue, { color: recoveryReadiness.status === 'Ready' ? '#10b981' : '#f59e0b' }]}>
                   {recoveryReadiness.readiness_score}
                 </Text>
                 <Text style={[ss.analyticsLabel, { color: c.sub }]}>{recoveryReadiness.status}</Text>
@@ -1398,88 +1446,144 @@ export default function TwinScreen() {
             )}
           </View>
         )}
+      </>
+    );
+  };
 
-        {/* Today's macro summary */}
-        {(todayMacros.calories > 0) && (
-          <>
-            <Text style={[ss.section, { color: c.text }]}>Today's Macros</Text>
-            <View style={[ss.macroCard, { backgroundColor: c.card }]}>
-              <View style={{ flex: 1, alignItems: 'center' }}>
-                <Text style={[ss.macroG, { color: '#f59e0b', fontSize: 18 }]}>{Math.round(todayMacros.calories)}</Text>
-                <Text style={[ss.macroLbl, { color: c.sub }]}>kcal</Text>
-              </View>
-              <View style={[ss.macroDiv, { backgroundColor: c.border }]} />
-              <View style={{ flex: 1, alignItems: 'center' }}>
-                <Text style={[ss.macroG, { color: '#f59e0b', fontSize: 18 }]}>{Math.round(todayMacros.carbs)}g</Text>
-                <Text style={[ss.macroLbl, { color: c.sub }]}>Carbs</Text>
-              </View>
-              <View style={{ flex: 1, alignItems: 'center' }}>
-                <Text style={[ss.macroG, { color: '#10b981', fontSize: 18 }]}>{Math.round(todayMacros.protein)}g</Text>
-                <Text style={[ss.macroLbl, { color: c.sub }]}>Protein</Text>
-              </View>
-              <View style={{ flex: 1, alignItems: 'center' }}>
-                <Text style={[ss.macroG, { color: '#ef4444', fontSize: 18 }]}>{Math.round(todayMacros.fat)}g</Text>
-                <Text style={[ss.macroLbl, { color: c.sub }]}>Fat</Text>
-              </View>
-            </View>
-          </>
-        )}
+  const renderOrgansTab = () => (
+    <>
+      {organScores?.scores ? (
+        <>
+          <BodyMap scores={organScores.scores} c={c} />
+          {/* Horizontal scrollable organ cards below the map */}
+          <Text style={[ss.section, { color: c.text }]}>Scores Breakdown</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+            {(Object.keys(organScores.scores) as string[]).map(name => {
+              const data = organScores.scores[name];
+              const clr  = data.status === 'critical' ? '#ef4444' : data.status === 'warning' ? '#f59e0b' : '#10b981';
+              const icons: Record<string, string> = { heart: '🫀', lungs: '🫁', gut: '🦠', brain: '🧠', liver: '🟤', legs: '🦵' };
+              return (
+                <View key={name} style={[ss.organCard, { backgroundColor: c.card, borderColor: c.border }]}>
+                  <Text style={{ fontSize: 24 }}>{icons[name] ?? '🔬'}</Text>
+                  <Text style={[ss.organScore, { color: clr }]}>{data.score}%</Text>
+                  <Text style={[ss.organName, { color: c.sub }]}>{name.charAt(0).toUpperCase() + name.slice(1)}</Text>
+                  <View style={[ss.organBar, { backgroundColor: c.border }]}>
+                    <View style={[ss.organBarFill, { width: `${data.score}%`, backgroundColor: clr }]} />
+                  </View>
+                </View>
+              );
+            })}
+          </ScrollView>
+        </>
+      ) : (
+        <View style={[ss.emptyCard, { backgroundColor: c.card }]}>
+          <Text style={{ fontSize: 40 }}>🏥</Text>
+          <Text style={[ss.emptyTitle, { color: c.text }]}>No Organ Data Yet</Text>
+          <Text style={[ss.emptySub,  { color: c.sub }]}>Run a simulation to see organ health scores</Text>
+        </View>
+      )}
+    </>
+  );
 
-        {/* Saved Routines */}
-        {savedRoutines.length > 0 && (
-          <>
-            <Text style={[ss.section, { color: c.text }]}>Saved Routines</Text>
-            {savedRoutines.map(r => (
-              <TouchableOpacity key={r.id} style={[ss.routineCard, { backgroundColor: c.card }]}
-                onPress={() => handleLoadRoutine(r.id, r.name)}
-                onLongPress={() => Alert.alert('Delete', `Delete "${r.name}"?`, [
-                  { text: 'Cancel', style: 'cancel' },
-                  { text: 'Delete', style: 'destructive', onPress: () => deleteRoutine(r.id) },
-                ])}>
-                <View style={ss.routineIcon}><Text style={{ fontSize: 20 }}>📋</Text></View>
-                <View style={{ flex: 1 }}>
-                  <Text style={[ss.routineName, { color: c.text }]}>{r.name}</Text>
-                  <Text style={[ss.routineMeta, { color: c.sub }]}>{r.eventCount} events · {new Date(r.createdAt).toLocaleDateString('en-IN')}</Text>
-                </View>
-                <Ionicons name="play-circle" size={28} color={c.active} />
-              </TouchableOpacity>
-            ))}
-          </>
-        )}
+  const renderTrendsTab = () => (
+    <>
+      {/* Saved Routines */}
+      {savedRoutines.length > 0 && (
+        <>
+          <Text style={[ss.section, { color: c.text }]}>Saved Routines</Text>
+          {savedRoutines.map(r => (
+            <TouchableOpacity key={r.id} style={[ss.routineCard, { backgroundColor: c.card }]}
+              onPress={() => handleLoadRoutine(r.id, r.name)}
+              onLongPress={() => Alert.alert('Delete', `Delete "${r.name}"?`, [
+                { text: 'Cancel', style: 'cancel' },
+                { text: 'Delete', style: 'destructive', onPress: () => deleteRoutine(r.id) },
+              ])}>
+              <View style={ss.routineIcon}><Text style={{ fontSize: 20 }}>📋</Text></View>
+              <View style={{ flex: 1 }}>
+                <Text style={[ss.routineName, { color: c.text }]}>{r.name}</Text>
+                <Text style={[ss.routineMeta, { color: c.sub }]}>{r.eventCount} events · {new Date(r.createdAt).toLocaleDateString('en-IN')}</Text>
+              </View>
+              <Ionicons name="play-circle" size={28} color={c.active} />
+            </TouchableOpacity>
+          ))}
+        </>
+      )}
 
-        {/* Session History */}
-        {sessions.length > 0 && (
-          <>
-            <View style={ss.rowBetween}>
-              <Text style={[ss.section, { color: c.text }]}>Recent Simulations</Text>
-              <TouchableOpacity onPress={handleUndo}>
-                <Text style={{ color: '#ef4444', fontSize: 12 }}>⏪ Undo Last</Text>
+      {/* Session History */}
+      {sessions.length > 0 ? (
+        <>
+          <View style={ss.rowBetween}>
+            <Text style={[ss.section, { color: c.text }]}>Recent Simulations</Text>
+            <TouchableOpacity onPress={handleUndo}>
+              <Text style={{ color: '#ef4444', fontSize: 12 }}>⏪ Undo Last</Text>
+            </TouchableOpacity>
+          </View>
+          {sessions.slice(0, 5).map(s => (
+            <TouchableOpacity key={s.session_id}
+              style={[ss.sessionCard, { backgroundColor: c.card }]}
+              onPress={() => router.push(`/session/${s.session_id}`)}>
+              <View style={[ss.sessionDot, { backgroundColor: s.has_anomaly ? '#ef444420' : '#10b98120' }]}>
+                <Ionicons name={s.has_anomaly ? 'warning' : 'checkmark-circle'} size={22} color={s.has_anomaly ? '#ef4444' : '#10b981'} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[ss.sessionName, { color: c.text }]}>{s.name || 'Simulation'}</Text>
+                <Text style={[ss.sessionMeta, { color: c.sub }]}>
+                  {s.timestamp ? new Date(s.timestamp).toLocaleDateString('en-IN') : 'Recent'} · {s.event_count ?? 0} events
+                </Text>
+                {s.ai_insights?.[0] && (
+                  <Text style={[ss.sessionInsight, { color: c.sub }]} numberOfLines={1}>{s.ai_insights[0]}</Text>
+                )}
+              </View>
+              <Ionicons name="chevron-forward" size={16} color={c.sub} />
+            </TouchableOpacity>
+          ))}
+        </>
+      ) : (
+        <View style={[ss.emptyCard, { backgroundColor: c.card }]}>
+          <Text style={{ fontSize: 40 }}>📈</Text>
+          <Text style={[ss.emptyTitle, { color: c.text }]}>No History Yet</Text>
+          <Text style={[ss.emptySub,  { color: c.sub }]}>Completed simulations will appear here</Text>
+        </View>
+      )}
+    </>
+  );
+
+  const renderDashboard = () => {
+    const DASH_TABS: { id: DashTab; label: string; icon: string }[] = [
+      { id: 'overview', label: 'Overview', icon: '📊' },
+      { id: 'organs',   label: 'Organs',   icon: '🏥' },
+      { id: 'trends',   label: 'Trends',   icon: '📈' },
+    ];
+
+    return (
+      <ScrollView style={{ flex: 1 }}
+        contentContainerStyle={{ padding: 16, paddingTop: insets.top + 62, paddingBottom: 100 }}
+        showsVerticalScrollIndicator={false}>
+
+        {/* Dashboard inner tabs */}
+        <View style={[ss.dashTabBar, { borderBottomColor: c.border }]}>
+          {DASH_TABS.map(t => {
+            const active = dashTab === t.id;
+            return (
+              <TouchableOpacity key={t.id} style={ss.dashTabBtn} onPress={() => setDashTab(t.id)}>
+                <Text style={ss.dashTabIcon}>{t.icon}</Text>
+                <Text style={[ss.dashTabLabel, { color: active ? c.active : c.sub, borderBottomWidth: active ? 2.5 : 0, borderBottomColor: c.active }]}>
+                  {t.label}
+                </Text>
               </TouchableOpacity>
-            </View>
-            {sessions.slice(0, 5).map(s => (
-              <TouchableOpacity key={s.session_id}
-                style={[ss.sessionCard, { backgroundColor: c.card }]}
-                onPress={() => router.push(`/session/${s.session_id}`)}>
-                <View style={[ss.sessionDot, { backgroundColor: s.has_anomaly ? '#ef444420' : '#10b98120' }]}>
-                  <Ionicons name={s.has_anomaly ? 'warning' : 'checkmark-circle'} size={22} color={s.has_anomaly ? '#ef4444' : '#10b981'} />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={[ss.sessionName, { color: c.text }]}>{s.name || 'Simulation'}</Text>
-                  <Text style={[ss.sessionMeta, { color: c.sub }]}>
-                    {s.timestamp ? new Date(s.timestamp).toLocaleDateString('en-IN') : 'Recent'} · {s.event_count ?? 0} events
-                  </Text>
-                  {s.ai_insights?.[0] && (
-                    <Text style={[ss.sessionInsight, { color: c.sub }]} numberOfLines={1}>{s.ai_insights[0]}</Text>
-                  )}
-                </View>
-                <Ionicons name="chevron-forward" size={16} color={c.sub} />
-              </TouchableOpacity>
-            ))}
-          </>
-        )}
+            );
+          })}
+        </View>
+
+        {dashTab === 'overview' && renderOverviewTab()}
+        {dashTab === 'organs'   && renderOrgansTab()}
+        {dashTab === 'trends'   && renderTrendsTab()}
+
       </ScrollView>
     );
   };
+
+
 
   // ────────────────────────────────────────────────────────────────────────────
   // ROUTINE PANEL
@@ -1692,6 +1796,8 @@ export default function TwinScreen() {
 
       {mode === 'dashboard' ? renderDashboard() : renderRoutinePanel()}
 
+      {/* Simulation banner is rendered globally in _layout.tsx — visible on all screens */}
+
       {/* FAB */}
       <TouchableOpacity
         style={[ss.fab, { backgroundColor: mode === 'dashboard' ? c.active : '#ef4444', bottom: insets.bottom + 8 }]}
@@ -1862,4 +1968,23 @@ const ss = StyleSheet.create({
   modalSub: { fontSize: 13, marginBottom: 16, lineHeight: 20 },
   input: { borderRadius: 12, borderWidth: 1, padding: 12, fontSize: 14, marginBottom: 16 },
   modalBtn: { borderRadius: 12, paddingHorizontal: 20, paddingVertical: 12, flexDirection: 'row', alignItems: 'center', gap: 4 },
+
+  // Dashboard inner tabs
+  dashTabBar: { flexDirection: 'row', borderBottomWidth: 1, marginBottom: 16 },
+  dashTabBtn: { flex: 1, alignItems: 'center', paddingVertical: 10, gap: 2 },
+  dashTabIcon: { fontSize: 18 },
+  dashTabLabel: { fontSize: 11, fontWeight: '700', paddingBottom: 6 },
+
+  // Vital card top row with status dot
+  vitalTopRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 },
+  statusDot: { width: 8, height: 8, borderRadius: 4 },
+
+  // Macro rings card
+  macroRingsCard: { borderRadius: 20, padding: 16, flexDirection: 'row', justifyContent: 'space-around', alignItems: 'center', marginBottom: 8 },
+  macroRingWrap: { alignItems: 'center' },
+  macroOuterRing: { justifyContent: 'center', alignItems: 'center', borderWidth: 7 },
+  macroInnerRing: { position: 'absolute', justifyContent: 'center', alignItems: 'center' },
+  macroRingVal: { fontWeight: '800', fontSize: 16, textAlign: 'center' },
+  macroRingUnit: { fontSize: 9, textAlign: 'center', marginTop: -2 },
+  macroRingLabel: { fontSize: 11, fontWeight: '600', marginTop: 8 },
 });

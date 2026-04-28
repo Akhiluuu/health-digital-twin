@@ -25,6 +25,11 @@ import type {
   OrganScoresResponse,
   VitalsTrendResponse,
 } from '../services/biogears';
+import {
+  saveSimulationResult,
+  getLastSimulation,
+  recordToVitals,
+} from '../database/simulationHistoryDB';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -208,6 +213,19 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
     loadRoutinesFromStorage();
     refreshSessions();
     refreshAnalytics();
+    // ── Load cached vitals from SQLite so Dashboard works offline ─────────
+    getLastSimulation(twinUserId).then((record) => {
+      if (record && !lastVitals) {
+        setLastVitals(recordToVitals(record));
+        if (record.anomaly_labels) {
+          try {
+            const labels: string[] = JSON.parse(record.anomaly_labels);
+            setLastAnomalies(labels.map(l => ({ label: l, severity: 'warning', value: 0, normal_range: '' })));
+          } catch { /* ignore */ }
+        }
+        console.log('[BiogearsTwin] Loaded cached vitals from local DB (offline fallback)');
+      }
+    }).catch(() => {});
   }, [twinUserId]);
 
   const loadTodayFromStorage = async () => {
@@ -434,22 +452,28 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
       setSimulationStatus('running');
       const { job_id } = await BiogearsAPI.simulateAsync(twinUserId, events);
 
-      // Poll progress
-      setSimulationProgress('Computing physiology — this takes 30–120 seconds...');
-      const result = await BiogearsAPI.pollUntilDone(job_id, 2500, 300_000);
+      // Poll progress — BioGears engine can take 10–25 minutes for a full-day scenario
+      setSimulationProgress('BioGears engine computing physiology (10–25 min)...');
+      const result = await BiogearsAPI.pollUntilDone(job_id, 3000, 1_800_000);
 
       // Success: update state
       setLastVitals(result.vitals);
       setLastAnomalies(result.anomalies || []);
       setLastInteractionWarnings(result.interaction_warnings || []);
 
+      // ── Persist result locally (offline cache + Drive backup) ─────────
+      const sessionId = new Date().toISOString().replace(/[:.]/g, '-');
+      await saveSimulationResult(
+        twinUserId,
+        sessionId,
+        result.vitals,
+        result.anomalies || []
+      ).catch(err => console.warn('[BiogearsTwin] Local save failed (non-fatal):', err));
+      setLastSessionId(sessionId);
+
       // Generate AI insights from anomalies + vitals
       const insights = generateInsights(result);
       setLastAiInsights(insights);
-
-      // Save session metadata locally
-      const sessionId = new Date().toISOString().replace(/[:.]/g, '-');
-      setLastSessionId(sessionId);
 
       const sessionMeta: LocalSessionMeta = {
         session_id: sessionId,

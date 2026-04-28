@@ -1,7 +1,0 @@
-<?xml version="1.0" encoding="UTF-8" standalone="no" ?>
-<StabilizationCriteria xmlns="uri:/mil/tatrc/physiology/datamodel">
-    <AlgorithmCriteria xsi:type="PhysiologyEngineStabilizationCriteriaData">
-        <ConvergenceTime value="10" unit="s"/>
-        <MinimumReactionTime value="5" unit="s"/>
-    </AlgorithmCriteria>
-</StabilizationCriteria>

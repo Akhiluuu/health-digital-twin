@@ -1,9 +1,8 @@
 // database/hydrationHistoryDB.ts
 // Stores every water intake event with timestamp for history display
+// Migrated to shared vital_health.db via index.ts
 
-import * as SQLite from "expo-sqlite";
-
-const db = SQLite.openDatabaseSync("hydration_history.db");
+import { db } from "./index";
 
 ///////////////////////////////////////////////////////////
 // TYPES
@@ -18,24 +17,11 @@ export type HydrationEntry = {
 };
 
 ///////////////////////////////////////////////////////////
-// INIT
+// INIT — no-op: table created by initAllTables in schema.ts
 ///////////////////////////////////////////////////////////
 
 export async function initHydrationHistoryDB() {
-  try {
-    await db.execAsync(`
-      CREATE TABLE IF NOT EXISTS hydration_history (
-        id        INTEGER PRIMARY KEY AUTOINCREMENT,
-        amount    INTEGER NOT NULL,
-        total     INTEGER NOT NULL,
-        timestamp INTEGER NOT NULL,
-        source    TEXT DEFAULT 'manual'
-      );
-    `);
-    console.log("💧 Hydration history DB initialized");
-  } catch (err) {
-    console.log("❌ Hydration history DB init error:", err);
-  }
+  console.log("💧 Hydration history DB ready (shared vital_health.db)");
 }
 
 ///////////////////////////////////////////////////////////
@@ -67,14 +53,10 @@ export function getTodayHydrationHistory(): HydrationEntry[] {
   try {
     const startOfDay = new Date();
     startOfDay.setHours(0, 0, 0, 0);
-
     const rows = db.getAllSync(
-      `SELECT * FROM hydration_history
-       WHERE timestamp >= ?
-       ORDER BY timestamp DESC`,
+      `SELECT * FROM hydration_history WHERE timestamp >= ? ORDER BY timestamp DESC`,
       [startOfDay.getTime()]
     );
-
     return rows as HydrationEntry[];
   } catch (err) {
     console.log("❌ Hydration history fetch error:", err);
@@ -83,14 +65,13 @@ export function getTodayHydrationHistory(): HydrationEntry[] {
 }
 
 ///////////////////////////////////////////////////////////
-// CLEAR TODAY'S HISTORY (used on reset)
+// CLEAR TODAY'S HISTORY
 ///////////////////////////////////////////////////////////
 
 export async function clearTodayHydrationHistory() {
   try {
     const startOfDay = new Date();
     startOfDay.setHours(0, 0, 0, 0);
-
     await db.runAsync(
       `DELETE FROM hydration_history WHERE timestamp >= ?`,
       [startOfDay.getTime()]

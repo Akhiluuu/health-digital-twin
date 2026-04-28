@@ -67,3 +67,10 @@ debug_*.py
 # VitalHealth secrets — never commit
 VitalHealth/.env
 VitalHealth/.env.local
+
+# Healthbot — LLM model files are too large for git (each ~3 GB)
+# Download separately: see healthbot/README.md for instructions
+healthbot/model/
+healthbot/__pycache__/
+healthbot/**/__pycache__/
+healthbot/*.pyc

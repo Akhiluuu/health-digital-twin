@@ -2,14 +2,13 @@
 // Central API client for the BioGears Digital Twin backend
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as SecureStore from 'expo-secure-store';
 
 // ─── Configuration ────────────────────────────────────────────────────────────
+// LOCAL DEV:  your laptop's Wi-Fi IP (e.g. 'http://10.172.0.79:8000')
+// PRODUCTION: change to your E2E Cloud URL (e.g. 'https://yourdomain.com')
 
-<<<<<<< HEAD
-const DEFAULT_BASE_URL = 'http:/10.66.213.41/:8000';  // Your laptop's local Wi-Fi IP
-=======
-const DEFAULT_BASE_URL = 'http://10.172.0.79:8000';  // Your laptop's local Wi-Fi IP
->>>>>>> d8f0f5ae41fabffb46920618bbad290da4e8e571
+const DEFAULT_BASE_URL = 'http://10.172.0.79:8000';
 const BASE_URL_KEY = '@biogears_base_url';
 
 export async function getBiogearsBaseUrl(): Promise<string> {
@@ -31,6 +30,26 @@ export async function getBiogearsBaseUrl(): Promise<string> {
 
 export async function setBiogearsBaseUrl(url: string): Promise<void> {
   await AsyncStorage.setItem(BASE_URL_KEY, url.replace(/\/$/, ''));
+}
+
+// ─── API Key (stored securely, set once in Settings) ─────────────────────────
+
+const API_KEY_STORE = 'biogears_api_key';
+
+export async function setApiKey(key: string): Promise<void> {
+  await SecureStore.setItemAsync(API_KEY_STORE, key);
+}
+
+export async function getApiKey(): Promise<string> {
+  try {
+    return (await SecureStore.getItemAsync(API_KEY_STORE)) ?? '';
+  } catch {
+    return '';
+  }
+}
+
+export async function clearApiKey(): Promise<void> {
+  await SecureStore.deleteItemAsync(API_KEY_STORE);
 }
 
 async function getUrl(path: string): Promise<string> {
@@ -174,13 +193,17 @@ export class BiogearsError extends Error {
 
 async function apiFetch<T>(path: string, options?: RequestInit, timeoutMs = 30000): Promise<T> {
   const url = await getUrl(path);
+  const apiKey = await getApiKey();
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
     console.log(`[BioGears] API REQUEST: ${options?.method || 'GET'} ${url}`);
     const res = await fetch(url, {
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        ...(apiKey ? { 'X-API-Key': apiKey } : {}),
+      },
       signal: controller.signal,
       ...options,
     });
@@ -225,7 +248,7 @@ export async function registerTwin(payload: BiogearsRegistrationPayload): Promis
   return apiFetch('/register', {
     method: 'POST',
     body: JSON.stringify(payload),
-  }, 300_000); // 5 min timeout for calibration
+  }, 600_000); // 10 min timeout — BioGears patient stabilization takes 2–8 min
 }
 
 /**
@@ -268,14 +291,19 @@ export async function getJobStatus(jobId: string): Promise<BiogearsJob> {
  */
 export async function pollUntilDone(
   jobId: string,
-  intervalMs = 2500,
-  maxWaitMs = 300_000
+  intervalMs = 3000,
+  maxWaitMs = 1_800_000   // 30 minutes — BioGears can take 10–25 min for full-day scenarios
 ): Promise<BiogearsSimulationResult> {
   const start = Date.now();
   return new Promise((resolve, reject) => {
     const check = async () => {
-      if (Date.now() - start > maxWaitMs) {
-        reject(new BiogearsError('Simulation timed out after 5 minutes', 408));
+      const elapsed = Date.now() - start;
+      if (elapsed > maxWaitMs) {
+        reject(new BiogearsError(
+          `Simulation exceeded ${Math.round(maxWaitMs / 60000)}-minute limit. ` +
+          'The engine may still be running — check the server logs.',
+          408
+        ));
         return;
       }
       try {
@@ -285,10 +313,16 @@ export async function pollUntilDone(
         } else if (job.status === 'failed') {
           reject(new BiogearsError(job.error || 'Simulation failed', 500));
         } else {
+          // Still running — keep polling
           setTimeout(check, intervalMs);
         }
       } catch (err) {
-        reject(err);
+        // Network hiccup — keep polling unless we've timed out
+        if (Date.now() - start < maxWaitMs) {
+          setTimeout(check, intervalMs * 2);
+        } else {
+          reject(err);
+        }
       }
     };
     setTimeout(check, intervalMs);
@@ -397,14 +431,6 @@ export async function getTwinProfile(userId: string): Promise<any> {
  */
 export async function getSubstances(): Promise<{ substances: Record<string, string[]>; total: number }> {
   return apiFetch('/substances', undefined, 10_000);
-}
-
-
-/**
- * Get greeting message from BioGears server for AI Health page
- */
-export async function getGreeting(): Promise<{ message: string }> {
-  return apiFetch('/greeting', undefined, 5000);
 }
 
 
