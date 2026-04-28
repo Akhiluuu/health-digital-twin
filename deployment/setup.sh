@@ -1,202 +1,332 @@
 #!/usr/bin/env bash
 # =============================================================================
-#  VitalHealth — E2E Cloud Server Setup Script
-#  Run this ONCE on a fresh Ubuntu 22.04 VM to configure everything.
+#  VitalHealth Digital Twin — E2E Cloud Deployment Script
+#  Tested on: Ubuntu 22.04 LTS (8-core VM, 16 GB RAM)
 #
 #  Usage:
 #    chmod +x deployment/setup.sh
 #    ./deployment/setup.sh
 #
-#  What it does:
-#    1. Installs system packages
-#    2. Sets up Python 3.11 venv
-#    3. Installs Python dependencies
-#    4. Prompts for API key and writes .env
-#    5. Installs systemd service
-#    6. Configures Nginx
-#    7. Sets up daily backup cron
-#    8. Starts everything and runs a health check
+#  What this script deploys:
+#    ┌─────────────────────────────────────────────────────────┐
+#    │  Mobile App (Android/iOS)                               │
+#    │       │                                                 │
+#    │       ▼                                                 │
+#    │  Nginx (port 80)                                        │
+#    │    /      → BioGears Simulation API  (port 8000)        │
+#    │    /ai/   → Health AI Dr. Aria       (port 8001)        │
+#    └─────────────────────────────────────────────────────────┘
+#
+#  Services installed:
+#    • digitaltwin.service  — BioGears physiological simulation (FastAPI)
+#    • healthbot.service    — Dr. Aria Health AI chatbot (FastAPI + LLM)
+#
+#  IMPORTANT — LLM Model files:
+#    The Qwen2.5-14B GGUF model (~9.8 GB) must be placed manually at:
+#      health-digital-twin/healthbot/model/
+#    before starting the healthbot service.
+#    Download from: https://huggingface.co/Qwen/Qwen2.5-14B-Instruct-GGUF
 # =============================================================================
 
 set -euo pipefail
 
-# ── Colours ───────────────────────────────────────────────────────────────────
-GREEN="\033[0;32m"; YELLOW="\033[1;33m"; RED="\033[0;31m"; NC="\033[0m"
-ok()   { echo -e "${GREEN}✔  $*${NC}"; }
-info() { echo -e "${YELLOW}→  $*${NC}"; }
-fail() { echo -e "${RED}✘  $*${NC}"; exit 1; }
+# ── Colour helpers ─────────────────────────────────────────────────────────────
+GREEN="\033[0;32m"; YELLOW="\033[1;33m"; RED="\033[0;31m"; CYAN="\033[0;36m"; NC="\033[0m"
+ok()      { echo -e "${GREEN}  ✔  $*${NC}"; }
+info()    { echo -e "${CYAN}  →  $*${NC}"; }
+warn()    { echo -e "${YELLOW}  ⚠  $*${NC}"; }
+fail()    { echo -e "${RED}  ✘  $*${NC}"; exit 1; }
+section() { echo -e "\n${YELLOW}━━━  $*  ━━━${NC}"; }
 
-PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-DEPLOY_DIR="$PROJECT_DIR/deployment"
+# ── Paths ──────────────────────────────────────────────────────────────────────
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+DEPLOY_DIR="$SCRIPT_DIR"
+
+BIOGEARS_VENV="$PROJECT_DIR/venv"
+HEALTHBOT_VENV="$PROJECT_DIR/healthbot_venv"
 
 echo ""
-echo "============================================================"
-echo "  VitalHealth — BioGears Cloud Setup"
-echo "  Project: $PROJECT_DIR"
-echo "============================================================"
+echo "╔══════════════════════════════════════════════════════════════╗"
+echo "║         VitalHealth Digital Twin — Cloud Setup               ║"
+echo "║         Project : $PROJECT_DIR"
+echo "╚══════════════════════════════════════════════════════════════╝"
 echo ""
 
-# ── Guard: must run as non-root ubuntu user ───────────────────────────────────
-if [[ "$EUID" -eq 0 ]]; then
-  fail "Do NOT run as root. Run as ubuntu: ./deployment/setup.sh"
-fi
+# ── Guard: must not run as root ────────────────────────────────────────────────
+[[ "$EUID" -eq 0 ]] && fail "Run as a regular user (ubuntu), not root. Use sudo where needed."
 
-# ── Step 1: System packages ────────────────────────────────────────────────────
-info "Step 1/8 — Installing system packages..."
+# ══════════════════════════════════════════════════════════════════════════════
+section "Step 1/10 — System packages"
+# ══════════════════════════════════════════════════════════════════════════════
+info "Updating package index and installing system dependencies..."
 sudo apt-get update -qq
 sudo apt-get install -y -qq \
-    git python3.11 python3.11-venv python3-pip \
-    nginx certbot python3-certbot-nginx \
-    build-essential libssl-dev libffi-dev \
-    wget curl unzip sqlite3 htop tmux
+    git curl wget unzip sqlite3 htop tmux \
+    python3.11 python3.11-venv python3-pip \
+    nginx \
+    build-essential libssl-dev libffi-dev libsqlite3-dev \
+    tesseract-ocr tesseract-ocr-eng \
+    libgl1 libglib2.0-0
 ok "System packages installed."
 
-# ── Step 2: Python venv ────────────────────────────────────────────────────────
-info "Step 2/8 — Creating Python 3.11 virtual environment..."
-cd "$PROJECT_DIR"
-python3.11 -m venv venv
-ok "Venv created at $PROJECT_DIR/venv"
+# ══════════════════════════════════════════════════════════════════════════════
+section "Step 2/10 — Python virtual environments"
+# ══════════════════════════════════════════════════════════════════════════════
+# Two separate venvs because BioGears and Healthbot have conflicting
+# dependency versions (different fastapi, pydantic, numpy).
 
-# ── Step 3: Python dependencies ───────────────────────────────────────────────
-info "Step 3/8 — Installing Python dependencies..."
-source "$PROJECT_DIR/venv/bin/activate"
+info "Creating BioGears venv at $BIOGEARS_VENV ..."
+python3.11 -m venv "$BIOGEARS_VENV"
+ok "BioGears venv ready."
+
+info "Creating Healthbot venv at $HEALTHBOT_VENV ..."
+python3.11 -m venv "$HEALTHBOT_VENV"
+ok "Healthbot venv ready."
+
+# ══════════════════════════════════════════════════════════════════════════════
+section "Step 3/10 — Python dependencies"
+# ══════════════════════════════════════════════════════════════════════════════
+info "Installing BioGears dependencies..."
+source "$BIOGEARS_VENV/bin/activate"
 pip install --upgrade pip wheel setuptools -q
 pip install -r "$PROJECT_DIR/requirements.txt" -q
-ok "Python dependencies installed."
+deactivate
+ok "BioGears dependencies installed."
 
-# ── Step 4: .env file ─────────────────────────────────────────────────────────
-info "Step 4/8 — Creating .env configuration file..."
+info "Installing Healthbot dependencies..."
+source "$HEALTHBOT_VENV/bin/activate"
+pip install --upgrade pip wheel setuptools -q
+pip install -r "$PROJECT_DIR/healthbot/requirements.txt" -q
 
-if [[ -f "$PROJECT_DIR/.env" ]]; then
-  echo ""
-  echo "⚠️  .env already exists. Skipping to avoid overwriting."
-  echo "   Edit it manually: nano $PROJECT_DIR/.env"
+# Install llama-cpp-python — detect GPU and compile accordingly
+info "Installing llama-cpp-python (LLM inference engine)..."
+if command -v nvcc &>/dev/null || ls /dev/nvidia* &>/dev/null 2>&1; then
+    warn "NVIDIA GPU detected — building with CUDA support (this may take 5-10 min)..."
+    CMAKE_ARGS="-DGGML_CUDA=on" pip install llama-cpp-python --no-cache-dir -q
+    ok "llama-cpp-python installed with CUDA support."
 else
-  # Auto-generate a secure API key
-  GENERATED_KEY=$(python3 -c "import secrets; print(secrets.token_hex(32))")
+    warn "No GPU detected — installing CPU-only llama-cpp-python..."
+    pip install llama-cpp-python --no-cache-dir -q
+    ok "llama-cpp-python installed (CPU mode — inference will be slower)."
+fi
+deactivate
+ok "Healthbot dependencies installed."
 
-  cat > "$PROJECT_DIR/.env" << EOF
-# ── VitalHealth Production Config ────────────────────────────────────────────
-# Generated by setup.sh on $(date)
-# KEEP THIS FILE SECRET — do not commit to git
-
-DIGITAL_TWIN_API_KEY=$GENERATED_KEY
-SIM_RATE_LIMIT=10
-SIM_RATE_WINDOW=3600
-BIOGEARS_BIN_DIR=$PROJECT_DIR/biogears_runtime
-EOF
-
-  chmod 600 "$PROJECT_DIR/.env"
-  ok ".env created."
-  echo ""
-  echo "  ┌──────────────────────────────────────────────────────────┐"
-  echo "  │  🔑 YOUR API KEY (save this — you'll need it in the app) │"
-  echo "  │                                                           │"
-  echo "  │  $GENERATED_KEY  │"
-  echo "  │                                                           │"
-  echo "  └──────────────────────────────────────────────────────────┘"
-  echo ""
+# ══════════════════════════════════════════════════════════════════════════════
+section "Step 4/10 — Import path symlink (health_ai → healthbot)"
+# ══════════════════════════════════════════════════════════════════════════════
+# The source code imports from 'health_ai.*' but the package folder is
+# 'healthbot/'. We create a symlink so Python can resolve both names.
+SYMLINK="$PROJECT_DIR/health_ai"
+if [[ -L "$SYMLINK" ]]; then
+    ok "Symlink health_ai → healthbot already exists."
+elif [[ -e "$SYMLINK" ]]; then
+    warn "health_ai path exists but is not a symlink — skipping."
+else
+    ln -s "$PROJECT_DIR/healthbot" "$SYMLINK"
+    ok "Created symlink: health_ai → healthbot"
 fi
 
-# ── Step 5: Verify BioGears runtime ───────────────────────────────────────────
-info "Step 5/8 — Checking BioGears runtime..."
+# ══════════════════════════════════════════════════════════════════════════════
+section "Step 5/10 — Environment configuration"
+# ══════════════════════════════════════════════════════════════════════════════
+ENV_FILE="$PROJECT_DIR/.env"
+
+if [[ -f "$ENV_FILE" ]]; then
+    warn ".env already exists — skipping to protect existing config."
+    warn "Edit manually if needed: nano $ENV_FILE"
+else
+    GENERATED_KEY=$(python3 -c "import secrets; print(secrets.token_hex(32))")
+    cat > "$ENV_FILE" << ENVEOF
+# ── VitalHealth Cloud Config ──────────────────────────────────────────────────
+# Generated by setup.sh on $(date)
+# KEEP THIS FILE SECRET — never commit to git
+
+DIGITAL_TWIN_API_KEY=${GENERATED_KEY}
+SIM_RATE_LIMIT=10
+SIM_RATE_WINDOW=3600
+BIOGEARS_BIN_DIR=${PROJECT_DIR}/biogears_runtime
+ENVEOF
+    chmod 600 "$ENV_FILE"
+    ok ".env created."
+    echo ""
+    echo "  ┌──────────────────────────────────────────────────────────┐"
+    echo "  │  🔑  API KEY (save this — enter it in the mobile app)    │"
+    echo "  │  ${GENERATED_KEY}  │"
+    echo "  └──────────────────────────────────────────────────────────┘"
+    echo ""
+fi
+
+# ══════════════════════════════════════════════════════════════════════════════
+section "Step 6/10 — BioGears runtime"
+# ══════════════════════════════════════════════════════════════════════════════
 RUNTIME_DIR="$PROJECT_DIR/biogears_runtime"
 BGCLI="$RUNTIME_DIR/bg-cli"
 
-if [[ ! -f "$BGCLI" ]]; then
-  echo -e "${YELLOW}→  BioGears runtime not found. Downloading official Linux release (this may take a minute)...${NC}"
-  mkdir -p "$RUNTIME_DIR"
-  cd "$RUNTIME_DIR"
-  # Download the official BioGears 7.4 Linux binary
-  wget -q --show-progress -O biogears.tar.gz "https://github.com/BioGearsEngine/core/releases/download/v7.4.0/BioGears-7.4.0-Linux.tar.gz"
-  # Extract it (strip-components removes the top-level folder from the tar so files go directly into biogears_runtime)
-  tar -xzf biogears.tar.gz --strip-components=1
-  rm biogears.tar.gz
-  cd "$PROJECT_DIR"
+if [[ -f "$BGCLI" ]]; then
+    ok "BioGears runtime already present at $RUNTIME_DIR"
+else
+    warn "BioGears runtime not found — downloading official Linux v7.4.0 release..."
+    mkdir -p "$RUNTIME_DIR"
+    BIOGEARS_URL="https://github.com/BioGearsEngine/core/releases/download/v7.4.0/BioGears-7.4.0-Linux.tar.gz"
+    wget -q --show-progress -O /tmp/biogears.tar.gz "$BIOGEARS_URL"
+    tar -xzf /tmp/biogears.tar.gz --strip-components=1 -C "$RUNTIME_DIR"
+    rm /tmp/biogears.tar.gz
+    ok "BioGears runtime downloaded and extracted."
 fi
 
 chmod +x "$BGCLI"
-ok "BioGears runtime is ready and executable."
+ok "BioGears runtime verified (bg-cli is executable)."
 
-# ── Step 6: Systemd service ────────────────────────────────────────────────────
-info "Step 6/8 — Installing systemd service..."
-sudo cp "$DEPLOY_DIR/digitaltwin.service" /etc/systemd/system/digitaltwin.service
+# ══════════════════════════════════════════════════════════════════════════════
+section "Step 7/10 — LLM model check"
+# ══════════════════════════════════════════════════════════════════════════════
+MODEL_DIR="$PROJECT_DIR/healthbot/model"
+MODEL_SHARD1="$MODEL_DIR/qwen2.5-14b-instruct-q5_k_m-00001-of-00003.gguf"
+
+mkdir -p "$MODEL_DIR"
+
+if [[ -f "$MODEL_SHARD1" ]]; then
+    ok "LLM model shards found in $MODEL_DIR"
+else
+    echo ""
+    warn "LLM model files not found in $MODEL_DIR"
+    echo ""
+    echo "  The Health AI chatbot (Dr. Aria) requires the Qwen2.5-14B GGUF model."
+    echo "  Download all 3 shards and place them in:  $MODEL_DIR"
+    echo ""
+    echo "  Option A — HuggingFace CLI:"
+    echo "    pip install huggingface_hub"
+    echo "    huggingface-cli download Qwen/Qwen2.5-14B-Instruct-GGUF \\"
+    echo "        qwen2.5-14b-instruct-q5_k_m-00001-of-00003.gguf \\"
+    echo "        qwen2.5-14b-instruct-q5_k_m-00002-of-00003.gguf \\"
+    echo "        qwen2.5-14b-instruct-q5_k_m-00003-of-00003.gguf \\"
+    echo "        --local-dir $MODEL_DIR"
+    echo ""
+    echo "  Option B — Copy from your local machine via scp:"
+    echo "    scp ~/Health-Digital-Twin/healthbot_v3.1/health_ai/model/*.gguf \\"
+    echo "        ubuntu@\$(hostname -I | awk '{print \$1}'):$MODEL_DIR/"
+    echo ""
+    echo "  The healthbot service will fail to start until the model is present."
+    echo "  The BioGears simulation service (port 8000) works independently."
+    echo ""
+fi
+
+# ══════════════════════════════════════════════════════════════════════════════
+section "Step 8/10 — Systemd services"
+# ══════════════════════════════════════════════════════════════════════════════
+
+# ── Patch service files with the actual project path ──────────────────────────
+# (Service files reference /home/ubuntu/health-digital-twin by default)
+for SVC_TEMPLATE in digitaltwin.service healthbot.service; do
+    sed "s|/home/ubuntu/health-digital-twin|${PROJECT_DIR}|g" \
+        "$DEPLOY_DIR/$SVC_TEMPLATE" \
+        > "/tmp/$SVC_TEMPLATE"
+    sudo cp "/tmp/$SVC_TEMPLATE" "/etc/systemd/system/$SVC_TEMPLATE"
+done
+
 sudo systemctl daemon-reload
+
+# ── BioGears service ──────────────────────────────────────────────────────────
+info "Starting digitaltwin.service (BioGears API)..."
 sudo systemctl enable digitaltwin
 sudo systemctl restart digitaltwin
 sleep 3
 
 if sudo systemctl is-active --quiet digitaltwin; then
-  ok "digitaltwin.service is running."
+    ok "digitaltwin.service is running."
 else
-  echo ""
-  fail "Service failed to start. Check logs: journalctl -u digitaltwin -n 50"
+    warn "digitaltwin.service failed to start."
+    echo "  Logs: journalctl -u digitaltwin -n 50"
 fi
 
-# ── Step 7: Nginx ─────────────────────────────────────────────────────────────
-info "Step 7/8 — Configuring Nginx..."
+# ── Healthbot service ─────────────────────────────────────────────────────────
+if [[ -f "$MODEL_SHARD1" ]]; then
+    info "Starting healthbot.service (Health AI)..."
+    sudo systemctl enable healthbot
+    sudo systemctl restart healthbot
+    sleep 5  # Model loading takes a few seconds
+
+    if sudo systemctl is-active --quiet healthbot; then
+        ok "healthbot.service is running."
+    else
+        warn "healthbot.service failed to start."
+        echo "  Logs: journalctl -u healthbot -n 50"
+    fi
+else
+    warn "Skipping healthbot.service start — model files not present."
+    warn "After copying model files, run: sudo systemctl start healthbot"
+fi
+
+# ══════════════════════════════════════════════════════════════════════════════
+section "Step 9/10 — Nginx reverse proxy"
+# ══════════════════════════════════════════════════════════════════════════════
 sudo cp "$DEPLOY_DIR/nginx.conf" /etc/nginx/sites-available/digitaltwin
 sudo ln -sf /etc/nginx/sites-available/digitaltwin /etc/nginx/sites-enabled/digitaltwin
 sudo rm -f /etc/nginx/sites-enabled/default
 
 if sudo nginx -t 2>/dev/null; then
-  sudo systemctl reload nginx
-  sudo systemctl enable nginx
-  ok "Nginx configured and reloaded."
+    sudo systemctl enable nginx
+    sudo systemctl reload nginx
+    ok "Nginx configured and reloaded."
 else
-  fail "Nginx config test failed. Check: sudo nginx -t"
+    fail "Nginx config test failed. Run: sudo nginx -t"
 fi
 
-# ── Step 8: Daily backup cron ─────────────────────────────────────────────────
-info "Step 8/8 — Setting up daily backup..."
-
-BACKUP_SCRIPT="/home/ubuntu/backup_twins.sh"
-cat > "$BACKUP_SCRIPT" << BSCRIPT
-#!/bin/bash
-DATE=\$(date +%Y%m%d_%H%M)
-DEST="/home/ubuntu/backups/\$DATE"
-mkdir -p "\$DEST"
-cp -r "$PROJECT_DIR/clinical_data"   "\$DEST/" 2>/dev/null || true
-cp    "$PROJECT_DIR/twins_database.db" "\$DEST/" 2>/dev/null || true
-cp -r "$PROJECT_DIR/reports"         "\$DEST/" 2>/dev/null || true
-ls -dt /home/ubuntu/backups/*/ 2>/dev/null | tail -n +8 | xargs rm -rf
-echo "[\$(date)] Backup complete: \$DEST" >> /var/log/twin_backup.log
-BSCRIPT
-
-chmod +x "$BACKUP_SCRIPT"
-# Schedule: daily at 03:00 AM (only add if not already present)
-if ! crontab -l 2>/dev/null | grep -q "backup_twins"; then
-  (crontab -l 2>/dev/null; echo "0 3 * * * $BACKUP_SCRIPT") | crontab -
-fi
-ok "Daily backup cron scheduled (03:00 AM)."
-
-# ── Final health check ─────────────────────────────────────────────────────────
-echo ""
-info "Running health check..."
+# ══════════════════════════════════════════════════════════════════════════════
+section "Step 10/10 — Health checks & validation"
+# ══════════════════════════════════════════════════════════════════════════════
 sleep 2
-HEALTH=$(curl -s http://localhost:8000/health 2>/dev/null || echo "FAIL")
+PASS=0; FAIL=0
 
-if echo "$HEALTH" | grep -q '"healthy"'; then
-  ok "Health check PASSED: $HEALTH"
-else
-  echo -e "${RED}✘  Health check failed. Response: $HEALTH${NC}"
-  echo "   Check logs: journalctl -u digitaltwin -f"
+run_check() {
+    local NAME="$1" URL="$2" EXPECT="$3"
+    local RESP
+    RESP=$(curl -sf --max-time 10 "$URL" 2>/dev/null || echo "UNREACHABLE")
+    if echo "$RESP" | grep -q "$EXPECT"; then
+        ok "[$NAME] $URL — OK"
+        PASS=$((PASS + 1))
+    else
+        warn "[$NAME] $URL — FAILED (got: ${RESP:0:80})"
+        FAIL=$((FAIL + 1))
+    fi
+}
+
+run_check "BioGears /health"    "http://localhost:8000/health"     "healthy"
+run_check "BioGears /substances" "http://localhost:8000/substances" "name"
+run_check "Nginx → BioGears"   "http://localhost/health"          "healthy"
+
+if [[ -f "$MODEL_SHARD1" ]]; then
+    run_check "HealthAI /health"    "http://localhost:8001/health"    "ok"
+    run_check "Nginx → HealthAI"   "http://localhost/ai/health"      "ok"
 fi
 
 # ── Summary ───────────────────────────────────────────────────────────────────
+VM_IP=$(hostname -I | awk '{print $1}')
+
 echo ""
-echo "============================================================"
-echo -e "${GREEN}  ✅  Setup complete!${NC}"
-echo "============================================================"
-echo ""
-echo "  Next steps:"
-echo "  1. Open port 80 and 443 in the E2E Cloud Security Group"
-echo "  2. Test from your laptop: curl http://YOUR_VM_IP/health"
-echo "  3. (Optional) SSL: sudo certbot --nginx -d yourdomain.com"
-echo "  4. Update the mobile app URL in Settings → Server Configuration"
-echo ""
-echo "  Useful commands:"
-echo "    journalctl -u digitaltwin -f    # live logs"
-echo "    sudo systemctl status digitaltwin"
-echo "    sudo systemctl restart digitaltwin"
+echo "╔══════════════════════════════════════════════════════════════════╗"
+if [[ $FAIL -eq 0 ]]; then
+echo -e "║  ${GREEN}✅  All checks passed ($PASS/$PASS)${NC}                               ║"
+else
+echo -e "║  ${YELLOW}⚠   $PASS passed, $FAIL failed — see warnings above${NC}              ║"
+fi
+echo "╠══════════════════════════════════════════════════════════════════╣"
+echo "║  Deployment Summary                                              ║"
+echo "║                                                                  ║"
+echo "║  BioGears API   → http://$VM_IP:8000  (or http://$VM_IP/)"
+echo "║  Health AI      → http://$VM_IP:8001  (or http://$VM_IP/ai/)"
+echo "║                                                                  ║"
+echo "╠══════════════════════════════════════════════════════════════════╣"
+echo "║  Mobile App Setup                                                ║"
+echo "║    Open VitalHealth → Settings → Server Configuration           ║"
+echo "║    Enter your VM IP: $VM_IP                          ║"
+echo "║                                                                  ║"
+echo "╠══════════════════════════════════════════════════════════════════╣"
+echo "║  Useful commands                                                 ║"
+echo "║    journalctl -u digitaltwin -f    # BioGears live logs         ║"
+echo "║    journalctl -u healthbot -f      # Health AI live logs        ║"
+echo "║    sudo systemctl status digitaltwin healthbot nginx             ║"
+echo "╚══════════════════════════════════════════════════════════════════╝"
 echo ""

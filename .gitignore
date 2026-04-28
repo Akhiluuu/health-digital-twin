@@ -68,9 +68,9 @@ debug_*.py
 VitalHealth/.env
 VitalHealth/.env.local
 
-# Healthbot — LLM model files are too large for git (each ~3 GB)
-# Download separately: see healthbot/README.md for instructions
-healthbot/model/
+# Healthbot — LLM GGUF weight files are too large for git (each ~3 GB)
+# Download separately from HuggingFace and place in healthbot/model/
+healthbot/model/*.gguf
 healthbot/__pycache__/
 healthbot/**/__pycache__/
 healthbot/*.pyc

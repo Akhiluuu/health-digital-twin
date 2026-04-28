@@ -1,0 +1,43 @@
+[Unit]
+Description=Health AI — Dr. Aria Chatbot (VitalHealth)
+Documentation=https://github.com/Akhiluuu/health-digital-twin
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu/health-digital-twin
+
+# health_ai.* imports are resolved via the symlink created by setup.sh:
+#   health-digital-twin/health_ai -> health-digital-twin/healthbot
+# This avoids renaming all source files while keeping the package name consistent.
+Environment=PYTHONPATH=/home/ubuntu/health-digital-twin
+
+# Start the healthbot on port 8001 using its dedicated venv
+# Single worker: GGUF LLM cannot be safely shared across processes
+ExecStart=/home/ubuntu/health-digital-twin/healthbot_venv/bin/uvicorn \
+    healthbot.api.server:app \
+    --host 127.0.0.1 \
+    --port 8001 \
+    --workers 1 \
+    --log-level info \
+    --access-log
+
+# Auto-restart on crash
+Restart=always
+RestartSec=10
+StartLimitIntervalSec=120
+StartLimitBurst=5
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=healthbot
+
+# Security hardening
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
