@@ -180,37 +180,44 @@ chmod +x "$BGCLI"
 ok "BioGears runtime verified (bg-cli is executable)."
 
 # ══════════════════════════════════════════════════════════════════════════════
-section "Step 7/10 — LLM model check"
+section "Step 7/10 — LLM model download (Qwen2.5-14B GGUF)"
 # ══════════════════════════════════════════════════════════════════════════════
+# Model is split into 3 shards (~3 GB each, ~9.8 GB total).
+# wget -c = resumable: safe to re-run if download was interrupted.
 MODEL_DIR="$PROJECT_DIR/healthbot/model"
 MODEL_SHARD1="$MODEL_DIR/qwen2.5-14b-instruct-q5_k_m-00001-of-00003.gguf"
+HF_BASE="https://huggingface.co/Qwen/Qwen2.5-14B-Instruct-GGUF/resolve/main"
 
 mkdir -p "$MODEL_DIR"
 
 if [[ -f "$MODEL_SHARD1" ]]; then
-    ok "LLM model shards found in $MODEL_DIR"
+    ok "LLM model shards already present in $MODEL_DIR — skipping download."
 else
+    warn "Downloading Qwen2.5-14B model (~9.8 GB total). This will take a while..."
+    echo "  Downloads are resumable — safe to Ctrl+C and re-run setup.sh."
     echo ""
-    warn "LLM model files not found in $MODEL_DIR"
-    echo ""
-    echo "  The Health AI chatbot (Dr. Aria) requires the Qwen2.5-14B GGUF model."
-    echo "  Download all 3 shards and place them in:  $MODEL_DIR"
-    echo ""
-    echo "  Option A — HuggingFace CLI:"
-    echo "    pip install huggingface_hub"
-    echo "    huggingface-cli download Qwen/Qwen2.5-14B-Instruct-GGUF \\"
-    echo "        qwen2.5-14b-instruct-q5_k_m-00001-of-00003.gguf \\"
-    echo "        qwen2.5-14b-instruct-q5_k_m-00002-of-00003.gguf \\"
-    echo "        qwen2.5-14b-instruct-q5_k_m-00003-of-00003.gguf \\"
-    echo "        --local-dir $MODEL_DIR"
-    echo ""
-    echo "  Option B — Copy from your local machine via scp:"
-    echo "    scp ~/Health-Digital-Twin/healthbot_v3.1/health_ai/model/*.gguf \\"
-    echo "        ubuntu@\$(hostname -I | awk '{print \$1}'):$MODEL_DIR/"
-    echo ""
-    echo "  The healthbot service will fail to start until the model is present."
-    echo "  The BioGears simulation service (port 8000) works independently."
-    echo ""
+
+    cd "$MODEL_DIR"
+
+    info "Downloading shard 1/3..."
+    wget -c --show-progress \
+        "${HF_BASE}/qwen2.5-14b-instruct-q5_k_m-00001-of-00003.gguf"
+
+    info "Downloading shard 2/3..."
+    wget -c --show-progress \
+        "${HF_BASE}/qwen2.5-14b-instruct-q5_k_m-00002-of-00003.gguf"
+
+    info "Downloading shard 3/3..."
+    wget -c --show-progress \
+        "${HF_BASE}/qwen2.5-14b-instruct-q5_k_m-00003-of-00003.gguf"
+
+    cd "$PROJECT_DIR"
+
+    if [[ -f "$MODEL_SHARD1" ]]; then
+        ok "All 3 model shards downloaded successfully."
+    else
+        warn "Model download may have failed. Check $MODEL_DIR and re-run if needed."
+    fi
 fi
 
 # ══════════════════════════════════════════════════════════════════════════════
