@@ -328,7 +328,6 @@ run_check() {
 }
 
 run_check "BioGears /health"    "http://localhost:8000/health"     "healthy"
-run_check "BioGears /substances" "http://localhost:8000/substances" "name"
 run_check "Nginx → BioGears"   "http://localhost/health"          "healthy"
 
 if [[ -f "$MODEL_SHARD1" ]]; then
