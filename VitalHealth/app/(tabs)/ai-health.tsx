@@ -67,13 +67,17 @@ const KEY_SERVER_IP    = "@hai_server_ip";
 const KEY_SERVER_PORT  = "@hai_server_port";
 const KEY_CHAT_HISTORY = "@hai_chat_history";
 const DEFAULT_PORT     = "8000";
+const DEFAULT_AI_URL   = "http://151.185.42.123/ai";
 const TOP_K            = 5;
 const MAX_SAVED_SESSIONS = 30;
 
 // ─── Utility Functions ────────────────────────────────────────────────────────
 
-const buildUrl = (ip: string, port: string) =>
-  `http://${ip.trim().replace(/^https?:\/\//, "")}:${(port || "8000").trim()}`;
+const buildUrl = (ip: string, port: string) => {
+  const cleaned = ip.trim().replace(/\/$/, "");
+  if (cleaned.startsWith("http://") || cleaned.startsWith("https://")) return cleaned;
+  return `http://${cleaned}:${(port || "8000").trim()}`;
+};
 
 const genId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 
@@ -188,7 +192,7 @@ function ServerConfigModal({
         <View style={[styles.modalCard, { backgroundColor: c.card, borderColor: c.border }]}>
           <Text style={[styles.modalTitle, { color: c.text }]}>⚙️ Server Settings</Text>
           <Text style={[styles.modalSub, { color: c.sub }]}>
-            Enter your laptop's LAN IP address for LLM generation.{"\n"}
+            Enter the full AI server URL (e.g. http://151.185.42.123/ai).{"\n"}
             Chunking and embedding happen on this device!
           </Text>
           <Text style={[styles.fieldLabel, { color: c.sub }]}>Laptop IP Address</Text>
@@ -196,7 +200,7 @@ function ServerConfigModal({
             <Text style={styles.fieldIcon}>🌐</Text>
             <TextInput
               style={[styles.fieldInput, { color: c.text }]} value={localIp} onChangeText={setLocalIp}
-              placeholder="e.g. 192.168.1.42" placeholderTextColor={c.sub}
+              placeholder="e.g. http://151.185.42.123/ai" placeholderTextColor={c.sub}
               keyboardType="numeric" autoCapitalize="none" autoCorrect={false}
             />
           </View>
@@ -508,7 +512,7 @@ export default function AIHealthScreen() {
   const { activeSymptoms, historySymptoms } = useSymptoms();
 
   // Server
-  const [serverIp, setServerIp]     = useState("");
+  const [serverIp, setServerIp]     = useState(DEFAULT_AI_URL);
   const [serverPort, setServerPort] = useState(DEFAULT_PORT);
   const [connected, setConnected]   = useState(false);
   const [showConfig, setShowConfig] = useState(false);

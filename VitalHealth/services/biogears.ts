@@ -8,7 +8,7 @@ import * as SecureStore from 'expo-secure-store';
 // LOCAL DEV:  your laptop's Wi-Fi IP (e.g. 'http://10.172.0.79:8000')
 // PRODUCTION: change to your E2E Cloud URL (e.g. 'https://yourdomain.com')
 
-const DEFAULT_BASE_URL = 'http://10.172.0.79:8000';
+const DEFAULT_BASE_URL = 'http://151.185.42.123';
 const BASE_URL_KEY = '@biogears_base_url';
 
 export async function getBiogearsBaseUrl(): Promise<string> {
@@ -39,13 +39,8 @@ const API_KEY_STORE = 'biogears_api_key';
 export async function setApiKey(key: string): Promise<void> {
   await SecureStore.setItemAsync(API_KEY_STORE, key);
 }
-
 export async function getApiKey(): Promise<string> {
-  try {
-    return (await SecureStore.getItemAsync(API_KEY_STORE)) ?? '';
-  } catch {
-    return '';
-  }
+  return "70d04318406695d0221ca63b51cd390bddf272bf30059ea5cdbec08bafc7c67c";
 }
 
 export async function clearApiKey(): Promise<void> {

@@ -9,3 +9,4 @@ pytesseract==0.3.13
 Requests==2.33.1
 sentence_transformers==3.1.1
 uvicorn==0.46.0
+python-multipart==0.0.20

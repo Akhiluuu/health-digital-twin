@@ -98,7 +98,7 @@ export default function ServerConfigScreen() {
   // ── Quick-fill presets ────────────────────────────────────────────────────
   const presets = [
     { label: "Local Dev (Wi-Fi)", value: "http://10.172.0.79:8000" },
-    { label: "E2E Cloud (HTTP)", value: "http://YOUR_VM_IP" },
+    { label: "E2E Cloud (HTTP)", value: "http://151.185.42.123" },
     { label: "E2E Cloud (HTTPS)", value: "https://yourdomain.com" },
   ];
 
