@@ -247,7 +247,7 @@ class AsyncSyncRequest(BaseModel):
 # ---------------------------------------------------------------------------
 # INTERNAL HELPERS
 # ---------------------------------------------------------------------------
-BASE_URL = "http://127.0.0.1:8000"
+BASE_URL = "http://151.185.42.123:8001"
 
 def _build_vitals_from_df(df: pd.DataFrame) -> dict:
     try:

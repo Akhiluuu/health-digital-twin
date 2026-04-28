@@ -19,13 +19,13 @@ def parse_args():
     )
     parser.add_argument(
         "--host",
-        default="0.0.0.0",
+        default="151.185.42.123:8001",
         help="Host to bind (default: 0.0.0.0 — accessible on LAN)",
     )
     parser.add_argument(
         "--port",
         type=int,
-        default=8000,
+        default=8001,
         help="Port to listen on (default: 8000)",
     )
     parser.add_argument(

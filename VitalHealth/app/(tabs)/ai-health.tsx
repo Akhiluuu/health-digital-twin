@@ -73,7 +73,7 @@ const MAX_SAVED_SESSIONS = 30;
 // ─── Utility Functions ────────────────────────────────────────────────────────
 
 const buildUrl = (ip: string, port: string) =>
-  `http://${ip.trim().replace(/^https?:\/\//, "")}:${(port || "8000").trim()}`;
+  `http://${ip.trim().replace(/^https?:\/\//, "")}/ai`;
 
 const genId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 

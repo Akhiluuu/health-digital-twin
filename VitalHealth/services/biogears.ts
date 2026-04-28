@@ -2,36 +2,30 @@
 // Central API client for the BioGears Digital Twin backend
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { auth } from '../services/firebase';
 
 // ─── Configuration ────────────────────────────────────────────────────────────
 
-<<<<<<< HEAD
-const DEFAULT_BASE_URL = 'http:/10.66.213.41/:8000';  // Your laptop's local Wi-Fi IP
-=======
-const DEFAULT_BASE_URL = 'http://10.172.0.79:8000';  // Your laptop's local Wi-Fi IP
->>>>>>> d8f0f5ae41fabffb46920618bbad290da4e8e571
-const BASE_URL_KEY = '@biogears_base_url';
+// ADD these 2 lines instead:
+const BIOGEARS_IP_KEY = '@biogears_ip_address';
+const BIOGEARS_PORT_KEY = '@biogears_port';
 
+// ADD this replacement:
 export async function getBiogearsBaseUrl(): Promise<string> {
   try {
-    const stored = await AsyncStorage.getItem(BASE_URL_KEY);
-    const url = stored || DEFAULT_BASE_URL;
-
-    if (url.includes('10.0.2.2') && !stored) {
-      console.warn('[BioGears] WARNING: Using 10.0.2.2 which often fails on Windows. Consider using 10.66.213.41');
+    const ip   = await AsyncStorage.getItem(BIOGEARS_IP_KEY);
+    const port = await AsyncStorage.getItem(BIOGEARS_PORT_KEY);
+    if (ip) {
+      const url = `http://${ip}`
+      console.log(`[BioGears] Using Base URL: ${url}`);
+      return url;
     }
-
-    console.log(`[BioGears] Using Base URL: ${url}`);
-    return url;
-  } catch {
-    console.log(`[BioGears] Using Default Base URL (Fallback): ${DEFAULT_BASE_URL}`);
-    return DEFAULT_BASE_URL;
-  }
+  } catch {}
+  console.warn('[BioGears] No IP configured — set it in the Twin screen.');
+  return '';
 }
 
-export async function setBiogearsBaseUrl(url: string): Promise<void> {
-  await AsyncStorage.setItem(BASE_URL_KEY, url.replace(/\/$/, ''));
-}
+
 
 async function getUrl(path: string): Promise<string> {
   const base = await getBiogearsBaseUrl();
@@ -178,12 +172,17 @@ async function apiFetch<T>(path: string, options?: RequestInit, timeoutMs = 3000
   const timer = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
-    console.log(`[BioGears] API REQUEST: ${options?.method || 'GET'} ${url}`);
-    const res = await fetch(url, {
-      headers: { 'Content-Type': 'application/json' },
-      signal: controller.signal,
-      ...options,
-    });
+   console.log(`[BioGears] API REQUEST: ${options?.method || 'GET'} ${url}`);
+
+const res = await fetch(url, {
+  ...options,
+  headers: {
+    'Content-Type': 'application/json',
+    'X-API-Key': 'YOUR_API_KEY_HERE',   // ✅ ADD THIS
+    ...(options?.headers || {}),
+  },
+  signal: controller.signal,
+});
     clearTimeout(timer);
 
     console.log(`[BioGears] API RESPONSE: ${res.status} ${url}`);
@@ -490,3 +489,5 @@ export async function markRoutineUsed(userId: string, routineId: string): Promis
   );
   await AsyncStorage.setItem(ROUTINES_KEY(userId), JSON.stringify(updated));
 }
+
+
