@@ -40,8 +40,15 @@ section() { echo -e "\n${YELLOW}━━━  $*  ━━━${NC}"; }
 
 # ── Paths ──────────────────────────────────────────────────────────────────────
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-DEPLOY_DIR="$SCRIPT_DIR"
+
+# Auto-detect if script is in project root or deployment/ folder
+if [[ -f "$SCRIPT_DIR/requirements.txt" ]]; then
+    PROJECT_DIR="$SCRIPT_DIR"
+    DEPLOY_DIR="$SCRIPT_DIR/deployment"
+else
+    PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+    DEPLOY_DIR="$SCRIPT_DIR"
+fi
 
 BIOGEARS_VENV="$PROJECT_DIR/venv"
 HEALTHBOT_VENV="$PROJECT_DIR/healthbot_venv"
