@@ -96,14 +96,14 @@ section "Step 3/10 — Python dependencies"
 # ══════════════════════════════════════════════════════════════════════════════
 info "Installing BioGears dependencies..."
 source "$BIOGEARS_VENV/bin/activate"
-pip install --upgrade pip wheel setuptools -q
+pip install --upgrade pip wheel "setuptools<82" -q
 pip install -r "$PROJECT_DIR/requirements.txt" -q
 deactivate
 ok "BioGears dependencies installed."
 
 info "Installing Healthbot dependencies..."
 source "$HEALTHBOT_VENV/bin/activate"
-pip install --upgrade pip wheel setuptools -q
+pip install --upgrade pip wheel "setuptools<82" -q
 pip install -r "$PROJECT_DIR/healthbot/requirements.txt" -q
 
 # Install llama-cpp-python — detect GPU and compile accordingly
