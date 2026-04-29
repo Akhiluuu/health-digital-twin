@@ -30,7 +30,7 @@ VALID_MEAL_TYPES = {
 }
 
 VALID_ENVIRONMENTS = {
-    "StandardEnvironment",
+    "Standard",
     "ExerciseEnvironment",
     "AnchorageDecember",
     "AnchorageInside",
@@ -150,9 +150,9 @@ def validate_events(events: List[Dict[str, Any]]) -> List[str]:
                 )
 
         elif etype == "meal":
-            if val is None or not (50 <= float(val) <= 5000):
+            if val is None or not (5 <= float(val) <= 10000):
                 errors.append(
-                    f"{label}: 'value' (calories) must be 50–5000, got {val}."
+                    f"{label}: 'value' (calories) must be 5–10000, got {val}."
                 )
             mt = e.get("meal_type")
             if mt and mt not in VALID_MEAL_TYPES:
@@ -168,9 +168,9 @@ def validate_events(events: List[Dict[str, Any]]) -> List[str]:
                         )
 
         elif etype == "water":
-            if val is None or not (50 <= float(val) <= 5000):
+            if val is None or not (5 <= float(val) <= 10000):
                 errors.append(
-                    f"{label}: 'value' (water in mL) must be 50–5000, got {val}."
+                    f"{label}: 'value' (water in mL) must be 5–10000, got {val}."
                 )
 
         elif etype == "substance":

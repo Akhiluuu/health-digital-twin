@@ -256,7 +256,9 @@ def _build_vitals_from_df(df: pd.DataFrame) -> dict:
 
         def _safe(key):
             v = latest.get(key)
-            return None if v is None or (isinstance(v, float) and math.isnan(v)) else v
+            if v is None: return None
+            val = result_parser.safe_float(v)
+            return None if math.isnan(val) else val
 
         # Cache BP values — guard BOTH fields together to prevent int(None)
         sys_bp = _safe('SystolicArterialPressure')

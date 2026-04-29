@@ -665,7 +665,7 @@ def build_batch_reconstruction(user_id, state_path, events: list, user_weight_kg
             last_substance_time = ev_ts
 
         elif etype == "environment":
-            env_name    = event.get("environment_name", "StandardEnvironment")
+            env_name    = event.get("environment_name", "Standard")
             actions_xml += _environment_xml(env_name)
 
         elif etype == "stress":
@@ -798,7 +798,7 @@ def build_whatif_scenario(user_id, state_path, event: dict, hours=4):
         event_action  = _substance_xml(event.get("substance_name", "Caffeine"), float(val))
         event_action += _advance_xml(seconds)
     elif etype == "environment":
-        event_action  = _environment_xml(event.get("environment_name", "StandardEnvironment"))
+        event_action  = _environment_xml(event.get("environment_name", "Standard"))
         event_action += _advance_xml(seconds)
     else:
         event_action = _advance_xml(seconds)
