@@ -771,6 +771,15 @@ def simulate_async(data: AsyncSyncRequest, background_tasks: BackgroundTasks):
     if not state_file.exists():
         raise HTTPException(status_code=404, detail=f"Twin '{data.user_id}' not found.")
 
+    # Prevent duplicate jobs: Check if user already has a running simulation
+    with _jobs_lock:
+        jobs = _load_jobs()
+        for j_id, j_data in jobs.items():
+            if j_data.get("user_id") == data.user_id and j_data.get("status") in ("pending", "running"):
+                logger.info(f"🔄 Re-attaching {data.user_id} to existing running job {j_id}")
+                return {"job_id": j_id, "status": "running", "poll_url": f"{BASE_URL}/jobs/{j_id}"}
+
+
     job_id = str(uuid.uuid4())
     _set_job(job_id, {
         "status":     "pending",
