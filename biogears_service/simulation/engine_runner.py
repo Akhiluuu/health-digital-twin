@@ -22,7 +22,7 @@ from biogears_service.simulation.config import (
 
 logger = logging.getLogger("DigitalTwin.Engine")
 
-ENGINE_TIMEOUT_SECONDS = int(os.environ.get("ENGINE_TIMEOUT_SECONDS", "600"))
+ENGINE_TIMEOUT_SECONDS = int(os.environ.get("ENGINE_TIMEOUT_SECONDS", "7200"))
 
 # BioGears output lines shown at INFO level (everything else at DEBUG)
 _IMPORTANT_PREFIXES = (
