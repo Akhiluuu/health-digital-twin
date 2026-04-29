@@ -123,6 +123,17 @@ def _substance_xml(name: str, val: float, is_stacked: bool = False) -> str:
     ORAL uses SubstanceOralDoseData with dose in mg directly.
     NASAL uses SubstanceNasalDoseData with dose in ug directly.
     """
+    if name == "Caffeine":
+        # BioGears does not natively ship with Caffeine.xml!
+        # We mimic the sympathetic effect (HR increase) via AcuteStressData.
+        # 100mg caffeine -> ~0.05 severity.
+        severity = min(0.15, val / 2000.0)
+        return (
+            f'        <Action xsi:type="AcuteStressData">\n'
+            f'            <Severity value="{severity:.4f}"/>\n'
+            f'        </Action>\n'
+        )
+
     info = SUBSTANCE_REGISTRY.get(name)
     if info is None:
         # Unknown substance — try as 1 mg/mL IV bolus
