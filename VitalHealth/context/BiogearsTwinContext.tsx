@@ -236,7 +236,71 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
         console.log('[BiogearsTwin] Loaded cached vitals from local DB (offline fallback)');
       }
     }).catch(() => {});
+
+    resumeActiveJob();
   }, [twinUserId]);
+
+  const resumeActiveJob = async () => {
+    try {
+      const jobId = await AsyncStorage.getItem('biogears_active_job');
+      if (!jobId) return;
+      
+      const statusRes = await BiogearsAPI.getJobStatus(jobId);
+      if (statusRes.status === 'running' || statusRes.status === 'pending') {
+        console.log(`[BiogearsTwin] Resuming active job: ${jobId}`);
+        setSimulationStatus('running');
+        setSimulationProgress('Resuming background simulation...');
+        const result = await BiogearsAPI.pollUntilDone(jobId, 3000, 43_200_000);
+        await finishSimulationSuccess(result);
+      } else {
+        await AsyncStorage.removeItem('biogears_active_job');
+      }
+    } catch (err) {
+      console.log('Failed to resume active job:', err);
+      await AsyncStorage.removeItem('biogears_active_job');
+    }
+  };
+
+  const finishSimulationSuccess = async (result: any) => {
+    setLastVitals(result.vitals);
+    setLastAnomalies(result.anomalies || []);
+    setLastInteractionWarnings(result.interaction_warnings || []);
+
+    const sessionId = new Date().toISOString().replace(/[:.]/g, '-');
+    await saveSimulationResult(
+      twinUserId!,
+      sessionId,
+      result.vitals,
+      result.anomalies || []
+    ).catch(err => console.warn('[BiogearsTwin] Local save failed (non-fatal):', err));
+
+    setLastSessionId(sessionId);
+
+    // Generate AI insights from anomalies + vitals
+    const insights = generateInsights(result);
+    setLastAiInsights(insights);
+
+    const sessionMeta: LocalSessionMeta = {
+      session_id: sessionId,
+      name: simulationName || `Simulation ${new Date().toLocaleDateString('en-IN')}`,
+      timestamp: new Date().toISOString(),
+      vitals_snapshot: result.vitals,
+      has_anomaly: result.has_anomaly,
+      events: todayEvents,
+      event_count: todayEvents.length,
+      ai_insights: insights,
+    };
+    await BiogearsAPI.saveSessionMeta(twinUserId!, sessionMeta);
+    setSessions(prev => [sessionMeta, ...prev]);
+
+    setSimulationStatus('done');
+    setSimulationProgress('Simulation complete!');
+    setSimulationName('');
+    await AsyncStorage.removeItem('biogears_active_job');
+
+    await refreshSessions();
+    await refreshAnalytics();
+  };
 
   const loadTodayFromStorage = async () => {
     if (!twinUserId) return;
@@ -465,50 +529,15 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
       setSimulationProgress('Starting BioGears engine...');
       setSimulationStatus('running');
       const { job_id } = await BiogearsAPI.simulateAsync(twinUserId, events);
+      await AsyncStorage.setItem('biogears_active_job', job_id);
 
       // Poll progress — BioGears engine can take 10–25 minutes for a full-day scenario
       setSimulationProgress('BioGears engine computing physiology (10–25 min)...');
       const result = await BiogearsAPI.pollUntilDone(job_id, 3000, 43_200_000);  // 12 hour timeout
 
-      // Success: update state
-      setLastVitals(result.vitals);
-      setLastAnomalies(result.anomalies || []);
-      setLastInteractionWarnings(result.interaction_warnings || []);
+      await finishSimulationSuccess(result);
 
-      // ── Persist result locally (offline cache + Drive backup) ─────────
-      const sessionId = new Date().toISOString().replace(/[:.]/g, '-');
-      await saveSimulationResult(
-        twinUserId,
-        sessionId,
-        result.vitals,
-        result.anomalies || []
-      ).catch(err => console.warn('[BiogearsTwin] Local save failed (non-fatal):', err));
-      setLastSessionId(sessionId);
 
-      // Generate AI insights from anomalies + vitals
-      const insights = generateInsights(result);
-      setLastAiInsights(insights);
-
-      const sessionMeta: LocalSessionMeta = {
-        session_id: sessionId,
-        name: simulationName || `Simulation ${new Date().toLocaleDateString('en-IN')}`,
-        timestamp: new Date().toISOString(),
-        vitals_snapshot: result.vitals,
-        has_anomaly: result.has_anomaly,
-        events: todayEvents,
-        event_count: todayEvents.length,
-        ai_insights: insights,
-      };
-      await BiogearsAPI.saveSessionMeta(twinUserId, sessionMeta);
-      setSessions(prev => [sessionMeta, ...prev]);
-
-      setSimulationStatus('done');
-      setSimulationProgress('Simulation complete!');
-      setSimulationName('');
-      
-      // Refresh historical data and analytics
-      refreshSessions();
-      refreshAnalytics();
     } catch (err: any) {
       setSimulationStatus('failed');
       setSimulationError(err.message || 'Simulation failed');

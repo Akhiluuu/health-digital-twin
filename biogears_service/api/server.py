@@ -370,22 +370,21 @@ def _run_batch_sync_blocking(user_id: str, events: list) -> dict:
     if not found:
         raise HTTPException(status_code=500, detail="Engine output file missing.")
 
-    # Update state file
-    updated_state_filename = f"batch_{user_id}.xml"
-    possible_states = list(BIOGEARS_BIN_DIR.rglob(updated_state_filename))
-    if possible_states:
-        try:
-            os.replace(str(possible_states[0]), str(state_file))
-            logger.info("🔄 State synchronized.")
-        except Exception as e:
-            logger.warning(f"⚠️ State sync skipped: {e}")
-
-    # ── [6/6] Analytics & report ─────────────────────────────────────────────
-    logger.info(f"[6/6] [{user_id}] Running analytics and generating report... ({_elapsed()})")
+    # ── [6/6] Validate Data & Analytics ──────────────────────────────────────
+    logger.info(f"[6/6] [{user_id}] Validating output and generating report... ({_elapsed()})")
 
     # Fix for BioGears extra column bug: tell pandas not to use col 0 as index
-    df = pd.read_csv(dest_csv, index_col=False)
-    df = df.loc[:, ~df.columns.str.contains('^Unnamed')]
+    try:
+        df = pd.read_csv(dest_csv, index_col=False)
+        df = df.loc[:, ~df.columns.str.contains('^Unnamed')]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Engine output CSV is malformed: {e}")
+
+    # Check for "Dead Twin" (NaNs in critical vitals like HeartRate)
+    if 'HeartRate' in df.columns and df['HeartRate'].isnull().any():
+        logger.error(f"❌ [{user_id}] Engine produced NaN values (Twin died). Rolling back state.")
+        raise HTTPException(status_code=500, detail="Simulation resulted in physiological failure (NaN values). State has been rolled back to prevent corruption.")
+
     vitals = _build_vitals_from_df(df)
     report_url = visualizer.generate_health_report(user_id, custom_path=dest_csv)
 
@@ -393,6 +392,16 @@ def _run_batch_sync_blocking(user_id: str, events: list) -> dict:
     anomalies = result_parser.detect_anomalies(df)
     if anomalies:
         logger.warning(f"🚨 Anomalies for {user_id}: {[a['label'] for a in anomalies]}")
+
+    # Update state file ONLY IF successful and healthy
+    updated_state_filename = f"batch_{user_id}.xml"
+    possible_states = list(BIOGEARS_BIN_DIR.rglob(updated_state_filename))
+    if possible_states:
+        try:
+            os.replace(str(possible_states[0]), str(state_file))
+            logger.info("🔄 State synchronized safely.")
+        except Exception as e:
+            logger.warning(f"⚠️ State sync skipped: {e}")
 
     # ── Auto-backup state after every successful simulation ──────────────────
     try:

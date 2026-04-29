@@ -616,10 +616,10 @@ def build_batch_reconstruction(user_id, state_path, events: list, user_weight_kg
         ev_ts     = float(event["timestamp"])
         wait_time = int(ev_ts - engine_clock)
 
-        # Cap long gaps between events to 4 hours to prevent engine timeout
-        if wait_time > 14400:
-            engine_clock += (wait_time - 14400)
-            wait_time = 14400
+        # Cap long gaps between events to 30 minutes to aggressively fast-forward compute
+        if wait_time > 1800:
+            engine_clock += (wait_time - 1800)
+            wait_time = 1800
 
         if wait_time > 0:
             actions_xml  += _advance_xml(wait_time)
@@ -708,11 +708,11 @@ def build_batch_reconstruction(user_id, state_path, events: list, user_weight_kg
             actions_xml  += _fasting_xml(hours)
             engine_clock += fast_sec  # _fasting_xml advances exactly fast_sec internally
 
-    # Cap final stabilization gap to 2 hours to avoid excessive compute
+    # Cap final stabilization gap to 30 minutes to avoid excessive compute
     final_gap = int(now_ts - engine_clock)
     _log.info(f"[{user_id}] Final gap to 'now': {final_gap}s ({round(final_gap/3600, 1)}h)")
 
-    capped_gap = min(final_gap, 7200)
+    capped_gap = min(final_gap, 1800)
     if capped_gap > 10:
         actions_xml += _advance_xml(capped_gap)
         engine_clock += capped_gap
