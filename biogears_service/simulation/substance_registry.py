@@ -36,6 +36,10 @@ SUBSTANCE_REGISTRY: Dict[str, Any] = {
         "warning": None,
         "note": "Standard coffee = 80–100 mg. Max daily dose = 400 mg.",
         "effects": "↑ HR, ↑ alertness, mild ↑ BP, ↓ fatigue",
+        # ⚠️ SPECIAL CASE: BioGears has no Caffeine.xml substance file.
+        # scenario_builder.py intercepts Caffeine and maps it to AcuteStressData
+        # (severity = dose_mg / 2000, capped at 0.15) to model the sympathomimetic HR rise.
+        # route/unit above are for UI display only — not used for XML generation.
     },
 
     # ── Analgesics ─────────────────────────────────────────────────────────────

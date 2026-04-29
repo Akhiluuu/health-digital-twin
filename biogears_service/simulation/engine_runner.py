@@ -1,11 +1,12 @@
 """
-engine_runner.py — BioGears subprocess launcher (v3).
+engine_runner.py — BioGears subprocess launcher (v4).
 
-Improvements vs v2:
-  - Real-time stdout streaming (no more silent 5-minute wait)
-  - Progress heartbeat every 30s so you can see it's still running
-  - Key BioGears lines (Time, Completed, Error) printed at INFO level
-  - Configurable timeout via ENGINE_TIMEOUT_SECONDS env var
+Improvements vs v3:
+  - DEFAULT timeout reduced from 86400s (24h!) → 1800s (30 min) via ENGINE_TIMEOUT_SECONDS env var
+  - Expanded silent-failure detection: catches "Patient stabilization failed",
+    "Serialization failed", "failed to stabilize", "[Fatal]", and more
+  - Heartbeat interval exposed via env var ENGINE_HEARTBEAT_SECONDS
+  - Better progress logging with elapsed time on every heartbeat
 """
 
 import os
@@ -22,12 +23,32 @@ from biogears_service.simulation.config import (
 
 logger = logging.getLogger("DigitalTwin.Engine")
 
-ENGINE_TIMEOUT_SECONDS = int(os.environ.get("ENGINE_TIMEOUT_SECONDS", "86400"))
+# Default 30 minutes — sufficient for a full-day BioGears scenario.
+# For very long what-if runs you can raise via ENGINE_TIMEOUT_SECONDS env var.
+ENGINE_TIMEOUT_SECONDS   = int(os.environ.get("ENGINE_TIMEOUT_SECONDS", "1800"))
+ENGINE_HEARTBEAT_SECONDS = int(os.environ.get("ENGINE_HEARTBEAT_SECONDS", "30"))
 
 # BioGears output lines shown at INFO level (everything else at DEBUG)
 _IMPORTANT_PREFIXES = (
     "Time:", "Simulation Time", "Completed", "Error", "Warning",
     "Physiology", "Patient", "Loading", "Running", "[Fatal]", "[ERROR]",
+    "Serialization", "stabilize",
+)
+
+# Strings that indicate a silent failure even when exit code is 0.
+# BioGears exits 0 even on XML parse errors, missing patient files, etc.
+_FAILURE_STRINGS = (
+    "Error while processing",
+    "Unable to load",
+    "no declaration found",
+    "Patient stabilization failed",
+    "failed to stabilize",
+    "Serialization failed",
+    "[Fatal]",
+    "scenario failed",
+    "Could not find",
+    "unable to find",
+    "Error reading",
 )
 
 
@@ -45,12 +66,12 @@ class EngineResult:
         return f"EngineResult(success={self.success}, rc={self.return_code})"
 
 
-def _heartbeat(user_id: str, stop_evt: threading.Event, interval: int = 30):
+def _heartbeat(user_id: str, stop_evt: threading.Event, start_time: float,
+               interval: int = ENGINE_HEARTBEAT_SECONDS):
     """Background thread: prints a progress line every `interval` seconds."""
-    elapsed = 0
     while not stop_evt.wait(interval):
-        elapsed += interval
-        logger.info(f"⏳  [{user_id}] BioGears still running... ({elapsed}s elapsed)")
+        elapsed = round(time.time() - start_time, 0)
+        logger.info(f"⏳  [{user_id}] BioGears still running... ({int(elapsed)}s elapsed)")
 
 
 def run_biogears(scenario_path: str, user_id: str = "unknown") -> EngineResult:
@@ -100,7 +121,7 @@ def run_biogears(scenario_path: str, user_id: str = "unknown") -> EngineResult:
         stop_heartbeat   = threading.Event()
         heartbeat_thread = threading.Thread(
             target=_heartbeat,
-            args=(user_id, stop_heartbeat, 30),
+            args=(user_id, stop_heartbeat, start_time, ENGINE_HEARTBEAT_SECONDS),
             daemon=True,
         )
         heartbeat_thread.start()
@@ -126,7 +147,8 @@ def run_biogears(scenario_path: str, user_id: str = "unknown") -> EngineResult:
 
                 # Important lines → INFO, rest → DEBUG
                 stripped = line.strip()
-                if any(stripped.startswith(p) for p in _IMPORTANT_PREFIXES):
+                if any(stripped.startswith(p) or p.lower() in stripped.lower()
+                       for p in _IMPORTANT_PREFIXES):
                     logger.info(f"⚙️   [{user_id}] {stripped}")
                 else:
                     logger.debug(f"     {stripped}")
@@ -145,15 +167,12 @@ def run_biogears(scenario_path: str, user_id: str = "unknown") -> EngineResult:
             return EngineResult(success=False, log_path=str(log_path), return_code=-1)
 
         proc.wait(timeout=10)
-        rc      = proc.returncode
+        rc = proc.returncode
 
-        # ── Detect "silent failure": engine exits 0 but state was not produced ─
+        # ── Detect "silent failure": engine exits 0 but scenario did not run ─
         # BioGears exits 0 even when it fails to parse the scenario XML.
-        # We detect this by looking for the failure string in stdout output.
         engine_failed = any(
-            "Error while processing" in line or
-            "Unable to load" in line or
-            "no declaration found" in line
+            any(fail_str.lower() in line.lower() for fail_str in _FAILURE_STRINGS)
             for line in output_lines
         )
         success = (rc == 0) and not engine_failed
@@ -165,6 +184,11 @@ def run_biogears(scenario_path: str, user_id: str = "unknown") -> EngineResult:
             logger.info(f"✅  [{user_id}] Engine FINISHED OK  ({elapsed}s)")
         elif engine_failed:
             logger.error(f"❌  [{user_id}] Engine SCENARIO ERROR ({elapsed}s) | log={log_path}")
+            # Log the first failure line found for quick diagnosis
+            for line in output_lines:
+                if any(fs.lower() in line.lower() for fs in _FAILURE_STRINGS):
+                    logger.error(f"    ↳ Failure hint: {line.strip()[:200]}")
+                    break
         else:
             logger.error(f"❌  [{user_id}] Engine FAILED rc={rc}  ({elapsed}s) | log={log_path}")
         logger.info("=" * 55)

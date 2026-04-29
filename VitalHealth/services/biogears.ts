@@ -55,12 +55,21 @@ export async function setBiogearsBaseUrl(url: string): Promise<void> {
 // ─── API Key (stored securely, set once in Settings) ─────────────────────────
 
 const API_KEY_STORE = 'biogears_api_key';
+// Fallback key used when no key has been set in SecureStore.
+// This must match DIGITAL_TWIN_API_KEY in the server's .env file.
+// In production this should only be changed via the Settings screen.
+const _FALLBACK_API_KEY = '8d82c9b7832e7f909ad6629e553888f2084c458a7e94c3d743d99bcc3860d5d6';
 
 export async function setApiKey(key: string): Promise<void> {
   await SecureStore.setItemAsync(API_KEY_STORE, key);
 }
 export async function getApiKey(): Promise<string> {
-  return "70d04318406695d0221ca63b51cd390bddf272bf30059ea5cdbec08bafc7c67c";
+  try {
+    const stored = await SecureStore.getItemAsync(API_KEY_STORE);
+    return stored && stored.trim().length > 0 ? stored.trim() : _FALLBACK_API_KEY;
+  } catch {
+    return _FALLBACK_API_KEY;
+  }
 }
 
 export async function clearApiKey(): Promise<void> {

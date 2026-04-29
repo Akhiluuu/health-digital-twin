@@ -170,6 +170,8 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
   const [substances, setSubstances] = useState<Record<string, string[]>>({});
 
   const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const simStartRef = useRef<number | null>(null);   // epoch ms when simulation started
+  const progressTickRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // ── Substances Library ────────────────────────────────────────────────────
 
@@ -296,6 +298,12 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
     setSimulationStatus('done');
     setSimulationProgress('Simulation complete!');
     setSimulationName('');
+    // Stop progress ticker
+    if (progressTickRef.current) {
+      clearInterval(progressTickRef.current);
+      progressTickRef.current = null;
+    }
+    simStartRef.current = null;
     await AsyncStorage.removeItem('biogears_active_job');
 
     await refreshSessions();
@@ -339,7 +347,9 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
   }, [twinUserId]);
 
   const refreshAnalytics = useCallback(async () => {
-    if (!twinUserId) return;  // Only skip if no user ID
+    // Don't hammer the server when the twin isn't registered yet —
+    // all 7 analytics endpoints return 404 and generate noise in logs.
+    if (!twinUserId || twinStatus === 'unregistered' || twinStatus === 'checking') return;
     try {
       const results = await Promise.allSettled([
         BiogearsAPI.getOrganScores(twinUserId),
@@ -361,7 +371,7 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
     } catch (err) {
       console.error('Failed to fetch analytics:', err);
     }
-  }, [twinUserId]);
+  }, [twinUserId, twinStatus]);
 
 
   useEffect(() => {
@@ -486,7 +496,12 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
     } catch (err: any) {
       console.log(`[BioGearsContext] Registration FAILED:`, err);
       setTwinStatus('error');
-      setTwinStatusError(err.detail?.detail || err.message || 'Registration failed');
+      // BiogearsError.detail can be a FastAPI validation dict or a plain string
+      const detail = err.detail;
+      const msg = typeof detail === 'string'
+        ? detail
+        : (detail?.detail || detail?.message || err.message || 'Registration failed');
+      setTwinStatusError(msg);
       throw err;
     }
   }, []);
@@ -531,14 +546,30 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
       const { job_id } = await BiogearsAPI.simulateAsync(twinUserId, events);
       await AsyncStorage.setItem('biogears_active_job', job_id);
 
+      // Start live elapsed-time ticker so user sees progress
+      simStartRef.current = Date.now();
+      setSimulationProgress('BioGears engine initialising...');
+      progressTickRef.current = setInterval(() => {
+        const elapsed = Math.round((Date.now() - (simStartRef.current ?? Date.now())) / 1000);
+        const mins = Math.floor(elapsed / 60);
+        const secs = elapsed % 60;
+        const timeStr = mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
+        setSimulationProgress(`BioGears computing physiology... (${timeStr} elapsed)`);
+      }, 5000);
+
       // Poll progress — BioGears engine can take 10–25 minutes for a full-day scenario
-      setSimulationProgress('BioGears engine computing physiology (10–25 min)...');
       const result = await BiogearsAPI.pollUntilDone(job_id, 3000, 43_200_000);  // 12 hour timeout
 
       await finishSimulationSuccess(result);
 
 
     } catch (err: any) {
+      // Stop progress ticker on failure too
+      if (progressTickRef.current) {
+        clearInterval(progressTickRef.current);
+        progressTickRef.current = null;
+      }
+      simStartRef.current = null;
       setSimulationStatus('failed');
       setSimulationError(err.message || 'Simulation failed');
       setSimulationProgress('');
@@ -630,9 +661,8 @@ function generateInsights(result: any): string[] {
   }
 
   if (v.spo2 != null) {
-    const spoPct = Math.round(v.spo2 * 100);
-    if (spoPct < 94) insights.push(`🫁 SpO₂ at ${spoPct}% is below normal — watch for breathlessness.`);
-    else insights.push(`✅ Oxygen saturation healthy at ${spoPct}%.`);
+    if (v.spo2 < 94) insights.push(`🫁 SpO₂ at ${v.spo2}% is below normal — watch for breathlessness.`);
+    else insights.push(`✅ Oxygen saturation healthy at ${v.spo2}%.`);
   }
 
   if (v.glucose != null) {

@@ -257,14 +257,20 @@ def _stress_xml(intensity: float) -> str:
 def _alcohol_xml(standard_drinks: float, weight_kg: float = 70.0) -> str:
     """
     Models alcohol consumption (1 standard drink = 14g ethanol = 10 mL absolute alcohol).
-    Ethanol is administered as oral dose. BioGears Ethanol substance supports this.
+    Ethanol is administered as oral dose via SubstanceOralDoseData.
+
+    UNIT NOTE: BioGears Ethanol.xml substance definition uses mass 'g' as its dose unit
+    (unlike most other substances which use 'mg'). SubstanceOralDoseData for Ethanol
+    must use unit='g'. This is correct and validated against the BioGears CDM.
+
     Effects: vasodilation, mild bradycardia, impaired glucose regulation.
+    Standard drink = 14g ethanol (US definition, NIAAA).
     """
-    ethanol_g = standard_drinks * 14.0
+    ethanol_g = round(standard_drinks * 14.0, 1)
     return (
         f'        <Action xsi:type="SubstanceOralDoseData" AdminRoute="Gastrointestinal">\n'
         f'            <Substance>Ethanol</Substance>\n'
-        f'            <Dose value="{round(ethanol_g, 1)}" unit="g"/>\n'
+        f'            <Dose value="{ethanol_g}" unit="g"/>\n'
         f'        </Action>\n'
     )
 
@@ -329,32 +335,41 @@ def _circadian_phase_xml(wall_hour: int) -> str:
 def _catchup_routine_xml(weight_kg: float) -> str:
     """
     Simulates a generic 24-hour day to catch up physiological state after missing a day.
-    Includes normal hydration, 3 meals (2000 kcal), and 8 hours of sleep.
+    Includes normal hydration, 3 meals (~2000 kcal total), and 8 hours of sleep.
+
+    TIMING (total = 86400s exactly = 24h):
+      0h    wake up, water
+      0.5h  breakfast (500 kcal)
+      4.5h  lunch with water (700 kcal)
+      9.5h  dinner with water (800 kcal)
+      16h   sleep start
+      24h   sleep end
     """
     xml = "        <!-- START CATCH-UP ROUTINE (simulating missing day) -->\n"
-    # Wake up, drink water (250mL)
+
+    # 0h: Wake up, drink water (250 mL), advance 30 min
     xml += _water_xml(250.0)
-    xml += _advance_xml(1800) # 0.5 h
+    xml += _advance_xml(1800)   # 0 → 0.5h
 
-    # Breakfast (500 kcal)
+    # 0.5h: Breakfast (500 kcal), advance 4h
     xml += _meal_xml(500, "balanced")
-    xml += _advance_xml(14400) # 4 h
+    xml += _advance_xml(14400)  # 0.5 → 4.5h
 
-    # Lunch (700 kcal) + water
+    # 4.5h: Lunch + water (700 kcal), advance 5h
     xml += _water_xml(300.0)
     xml += _meal_xml(700, "balanced")
-    xml += _advance_xml(18000) # 5 h
+    xml += _advance_xml(18000)  # 4.5 → 9.5h
 
-    # Dinner (800 kcal) + water
+    # 9.5h: Dinner + water (800 kcal), advance 6.5h
     xml += _water_xml(300.0)
     xml += _meal_xml(800, "balanced")
-    xml += _advance_xml(23400) # 6.5 h
+    xml += _advance_xml(23400)  # 9.5 → 16h
 
-    # Sleep (8 hours)
+    # 16h: Sleep 8 hours
     xml += '        <Action xsi:type="SleepData" Sleep="On"/>\n'
-    xml += _advance_xml(28800) # 8 h
+    xml += _advance_xml(28800)  # 16 → 24h
     xml += '        <Action xsi:type="SleepData" Sleep="Off"/>\n'
-    
+
     xml += "        <!-- END CATCH-UP ROUTINE -->\n"
     return xml
 
@@ -611,6 +626,9 @@ def build_batch_reconstruction(user_id, state_path, events: list, user_weight_kg
 
     # ── Replay each event at its correct engine time ─────────────────────────
     last_substance_time = -99999
+    # Minimum advance between any two actions so BioGears doesn't receive
+    # back-to-back actions with zero time (which can confuse the CDM parser).
+    _MIN_ADVANCE_S = 10
 
     for event in sorted_events:
         ev_ts     = float(event["timestamp"])
@@ -621,10 +639,7 @@ def build_batch_reconstruction(user_id, state_path, events: list, user_weight_kg
             engine_clock += (wait_time - 1800)
             wait_time = 1800
 
-        if wait_time > 0:
-            actions_xml  += _advance_xml(wait_time)
-            engine_clock += wait_time
-        elif wait_time < 0:
+        if wait_time < 0:
             # Event is behind engine clock — skip with warning (shouldn't happen after sort)
             _log.warning(
                 f"[{user_id}] Skipping event '{event.get('event_type')}' at "
@@ -632,6 +647,12 @@ def build_batch_reconstruction(user_id, state_path, events: list, user_weight_kg
                 f"already past engine clock ({datetime.datetime.fromtimestamp(engine_clock).strftime('%H:%M')})."
             )
             continue
+
+        # Enforce minimum advance so BioGears always has at least 10s between actions
+        effective_wait = max(wait_time, _MIN_ADVANCE_S)
+        if effective_wait > 0:
+            actions_xml  += _advance_xml(effective_wait)
+            engine_clock += effective_wait
 
         etype = event["event_type"]
         val   = event.get("value", 0)
@@ -705,8 +726,12 @@ def build_batch_reconstruction(user_id, state_path, events: list, user_weight_kg
         elif etype == "fast":
             hours    = max(1.0, min(48.0, float(val or 0)))
             fast_sec = int(hours * 3600)
+            # _fasting_xml emits an AdvanceTimeData action (the XML advances the engine clock).
+            # We also advance engine_clock here to keep our logical clock in sync.
+            # These are two separate things: XML actions control BioGears, engine_clock
+            # tracks our position so subsequent wait_time calculations are correct.
             actions_xml  += _fasting_xml(hours)
-            engine_clock += fast_sec  # _fasting_xml advances exactly fast_sec internally
+            engine_clock += fast_sec
 
     # Cap final stabilization gap to 30 minutes to avoid excessive compute
     final_gap = int(now_ts - engine_clock)

@@ -446,6 +446,7 @@ def compute_historical_progress(user_id: str, history_dir: Path, timespan: str =
     """
     Returns a time-ordered series of health scores and key vitals for charting.
     timespan: 'week' (last 7 sessions) or 'month' (last 30 sessions).
+    Health score is derived from ALL tracked vitals (composite), not just HR.
     """
     user_path = history_dir / user_id
     if not user_path.exists():
@@ -459,17 +460,37 @@ def compute_historical_progress(user_id: str, history_dir: Path, timespan: str =
         df = _clean_df(f)
         if df is None: continue
         
-        # Calculate a mini-health score for this session
+        # Build a composite score from available vitals (same logic as compute_health_score)
         latest = df.iloc[-1]
-        hr = float(latest.get("HeartRate", 72))
-        hr_s = _score_value(hr, 60, 100) * 100
-        
+        scores = []
+        hr = latest.get("HeartRate")
+        if hr is not None:
+            scores.append(_score_value(float(hr), 60, 100))
+
+        sys_bp = latest.get("SystolicArterialPressure")
+        if sys_bp is not None:
+            scores.append(_score_value(float(sys_bp), 90, 120))
+
+        gluc = latest.get("Glucose-BloodConcentration")
+        if gluc is not None:
+            scores.append(_score_value(float(gluc), 70, 140))
+
+        rr = latest.get("RespirationRate")
+        if rr is not None:
+            scores.append(_score_value(float(rr), 12, 20))
+
+        spo2_raw = latest.get("OxygenSaturation")
+        if spo2_raw is not None:
+            scores.append(_score_value(float(spo2_raw) * 100, 94, 100))
+
+        composite = round(sum(scores) / len(scores) * 100) if scores else 50
+
         timestamp = datetime.datetime.fromtimestamp(f.stat().st_mtime).isoformat()
         progress.append({
             "timestamp": timestamp,
-            "health_score": round(hr_s), # Simplified for trend
-            "heart_rate": round(hr, 1),
-            "glucose": round(float(latest.get("Glucose-BloodConcentration", 90)), 1)
+            "health_score": composite,
+            "heart_rate": round(float(hr), 1) if hr is not None else None,
+            "glucose": round(float(gluc), 1) if gluc is not None else None,
         })
 
     return {

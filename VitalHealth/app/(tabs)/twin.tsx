@@ -15,7 +15,6 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import SimProgressOverlay from '../../components/twin/SimProgressOverlay';
 import { useBiogearsTwin } from '../../context/BiogearsTwinContext';
 import { useTheme } from '../../context/ThemeContext';
 import { colors as themeColors } from '../../theme/colors';
@@ -1347,9 +1346,12 @@ export default function TwinScreen() {
             </View>
             {/* Progress dots */}
             <View style={ss.simDotsRow}>
-              {['Queued','Engine running','Computing physiology','Finalising'].map((label, i) => {
-                const done = simulationStatus === 'running' && elapsedSecs > i * 15;
-                const active = simulationStatus === 'running' && !done && elapsedSecs > (i - 1) * 15;
+              {['Engine init', 'Running physics', 'Computing vitals', 'Finalising'].map((label, i) => {
+                // Realistic BioGears timing: init ~30s, physics bulk ~2min, vitals ~8min, done ~15min
+                const thresholds = [30, 120, 480, 900];
+                const done   = simulationStatus === 'running' && elapsedSecs > thresholds[i];
+                const active = simulationStatus === 'running' && !done &&
+                               elapsedSecs > (i === 0 ? 0 : thresholds[i - 1]);
                 return (
                   <View key={label} style={ss.simDotWrap}>
                     <View style={[

@@ -77,9 +77,10 @@ app.mount("/view-reports", StaticFiles(directory=str(REPORT_DIR)), name="reports
 # ---------------------------------------------------------------------------
 # OPTIONAL API KEY AUTH
 # ---------------------------------------------------------------------------
-# Set env var DIGITAL_TWIN_API_KEY to enable API key protection.
-# If not set, all endpoints are open (dev mode).
-API_KEY_ENV = os.environ.get("DIGITAL_TWIN_API_KEY", "70d04318406695d0221ca63b51cd390bddf272bf30059ea5cdbec08bafc7c67c")
+# Set env var DIGITAL_TWIN_API_KEY to require callers to pass an API key.
+# If DIGITAL_TWIN_API_KEY is not set, endpoints are OPEN (dev/local mode).
+# NEVER commit a real key into this file — use the env var on the server.
+API_KEY_ENV = os.environ.get("DIGITAL_TWIN_API_KEY", "")  # empty = open (no auth)
 api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 
 async def require_api_key(key: str = Depends(api_key_header)):
@@ -247,7 +248,10 @@ class AsyncSyncRequest(BaseModel):
 # ---------------------------------------------------------------------------
 # INTERNAL HELPERS
 # ---------------------------------------------------------------------------
-BASE_URL = "http://127.0.0.1:8000"
+# BASE_URL is used for constructing poll URLs returned to the client.
+# In production, set SERVER_BASE_URL env var to your public domain.
+# Fallback to localhost only for local dev.
+BASE_URL = os.environ.get("SERVER_BASE_URL", "http://127.0.0.1:8000").rstrip("/")
 
 def _build_vitals_from_df(df: pd.DataFrame) -> dict:
     try:
@@ -258,26 +262,37 @@ def _build_vitals_from_df(df: pd.DataFrame) -> dict:
             v = latest.get(key)
             if v is None: return None
             val = result_parser.safe_float(v)
-            return None if math.isnan(val) else val
+            return None if (math.isnan(val) or math.isinf(val)) else val
 
-        # Cache BP values — guard BOTH fields together to prevent int(None)
+        # Pre-fetch ALL values once — avoids double (or more) lookups per key
+        hr   = _safe('HeartRate')
         sys_bp = _safe('SystolicArterialPressure')
         dia_bp = _safe('DiastolicArterialPressure')
+        gluc = _safe('Glucose-BloodConcentration')
+        rr   = _safe('RespirationRate')
+        spo2 = _safe('OxygenSaturation')
+        temp = _safe('CoreTemperature')
+        co   = _safe('CardiacOutput')
+        map_ = _safe('MeanArterialPressure')
+        sv   = _safe('HeartStrokeVolume')
+        tv   = _safe('TidalVolume')
+        ph   = _safe('ArterialBloodPH')
+        exlv = _safe('AchievedExerciseLevel')
 
         return {
-            "heart_rate":       round(_safe("HeartRate"), 1)           if _safe("HeartRate") is not None else None,
-            "blood_pressure":   f"{int(sys_bp)}/{int(dia_bp)}"         if (sys_bp is not None and dia_bp is not None) else None,
-            "glucose":          round(_safe("Glucose-BloodConcentration"), 2) if _safe("Glucose-BloodConcentration") is not None else None,
-            "respiration":      round(_safe("RespirationRate"), 1)     if _safe("RespirationRate") is not None else None,
-            "spo2":             round(_safe("OxygenSaturation") * 100, 1)      if _safe("OxygenSaturation") is not None else None,
-            "core_temperature": round(_safe("CoreTemperature"), 2)     if _safe("CoreTemperature") is not None else None,
-            "cardiac_output":   round(_safe("CardiacOutput"), 2)       if _safe("CardiacOutput") is not None else None,
+            "heart_rate":       round(hr, 1)           if hr   is not None else None,
+            "blood_pressure":   f"{int(sys_bp)}/{int(dia_bp)}" if (sys_bp is not None and dia_bp is not None) else None,
+            "glucose":          round(gluc, 2)         if gluc is not None else None,
+            "respiration":      round(rr, 1)           if rr   is not None else None,
+            "spo2":             round(spo2 * 100, 1)   if spo2 is not None else None,
+            "core_temperature": round(temp, 2)         if temp is not None else None,
+            "cardiac_output":   round(co, 2)           if co   is not None else None,
             # ── Extended Vitals ─────────────────────────────────────────
-            "map":              round(_safe("MeanArterialPressure"), 1) if _safe("MeanArterialPressure") is not None else None,
-            "stroke_volume":    round(_safe("HeartStrokeVolume"), 1)   if _safe("HeartStrokeVolume") is not None else None,
-            "tidal_volume":     round(_safe("TidalVolume"), 1)         if _safe("TidalVolume") is not None else None,
-            "arterial_ph":      round(_safe("ArterialBloodPH"), 2)     if _safe("ArterialBloodPH") is not None else None,
-            "exercise_level":   round(_safe("AchievedExerciseLevel"), 3) if _safe("AchievedExerciseLevel") is not None else None,
+            "map":              round(map_, 1)          if map_ is not None else None,
+            "stroke_volume":    round(sv, 1)            if sv   is not None else None,
+            "tidal_volume":     round(tv, 1)            if tv   is not None else None,
+            "arterial_ph":      round(ph, 2)            if ph   is not None else None,
+            "exercise_level":   round(exlv, 3)          if exlv is not None else None,
         }
     except Exception as e:
         logger.error(f"_build_vitals_from_df error: {e}")
@@ -382,8 +397,21 @@ def _run_batch_sync_blocking(user_id: str, events: list) -> dict:
 
     # Check for "Dead Twin" (NaNs in critical vitals like HeartRate)
     if 'HeartRate' in df.columns and df['HeartRate'].isnull().any():
-        logger.error(f"❌ [{user_id}] Engine produced NaN values (Twin died). Rolling back state.")
-        raise HTTPException(status_code=500, detail="Simulation resulted in physiological failure (NaN values). State has been rolled back to prevent corruption.")
+        logger.error(f"\u274c [{user_id}] Engine produced NaN values (Twin died). Rolling back state.")
+        # Attempt to restore the most recent backup so the state file is usable
+        bak_dir  = USER_STATES_DIR / "backups" / user_id
+        backups  = sorted(bak_dir.glob(f"{user_id}_*.xml"), key=os.path.getmtime, reverse=True) if bak_dir.exists() else []
+        if backups:
+            try:
+                shutil.copy2(str(backups[0]), str(state_file))
+                logger.info(f"\u267b\ufe0f [{user_id}] State rolled back from backup: {backups[0].name}")
+            except Exception as rb_err:
+                logger.warning(f"\u26a0\ufe0f [{user_id}] Rollback failed: {rb_err}")
+        raise HTTPException(
+            status_code=500,
+            detail="Simulation resulted in physiological failure (NaN values in HeartRate). "
+                   "State has been rolled back to the previous backup."
+        )
 
     vitals = _build_vitals_from_df(df)
     report_url = visualizer.generate_health_report(user_id, custom_path=dest_csv)
@@ -393,15 +421,20 @@ def _run_batch_sync_blocking(user_id: str, events: list) -> dict:
     if anomalies:
         logger.warning(f"🚨 Anomalies for {user_id}: {[a['label'] for a in anomalies]}")
 
-    # Update state file ONLY IF successful and healthy
-    updated_state_filename = f"batch_{user_id}.xml"
-    possible_states = list(BIOGEARS_BIN_DIR.rglob(updated_state_filename))
-    if possible_states:
+    # Update state file ONLY IF successful and healthy.
+    # The BioGears engine writes the serialized state to a predictable direct path;
+    # use that first (fast), fall back to rglob only if needed.
+    updated_state_path = BIOGEARS_BIN_DIR / f"batch_{user_id}.xml"
+    if not updated_state_path.exists():
+        # Fallback: scan subdirectories (some BioGears versions write to subdirs)
+        candidates = list(BIOGEARS_BIN_DIR.rglob(f"batch_{user_id}.xml"))
+        updated_state_path = candidates[0] if candidates else None
+    if updated_state_path and Path(updated_state_path).exists():
         try:
-            os.replace(str(possible_states[0]), str(state_file))
-            logger.info("🔄 State synchronized safely.")
+            os.replace(str(updated_state_path), str(state_file))
+            logger.info("\U0001f504 State synchronized safely.")
         except Exception as e:
-            logger.warning(f"⚠️ State sync skipped: {e}")
+            logger.warning(f"\u26a0\ufe0f State sync skipped: {e}")
 
     # ── Auto-backup state after every successful simulation ──────────────────
     try:
@@ -760,7 +793,9 @@ def _background_sync(job_id: str, user_id: str, events: list):
         _set_job(job_id, job)
     except HTTPException as e:
         job["status"] = "failed"
-        job["error"]  = e.detail
+        # Serialize detail properly whether it's a dict or a plain string
+        detail = e.detail
+        job["error"] = detail if isinstance(detail, str) else json.dumps(detail, default=str)
         _set_job(job_id, job)
     except Exception as e:
         job["status"] = "failed"
@@ -822,7 +857,7 @@ def get_job_status(job_id: str):
             status_code=404,
             detail=(
                 f"Job '{job_id}' not found. "
-                "It may have expired (jobs are kept for 2 hours) or the ID is incorrect."
+                "It may have expired (jobs are kept for 24 hours) or the ID is incorrect."
             )
         )
     return {
