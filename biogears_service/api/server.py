@@ -93,7 +93,7 @@ async def require_api_key(key: str = Depends(api_key_header)):
 # Thread-safe via _jobs_lock. Jobs older than JOB_TTL_SECONDS are pruned.
 # ---------------------------------------------------------------------------
 _jobs_lock     = threading.Lock()
-JOB_TTL_SECONDS = 7200  # 2 hours
+JOB_TTL_SECONDS = 86400  # 24 hours
 
 
 def _load_jobs() -> Dict[str, Dict[str, Any]]:
