@@ -578,10 +578,10 @@ def build_batch_reconstruction(user_id, state_path, events: list, user_weight_kg
         wall_hour    = datetime.datetime.now().hour
         actions_xml  = _circadian_phase_xml(wall_hour)
 
-        # Catch up full missing days before the first event
-        while (earliest_ev_ts - engine_clock) >= 86400:
-            actions_xml  += _catchup_routine_xml(user_weight_kg)
-            engine_clock += 86400
+        # No catchup routines. Hard cap pre-event basal gap to 2 hours.
+        time_jump = earliest_ev_ts - engine_clock
+        if time_jump > 7200:
+            engine_clock += (time_jump - 7200) # Fast-forward logical clock instantly
 
         gap_to_first = int(earliest_ev_ts - engine_clock)
         if gap_to_first > 30:
@@ -604,6 +604,11 @@ def build_batch_reconstruction(user_id, state_path, events: list, user_weight_kg
     for event in sorted_events:
         ev_ts     = float(event["timestamp"])
         wait_time = int(ev_ts - engine_clock)
+
+        # Cap long gaps between events to 4 hours to prevent engine timeout
+        if wait_time > 14400:
+            engine_clock += (wait_time - 14400)
+            wait_time = 14400
 
         if wait_time > 0:
             actions_xml  += _advance_xml(wait_time)
@@ -692,21 +697,14 @@ def build_batch_reconstruction(user_id, state_path, events: list, user_weight_kg
             actions_xml  += _fasting_xml(hours)
             engine_clock += fast_sec  # _fasting_xml advances exactly fast_sec internally
 
-    # ── Final stabilisation: advance engine to present time ──────────────────
-    # Cap at 8 hours to avoid excessive compute, but do NOT use the old 4h cap.
-    # 8 hours matches the documented basal-gap cap in the rest of the codebase.
+    # Cap final stabilization gap to 2 hours to avoid excessive compute
     final_gap = int(now_ts - engine_clock)
     _log.info(f"[{user_id}] Final gap to 'now': {final_gap}s ({round(final_gap/3600, 1)}h)")
 
-    if final_gap > 10:
-        while final_gap >= 86400:
-            actions_xml  += _catchup_routine_xml(user_weight_kg)
-            engine_clock += 86400
-            final_gap    -= 86400
-        # Cap at 8 hours (28800s) — physiologically sufficient, avoids very long compute
-        capped_gap = min(final_gap, 28800)
-        if capped_gap > 0:
-            actions_xml += _advance_xml(capped_gap)
+    capped_gap = min(final_gap, 7200)
+    if capped_gap > 10:
+        actions_xml += _advance_xml(capped_gap)
+        engine_clock += capped_gap
     else:
         # Minimum baseline padding so BioGears writes at least a few data rows
         actions_xml += _advance_xml(60)
