@@ -11,13 +11,33 @@ import * as SecureStore from 'expo-secure-store';
 const DEFAULT_BASE_URL = 'http://151.185.42.123';
 const BASE_URL_KEY = '@biogears_base_url';
 
+/** Strip redundant/wrong ports from a BioGears URL.
+ *  :8000 was incorrectly stored by early versions — nginx exposes port 80. */
+function sanitizeBiogearsUrl(raw: string): string {
+  try {
+    const u = new URL(raw);
+    // Remove port 8000 (FastAPI internal, not public) or default HTTP/HTTPS ports
+    if (
+      u.port === '8000' ||
+      (u.protocol === 'http:' && u.port === '80') ||
+      (u.protocol === 'https:' && u.port === '443')
+    ) {
+      return `${u.protocol}//${u.hostname}${u.pathname !== '/' ? u.pathname : ''}`;
+    }
+  } catch { /* not a full URL — return as-is */ }
+  return raw;
+}
+
 export async function getBiogearsBaseUrl(): Promise<string> {
   try {
     const stored = await AsyncStorage.getItem(BASE_URL_KEY);
-    const url = stored || DEFAULT_BASE_URL;
+    const raw = stored || DEFAULT_BASE_URL;
+    const url = sanitizeBiogearsUrl(raw);
 
-    if (url.includes('10.0.2.2') && !stored) {
-      console.warn('[BioGears] WARNING: Using 10.0.2.2 which often fails on Windows. Consider using 10.66.213.41');
+    // Auto-heal: if we fixed a bad stored URL, persist the clean version
+    if (stored && url !== stored) {
+      console.log(`[BioGears] Auto-fixed stored URL: ${stored} → ${url}`);
+      await AsyncStorage.setItem(BASE_URL_KEY, url);
     }
 
     console.log(`[BioGears] Using Base URL: ${url}`);
@@ -177,11 +197,17 @@ export interface VitalsTrendResponse {
 
 export class BiogearsError extends Error {
   constructor(
-    message: string,
+    message: string | any,
     public statusCode?: number,
     public detail?: any
   ) {
-    super(message);
+    let finalMessage = 'Unknown error';
+    if (typeof message === 'object' && message !== null) {
+      finalMessage = message.message || message.detail || JSON.stringify(message);
+    } else if (message) {
+      finalMessage = String(message);
+    }
+    super(finalMessage);
     this.name = 'BiogearsError';
   }
 }
@@ -287,7 +313,7 @@ export async function getJobStatus(jobId: string): Promise<BiogearsJob> {
 export async function pollUntilDone(
   jobId: string,
   intervalMs = 3000,
-  maxWaitMs = 1_800_000   // 30 minutes — BioGears can take 10–25 min for full-day scenarios
+  maxWaitMs = 43_200_000  // 12 hours — BioGears can take 10–25 min for full-day scenarios
 ): Promise<BiogearsSimulationResult> {
   const start = Date.now();
   return new Promise((resolve, reject) => {

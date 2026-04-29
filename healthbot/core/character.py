@@ -418,7 +418,7 @@ def classify_intent(query: str) -> str:
         return "lab"
     if is_health_related(q):
         return "general"
-    return "off_topic"
+    return "general"
 
 def detect_urgent(query: str) -> bool:
     q = query.lower()

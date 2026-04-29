@@ -15,6 +15,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import SimProgressOverlay from '../../components/twin/SimProgressOverlay';
 import { useBiogearsTwin } from '../../context/BiogearsTwinContext';
 import { useTheme } from '../../context/ThemeContext';
 import { colors as themeColors } from '../../theme/colors';
@@ -641,6 +642,28 @@ export default function TwinScreen() {
   const [dashTab, setDashTab] = useState<DashTab>('overview');  // dashboard inner tab
   const fabAnim = useRef(new Animated.Value(0)).current;
 
+  // ── Simulation elapsed timer ───────────────────────────────────────────────
+  const simStartRef = useRef<number | null>(null);
+  const [elapsedSecs, setElapsedSecs] = useState(0);
+
+  useEffect(() => {
+    if (simulationStatus === 'running' || simulationStatus === 'queued') {
+      if (!simStartRef.current) simStartRef.current = Date.now();
+      const id = setInterval(() => {
+        setElapsedSecs(Math.floor((Date.now() - simStartRef.current!) / 1000));
+      }, 1000);
+      return () => clearInterval(id);
+    } else {
+      simStartRef.current = null;
+      setElapsedSecs(0);
+    }
+  }, [simulationStatus]);
+
+  const fmtElapsed = (s: number) => {
+    const m = Math.floor(s / 60); const sec = s % 60;
+    return m > 0 ? `${m}m ${sec}s` : `${sec}s`;
+  };
+
   const switchMode = (next: 'dashboard' | 'routine') => {
     Animated.spring(fabAnim, { toValue: next === 'routine' ? 1 : 0, useNativeDriver: true }).start();
     setMode(next);
@@ -1105,8 +1128,8 @@ export default function TwinScreen() {
       {/* Common quick picks */}
       <SectionLabel text="Common substances" c={c} />
       <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
-        {['Caffeine', 'Aspirin', 'Acetaminophen', 'Ethanol', 'Albuterol', 'Morphine', 'Nicotine'].map(s => (
-          <TouchableOpacity key={s} onPress={() => { setSubName(s); setSubDose(s === 'Caffeine' ? '200' : s === 'Ethanol' ? '14000' : '500'); }}
+        {['Caffeine', 'Aspirin', 'Acetaminophen', 'Albuterol', 'Insulin', 'Morphine'].map(s => (
+          <TouchableOpacity key={s} onPress={() => { setSubName(s); setSubDose(s === 'Caffeine' ? '100' : s === 'Insulin' ? '10' : '500'); }}
             style={[ss.chip, subName === s && { backgroundColor: '#8b5cf6', borderColor: '#8b5cf6' }]}>
             <Text style={[ss.chipTxt, subName === s && { color: '#fff' }]}>{s}</Text>
           </TouchableOpacity>
@@ -1301,7 +1324,54 @@ export default function TwinScreen() {
 
     return (
       <>
-        {/* Simulation error banner (never an Alert popup) */}
+        {/* ── Inline Simulation Status Card (replaces floating overlay) ── */}
+        {(simulationStatus === 'queued' || simulationStatus === 'running') && (
+          <LinearGradient
+            colors={['#0ea5e920', '#38bdf820', '#0ea5e910']}
+            start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+            style={[ss.simCard, { borderColor: '#38bdf840' }]}
+          >
+            {/* Top row: icon + title + elapsed */}
+            <View style={ss.simCardHeader}>
+              <View style={[ss.simPulse, { backgroundColor: '#38bdf820', borderColor: '#38bdf860' }]}>
+                <ActivityIndicator color='#38bdf8' size='small' />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[ss.simCardTitle, { color: c.text }]}>BioGears Simulating…</Text>
+                <Text style={[ss.simCardSub, { color: c.sub }]}>{simulationProgress || 'Initialising engine…'}</Text>
+              </View>
+              <View style={[ss.simElapsedBadge, { backgroundColor: '#38bdf815', borderColor: '#38bdf840' }]}>
+                <Ionicons name='time-outline' size={11} color='#38bdf8' />
+                <Text style={ss.simElapsedTxt}>{fmtElapsed(elapsedSecs)}</Text>
+              </View>
+            </View>
+            {/* Progress dots */}
+            <View style={ss.simDotsRow}>
+              {['Queued','Engine running','Computing physiology','Finalising'].map((label, i) => {
+                const done = simulationStatus === 'running' && elapsedSecs > i * 15;
+                const active = simulationStatus === 'running' && !done && elapsedSecs > (i - 1) * 15;
+                return (
+                  <View key={label} style={ss.simDotWrap}>
+                    <View style={[
+                      ss.simDotCircle,
+                      done   && { backgroundColor: '#38bdf8', borderColor: '#38bdf8' },
+                      active && { borderColor: '#38bdf8' },
+                      !done && !active && { borderColor: c.border },
+                    ]}>
+                      {done && <Ionicons name='checkmark' size={10} color='#fff' />}
+                    </View>
+                    <Text style={[ss.simDotLabel, { color: done || active ? '#38bdf8' : c.sub }]}>{label}</Text>
+                  </View>
+                );
+              })}
+            </View>
+            <Text style={[ss.simNote, { color: c.sub }]}>
+              ⏱ BioGears runs up to 12 h of physiology — this takes 10–25 min. You can use other parts of the app.
+            </Text>
+          </LinearGradient>
+        )}
+
+        {/* Simulation error banner */}
         {simulationStatus === 'failed' && (
           <View style={[ss.errorBox, { backgroundColor: '#ef444420' }]}>
             <Ionicons name="warning" size={18} color="#ef4444" />
@@ -1796,8 +1866,6 @@ export default function TwinScreen() {
 
       {mode === 'dashboard' ? renderDashboard() : renderRoutinePanel()}
 
-      {/* Simulation banner is rendered globally in _layout.tsx — visible on all screens */}
-
       {/* FAB */}
       <TouchableOpacity
         style={[ss.fab, { backgroundColor: mode === 'dashboard' ? c.active : '#ef4444', bottom: insets.bottom + 8 }]}
@@ -1837,6 +1905,31 @@ const ss = StyleSheet.create({
   stepLineActive: { backgroundColor: '#38bdf8' },
   simBox: { borderRadius: 16, padding: 16, marginBottom: 12, borderWidth: 1, alignItems: 'center' },
   simMsg: { fontSize: 12, marginTop: 4, textAlign: 'center' },
+
+  // Inline Simulation Status Card
+  simCard: {
+    borderRadius: 20, padding: 18, marginBottom: 16, borderWidth: 1,
+  },
+  simCardHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 16 },
+  simPulse: {
+    width: 42, height: 42, borderRadius: 21, borderWidth: 1.5,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  simCardTitle: { fontSize: 15, fontWeight: '700', marginBottom: 2 },
+  simCardSub: { fontSize: 12, lineHeight: 17 },
+  simElapsedBadge: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    borderRadius: 20, paddingHorizontal: 10, paddingVertical: 5, borderWidth: 1,
+  },
+  simElapsedTxt: { color: '#38bdf8', fontSize: 12, fontWeight: '700' },
+  simDotsRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 14 },
+  simDotWrap: { alignItems: 'center', flex: 1 },
+  simDotCircle: {
+    width: 22, height: 22, borderRadius: 11, borderWidth: 2,
+    alignItems: 'center', justifyContent: 'center', marginBottom: 5,
+  },
+  simDotLabel: { fontSize: 9, fontWeight: '600', textAlign: 'center', letterSpacing: 0.2 },
+  simNote: { fontSize: 11, lineHeight: 17, textAlign: 'center', fontStyle: 'italic' },
   errorBox: { borderRadius: 12, padding: 12, flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 },
   errorTxt: { color: '#ef4444', fontSize: 13, flex: 1 },
   interactionBanner: { backgroundColor: '#fbbf2420', borderRadius: 10, padding: 10, flexDirection: 'row', gap: 8, marginBottom: 10, borderWidth: 1, borderColor: '#fbbf24' },

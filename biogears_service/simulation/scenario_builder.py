@@ -112,21 +112,31 @@ def _water_xml(ml: float) -> str:
 
 
 def _substance_xml(name: str, val: float, is_stacked: bool = False) -> str:
-    """Routes a substance to the correct BioGears administration action."""
+    """
+    Routes a substance to the correct BioGears administration action.
+
+    BioGears IV bolus CDM requires:
+      <Concentration value="C" unit="mg/mL"/> + <Dose value="V" unit="mL"/>
+      where Dose (mg) = C × V
+    We use C = 1 mg/mL (or 1000 ug/mL for ug-dosed drugs) so V = dose_mg numerically.
+
+    ORAL uses SubstanceOralDoseData with dose in mg directly.
+    NASAL uses SubstanceNasalDoseData with dose in ug directly.
+    """
     info = SUBSTANCE_REGISTRY.get(name)
     if info is None:
-        # Fallback — unknown substance goes IV bolus
+        # Unknown substance — try as 1 mg/mL IV bolus
         return (
             f'        <Action xsi:type="SubstanceBolusData" AdminRoute="Intravenous">\n'
             f'            <Substance>{name}</Substance>\n'
             f'            <Concentration value="1.0" unit="mg/mL"/>\n'
-            f'            <Dose value="{val}" unit="mL"/>\n'
+            f'            <Dose value="{round(val, 4)}" unit="mL"/>\n'
             f'        </Action>\n'
         )
 
-    effective_val = round(val * 1.15, 4) if is_stacked else val
+    effective_val = round(val * 1.15, 4) if is_stacked else round(val, 4)
     route = info["route"]
-    unit  = info["unit"]
+    unit  = info["unit"]   # "mg", "ug", "mL/min", or "U" (insulin units)
 
     if route == "IV_COMPOUND":
         return (
@@ -136,30 +146,53 @@ def _substance_xml(name: str, val: float, is_stacked: bool = False) -> str:
             f'            <Rate value="{effective_val}" unit="{unit}"/>\n'
             f'        </Action>\n'
         )
+
     elif route == "ORAL":
+        # SubstanceOralDoseData: dose in mg directly
         return (
             f'        <Action xsi:type="SubstanceOralDoseData" AdminRoute="Gastrointestinal">\n'
             f'            <Substance>{name}</Substance>\n'
-            f'            <Dose value="{effective_val}" unit="{unit}"/>\n'
+            f'            <Dose value="{effective_val}" unit="mg"/>\n'
             f'        </Action>\n'
         )
+
     elif route == "NASAL":
+        # SubstanceNasalDoseData: dose in ug directly
         return (
             f'        <Action xsi:type="SubstanceNasalDoseData">\n'
             f'            <Substance>{name}</Substance>\n'
-            f'            <Dose value="{effective_val}" unit="{unit}"/>\n'
+            f'            <Dose value="{effective_val}" unit="ug"/>\n'
             f'        </Action>\n'
         )
+
     else:  # IV_BOLUS
-        conc = "1000.0" if unit == "ug" else "1.0"
-        conc_unit = "ug/mL" if unit == "ug" else "mg/mL"
+        # BioGears CDM: Concentration × Volume = Dose
+        # Use concentration 1 mg/mL → volume_mL = dose_mg (numerically equivalent)
+        # For ug-dosed drugs (Fentanyl): 1000 ug/mL → volume_mL = dose_ug / 1000
+        if unit == "ug":
+            # Fentanyl and other ug-dosed IV drugs
+            conc_val  = 1000.0              # ug/mL
+            conc_unit = "ug/mL"
+            dose_vol  = round(effective_val / 1000.0, 6)  # ug ÷ (ug/mL) = mL
+        elif unit == "U":
+            # Insulin — Units dosed at 100 U/mL concentration
+            conc_val  = 100.0
+            conc_unit = "U/mL"
+            dose_vol  = round(effective_val / 100.0, 6)   # U ÷ (U/mL) = mL
+        else:
+            # mg-dosed drugs: 1 mg/mL → volume = dose_mg numerically
+            conc_val  = 1.0
+            conc_unit = "mg/mL"
+            dose_vol  = effective_val                       # mg ÷ (mg/mL) = mL
+
         return (
             f'        <Action xsi:type="SubstanceBolusData" AdminRoute="Intravenous">\n'
             f'            <Substance>{name}</Substance>\n'
-            f'            <Concentration value="{conc}" unit="{conc_unit}"/>\n'
-            f'            <Dose value="{effective_val}" unit="mL"/>\n'
+            f'            <Concentration value="{conc_val}" unit="{conc_unit}"/>\n'
+            f'            <Dose value="{dose_vol}" unit="mL"/>\n'
             f'        </Action>\n'
         )
+
 
 
 def _environment_xml(env_name: str) -> str:
@@ -450,7 +483,7 @@ def build_registration_scenario(user_id, age, weight, height, sex, body_fat,
         f'        <PatientFile>{abs_patient}</PatientFile>\n'
         f'{conditions_block}'
         '    </InitialParameters>\n'
-        '        <Action xsi:type="AdvanceTimeData"><Time value="120" unit="s"/></Action>\n'
+        '        <Action xsi:type="AdvanceTimeData"><Time value="300" unit="s"/></Action>\n'
         f'        <Action xsi:type="SerializeStateData" Type="Save"><Filename>{abs_state_out}</Filename></Action>\n'
         '</Scenario>'
     )

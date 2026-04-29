@@ -187,27 +187,26 @@ def validate_events(events: List[Dict[str, Any]]) -> List[str]:
                     f"{label}: Substance '{sub}' not found in registry.{hint}"
                 )
             else:
-                DOSE_CAPS = {
-                    "Morphine":      30,    # mg  (acute single dose max)
-                    "Fentanyl":      0.2,   # mg  (200 ug)
-                    "Ketamine":      500,   # mg
-                    "Rocuronium":    200,   # mg
-                    "Succinylcholine": 200, # mg
-                    "Midazolam":     30,    # mg
-                    "Epinephrine":   10,    # mL
-                    "Vasopressin":   40,    # mL
-                    "Insulin":       50,    # u
-                    "Pralidoxime":   2000,  # mg
-                    "Atropine":      20,    # mg
-                    "Naloxone":      10,    # mg
-                    "Caffine":       800,   # mg  (BioGears spelling)
-                }
-                if sub in DOSE_CAPS and val is not None and float(val) > DOSE_CAPS[sub]:
+                info = SUBSTANCE_REGISTRY[sub]
+                unit = info.get("unit", "units")
+                safe_max = info.get("safe_max", None)
+                safety_level = info.get("safety_level", "safe")
+                warning_text = info.get("warning")
+
+                # Hard block on truly dangerous substances above safe_max
+                if safe_max is not None and safe_max > 0 and val is not None and float(val) > safe_max:
                     errors.append(
-                        f"{label}: Dose {val} exceeds safety cap for '{sub}' "
-                        f"(max: {DOSE_CAPS[sub]} {SUBSTANCE_REGISTRY[sub].get('unit', 'units')}). "
-                        f"This limit protects simulation accuracy."
+                        f"{label}: Dose {val} {unit} exceeds safety maximum for '{sub}' "
+                        f"(max: {safe_max} {unit}). "
+                        f"{info.get('note', 'Reduce the dose to proceed.')}"
                     )
+
+                # Log safety level warnings (non-blocking — returned separately)
+                if safety_level in ("danger", "clinical_only") and warning_text:
+                    logger.warning(
+                        f"{label}: '{sub}' is safety_level='{safety_level}': {warning_text}"
+                    )
+
 
         elif etype == "stress":                                     # ── NEW
             if val is None:

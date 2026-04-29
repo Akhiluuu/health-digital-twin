@@ -145,6 +145,7 @@ export default {
 
             useAndroidX: true,
             enableJetifier: true,
+            usesCleartextTraffic: true,
 
             extraMavenRepos: [
               "$rootDir/../node_modules/@notifee/react-native/android/libs",

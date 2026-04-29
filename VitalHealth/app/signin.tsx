@@ -14,6 +14,7 @@ import {
   TextInput,
   TouchableOpacity,
   View,
+  UIManager,
 } from "react-native";
 import Svg, { Path, Line } from "react-native-svg";
 
@@ -100,13 +101,16 @@ export default function SignIn() {
   const scrollToField = (fieldRef: React.RefObject<TextInput>) => {
     if (!fieldRef.current || !scrollRef.current) return;
     const scrollNode = findNodeHandle(scrollRef.current);
-    if (!scrollNode) return;
-    fieldRef.current.measureLayout(
+    const fieldNode = findNodeHandle(fieldRef.current);
+    if (!scrollNode || !fieldNode) return;
+
+    UIManager.measureLayout(
+      fieldNode,
       scrollNode,
+      () => {},
       (_x, y) => {
         scrollRef.current?.scrollTo({ y: y - 24, animated: true });
-      },
-      () => {}
+      }
     );
   };
 

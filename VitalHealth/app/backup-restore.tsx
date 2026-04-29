@@ -3,16 +3,22 @@
 
 import { Stack } from "expo-router";
 import BackupRestoreScreen from "../screens/BackupRestoreScreen";
+import { useTheme } from "../context/ThemeContext";
+import { colors } from "../theme/colors";
 
 export default function BackupRestorePage() {
+  const { theme } = useTheme();
+  const c = colors[theme];
+
   return (
     <>
       <Stack.Screen
         options={{
           title: "Backup & Restore",
-          headerStyle: { backgroundColor: "#0F0F1A" },
-          headerTintColor: "#F0F0FF",
+          headerStyle: { backgroundColor: c.card },
+          headerTintColor: c.text,
           headerTitleStyle: { fontWeight: "700" },
+          headerShadowVisible: false,
           headerBackTitle: "Settings",
         }}
       />

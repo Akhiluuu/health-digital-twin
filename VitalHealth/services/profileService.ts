@@ -187,13 +187,15 @@ export async function updateProfile(
 
     const safePartial: Partial<UserProfile> = {
       ...partial,
-      emergencyContact: partial.emergencyContact
-        ? {
-            ...EMPTY_PROFILE.emergencyContact,
-            ...partial.emergencyContact,
-          }
-        : undefined,
     };
+    if (partial.emergencyContact) {
+      safePartial.emergencyContact = {
+        ...EMPTY_PROFILE.emergencyContact,
+        ...partial.emergencyContact,
+      };
+    } else if (partial.emergencyContact === undefined) {
+      delete safePartial.emergencyContact;
+    }
 
     await setDoc(
       doc(db, "users", user.uid),

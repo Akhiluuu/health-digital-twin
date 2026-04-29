@@ -173,14 +173,23 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
 
   // ── Substances Library ────────────────────────────────────────────────────
 
+  const substanceFetchingRef = useRef(false);
+
   const refreshSubstances = useCallback(async () => {
+    // Guard: don't fire a second request if one is already in-flight
+    if (substanceFetchingRef.current) return;
+    substanceFetchingRef.current = true;
     try {
       const data = await BiogearsAPI.getSubstances();
       setSubstances(data.substances);
-    } catch (err) {
-      console.error('Failed to fetch substances:', err);
+    } catch (err: any) {
+      // Silently ignore network errors — the substance list is non-critical
+      // and the server may simply not be reachable on this network.
+      console.log('[BioGears] Substances unavailable (server unreachable) — will use defaults.');
+    } finally {
+      substanceFetchingRef.current = false;
     }
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
 
   // ── Recheck twin status on server ─────────────────────────────────────────
@@ -206,7 +215,8 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
   // ── Load persisted data on mount ─────────────────────────────────────────
 
   useEffect(() => {
-    refreshSubstances(); // Fetch library on mount
+    // NOTE: substances are NOT fetched here — twin.tsx calls refreshSubstances()
+    // explicitly so this doesn't fire on every screen load.
     if (!twinUserId) return;
     recheckTwinStatus();
     loadTodayFromStorage();
@@ -423,6 +433,10 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
     if (!twinUserId || twinStatus !== 'ready') {
       throw new Error('Twin not registered');
     }
+    if (simulationStatus === 'running' || simulationStatus === 'queued') {
+      console.warn('Simulation already in progress');
+      return;
+    }
     if (todayEvents.length === 0) {
       throw new Error('No events logged for today');
     }
@@ -454,7 +468,7 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
 
       // Poll progress — BioGears engine can take 10–25 minutes for a full-day scenario
       setSimulationProgress('BioGears engine computing physiology (10–25 min)...');
-      const result = await BiogearsAPI.pollUntilDone(job_id, 3000, 1_800_000);
+      const result = await BiogearsAPI.pollUntilDone(job_id, 3000, 43_200_000);  // 12 hour timeout
 
       // Success: update state
       setLastVitals(result.vitals);
