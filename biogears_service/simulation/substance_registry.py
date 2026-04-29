@@ -75,15 +75,7 @@ SUBSTANCE_REGISTRY: Dict[str, Any] = {
         "note": "Standard dose 500–1000 mg per administration.",
         "effects": "↓ fever, mild analgesia",
     },
-    "Aspirin": {
-        "route": "ORAL", "unit": "mg",
-        "category": "Analgesic / Antiplatelet",
-        "safe_min": 75, "safe_max": 1000,
-        "safety_level": "caution",
-        "warning": "⚠️ GI irritation risk. Avoid in children (Reye syndrome).",
-        "note": "Cardioprotective dose: 75–100 mg. Pain: 300–1000 mg.",
-        "effects": "↓ platelet aggregation, mild ↓ fever, anti-inflammatory",
-    },
+
 
     # ── Emergency / Cardiac ────────────────────────────────────────────────────
     "Epinephrine": {
@@ -115,15 +107,7 @@ SUBSTANCE_REGISTRY: Dict[str, Any] = {
     },
 
     # ── Anticholinergics ───────────────────────────────────────────────────────
-    "Atropine": {
-        "route": "IV_BOLUS", "unit": "mg",
-        "category": "Anticholinergic",
-        "safe_min": 0.5, "safe_max": 3.0,
-        "safety_level": "clinical_only",
-        "warning": "⚠️ Anticholinergic — tachycardia, dry mouth, urinary retention. Clinical only.",
-        "note": "Bradycardia: 0.5–1 mg IV. Organophosphate: 2–4 mg.",
-        "effects": "↑ HR, ↓ secretions, bronchodilation",
-    },
+
 
     # ── Reversal Agents ────────────────────────────────────────────────────────
     "Naloxone": {
@@ -155,15 +139,7 @@ SUBSTANCE_REGISTRY: Dict[str, Any] = {
         "note": "Induction: 1.5–2.5 mg/kg. Sedation: 0.5–1 mg/kg.",
         "effects": "↓↓ HR, ↓↓ BP, ↓ RR, unconsciousness",
     },
-    "Etomidate": {
-        "route": "IV_BOLUS", "unit": "mg",
-        "category": "Anesthetic",
-        "safe_min": 10, "safe_max": 60,
-        "safety_level": "clinical_only",
-        "warning": "🚨 ANESTHETIC — Adrenal suppression, myoclonus. OR use only.",
-        "note": "RSI induction: 0.3 mg/kg (~20 mg for 70 kg adult).",
-        "effects": "↓ HR, ↓ BP, rapid unconsciousness",
-    },
+
     "Midazolam": {
         "route": "IV_BOLUS", "unit": "mg",
         "category": "Benzodiazepine / Sedative",
@@ -259,15 +235,7 @@ SUBSTANCE_REGISTRY: Dict[str, Any] = {
     },
 
     # ── Antiemetics ───────────────────────────────────────────────────────────
-    "Ondansetron": {
-        "route": "IV_BOLUS", "unit": "mg",
-        "category": "Antiemetic",
-        "safe_min": 4, "safe_max": 32,
-        "safety_level": "safe",
-        "warning": None,
-        "note": "Standard dose 4–8 mg IV. Max 32 mg/day (QT risk above).",
-        "effects": "Antiemetic, mild ↓ HR at high doses",
-    },
+
 
     # ── Corticosteroids ───────────────────────────────────────────────────────
     "Prednisone": {
