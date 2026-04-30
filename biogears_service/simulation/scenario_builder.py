@@ -639,8 +639,10 @@ def build_batch_reconstruction(user_id, state_path, events: list, user_weight_kg
             engine_clock += (wait_time - 1800)
             wait_time = 1800
 
-        if wait_time < 0:
-            # Event is behind engine clock — skip with warning (shouldn't happen after sort)
+        # If an event is slightly behind the engine clock (because we padded the previous
+        # simultaneous event by 10s), we allow it up to a minute behind so it gets staggered.
+        if wait_time < -60:
+            # Event is genuinely behind engine clock — skip with warning (shouldn't happen after sort)
             _log.warning(
                 f"[{user_id}] Skipping event '{event.get('event_type')}' at "
                 f"{datetime.datetime.fromtimestamp(ev_ts).strftime('%H:%M')} — "
