@@ -126,7 +126,19 @@ function wallTimeToTimestamp(wallTime: string): number {
   // wallTime = "HH:MM"
   const [hh, mm] = wallTime.split(':').map(Number);
   const now = new Date();
+  const current_hh = now.getHours();
+  const current_mm = now.getMinutes();
+
   now.setHours(hh, mm, 0, 0);
+
+  // Smart Date Inference: Health logs are retroactive.
+  // If the time the user entered is strictly in the future compared to right now
+  // (e.g., it is 8:00 AM and they enter 10:00 PM for sleep), we safely 
+  // assume they are logging an event that happened yesterday.
+  if (hh > current_hh || (hh === current_hh && mm > current_mm)) {
+    now.setDate(now.getDate() - 1);
+  }
+
   return Math.floor(now.getTime() / 1000);
 }
 
