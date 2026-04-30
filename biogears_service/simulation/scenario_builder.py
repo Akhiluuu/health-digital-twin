@@ -540,7 +540,19 @@ def build_batch_reconstruction(user_id, state_path, events: list, user_weight_kg
 
     # ── Resolve all event timestamps upfront ────────────────────────────────
     now_ts       = time.time()
-    engine_mtime = os.path.getmtime(state_path)  # when the state file was last saved
+    
+    # Load Smart Continuation Meta
+    meta_path = Path(state_path).with_suffix(".meta.json")
+    state_meta = {}
+    if meta_path.exists():
+        try:
+            import json
+            state_meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+            
+    engine_sim_time = state_meta.get("engine_sim_time", os.path.getmtime(state_path))
+    processed_events = state_meta.get("events_processed", [])
 
     event_dicts = []
     for ev in events:
@@ -554,6 +566,31 @@ def build_batch_reconstruction(user_id, state_path, events: list, user_weight_kg
 
     sorted_events = sorted(event_dicts, key=lambda x: float(x["timestamp"]))
 
+    # ── Smart Fast-Continuation Check ───────────────────────────────────────
+    can_fast_continue = False
+    new_events = []
+    
+    if processed_events and len(sorted_events) >= len(processed_events):
+        # Check if the incoming events perfectly match the start of the processed events
+        match = True
+        for i, pe in enumerate(processed_events):
+            inc = sorted_events[i]
+            if inc.get("event_type") != pe.get("event_type") or abs(float(inc["timestamp"]) - float(pe["timestamp"])) > 1.0:
+                match = False
+                break
+                
+        if match:
+            # They only appended new events!
+            new_events_candidate = sorted_events[len(processed_events):]
+            # Ensure the new events don't require time-travel backward
+            if not new_events_candidate or float(new_events_candidate[0]["timestamp"]) >= engine_sim_time:
+                can_fast_continue = True
+                new_events = new_events_candidate
+                
+    if can_fast_continue:
+        _log.info(f"[{user_id}] ⚡ FAST CONTINUATION: Ignoring {len(processed_events)} previously simulated events.")
+        sorted_events = new_events
+
     # ── Determine the true simulation start time ─────────────────────────────
     # If the earliest event is BEFORE the engine state was created, we must
     # reconstruct backward to midnight of that event's day so that the engine
@@ -561,7 +598,7 @@ def build_batch_reconstruction(user_id, state_path, events: list, user_weight_kg
     earliest_ev_ts  = float(sorted_events[0]["timestamp"]) if sorted_events else now_ts
     latest_ev_ts    = float(sorted_events[-1]["timestamp"]) if sorted_events else now_ts
 
-    if earliest_ev_ts < engine_mtime:
+    if earliest_ev_ts < engine_sim_time and not can_fast_continue:
         # ── PAST-EVENT PATH: events are before twin creation ─────────────────
         # Reset to midnight of the earliest event's LOCAL calendar day so the
         # engine has a physiologically valid "start of day" anchor.
@@ -600,7 +637,7 @@ def build_batch_reconstruction(user_id, state_path, events: list, user_weight_kg
                 engine_clock += remaining_to_first
     else:
         # ── NORMAL PATH: events are at/after twin creation ───────────────────
-        engine_clock = engine_mtime
+        engine_clock = engine_sim_time
         wall_hour    = datetime.datetime.now().hour
         actions_xml  = _circadian_phase_xml(wall_hour)
 
@@ -746,6 +783,18 @@ def build_batch_reconstruction(user_id, state_path, events: list, user_weight_kg
     else:
         # Minimum baseline padding so BioGears writes at least a few data rows
         actions_xml += _advance_xml(60)
+        engine_clock += 60
+
+    # Write Meta File for future Fast-Continuations
+    try:
+        import json
+        meta_dict = {
+            "engine_sim_time": engine_clock,
+            "events_processed": event_dicts # store the FULL list of events, not just new ones
+        }
+        Path(state_path).with_suffix(".meta.json").write_text(json.dumps(meta_dict), encoding="utf-8")
+    except Exception as e:
+        _log.warning(f"Failed to write state meta: {e}")
 
     data_req = _DATA_REQUESTS.format(prefix=csv_prefix)
     xml = (
