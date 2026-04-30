@@ -157,8 +157,8 @@ SIM_RATE_WINDOW=3600
 BIOGEARS_BIN_DIR=${PROJECT_DIR}/biogears_runtime
 # Public URL of this VM — used to build async job poll URLs returned to the mobile app
 SERVER_BASE_URL=http://${VM_IP_FOR_ENV}
-# BioGears engine max runtime per simulation (seconds). 1800 = 30 min.
-ENGINE_TIMEOUT_SECONDS=1800
+# BioGears engine max runtime per simulation (seconds). 86400 = 24 hours.
+ENGINE_TIMEOUT_SECONDS=86400
 ENGINE_HEARTBEAT_SECONDS=30
 ENVEOF
     chmod 600 "$ENV_FILE"

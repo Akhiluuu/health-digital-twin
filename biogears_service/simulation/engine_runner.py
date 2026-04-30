@@ -2,7 +2,7 @@
 engine_runner.py — BioGears subprocess launcher (v4).
 
 Improvements vs v3:
-  - DEFAULT timeout reduced from 86400s (24h!) → 1800s (30 min) via ENGINE_TIMEOUT_SECONDS env var
+  - Timeout configured via ENGINE_TIMEOUT_SECONDS env var (default 24h)
   - Expanded silent-failure detection: catches "Patient stabilization failed",
     "Serialization failed", "failed to stabilize", "[Fatal]", and more
   - Heartbeat interval exposed via env var ENGINE_HEARTBEAT_SECONDS
@@ -23,9 +23,9 @@ from biogears_service.simulation.config import (
 
 logger = logging.getLogger("DigitalTwin.Engine")
 
-# Default 30 minutes — sufficient for a full-day BioGears scenario.
-# For very long what-if runs you can raise via ENGINE_TIMEOUT_SECONDS env var.
-ENGINE_TIMEOUT_SECONDS   = int(os.environ.get("ENGINE_TIMEOUT_SECONDS", "1800"))
+# Default 24 hours — accommodates very long simulations on the VM.
+# You can override this via ENGINE_TIMEOUT_SECONDS env var.
+ENGINE_TIMEOUT_SECONDS   = int(os.environ.get("ENGINE_TIMEOUT_SECONDS", "86400"))
 ENGINE_HEARTBEAT_SECONDS = int(os.environ.get("ENGINE_HEARTBEAT_SECONDS", "30"))
 
 # BioGears output lines shown at INFO level (everything else at DEBUG)
