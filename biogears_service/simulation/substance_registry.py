@@ -301,6 +301,16 @@ SUBSTANCE_REGISTRY: Dict[str, Any] = {
         "effects": "↑ Hgb, ↑ O2 carrying capacity",
     },
 
+    "Ethanol": {
+        "route": "ORAL", "unit": "mg",
+        "category": "Depressant / Alcohol",
+        "safe_min": 14000, "safe_max": 140000,
+        "safety_level": "caution",
+        "warning": "⚠️ ALCOHOL — CNS depression. 1 standard drink = 14,000 mg (14g) ethanol.",
+        "note": "Standard drink (14g). High doses risk coma or respiratory arrest.",
+        "effects": "Sedation, ↓ RR, mild ↓ BP",
+    },
+
     # ── Chemical / Toxic (simulation only) ───────────────────────────────────
     "Sarin": {
         "route": "IV_BOLUS", "unit": "mg",

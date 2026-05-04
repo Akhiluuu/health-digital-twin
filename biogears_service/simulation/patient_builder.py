@@ -1,12 +1,11 @@
-from biogears_service.simulation.config import SCENARIO_DIR
-
+from biogears_service.simulation.config import SCENARIO_API_DIR
 
 # -------------------------------------------------
 # 1️⃣ INITIALIZE NEW DIGITAL TWIN
 # -------------------------------------------------
 def build_initialization_scenario(user_id, age, weight, height, sex, body_fat, hr, rr, sys, dia):
 
-    scenario_file = SCENARIO_DIR / f"init_{user_id}.xml"
+    scenario_file = SCENARIO_API_DIR / f"init_{user_id}.xml"
 
     xml = f"""<?xml version="1.0" encoding="UTF-8"?>
 <Scenario xmlns="uri:/mil/tatrc/physiology/datamodel"
@@ -62,7 +61,7 @@ def build_initialization_scenario(user_id, age, weight, height, sex, body_fat, h
 # -------------------------------------------------
 def build_runtime_scenario(user_id, simulation_time):
 
-    scenario_file = SCENARIO_DIR / f"run_{user_id}.xml"
+    scenario_file = SCENARIO_API_DIR / f"run_{user_id}.xml"
 
     xml = f"""<?xml version="1.0" encoding="UTF-8"?>
 <Scenario xmlns="uri:/mil/tatrc/physiology/datamodel"

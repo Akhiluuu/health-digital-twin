@@ -33,7 +33,7 @@ from biogears_service.simulation.config import (
 from biogears_service.simulation import scenario_builder, visualizer
 from biogears_service.api import db
 
-BASE_URL = "http://127.0.0.1:8000"
+BASE_URL = os.environ.get("SERVER_BASE_URL", "http://127.0.0.1:8000").rstrip("/")
 
 # ---------------------------------------------------------------------------
 # In-memory stream job store

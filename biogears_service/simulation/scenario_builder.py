@@ -874,6 +874,22 @@ def build_whatif_scenario(user_id, state_path, event: dict, hours=4):
         remaining = max(0, seconds - dur)
         if remaining:
             event_action += _advance_xml(remaining)
+    elif etype == "sleep":
+        hours = max(0.25, min(float(val or 0), 12.0))
+        sleep_sec = int(hours * 3600)
+        event_action += '        <Action xsi:type="SleepData" Sleep="On"/>\n'
+        event_action += _advance_xml(sleep_sec)
+        event_action += '        <Action xsi:type="SleepData" Sleep="Off"/>\n'
+        remaining = max(0, seconds - sleep_sec)
+        if remaining:
+            event_action += _advance_xml(remaining)
+    elif etype == "fast":
+        hours = max(1.0, min(48.0, float(val or 0)))
+        fast_sec = int(hours * 3600)
+        event_action += _fasting_xml(hours)
+        remaining = max(0, seconds - fast_sec)
+        if remaining:
+            event_action += _advance_xml(remaining)
     elif etype == "meal":
         event_action  = _meal_xml(float(val), event.get("meal_type", "balanced"),
                                   event.get("carb_g"), event.get("fat_g"), event.get("protein_g"))
@@ -884,9 +900,23 @@ def build_whatif_scenario(user_id, state_path, event: dict, hours=4):
     elif etype == "substance":
         event_action  = _substance_xml(event.get("substance_name", "Caffeine"), float(val))
         event_action += _advance_xml(seconds)
+    elif etype == "alcohol":
+        g_ethanol = float(val or 0) * 14.0
+        event_action  = _substance_xml("Ethanol", g_ethanol)
+        event_action += _advance_xml(seconds)
     elif etype == "environment":
         event_action  = _environment_xml(event.get("environment_name", "Standard"))
         event_action += _advance_xml(seconds)
+    elif etype == "stress":
+        intensity = max(0.0, min(1.0, float(val or 0)))
+        dur = int(float(event.get("duration_seconds") or 300))
+        dur = max(60, min(dur, 3600))
+        event_action += _exercise_xml(intensity * 0.3)
+        event_action += _advance_xml(dur)
+        event_action += _exercise_xml(0.0)
+        remaining = max(0, seconds - dur)
+        if remaining:
+            event_action += _advance_xml(remaining)
     else:
         event_action = _advance_xml(seconds)
 
