@@ -610,7 +610,7 @@ def build_batch_reconstruction(user_id, state_path, events: list, user_weight_kg
         _log.info(
             f"[{user_id}] PAST-EVENT RECONSTRUCTION: earliest event is "
             f"{earliest_dt.strftime('%H:%M')} but twin was created at "
-            f"{datetime.datetime.fromtimestamp(engine_mtime).strftime('%H:%M')}. "
+            f"{datetime.datetime.fromtimestamp(engine_sim_time).strftime('%H:%M')}. "
             f"Rewinding engine clock to midnight ({midnight_dt.strftime('%Y-%m-%d 00:00')})."
         )
 
