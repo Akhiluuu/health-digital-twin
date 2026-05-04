@@ -564,7 +564,47 @@ def build_batch_reconstruction(user_id, state_path, events: list, user_weight_kg
         ev_copy["timestamp"] = ts
         event_dicts.append(ev_copy)
 
-    sorted_events = sorted(event_dicts, key=lambda x: float(x["timestamp"]))
+    # ── Timeline Splitting for Overlapping Events ───────────────────────────
+    timeline_events = []
+    for ev in event_dicts:
+        ts = ev["timestamp"]
+        etype = ev.get("event_type")
+        val = ev.get("value", 0)
+
+        if etype == "exercise":
+            dur = max(60, min(int(float(ev.get("duration_seconds") or 1800)), 14400))
+            timeline_events.append({"timestamp": ts, "event_type": "exercise_start", "value": val})
+            timeline_events.append({"timestamp": ts + dur, "event_type": "exercise_end"})
+            
+        elif etype == "sleep":
+            sleep_sec = int(max(0.25, min(float(val or 0), 12.0)) * 3600)
+            timeline_events.append({"timestamp": ts, "event_type": "sleep_start"})
+            timeline_events.append({"timestamp": ts + sleep_sec, "event_type": "sleep_end"})
+            
+        elif etype == "stress":
+            intensity = max(0.0, min(1.0, float(val or 0)))
+            dur = max(60, min(int(float(ev.get("duration_seconds") or 300)), 3600))
+            timeline_events.append({"timestamp": ts, "event_type": "stress_start", "value": intensity})
+            if intensity > 0.05:
+                timeline_events.append({"timestamp": ts + dur, "event_type": "stress_decay", "value": intensity * 0.3})
+                timeline_events.append({"timestamp": ts + dur + 300, "event_type": "stress_end"})
+            else:
+                timeline_events.append({"timestamp": ts + dur, "event_type": "stress_end"})
+                
+        elif etype == "fast":
+            fast_sec = int(max(1.0, min(48.0, float(val or 0))) * 3600)
+            timeline_events.append({"timestamp": ts, "event_type": "fast_start"})
+            timeline_events.append({"timestamp": ts + fast_sec, "event_type": "fast_end"})
+            
+        elif etype == "alcohol":
+            # Alcohol requires an anchor to allow absorption
+            timeline_events.append({"timestamp": ts, "event_type": "alcohol_start", "value": val})
+            timeline_events.append({"timestamp": ts + 1800, "event_type": "alcohol_end"})
+            
+        else:
+            timeline_events.append(ev)
+
+    sorted_events = sorted(timeline_events, key=lambda x: float(x["timestamp"]))
 
     # ── Smart Fast-Continuation Check ───────────────────────────────────────
     can_fast_continue = False
@@ -700,22 +740,15 @@ def build_batch_reconstruction(user_id, state_path, events: list, user_weight_kg
             f"@ engine_t={datetime.datetime.fromtimestamp(engine_clock).strftime('%H:%M:%S')}"
         )
 
-        if etype == "exercise":
-            intensity    = float(val)
-            duration_sec = int(float(event.get("duration_seconds") or 1800))
-            duration_sec = max(60, min(duration_sec, 14400))
-            actions_xml += _exercise_xml(intensity)
-            actions_xml += _advance_xml(duration_sec)
-            engine_clock += duration_sec
+        if etype == "exercise_start":
+            actions_xml += _exercise_xml(float(val))
+        elif etype == "exercise_end":
             actions_xml += _exercise_xml(0.0)
 
-        elif etype == "sleep":
-            hours        = max(0.25, min(float(val or 0), 12.0))
-            sleep_sec    = int(hours * 3600)
+        elif etype == "sleep_start":
             actions_xml += '        <Action xsi:type="SleepData" Sleep="On"/>\n'
-            actions_xml += _advance_xml(sleep_sec)
+        elif etype == "sleep_end":
             actions_xml += '        <Action xsi:type="SleepData" Sleep="Off"/>\n'
-            engine_clock += sleep_sec
 
         elif etype == "meal":
             actions_xml += _meal_xml(
@@ -739,38 +772,20 @@ def build_batch_reconstruction(user_id, state_path, events: list, user_weight_kg
             env_name    = event.get("environment_name", "Standard")
             actions_xml += _environment_xml(env_name)
 
-        elif etype == "stress":
-            intensity   = max(0.0, min(1.0, float(val or 0)))
-            dur         = int(float(event.get("duration_seconds") or 300))
-            dur         = max(60, min(dur, 3600))  # clamp 1min–60min
-
-            # Pattern: peak stress → gradual decay (mimics cortisol response kinetics)
-            # Phase 1: Full stress for user-specified duration
-            actions_xml += _stress_xml(intensity)
-            actions_xml += _advance_xml(dur)
-            engine_clock += dur
-            # Phase 2: 30% residual stress (simulates slow cortisol clearance)
-            if intensity > 0.05:
-                actions_xml += _stress_xml(intensity * 0.3)
-                actions_xml += _advance_xml(300)  # 5 min decay window
-                engine_clock += 300
-            # Phase 3: Full clearance — AcuteStressData severity=0.0 properly resets state
+        elif etype == "stress_start":
+            actions_xml += _stress_xml(float(val))
+        elif etype == "stress_decay":
+            actions_xml += _stress_xml(float(val))
+        elif etype == "stress_end":
             actions_xml += _stress_xml(0.0)
 
-        elif etype == "alcohol":
+        elif etype == "alcohol_start":
             actions_xml += _alcohol_xml(float(val or 0), weight_kg=user_weight_kg)
-            actions_xml += _advance_xml(1800)
-            engine_clock += 1800
+        elif etype == "alcohol_end":
+            pass # structural anchor
 
-        elif etype == "fast":
-            hours    = max(1.0, min(48.0, float(val or 0)))
-            fast_sec = int(hours * 3600)
-            # _fasting_xml emits an AdvanceTimeData action (the XML advances the engine clock).
-            # We also advance engine_clock here to keep our logical clock in sync.
-            # These are two separate things: XML actions control BioGears, engine_clock
-            # tracks our position so subsequent wait_time calculations are correct.
-            actions_xml  += _fasting_xml(hours)
-            engine_clock += fast_sec
+        elif etype in ("fast_start", "fast_end"):
+            pass # structural anchor; engine advances time automatically
 
     # Cap final stabilization gap to 30 minutes to avoid excessive compute
     final_gap = int(now_ts - engine_clock)
