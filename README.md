@@ -96,7 +96,7 @@ This is not a heuristic or a statistical model — it is a **mechanistic, organ-
 │  │                   Services Layer                            │ │
 │  │  biogears.ts · firebaseSync.ts · notifeeService.ts          │ │
 │  │  embeddingService.ts · documentProcessing.ts                │ │
-│  └────────────────────────────────────────────────────────────── │
+│  └─────────────────────────────────────────────────────────────┘ │
 └───────────────────────────────┬──────────────────────────────────┘
                                 │ HTTP / REST (axios)
                                 │ port 8000
