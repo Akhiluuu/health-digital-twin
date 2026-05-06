@@ -11,6 +11,13 @@ Architecture:
 
 BioGears writes the CSV progressively if it flushes stdout; we attempt row-by-row tailing.
 If BioGears buffers the whole file, we still stream status updates and the final burst.
+
+Fixes vs v1:
+  - Correct sort key: events sorted by 'timestamp' (not 'time_offset' which is None for most)
+  - build_batch_reconstruction returns 3 values (path, run_id, csv_prefix) — now unpacked correctly
+  - Added './' prefix to bg-cli command so shell finds the binary in cwd (not in $PATH)
+  - Added LD_LIBRARY_PATH injection so bg-cli can find libbiogears.so on Linux
+  - CSV search now uses csv_prefix from scenario_builder (not the hardcoded batch_{user_id} name)
 """
 
 import os
@@ -37,22 +44,32 @@ BASE_URL = os.environ.get("SERVER_BASE_URL", "http://127.0.0.1:8000").rstrip("/"
 
 # ---------------------------------------------------------------------------
 # In-memory stream job store
-# stream_id → {status, csv_path, dest_csv, user_id, error, process}
+# stream_id → {status, csv_prefix, dest_csv, user_id, error, process}
 # ---------------------------------------------------------------------------
 _stream_jobs: Dict[str, Dict[str, Any]] = {}
 
 
 # ---------------------------------------------------------------------------
 # NON-BLOCKING ENGINE RUNNER
-# Runs bg-cli.exe in a daemon thread; updates job record on completion.
+# Runs bg-cli in a daemon thread; updates job record on completion.
 # ---------------------------------------------------------------------------
 def _engine_thread(job_id: str, scenario_path: str, user_id: str,
-                   expected_csv: Path, dest_csv: Path, state_file: Path):
+                   csv_prefix: str, dest_csv: Path, state_file: Path):
     """Worker thread: runs BioGears and finalises the job record."""
     job = _stream_jobs[job_id]
     try:
         rel_scenario = os.path.relpath(scenario_path, BIOGEARS_BIN_DIR)
-        command = f'"{BIOGEARS_EXECUTABLE.name}" Scenario "{rel_scenario}"'
+        # Use "./" prefix so the shell resolves the binary relative to BIOGEARS_BIN_DIR.
+        # Without it, the shell searches $PATH and fails to find bg-cli.
+        command = f'"./{BIOGEARS_EXECUTABLE.name}" Scenario "{rel_scenario}"'
+
+        # Inject LD_LIBRARY_PATH so bg-cli finds libbiogears.so and libboost_filesystem.so
+        env = os.environ.copy()
+        lib_path = f"{BIOGEARS_BIN_DIR}/lib:{BIOGEARS_BIN_DIR}/bin"
+        if "LD_LIBRARY_PATH" in env:
+            env["LD_LIBRARY_PATH"] = f"{lib_path}:{env['LD_LIBRARY_PATH']}"
+        else:
+            env["LD_LIBRARY_PATH"] = lib_path
 
         proc = subprocess.Popen(
             command,
@@ -60,14 +77,15 @@ def _engine_thread(job_id: str, scenario_path: str, user_id: str,
             stderr=subprocess.STDOUT,
             text=True,
             shell=True,
-            cwd=str(BIOGEARS_BIN_DIR)
+            cwd=str(BIOGEARS_BIN_DIR),
+            env=env,
         )
         job["process"] = proc
         job["status"] = "running"
 
         # Drain stdout so the process doesn't block on a full pipe
         for line in proc.stdout:
-            pass  # Engine output already visible in server console
+            pass  # Engine output already visible in server console via engine_runner for the main path
 
         proc.wait()
 
@@ -77,18 +95,19 @@ def _engine_thread(job_id: str, scenario_path: str, user_id: str,
             return
 
         # --- Locate and move the output CSV ---
-        target_filename = f"batch_{user_id}Results.csv"
+        # Use csv_prefix from scenario_builder (e.g. "batch_alice_1746527823")
+        target_filename = f"{csv_prefix}Results.csv"
         found_csv: Optional[Path] = None
-        for _ in range(6):
+        for _ in range(12):   # up to 12s
             candidates = list(BIOGEARS_BIN_DIR.rglob(target_filename))
             if candidates:
                 found_csv = candidates[0]
                 break
-            time.sleep(2)
+            time.sleep(1)
 
         if not found_csv:
             job["status"] = "failed"
-            job["error"] = "Engine output CSV not found after completion."
+            job["error"] = f"Engine output CSV '{target_filename}' not found after completion."
             return
 
         dest_csv.parent.mkdir(parents=True, exist_ok=True)
@@ -96,6 +115,7 @@ def _engine_thread(job_id: str, scenario_path: str, user_id: str,
         os.remove(str(found_csv))
 
         # --- Update engine state ---
+        # scenario_builder saves the state as batch_{user_id}.xml in BIOGEARS_BIN_DIR
         updated_state = f"batch_{user_id}.xml"
         state_candidates = list(BIOGEARS_BIN_DIR.rglob(updated_state))
         if state_candidates:
@@ -112,11 +132,20 @@ def _engine_thread(job_id: str, scenario_path: str, user_id: str,
         df = df.loc[:, ~df.columns.str.contains('^Unnamed')]
         df.columns = [c.split('(')[0].strip() for c in df.columns]
         latest = df.iloc[-1].to_dict()
+
+        def _safe(k):
+            try:
+                v = float(latest.get(k, 0))
+                return 0.0 if (v != v) else v   # NaN check without math import
+            except (TypeError, ValueError):
+                return 0.0
+
         vitals = {
-            "heart_rate":   round(latest.get("HeartRate", 0), 1),
-            "blood_pressure": f"{int(latest.get('SystolicArterialPressure', 0))}/{int(latest.get('DiastolicArterialPressure', 0))}",
-            "glucose":       round(latest.get("Glucose-BloodConcentration", 0), 2),
-            "respiration":   round(latest.get("RespirationRate", 0), 1),
+            "heart_rate":     round(_safe("HeartRate"), 1),
+            "blood_pressure": f"{int(_safe('SystolicArterialPressure'))}/{int(_safe('DiastolicArterialPressure'))}",
+            "glucose":        round(_safe("Glucose-BloodConcentration"), 2),
+            "respiration":    round(_safe("RespirationRate"), 1),
+            "spo2":           round(_safe("OxygenSaturation") * 100, 1),
         }
 
         job["status"]     = "done"
@@ -141,23 +170,32 @@ def start_stream(user_id: str, events: list) -> Dict[str, Any]:
     if not state_file.exists():
         raise FileNotFoundError(f"Twin '{user_id}' not found.")
 
-    sorted_events = sorted(
-        [e if isinstance(e, dict) else e.dict() for e in events],
-        key=lambda x: x["time_offset"]
-    )
+    # Normalise events to dicts and assign timestamps
+    now_ts = time.time()
+    event_dicts = []
+    for e in events:
+        d = e if isinstance(e, dict) else e.dict()
+        # Prefer explicit timestamp; fall back to time_offset (seconds from now)
+        if not d.get("timestamp"):
+            d["timestamp"] = now_ts + (d.get("time_offset") or 0)
+        event_dicts.append(d)
 
-    scenario_path, run_id = scenario_builder.build_batch_reconstruction(
+    # Sort by timestamp (the field actually populated — time_offset is deprecated)
+    sorted_events = sorted(event_dicts, key=lambda x: float(x.get("timestamp") or 0))
+
+    # build_batch_reconstruction returns (path, run_id, csv_prefix)
+    scenario_path, run_id, csv_prefix = scenario_builder.build_batch_reconstruction(
         user_id, str(state_file), sorted_events
     )
 
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     dest_csv = USER_HISTORY_DIR / user_id / f"vitals_{timestamp}.csv"
-    expected_csv = BIOGEARS_BIN_DIR / f"batch_{user_id}Results.csv"
 
     job_id = str(uuid.uuid4())
     _stream_jobs[job_id] = {
         "status":     "pending",
         "user_id":    user_id,
+        "csv_prefix": csv_prefix,
         "dest_csv":   dest_csv,
         "vitals":     None,
         "report_url": None,
@@ -167,7 +205,7 @@ def start_stream(user_id: str, events: list) -> Dict[str, Any]:
 
     thread = threading.Thread(
         target=_engine_thread,
-        args=(job_id, scenario_path, user_id, expected_csv, dest_csv, state_file),
+        args=(job_id, scenario_path, user_id, csv_prefix, dest_csv, state_file),
         daemon=True
     )
     thread.start()
@@ -215,19 +253,17 @@ async def sse_generator(stream_id: str) -> AsyncGenerator[str, None]:
     rows_sent = 0
     csv_path: Optional[Path] = None
     last_check = time.time()
+    csv_prefix = job.get("csv_prefix", "")
 
     while True:
         status = job["status"]
 
-        # Try to find the CSV (it may not exist yet right at the start)
-        if csv_path is None:
-            candidate = BIOGEARS_BIN_DIR / f"batch_{job['user_id']}Results.csv"
-            # Also check inside Scenarios/API subfolder
-            if not candidate.exists():
-                alts = list(BIOGEARS_BIN_DIR.rglob(f"batch_{job['user_id']}Results.csv"))
-                candidate = alts[0] if alts else None
-            if candidate and Path(candidate).exists():
-                csv_path = Path(candidate)
+        # Try to find the in-progress CSV using the correct prefix
+        if csv_path is None and csv_prefix:
+            target = f"{csv_prefix}Results.csv"
+            candidates = list(BIOGEARS_BIN_DIR.rglob(target))
+            if candidates:
+                csv_path = Path(candidates[0])
 
         # Read new rows from the in-progress CSV
         if csv_path and csv_path.exists():
@@ -238,11 +274,11 @@ async def sse_generator(stream_id: str) -> AsyncGenerator[str, None]:
                 new_rows = df.iloc[rows_sent:]
                 for _, row in new_rows.iterrows():
                     vital_event = {
-                        "time": round(float(row.get("Time", 0)), 1),
-                        "heart_rate": round(float(row.get("HeartRate", 0)), 1),
-                        "glucose": round(float(row.get("Glucose-BloodConcentration", 0)), 2),
-                        "systolic": round(float(row.get("SystolicArterialPressure", 0)), 1),
-                        "diastolic": round(float(row.get("DiastolicArterialPressure", 0)), 1),
+                        "time":        round(float(row.get("Time", 0)), 1),
+                        "heart_rate":  round(float(row.get("HeartRate", 0)), 1),
+                        "glucose":     round(float(row.get("Glucose-BloodConcentration", 0)), 2),
+                        "systolic":    round(float(row.get("SystolicArterialPressure", 0)), 1),
+                        "diastolic":   round(float(row.get("DiastolicArterialPressure", 0)), 1),
                         "respiration": round(float(row.get("RespirationRate", 0)), 1),
                     }
                     yield _sse("vitals", vital_event)
@@ -258,29 +294,30 @@ async def sse_generator(stream_id: str) -> AsyncGenerator[str, None]:
 
         # Check for terminal states
         if status == "done":
-            # One final pass to catch any remaining rows
-            if job.get("dest_csv") and Path(job["dest_csv"]).exists():
+            # One final pass to catch any remaining rows from dest_csv
+            dest = job.get("dest_csv")
+            if dest and Path(dest).exists():
                 try:
-                    df = pd.read_csv(job["dest_csv"], index_col=False)
+                    df = pd.read_csv(dest, index_col=False)
                     df = df.loc[:, ~df.columns.str.contains('^Unnamed')]
                     df.columns = [c.split('(')[0].strip() for c in df.columns]
                     remaining = df.iloc[rows_sent:]
                     for _, row in remaining.iterrows():
                         yield _sse("vitals", {
-                            "time": round(float(row.get("Time", 0)), 1),
-                            "heart_rate": round(float(row.get("HeartRate", 0)), 1),
-                            "glucose": round(float(row.get("Glucose-BloodConcentration", 0)), 2),
-                            "systolic": round(float(row.get("SystolicArterialPressure", 0)), 1),
-                            "diastolic": round(float(row.get("DiastolicArterialPressure", 0)), 1),
+                            "time":        round(float(row.get("Time", 0)), 1),
+                            "heart_rate":  round(float(row.get("HeartRate", 0)), 1),
+                            "glucose":     round(float(row.get("Glucose-BloodConcentration", 0)), 2),
+                            "systolic":    round(float(row.get("SystolicArterialPressure", 0)), 1),
+                            "diastolic":   round(float(row.get("DiastolicArterialPressure", 0)), 1),
                             "respiration": round(float(row.get("RespirationRate", 0)), 1),
                         })
                 except Exception:
                     pass
 
             yield _sse("done", {
-                "status": "success",
-                "vitals": job.get("vitals"),
-                "report_url": job.get("report_url"),
+                "status":       "success",
+                "vitals":       job.get("vitals"),
+                "report_url":   job.get("report_url"),
                 "rows_streamed": rows_sent,
             })
             break

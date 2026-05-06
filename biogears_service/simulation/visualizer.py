@@ -19,9 +19,9 @@ import time
 import datetime
 from pathlib import Path
 
-from biogears_service.simulation.config import BIO_OUTPUT_DIR, BASE_DIR, SCENARIO_API_DIR
+from biogears_service.simulation.config import BIO_OUTPUT_DIR, BASE_DIR, SCENARIO_API_DIR, BIOGEARS_BIN_DIR
 
-BASE_URL = "http://127.0.0.1:8000"
+BASE_URL = os.environ.get("SERVER_BASE_URL", "http://127.0.0.1:8000").rstrip("/")
 
 
 # ── CSV discovery ─────────────────────────────────────────────────────────────
@@ -30,12 +30,9 @@ def get_csv_path(user_id, run_id=None, prefix="run_"):
     """Locates a BioGears output CSV by trying several candidate locations."""
     filename = f"run_{run_id}Results.csv" if run_id else f"{prefix}{user_id}Results.csv"
 
-    bin_dir          = BASE_DIR / "biogears_service" / "engine" / "BioGears" / "bin"
-    api_scenario_dir = bin_dir / "Scenarios" / "API"
-
     candidates = [
-        api_scenario_dir / filename,
-        bin_dir / filename,
+        BIOGEARS_BIN_DIR / "Scenarios" / "API" / filename,
+        BIOGEARS_BIN_DIR / filename,
         BIO_OUTPUT_DIR / filename,
         SCENARIO_API_DIR / filename,
     ]
@@ -167,10 +164,11 @@ def generate_health_report(user_id, run_id=None, custom_path=None):
 
         # Panel 3: Respiration
         ax = axes[3]
-        ax.plot(T, df["RespirationRate"], color=_COLOURS["respiration"],
-                linewidth=2, label="Resp Rate")
-        ax.axhline(12, color="black", linestyle=":", alpha=0.3)
-        ax.axhline(20, color="black", linestyle=":", alpha=0.3)
+        if "RespirationRate" in df.columns:
+            ax.plot(T, df["RespirationRate"], color=_COLOURS["respiration"],
+                    linewidth=2, label="Resp Rate")
+            ax.axhline(12, color="black", linestyle=":", alpha=0.3)
+            ax.axhline(20, color="black", linestyle=":", alpha=0.3)
         ax.set_ylabel("Breaths/min", fontweight="bold")
         ax.legend(loc="upper right", fontsize=9)
         ax.grid(True, linestyle="--", alpha=0.35)
