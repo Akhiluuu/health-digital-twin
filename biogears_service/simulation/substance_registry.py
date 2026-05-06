@@ -302,13 +302,15 @@ SUBSTANCE_REGISTRY: Dict[str, Any] = {
     },
 
     "Ethanol": {
-        "route": "ORAL", "unit": "mg",
+        "route": "ORAL", "unit": "g",
         "category": "Depressant / Alcohol",
-        "safe_min": 14000, "safe_max": 140000,
+        "safe_min": 14, "safe_max": 140,
         "safety_level": "caution",
-        "warning": "⚠️ ALCOHOL — CNS depression. 1 standard drink = 14,000 mg (14g) ethanol.",
-        "note": "Standard drink (14g). High doses risk coma or respiratory arrest.",
+        "warning": "⚠️ ALCOHOL — CNS depression. 1 standard drink = 14 g ethanol.",
+        "note": "Standard drink = 14g. High doses risk coma or respiratory arrest. Use the 'alcohol' event type rather than dosing directly.",
         "effects": "Sedation, ↓ RR, mild ↓ BP",
+        # NOTE: scenario_builder._alcohol_xml() handles Ethanol via SubstanceOralDoseData
+        # with unit='g'. Do NOT route Ethanol through _substance_xml (mg path).
     },
 
     # ── Chemical / Toxic (simulation only) ───────────────────────────────────

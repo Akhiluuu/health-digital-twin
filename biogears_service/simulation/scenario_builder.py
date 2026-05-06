@@ -326,7 +326,9 @@ def _fasting_xml(hours: float) -> str:
     seconds = int(hours * 3600)
     # Pure time advance — BioGears metabolic model handles glucose drop,
     # free fatty acid mobilization, and ketogenesis automatically.
-    return _advance_xml(seconds)
+    # Use _chunked_advance_xml so even a 48h fast (172800s) is split into
+    # <=1800s pieces and doesn't run the engine for hours on one action.
+    return _chunked_advance_xml(seconds)
 
 
 def _circadian_phase_xml(wall_hour: int) -> str:
@@ -378,25 +380,25 @@ def _catchup_routine_xml(weight_kg: float) -> str:
 
     # 0h: Wake up, drink water (250 mL), advance 30 min
     xml += _water_xml(250.0)
-    xml += _advance_xml(1800)   # 0 → 0.5h
+    xml += _chunked_advance_xml(1800)   # 0 → 0.5h
 
     # 0.5h: Breakfast (500 kcal), advance 4h
     xml += _meal_xml(500, "balanced")
-    xml += _advance_xml(14400)  # 0.5 → 4.5h
+    xml += _chunked_advance_xml(14400)  # 0.5 → 4.5h
 
     # 4.5h: Lunch + water (700 kcal), advance 5h
     xml += _water_xml(300.0)
     xml += _meal_xml(700, "balanced")
-    xml += _advance_xml(18000)  # 4.5 → 9.5h
+    xml += _chunked_advance_xml(18000)  # 4.5 → 9.5h
 
     # 9.5h: Dinner + water (800 kcal), advance 6.5h
     xml += _water_xml(300.0)
     xml += _meal_xml(800, "balanced")
-    xml += _advance_xml(23400)  # 9.5 → 16h
+    xml += _chunked_advance_xml(23400)  # 9.5 → 16h
 
     # 16h: Sleep 8 hours
     xml += '        <Action xsi:type="SleepData" Sleep="On"/>\n'
-    xml += _advance_xml(28800)  # 16 → 24h
+    xml += _chunked_advance_xml(28800)  # 16 → 24h
     xml += '        <Action xsi:type="SleepData" Sleep="Off"/>\n'
 
     xml += "        <!-- END CATCH-UP ROUTINE -->\n"
@@ -883,14 +885,17 @@ def build_forecast_scenario(user_id, state_path, hours=4):
     run_id        = f"{user_id}_forecast_{int(time.time())}"
     scenario_file = SCENARIO_API_DIR / f"forecast_{run_id}.xml"
     abs_state_in  = Path(state_path).absolute().as_posix()
-    # ✅ FIX: Save forecast state so forecasts can be chained
     abs_state_out = (BIOGEARS_BIN_DIR / f"forecast_{user_id}.xml").as_posix()
     csv_prefix    = f"forecast_{run_id}"
+
+    # Clamp forecast window: min 1h, max 12h — beyond 12h the engine diverges
+    hours     = max(1, min(12, int(hours)))
+    total_sec = hours * 3600
 
     data_req = _DATA_REQUESTS.format(prefix=csv_prefix)
     xml = (
         _scenario_header(abs_state_in, data_req)
-        + _advance_xml(hours * 3600)
+        + _chunked_advance_xml(total_sec)   # chunked so no single advance > 1800s
         + _serialize_state_xml(abs_state_out)
         + "\n"
         + _scenario_footer()
@@ -903,7 +908,7 @@ def build_forecast_scenario(user_id, state_path, hours=4):
 def build_whatif_scenario(user_id, state_path, event: dict, hours=4):
     """
     Builds two scenario files from the same engine state:
-      1. Baseline  — just advances time (no interventions)
+      1. Baseline     — just advances time (no interventions)
       2. Intervention — applies the event, then advances time
 
     Returns (baseline_path, intervention_path, base_run_id, evt_run_id,
@@ -911,6 +916,8 @@ def build_whatif_scenario(user_id, state_path, event: dict, hours=4):
     """
     ts            = int(time.time())
     abs_state_in  = Path(state_path).absolute().as_posix()
+    # Clamp to a reasonable window so the engine doesn't run for hours
+    hours         = max(1, min(12, int(hours)))
     seconds       = hours * 3600
 
     # ── Baseline ─────────────────────────────────────────────────────────────
@@ -920,7 +927,7 @@ def build_whatif_scenario(user_id, state_path, event: dict, hours=4):
     base_data_req = _DATA_REQUESTS.format(prefix=base_prefix)
     base_xml = (
         _scenario_header(abs_state_in, base_data_req)
-        + _advance_xml(seconds)
+        + _chunked_advance_xml(seconds)     # chunked baseline advance
         + _scenario_footer()
     )
     base_file.write_text(base_xml, encoding="utf-8")
@@ -936,57 +943,72 @@ def build_whatif_scenario(user_id, state_path, event: dict, hours=4):
 
     if etype == "exercise":
         dur = int(event.get("duration_seconds") or min(seconds // 2, 3600))
+        dur = max(60, min(dur, seconds))          # clamp to scenario window
         event_action  = _exercise_xml(float(val))
-        event_action += _advance_xml(dur)
+        event_action += _chunked_advance_xml(dur)
         event_action += _exercise_xml(0.0)
         remaining = max(0, seconds - dur)
         if remaining:
-            event_action += _advance_xml(remaining)
+            event_action += _chunked_advance_xml(remaining)
+
     elif etype == "sleep":
-        hours = max(0.25, min(float(val or 0), 12.0))
-        sleep_sec = int(hours * 3600)
+        sleep_h   = max(0.25, min(float(val or 0), 12.0))
+        sleep_sec = int(sleep_h * 3600)
+        sleep_sec = min(sleep_sec, seconds)       # clamp to scenario window
         event_action += '        <Action xsi:type="SleepData" Sleep="On"/>\n'
-        event_action += _advance_xml(sleep_sec)
+        event_action += _chunked_advance_xml(sleep_sec)
         event_action += '        <Action xsi:type="SleepData" Sleep="Off"/>\n'
         remaining = max(0, seconds - sleep_sec)
         if remaining:
-            event_action += _advance_xml(remaining)
+            event_action += _chunked_advance_xml(remaining)
+
     elif etype == "fast":
-        hours = max(1.0, min(48.0, float(val or 0)))
-        fast_sec = int(hours * 3600)
-        event_action += _fasting_xml(hours)
+        fast_h   = max(1.0, min(48.0, float(val or 0)))
+        fast_sec = int(fast_h * 3600)
+        fast_sec = min(fast_sec, seconds)         # clamp to scenario window
+        # Pure time advance — BioGears metabolic model handles fasting physiology
+        event_action += _chunked_advance_xml(fast_sec)
         remaining = max(0, seconds - fast_sec)
         if remaining:
-            event_action += _advance_xml(remaining)
+            event_action += _chunked_advance_xml(remaining)
+
     elif etype == "meal":
         event_action  = _meal_xml(float(val), event.get("meal_type", "balanced"),
                                   event.get("carb_g"), event.get("fat_g"), event.get("protein_g"))
-        event_action += _advance_xml(seconds)
+        event_action += _chunked_advance_xml(seconds)
+
     elif etype == "water":
         event_action  = _water_xml(float(val))
-        event_action += _advance_xml(seconds)
+        event_action += _chunked_advance_xml(seconds)
+
     elif etype == "substance":
         event_action  = _substance_xml(event.get("substance_name", "Caffeine"), float(val))
-        event_action += _advance_xml(seconds)
+        event_action += _chunked_advance_xml(seconds)
+
     elif etype == "alcohol":
-        g_ethanol = float(val or 0) * 14.0
-        event_action  = _substance_xml("Ethanol", g_ethanol)
-        event_action += _advance_xml(seconds)
+        # Use _alcohol_xml (standard drinks → grams ethanol) not _substance_xml
+        drinks = max(0.0, float(val or 0))
+        event_action  = _alcohol_xml(drinks)
+        event_action += _chunked_advance_xml(seconds)
+
     elif etype == "environment":
         event_action  = _environment_xml(event.get("environment_name", "Standard"))
-        event_action += _advance_xml(seconds)
+        event_action += _chunked_advance_xml(seconds)
+
     elif etype == "stress":
         intensity = max(0.0, min(1.0, float(val or 0)))
         dur = int(float(event.get("duration_seconds") or 300))
-        dur = max(60, min(dur, 3600))
-        event_action += _exercise_xml(intensity * 0.3)
-        event_action += _advance_xml(dur)
-        event_action += _exercise_xml(0.0)
+        dur = max(60, min(dur, seconds))          # clamp to scenario window
+        # Use AcuteStressData (not exercise) to correctly model sympathetic surge
+        event_action += _stress_xml(intensity)
+        event_action += _chunked_advance_xml(dur)
+        event_action += _stress_xml(0.0)          # clear stress after duration
         remaining = max(0, seconds - dur)
         if remaining:
-            event_action += _advance_xml(remaining)
+            event_action += _chunked_advance_xml(remaining)
+
     else:
-        event_action = _advance_xml(seconds)
+        event_action = _chunked_advance_xml(seconds)
 
     evt_data_req = _DATA_REQUESTS.format(prefix=evt_prefix)
     evt_xml = (
