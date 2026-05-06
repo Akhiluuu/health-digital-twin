@@ -583,7 +583,28 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
       }
       simStartRef.current = null;
       setSimulationStatus('failed');
-      setSimulationError(err.message || 'Simulation failed');
+
+      // The job store serialises the 500 detail as a JSON string, e.g.:
+      //   '{"message":"Engine execution failed.","log_snippet":"..."}'
+      // Parse it back so we show a clean, human-readable message instead of
+      // the raw JSON blob (which previously also contained ANSI escape codes).
+      let friendlyError = err.message || 'Simulation failed';
+      try {
+        // err.detail is set by BiogearsError — may be a raw string or object
+        const raw = err.detail?.detail ?? err.detail ?? err.message ?? '';
+        const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+        if (parsed && typeof parsed === 'object') {
+          const msg = parsed.message || '';
+          const snippet = (parsed.log_snippet || '').trim();
+          if (msg) {
+            friendlyError = snippet
+              ? `${msg}\n\n${snippet.split('\n').slice(0, 5).join('\n')}`
+              : msg;
+          }
+        }
+      } catch { /* raw string — use as-is */ }
+
+      setSimulationError(friendlyError);
       setSimulationProgress('');
       throw err;
     }

@@ -224,8 +224,37 @@ def _exercise_xml(intensity: float) -> str:
     )
 
 
+
 def _advance_xml(seconds: int) -> str:
     return f'        <Action xsi:type="AdvanceTimeData"><Time value="{seconds}" unit="s"/></Action>\n'
+
+
+# Maximum seconds for a single AdvanceTimeData action sent to BioGears.
+# Larger advances are automatically split into multiple chunks.
+# Keeping this at ≤1800 s (30 min) prevents the engine from running for
+# hours on a single action and then crashing from physiological divergence.
+_MAX_ADVANCE_CHUNK_S = 1800
+
+
+def _chunked_advance_xml(total_seconds: int) -> str:
+    """
+    Splits a large AdvanceTime into multiple ≤1800-second chunks.
+
+    BioGears can be asked to simulate many hours of physiology in one
+    AdvanceTimeData action, which causes the engine to run for a very long
+    wall-clock time and then crash from physiological divergence. Chunking
+    keeps each advance short so the engine writes progress checkpoints and
+    is less likely to diverge.
+    """
+    if total_seconds <= 0:
+        return ''
+    xml = ''
+    remaining = int(total_seconds)
+    while remaining > 0:
+        chunk = min(remaining, _MAX_ADVANCE_CHUNK_S)
+        xml += _advance_xml(chunk)
+        remaining -= chunk
+    return xml
 
 
 def _stress_xml(intensity: float) -> str:
@@ -551,8 +580,27 @@ def build_batch_reconstruction(user_id, state_path, events: list, user_weight_kg
         except Exception:
             pass
             
-    engine_sim_time = state_meta.get("engine_sim_time", os.path.getmtime(state_path))
+    engine_sim_time = state_meta.get("engine_sim_time", None)
+    if engine_sim_time is None:
+        # No meta.json exists yet (e.g. user registered before meta-write was added).
+        # Default to 30 minutes ago so the normal path is used with a minimal basal gap.
+        # Also heal the missing file immediately so future simulations don't fall back again.
+        engine_sim_time = now_ts - 1800
+        _log.warning(
+            f"[{user_id}] No meta.json found for state '{state_path}'. "
+            f"Healing: setting engine_sim_time = now - 30min ({engine_sim_time:.0f}). "
+            f"Writing meta.json for future runs."
+        )
+        try:
+            import json as _j
+            Path(state_path).with_suffix(".meta.json").write_text(
+                _j.dumps({"engine_sim_time": int(engine_sim_time), "healed": True}),
+                encoding="utf-8"
+            )
+        except Exception as _he:
+            _log.warning(f"[{user_id}] meta.json heal-write failed: {_he}")
     processed_events = state_meta.get("events_processed", [])
+
 
     event_dicts = []
     for ev in events:
@@ -661,19 +709,21 @@ def build_batch_reconstruction(user_id, state_path, events: list, user_weight_kg
         # (person was asleep from midnight up to whenever they woke and started logging)
         pre_event_gap = int(earliest_ev_ts - midnight_ts)
         if pre_event_gap > 60:
-            # Simulate sleep from midnight to ~first-event time for proper basal state
-            sleep_hours = min(pre_event_gap / 3600.0, 9.0)  # cap sleep at 9h
+            # Cap sleep to 2 hours — enough to model an overnight physiological baseline
+            # without running the engine for hours before even the first event.
+            sleep_hours = min(pre_event_gap / 3600.0, 2.0)  # HARD CAP: 2h max sleep advance
             sleep_sec   = int(sleep_hours * 3600)
             _log.info(f"[{user_id}] Injecting {sleep_hours:.1f}h sleep (midnight → first event).")
             actions_xml += '        <Action xsi:type="SleepData" Sleep="On"/>\n'
-            actions_xml += _advance_xml(sleep_sec)
+            actions_xml += _chunked_advance_xml(sleep_sec)
             actions_xml += '        <Action xsi:type="SleepData" Sleep="Off"/>\n'
             engine_clock += sleep_sec
 
-            # Small morning wakeup buffer (15 min basal settle after sleep)
+            # Morning wakeup buffer — cap to 30 min max so we don't add another huge block
             remaining_to_first = int(earliest_ev_ts - engine_clock)
+            remaining_to_first = min(remaining_to_first, _MAX_ADVANCE_CHUNK_S)  # HARD CAP: 30 min
             if remaining_to_first > 60:
-                actions_xml += _advance_xml(remaining_to_first)
+                actions_xml += _chunked_advance_xml(remaining_to_first)
                 engine_clock += remaining_to_first
     else:
         # ── NORMAL PATH: events are at/after twin creation ───────────────────
@@ -681,16 +731,18 @@ def build_batch_reconstruction(user_id, state_path, events: list, user_weight_kg
         wall_hour    = datetime.datetime.now().hour
         actions_xml  = _circadian_phase_xml(wall_hour)
 
-        # No catchup routines. Hard cap pre-event basal gap to 2 hours.
+        # Hard cap pre-event basal gap to 30 minutes of simulated time.
+        # Larger gaps are silently fast-forwarded on the logical clock only.
         time_jump = earliest_ev_ts - engine_clock
-        if time_jump > 7200:
-            engine_clock += (time_jump - 7200) # Fast-forward logical clock instantly
+        if time_jump > _MAX_ADVANCE_CHUNK_S:
+            engine_clock += (time_jump - _MAX_ADVANCE_CHUNK_S)  # logical fast-forward
 
         gap_to_first = int(earliest_ev_ts - engine_clock)
         if gap_to_first > 30:
             actions_xml  += f"        <!-- Basal gap: {gap_to_first}s since last sync to first event -->\n"
-            actions_xml  += _advance_xml(gap_to_first)
+            actions_xml  += _chunked_advance_xml(gap_to_first)
             engine_clock += gap_to_first
+
 
     # ── Log engine timeline for debugging ───────────────────────────────────
     _log.info(
@@ -711,15 +763,14 @@ def build_batch_reconstruction(user_id, state_path, events: list, user_weight_kg
         ev_ts     = float(event["timestamp"])
         wait_time = int(ev_ts - engine_clock)
 
-        # Cap long gaps between events to 30 minutes to aggressively fast-forward compute
-        if wait_time > 1800:
-            engine_clock += (wait_time - 1800)
-            wait_time = 1800
+        # Cap long gaps between events to _MAX_ADVANCE_CHUNK_S (30 min) and
+        # fast-forward the logical clock for anything beyond that.
+        if wait_time > _MAX_ADVANCE_CHUNK_S:
+            engine_clock += (wait_time - _MAX_ADVANCE_CHUNK_S)
+            wait_time = _MAX_ADVANCE_CHUNK_S
 
-        # If an event is slightly behind the engine clock (because we padded the previous
-        # simultaneous event by 10s), we allow it up to a minute behind so it gets staggered.
+        # If an event is genuinely behind the engine clock, skip it.
         if wait_time < -60:
-            # Event is genuinely behind engine clock — skip with warning (shouldn't happen after sort)
             _log.warning(
                 f"[{user_id}] Skipping event '{event.get('event_type')}' at "
                 f"{datetime.datetime.fromtimestamp(ev_ts).strftime('%H:%M')} — "
@@ -727,10 +778,11 @@ def build_batch_reconstruction(user_id, state_path, events: list, user_weight_kg
             )
             continue
 
-        # Enforce minimum advance so BioGears always has at least 10s between actions
+        # Enforce minimum advance so BioGears always has at least 10s between actions.
+        # Use _chunked_advance_xml so no single AdvanceTimeData node is > 1800 s.
         effective_wait = max(wait_time, _MIN_ADVANCE_S)
         if effective_wait > 0:
-            actions_xml  += _advance_xml(effective_wait)
+            actions_xml  += _chunked_advance_xml(effective_wait)
             engine_clock += effective_wait
 
         etype = event["event_type"]
@@ -787,18 +839,19 @@ def build_batch_reconstruction(user_id, state_path, events: list, user_weight_kg
         elif etype in ("fast_start", "fast_end"):
             pass # structural anchor; engine advances time automatically
 
-    # Cap final stabilization gap to 30 minutes to avoid excessive compute
+    # Cap final stabilization gap to 30 minutes and chunk it
     final_gap = int(now_ts - engine_clock)
     _log.info(f"[{user_id}] Final gap to 'now': {final_gap}s ({round(final_gap/3600, 1)}h)")
 
-    capped_gap = min(final_gap, 1800)
+    capped_gap = min(final_gap, _MAX_ADVANCE_CHUNK_S)
     if capped_gap > 10:
-        actions_xml += _advance_xml(capped_gap)
+        actions_xml += _chunked_advance_xml(capped_gap)
         engine_clock += capped_gap
     else:
         # Minimum baseline padding so BioGears writes at least a few data rows
         actions_xml += _advance_xml(60)
         engine_clock += 60
+
 
     # Write Meta File for future Fast-Continuations
     try:

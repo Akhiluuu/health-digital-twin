@@ -5,7 +5,7 @@ from fastapi.responses import StreamingResponse, Response
 from fastapi.security.api_key import APIKeyHeader
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
-import shutil, os, math, json, threading
+import shutil, os, math, json, threading, re
 import datetime
 import time
 import uuid
@@ -350,10 +350,24 @@ def _run_batch_sync_blocking(user_id: str, events: list) -> dict:
     # ── [4/6] Run BioGears engine ─────────────────────────────────────────────
     logger.info(f"[4/6] [{user_id}] Handing off to BioGears engine... ({_elapsed()})")
     if not engine_runner.run_biogears(path, user_id=user_id):
-        log = engine_runner.get_latest_log(user_id)
+        log = engine_runner.get_latest_log(user_id) or ""
+        # Strip ANSI escape sequences and BioGears progress-bar noise before
+        # returning the snippet so it's human-readable on mobile.
+        _ansi = re.compile(r'\x1b(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
+        _prog = re.compile(r'^\d+\s+process;\s+Progress\s+\d+/\d+', re.IGNORECASE)
+        clean_lines = [
+            _ansi.sub('', ln).strip()
+            for ln in log.splitlines()
+            if ln.strip() and not _prog.match(_ansi.sub('', ln).strip())
+        ]
+        # Prefer lines that look like errors; fall back to last 20 clean lines
+        _err_kw = ('error', 'failed', 'fatal', 'unable', 'could not', 'missing')
+        error_lines = [ln for ln in clean_lines if any(k in ln.lower() for k in _err_kw)]
+        snippet_lines = error_lines[-10:] if error_lines else clean_lines[-20:]
+        snippet = "\n".join(snippet_lines)
         raise HTTPException(status_code=500,
                             detail={"message": "Engine execution failed.",
-                                    "log_snippet": (log or "")[-500:]})
+                                    "log_snippet": snippet})
 
     # ── [5/6] Capture results ─────────────────────────────────────────────────
     logger.info(f"[5/6] [{user_id}] Capturing CSV output... ({_elapsed()})")
@@ -708,6 +722,23 @@ def register(data: RegistrationRequest):
         if target_file.exists():
             shutil.copy2(str(target_file), str(perm_state))
             os.remove(str(target_file))
+
+            # ── Write .meta.json so scenario_builder has accurate engine_sim_time ──
+            # Without this, scenario_builder falls back to os.path.getmtime(), which
+            # drifts every day and causes multi-hour simulation gaps (the root cause of
+            # the 77,000-second AdvanceTime that made the engine run for 20+ minutes).
+            try:
+                import json as _json
+                _now_epoch = int(datetime.datetime.now().timestamp())
+                _meta_path = perm_state.with_suffix(".meta.json")
+                _meta_path.write_text(_json.dumps({
+                    "engine_sim_time": _now_epoch,
+                    "registered_at": datetime.datetime.now().isoformat(),
+                    "user_id": data.user_id,
+                }))
+                logger.info(f"[{data.user_id}] meta.json written: engine_sim_time={_now_epoch}")
+            except Exception as _me:
+                logger.warning(f"[{data.user_id}] Failed to write meta.json: {_me}")
 
             # Build conditions list for metadata
             conditions = []

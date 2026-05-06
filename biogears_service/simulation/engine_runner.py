@@ -1,7 +1,12 @@
 """
-engine_runner.py — BioGears subprocess launcher (v4).
+engine_runner.py — BioGears subprocess launcher (v5).
 
-Improvements vs v3:
+Improvements vs v4:
+  - ANSI escape code stripping: BioGears uses terminal control sequences
+    (\u001b[0K, \r, etc.) for its progress bar. These are now stripped from
+    every captured line so logs and API error responses are clean.
+  - Progress-bar noise lines ("Progress 1/1; Elapsed Time ...") are filtered
+    from the stored output, keeping logs readable.
   - Timeout configured via ENGINE_TIMEOUT_SECONDS env var (default 24h)
   - Expanded silent-failure detection: catches "Patient stabilization failed",
     "Serialization failed", "failed to stabilize", "[Fatal]", and more
@@ -10,12 +15,29 @@ Improvements vs v3:
 """
 
 import os
+import re
 import subprocess
 import datetime
 import logging
 import threading
 import time
 from pathlib import Path
+
+# ── ANSI escape code stripper ────────────────────────────────────────────────
+# BioGears emits terminal control sequences like \u001b[0K (erase line), \u001b[?25l
+# (hide cursor), and colour codes (\u001b[32m etc.) as part of its progress bar.
+# These are meaningful for a TTY but become garbage in log files and API responses.
+_ANSI_RE = re.compile(r'\x1b(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
+
+
+def _strip_ansi(text: str) -> str:
+    """Remove all ANSI/VT100 escape sequences from *text*."""
+    return _ANSI_RE.sub('', text)
+
+
+# Lines whose sole content (after ANSI stripping) matches BioGears' progress
+# bar pattern are excluded from stored output — they add no diagnostic value.
+_PROGRESS_RE = re.compile(r'^\d+\s+process;\s+Progress\s+\d+/\d+;\s+Elapsed\s+Time', re.IGNORECASE)
 
 from biogears_service.simulation.config import (
     BIOGEARS_EXECUTABLE, BIOGEARS_BIN_DIR, LOGS_DIR
@@ -133,9 +155,23 @@ def run_biogears(scenario_path: str, user_id: str = "unknown") -> EngineResult:
 
         try:
             for line in proc.stdout:
+                # BioGears uses \r to overwrite the progress bar in the same
+                # terminal line. Split on \r and take the last segment so we
+                # always get the final content of each overwritten line.
                 line = line.rstrip()
+                if '\r' in line:
+                    line = line.split('\r')[-1].rstrip()
+
+                # Strip ANSI escape sequences (progress bar colour/erase codes)
+                line = _strip_ansi(line)
+
                 if not line:
                     continue
+
+                # Filter out pure progress-bar noise ("N process; Progress M/M; Elapsed Time ...")
+                if _PROGRESS_RE.match(line.strip()):
+                    continue
+
                 output_lines.append(line)
 
                 # Enforce deadline on each line read
