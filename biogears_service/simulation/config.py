@@ -20,11 +20,12 @@ if IS_WINDOWS:
     BIOGEARS_EXECUTABLE = BIOGEARS_BIN_DIR / "bg-cli.exe"
 else:
     # ── Ubuntu (cloud / E2Networks VM) ───────────────────────────────────────
-    # BioGears is installed system-wide via:
-    #   sudo tar -xzf BioGears-7.x.x-Linux.tar.gz -C /opt/biogears
+    # biogears_runtime/ is a writable directory at the project root containing
+    # symlinks to the bg-cli binary and all required runtime data
+    # (xsd/, patients/, substances/, environments/, etc.).
     # Override with env var BIOGEARS_BIN_DIR if you install it elsewhere.
     _bio_bin_override = os.environ.get("BIOGEARS_BIN_DIR")
-    BIOGEARS_BIN_DIR    = Path(_bio_bin_override) if _bio_bin_override else Path("/opt/biogears/bin")
+    BIOGEARS_BIN_DIR    = Path(_bio_bin_override) if _bio_bin_override else BASE_DIR / "biogears_runtime"
     BIOGEARS_EXECUTABLE = BIOGEARS_BIN_DIR / "bg-cli"
 
 # BioGears scenario output directory (scenarios written here before engine runs)

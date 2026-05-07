@@ -79,7 +79,13 @@ export default function SettingsScreen() {
           />
         </View>
 
+        {Item("Data Sharing", "/settings-data")}
+        {Item("☁️  Backup & Restore", "/backup-restore")}
+        {Item("🌐  Server Configuration", "/settings-server")}
         {Item("Security", "/settings-security")}
+        {Item("Emergency Contacts", "/settings-contacts")}
+        {Item("Language", "/settings-language")}
+        {Item("Notifications", "/settings-notifications")}
         {Item("Help Center", "/settings-help")}
         {Item("About VitalTwin", "/settings-about")}
       </ScrollView>

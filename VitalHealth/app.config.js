@@ -13,7 +13,7 @@ export default {
     newArchEnabled: true,
 
     assetBundlePatterns: ["**/*"],
-    owner: "monish2005",
+    owner: "akhilreddy_03",
 
     /////////////////////////////////////////////////////////
     // IOS CONFIGURATION
@@ -95,7 +95,7 @@ export default {
     /////////////////////////////////////////////////////////
     plugins: [
       "expo-router",
-      "@react-native-voice/voice",
+      "@react-native-voice/voice",  // Included in native build (EAS)
       "./plugins/withExcludeOldSupportLib",
 
       [
@@ -176,7 +176,7 @@ export default {
     /////////////////////////////////////////////////////////
     extra: {
       eas: {
-        projectId: "fc2ee98e-01ac-4835-b1d2-c774309193c9",
+        projectId: "25851d8d-cbb7-4158-87cf-14451ab53cb6",
       },
     },
   },

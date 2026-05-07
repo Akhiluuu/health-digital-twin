@@ -612,7 +612,7 @@ export default function Personal() {
           <View style={styles.fieldWrapper}>
             <Text style={[styles.fieldLabel, { color: colors.text }]}>Gender</Text>
             <View style={styles.genderContainer}>
-              {["Male", "Female", "Other"].map((g) => (
+              {["Male", "Female"].map((g) => (
                 <TouchableOpacity
                   key={g}
                   style={[
@@ -638,7 +638,7 @@ export default function Personal() {
             onPress={handleNext}
             activeOpacity={0.85}
           >
-            <Text style={styles.nextBtnText}>Continue →</Text>
+            <Text style={styles.nextBtnText}>Continue</Text>
           </TouchableOpacity>
 
         </ScrollView>

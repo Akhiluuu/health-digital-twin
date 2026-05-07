@@ -658,7 +658,7 @@ def register(data: RegistrationRequest):
         data.sex, data.body_fat, data.dict()
     )
 
-    if engine_runner.run_biogears(path):
+    if engine_runner.run_biogears(path, user_id=data.user_id):
         target_file = BIOGEARS_BIN_DIR / f"{data.user_id}.xml"
         perm_state = USER_STATES_DIR / f"{data.user_id}.xml"
         if target_file.exists():

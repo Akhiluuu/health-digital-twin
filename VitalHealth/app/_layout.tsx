@@ -11,6 +11,7 @@ import "../tasks/stepTrackingTask";
 import { Stack } from "expo-router";
 import React, { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as SplashScreen from "expo-splash-screen";
 
 ///////////////////////////////////////////////////////////
@@ -25,16 +26,18 @@ import { StepProvider } from "../context/StepContext";
 import { SymptomsProvider } from "../context/SymptomContext";
 import { ThemeProvider } from "../context/ThemeContext";
 import { FamilyProvider } from "../context/FamilyContext";
+import SimProgressOverlay from "../components/twin/SimProgressOverlay";
+import { useBiogearsTwin } from "../context/BiogearsTwinContext";
 
 ///////////////////////////////////////////////////////////
 // DATABASE INITIALIZATION
 ///////////////////////////////////////////////////////////
-import { initDB } from "../database/schema";
+import { initAllTables } from "../database/schema";
 import { initHistoryTable } from "../database/historySchema";
 import { initMedicineDB, markMissedMedicines } from "../database/medicineDB";
 import { initSymptomDB } from "../database/symptomDB";
 import { initHydrationDB } from "../database/hydrationDB";
-import { initHydrationHistoryDB } from "../database/hydrationHistoryDB"; // ✅ Moved here
+import { initHydrationHistoryDB } from "../database/hydrationHistoryDB";
 
 ///////////////////////////////////////////////////////////
 // SERVICES
@@ -74,6 +77,22 @@ const StepProviderWrapper: React.FC<{ children: React.ReactNode }> = ({
 };
 
 ///////////////////////////////////////////////////////////
+// GLOBAL SIMULATION BANNER — persists across all tabs/screens
+///////////////////////////////////////////////////////////
+function GlobalSimBanner() {
+  const { simulationStatus, simulationProgress, simulationError } = useBiogearsTwin();
+  const insets = useSafeAreaInsets();
+  return (
+    <SimProgressOverlay
+      status={simulationStatus as any}
+      progress={simulationProgress}
+      error={simulationError}
+      bottomOffset={60 + insets.bottom}
+    />
+  );
+}
+
+///////////////////////////////////////////////////////////
 // ROOT LAYOUT
 ///////////////////////////////////////////////////////////
 export default function RootLayout() {
@@ -99,15 +118,16 @@ export default function RootLayout() {
 
         await new Promise((res) => setTimeout(res, 500));
 
-        /////////////////////////////////////////////////////
         // 🗄️ INITIALIZE DATABASES
         /////////////////////////////////////////////////////
-        await initDB();
-        await initHistoryTable();
-        await initMedicineDB();
-        await initSymptomDB();
-        await initHydrationDB();
-        await initHydrationHistoryDB(); 
+        // One call creates ALL tables in vital_health.db atomically.
+        // Individual initXxxDB() are now no-ops kept for compatibility.
+        await initAllTables();
+        await initHistoryTable();    // safe fallback — no-op if already exists
+        await initMedicineDB();      // logs confirmation
+        await initSymptomDB();       // logs confirmation
+        await initHydrationDB();     // logs confirmation
+        await initHydrationHistoryDB();
 
         /////////////////////////////////////////////////////
         // 🔄 POST-INITIALIZATION TASKS
@@ -198,7 +218,11 @@ export default function RootLayout() {
                         <Stack.Screen name="symptom-flow" />
                         <Stack.Screen name="symptom-followup" />
                         <Stack.Screen name="symptom-chat" />
+                        <Stack.Screen name="backup-restore" />
+                        <Stack.Screen name="settings-server" />
                       </Stack>
+                      {/* Global BioGears banner — visible on every screen */}
+                      <GlobalSimBanner />
                     </NutritionProvider>
                   </SymptomsProvider>
                 </BiogearsTwinProvider>

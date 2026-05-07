@@ -362,7 +362,7 @@ export default function Habits() {
 
         {/* BACK */}
         <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
-          <Text style={[styles.backArrow, { color: c.backText }]}>‹</Text>
+          <Text style={[styles.backArrow, { color: c.backText }]}></Text>
           <Text style={[styles.backTxt,   { color: c.backText }]}>Back</Text>
         </TouchableOpacity>
 

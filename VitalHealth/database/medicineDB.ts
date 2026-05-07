@@ -1,12 +1,10 @@
 // database/medicineDB.ts
+// Uses the unified vital_health.db via shared connection from index.ts
 
-import * as SQLite from "expo-sqlite";
-
-const db = SQLite.openDatabaseSync("medicine.db");
+import { db } from "./index";
 
 ///////////////////////////////////////////////////////////
-// ✅ Medicine type — used for typed DB queries
-//    Eliminates all (med as any) casts throughout the app
+// TYPE
 ///////////////////////////////////////////////////////////
 
 export interface Medicine {
@@ -26,37 +24,16 @@ export interface Medicine {
 }
 
 ///////////////////////////////////////////////////////////
-// INIT TABLE
+// INIT — no-op: table created by initAllTables in schema.ts
 ///////////////////////////////////////////////////////////
 
 export async function initMedicineDB() {
-  try {
-    await db.execAsync(`
-      CREATE TABLE IF NOT EXISTS medicines (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name TEXT,
-        dose TEXT,
-        type TEXT,
-        time TEXT,
-        timestamp INTEGER,
-        meal TEXT,
-        frequency TEXT,
-        startDate TEXT,
-        endDate TEXT,
-        reminder INTEGER,
-        notificationId TEXT,
-        taken INTEGER DEFAULT 0
-      );
-    `);
-
-    console.log("💊 Medicine DB initialized");
-  } catch (error) {
-    console.log("❌ DB init error:", error);
-  }
+  // Table is already created by initAllTables(). Nothing to do here.
+  console.log("💊 Medicine DB ready (shared vital_health.db)");
 }
 
 ///////////////////////////////////////////////////////////
-// ADD MEDICINE
+// ADD
 ///////////////////////////////////////////////////////////
 
 export function addMedicine(
@@ -76,24 +53,12 @@ export function addMedicine(
     `INSERT INTO medicines
     (name, dose, type, time, timestamp, meal, frequency, startDate, endDate, reminder, notificationId, taken)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
-    [
-      name,
-      dose,
-      type,
-      time,
-      timestamp,
-      meal,
-      frequency,
-      startDate,
-      endDate,
-      reminder,
-      notificationId,
-    ]
+    [name, dose, type, time, timestamp, meal, frequency, startDate, endDate, reminder, notificationId]
   );
 }
 
 ///////////////////////////////////////////////////////////
-// GET MEDICINES
+// GET ALL
 ///////////////////////////////////////////////////////////
 
 export function getMedicines(): Medicine[] {
@@ -101,7 +66,7 @@ export function getMedicines(): Medicine[] {
 }
 
 ///////////////////////////////////////////////////////////
-// DELETE MEDICINE
+// DELETE
 ///////////////////////////////////////////////////////////
 
 export function deleteMedicine(id: number) {
@@ -112,14 +77,8 @@ export function deleteMedicine(id: number) {
 // UPDATE NOTIFICATION ID
 ///////////////////////////////////////////////////////////
 
-export function updateMedicineNotificationId(
-  id: number,
-  notificationId: string
-) {
-  db.runSync(
-    "UPDATE medicines SET notificationId = ? WHERE id = ?",
-    [notificationId, id]
-  );
+export function updateMedicineNotificationId(id: number, notificationId: string) {
+  db.runSync("UPDATE medicines SET notificationId = ? WHERE id = ?", [notificationId, id]);
 }
 
 ///////////////////////////////////////////////////////////
@@ -128,11 +87,7 @@ export function updateMedicineNotificationId(
 
 export async function markMedicineTaken(medicineId: string) {
   try {
-    await db.runAsync(
-      "UPDATE medicines SET taken = 1 WHERE id = ?",
-      [medicineId]
-    );
-
+    await db.runAsync("UPDATE medicines SET taken = 1 WHERE id = ?", [medicineId]);
     console.log("✅ Medicine marked as taken:", medicineId);
   } catch (error) {
     console.log("❌ Error marking medicine:", error);
@@ -143,13 +98,8 @@ export async function markMedicineTaken(medicineId: string) {
 // MARK TAKEN (BY NOTIFICATION ID)
 ///////////////////////////////////////////////////////////
 
-export function markMedicineTakenByNotificationId(
-  notificationId: string
-) {
-  db.runSync(
-    "UPDATE medicines SET taken = 1 WHERE notificationId = ?",
-    [notificationId]
-  );
+export function markMedicineTakenByNotificationId(notificationId: string) {
+  db.runSync("UPDATE medicines SET taken = 1 WHERE notificationId = ?", [notificationId]);
 }
 
 ///////////////////////////////////////////////////////////
@@ -159,20 +109,10 @@ export function markMedicineTakenByNotificationId(
 export async function saveMedicineHistory(medicineId: string) {
   try {
     const date = new Date().toISOString();
-
-    await db.execAsync(`
-      CREATE TABLE IF NOT EXISTS history (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        medicineId TEXT,
-        takenAt TEXT
-      );
-    `);
-
     await db.runAsync(
-      "INSERT INTO history (medicineId, takenAt) VALUES (?, ?)",
+      "INSERT INTO medicine_history (medicineId, takenAt) VALUES (?, ?)",
       [medicineId, date]
     );
-
     console.log("📊 Medicine history saved");
   } catch (error) {
     console.log("❌ History error:", error);
@@ -180,18 +120,16 @@ export async function saveMedicineHistory(medicineId: string) {
 }
 
 ///////////////////////////////////////////////////////////
-// MARK MISSED MEDICINES
+// MARK MISSED
 ///////////////////////////////////////////////////////////
 
 export async function markMissedMedicines() {
   try {
     const now = Date.now();
-
     await db.runAsync(
       "UPDATE medicines SET taken = -1 WHERE timestamp < ? AND taken = 0",
       [now]
     );
-
     console.log("⚠️ Missed medicines updated");
   } catch (error) {
     console.log("❌ Missed update error:", error);
@@ -199,23 +137,14 @@ export async function markMissedMedicines() {
 }
 
 ///////////////////////////////////////////////////////////
-// GET TODAY STATS
+// TODAY STATS
 ///////////////////////////////////////////////////////////
 
 export async function getTodayMedicineStats() {
   try {
-    const taken: any = await db.getFirstAsync(
-      "SELECT COUNT(*) as count FROM medicines WHERE taken = 1"
-    );
-
-    const missed: any = await db.getFirstAsync(
-      "SELECT COUNT(*) as count FROM medicines WHERE taken = -1"
-    );
-
-    return {
-      taken: taken?.count || 0,
-      missed: missed?.count || 0,
-    };
+    const taken: any = await db.getFirstAsync("SELECT COUNT(*) as count FROM medicines WHERE taken = 1");
+    const missed: any = await db.getFirstAsync("SELECT COUNT(*) as count FROM medicines WHERE taken = -1");
+    return { taken: taken?.count || 0, missed: missed?.count || 0 };
   } catch (error) {
     console.log("❌ Stats error:", error);
     return { taken: 0, missed: 0 };
@@ -224,8 +153,6 @@ export async function getTodayMedicineStats() {
 
 ///////////////////////////////////////////////////////////
 // GET BY NOTIFICATION ID
-// ✅ FIXED (Bug 5): Now returns typed Medicine | null instead of unknown.
-//    Eliminates all (med as any).frequency casts in index.js and notifeeService.ts.
 ///////////////////////////////////////////////////////////
 
 export function getMedicineByNotificationId(notificationId: string): Medicine | null {
@@ -234,7 +161,6 @@ export function getMedicineByNotificationId(notificationId: string): Medicine | 
       "SELECT * FROM medicines WHERE notificationId = ?",
       [notificationId]
     );
-
     return result.length > 0 ? result[0] : null;
   } catch (error) {
     console.log("❌ getMedicineByNotificationId error:", error);
@@ -248,11 +174,7 @@ export function getMedicineByNotificationId(notificationId: string): Medicine | 
 
 export function deleteMedicineByNotificationId(notificationId: string) {
   try {
-    db.runSync(
-      "DELETE FROM medicines WHERE notificationId = ?",
-      [notificationId]
-    );
-
+    db.runSync("DELETE FROM medicines WHERE notificationId = ?", [notificationId]);
     console.log("🗑 Deleted medicine by notificationId");
   } catch (error) {
     console.log("❌ deleteMedicineByNotificationId error:", error);
