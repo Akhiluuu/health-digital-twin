@@ -705,6 +705,31 @@ def build_batch_reconstruction(user_id, state_path, events: list, user_weight_kg
     earliest_ev_ts  = float(sorted_events[0]["timestamp"]) if sorted_events else now_ts
     latest_ev_ts    = float(sorted_events[-1]["timestamp"]) if sorted_events else now_ts
 
+    # Edge case: zero events (e.g. all filtered by Fast Continuation) — just advance 60s
+    if not sorted_events:
+        _log.info(f"[{user_id}] No events to replay — advancing engine 60s (baseline only).")
+        engine_clock = engine_sim_time
+        actions_xml  = _circadian_phase_xml(datetime.datetime.now().hour)
+        actions_xml += _advance_xml(60)
+        engine_clock += 60
+        # Write meta and return
+        try:
+            import json as _j
+            Path(state_path).with_suffix(".meta.json").write_text(
+                _j.dumps({"engine_sim_time": engine_clock, "events_processed": event_dicts}),
+                encoding="utf-8"
+            )
+        except Exception: pass
+        data_req = _DATA_REQUESTS.format(prefix=csv_prefix)
+        xml = (
+            _scenario_header(abs_state_in, data_req)
+            + actions_xml
+            + _serialize_state_xml(abs_state_out)
+            + "\n" + _scenario_footer()
+        )
+        scenario_file.write_text(xml, encoding="utf-8")
+        return str(scenario_file.absolute()), run_id, csv_prefix
+
     if earliest_ev_ts < engine_sim_time and not can_fast_continue:
         # ── PAST-EVENT PATH: events are before twin creation ─────────────────
         # Reset to midnight of the earliest event's LOCAL calendar day so the
@@ -861,6 +886,12 @@ def build_batch_reconstruction(user_id, state_path, events: list, user_weight_kg
     # Cap final stabilization gap to 30 minutes and chunk it
     final_gap = int(now_ts - engine_clock)
     _log.info(f"[{user_id}] Final gap to 'now': {final_gap}s ({round(final_gap/3600, 1)}h)")
+
+    # Guard: if engine_clock is already ahead of wall time (e.g. fast-continuation
+    # overshoot or clock drift), skip the final advance to avoid negative chunks.
+    if final_gap < 0:
+        _log.warning(f"[{user_id}] engine_clock ahead of now by {-final_gap}s — skipping final advance.")
+        final_gap = 0
 
     capped_gap = min(final_gap, _MAX_ADVANCE_CHUNK_S)
     if capped_gap > 10:

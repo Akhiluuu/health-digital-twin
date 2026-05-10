@@ -281,7 +281,11 @@ def _build_vitals_from_df(df: pd.DataFrame) -> dict:
 
         return {
             "heart_rate":       round(hr, 1)           if hr   is not None else None,
-            "blood_pressure":   f"{int(sys_bp)}/{int(dia_bp)}" if (sys_bp is not None and dia_bp is not None) else None,
+            "blood_pressure":   (
+                f"{int(sys_bp)}/{int(dia_bp)}"
+                if (sys_bp is not None and sys_bp > 0 and dia_bp is not None and dia_bp > 0)
+                else None
+            ),
             "glucose":          round(gluc, 2)         if gluc is not None else None,
             "respiration":      round(rr, 1)           if rr   is not None else None,
             "spo2":             round(spo2 * 100, 1)   if spo2 is not None else None,
@@ -379,22 +383,35 @@ def _run_batch_sync_blocking(user_id: str, events: list) -> dict:
     # ── Search using csv_prefix from scenario_builder (consistent naming) ─
     target_filename = f"{csv_prefix}Results.csv"
     found = False
-    logger.info(f"🔎 Scanning for: {target_filename}")
-    for attempt in range(12):  # up to 12 attempts × 1s = 12s max
-        possible_files = list(BIOGEARS_BIN_DIR.rglob(target_filename))
-        if possible_files:
-            ps = possible_files[0]
+    logger.info(f"\U0001f50e Scanning for: {target_filename}")
+
+    # Fast path: BioGears writes directly to SCENARIO_API_DIR (set via _DATA_REQUESTS).
+    # Check there first to avoid an expensive 12-second rglob loop.
+    direct_csv = SCENARIO_API_DIR / target_filename
+    for attempt in range(12):  # up to 12 attempts x 1s = 12s max
+        if direct_csv.exists() and direct_csv.stat().st_size > 0:
             try:
-                shutil.copy2(str(ps), str(dest_csv))
-                os.remove(str(ps))
+                shutil.copy2(str(direct_csv), str(dest_csv))
+                os.remove(str(direct_csv))
                 found = True
-                logger.info(f"✅ Results captured from {ps}")
+                logger.info(f"\u2705 Results captured from direct path: {direct_csv.name}")
                 break
             except Exception as e:
-                logger.warning(f"⏳ File locked, retrying... ({e})")
-        if found:
-            break
-        time.sleep(1)  # poll every 1s (was 2s × 6 = 12s worst-case; now 1s × 12 = same cap, faster response)
+                logger.warning(f"\u23f3 File locked, retrying... ({e})")
+        else:
+            # Fallback rglob for older engine versions that may write elsewhere
+            possible_files = list(BIOGEARS_BIN_DIR.rglob(target_filename))
+            if possible_files:
+                ps = possible_files[0]
+                try:
+                    shutil.copy2(str(ps), str(dest_csv))
+                    os.remove(str(ps))
+                    found = True
+                    logger.info(f"\u2705 Results captured via rglob: {ps}")
+                    break
+                except Exception as e:
+                    logger.warning(f"\u23f3 File locked (rglob), retrying... ({e})")
+        time.sleep(1)
 
     if not found:
         # Also try the direct path in SCENARIO_API_DIR as a fast-path fallback
