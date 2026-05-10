@@ -35,7 +35,7 @@ from typing import Dict, Any, Optional, AsyncGenerator
 
 from biogears_service.simulation.config import (
     BIOGEARS_EXECUTABLE, BIOGEARS_BIN_DIR,
-    USER_STATES_DIR, USER_HISTORY_DIR
+    USER_STATES_DIR, USER_HISTORY_DIR, SCENARIO_API_DIR
 )
 from biogears_service.simulation import scenario_builder, visualizer
 from biogears_service.api import db
@@ -83,27 +83,53 @@ def _engine_thread(job_id: str, scenario_path: str, user_id: str,
         job["process"] = proc
         job["status"] = "running"
 
-        # Drain stdout so the process doesn't block on a full pipe
+        output_lines = []
         for line in proc.stdout:
-            pass  # Engine output already visible in server console via engine_runner for the main path
+            output_lines.append(line.rstrip())
 
         proc.wait()
 
-        if proc.returncode != 0:
+        # BioGears exits 0 even on XML parse errors or missing patient files.
+        # Detect silent failures by scanning stdout for known failure strings.
+        _FAIL_STRINGS = (
+            "Error while processing", "Unable to load", "no declaration found",
+            "Patient stabilization failed", "failed to stabilize",
+            "Serialization failed", "[Fatal]", "scenario failed",
+            "Could not find", "unable to find", "Error reading",
+        )
+        engine_failed = any(
+            any(fs.lower() in line.lower() for fs in _FAIL_STRINGS)
+            for line in output_lines
+        )
+
+        if proc.returncode != 0 or engine_failed:
+            fail_hint = next(
+                (ln.strip()[:200] for ln in output_lines
+                 if any(fs.lower() in ln.lower() for fs in _FAIL_STRINGS)),
+                f"Engine exited with code {proc.returncode}"
+            )
             job["status"] = "failed"
-            job["error"] = f"Engine exited with code {proc.returncode}"
+            job["error"] = fail_hint
             return
 
-        # --- Locate and move the output CSV ---
-        # Use csv_prefix from scenario_builder (e.g. "batch_alice_1746527823")
+        # Locate and move the output CSV.
+        # With the updated _DATA_REQUESTS template, BioGears writes the CSV directly to
+        # SCENARIO_API_DIR/{csv_prefix}Results.csv — check there first (fast path),
+        # then fall back to rglob over BIOGEARS_BIN_DIR for older engine versions.
         target_filename = f"{csv_prefix}Results.csv"
         found_csv: Optional[Path] = None
-        for _ in range(12):   # up to 12s
-            candidates = list(BIOGEARS_BIN_DIR.rglob(target_filename))
-            if candidates:
-                found_csv = candidates[0]
-                break
-            time.sleep(1)
+
+        # Fast path: check SCENARIO_API_DIR directly
+        direct = SCENARIO_API_DIR / target_filename
+        if direct.exists():
+            found_csv = direct
+        else:
+            for _ in range(12):   # up to 12s
+                candidates = list(BIOGEARS_BIN_DIR.rglob(target_filename))
+                if candidates:
+                    found_csv = candidates[0]
+                    break
+                time.sleep(1)
 
         if not found_csv:
             job["status"] = "failed"
@@ -258,12 +284,17 @@ async def sse_generator(stream_id: str) -> AsyncGenerator[str, None]:
     while True:
         status = job["status"]
 
-        # Try to find the in-progress CSV using the correct prefix
+        # Try to find the in-progress CSV using the correct prefix.
+        # Check SCENARIO_API_DIR first (where _DATA_REQUESTS writes the CSV).
         if csv_path is None and csv_prefix:
             target = f"{csv_prefix}Results.csv"
-            candidates = list(BIOGEARS_BIN_DIR.rglob(target))
-            if candidates:
-                csv_path = Path(candidates[0])
+            direct = SCENARIO_API_DIR / target
+            if direct.exists():
+                csv_path = direct
+            else:
+                candidates = list(BIOGEARS_BIN_DIR.rglob(target))
+                if candidates:
+                    csv_path = Path(candidates[0])
 
         # Read new rows from the in-progress CSV
         if csv_path and csv_path.exists():

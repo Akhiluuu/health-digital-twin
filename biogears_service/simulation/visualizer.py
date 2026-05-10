@@ -11,6 +11,7 @@ Improvements vs v1:
 import matplotlib
 matplotlib.use("Agg")   # Non-interactive backend — safe for server use
 
+import os
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 import pandas as pd
@@ -22,6 +23,10 @@ from pathlib import Path
 from biogears_service.simulation.config import BIO_OUTPUT_DIR, BASE_DIR, SCENARIO_API_DIR, BIOGEARS_BIN_DIR
 
 BASE_URL = os.environ.get("SERVER_BASE_URL", "http://127.0.0.1:8000").rstrip("/")
+
+# Ensure the reports directory exists at import time so saves never fail.
+_REPORTS_DIR = BASE_DIR / "reports"
+_REPORTS_DIR.mkdir(parents=True, exist_ok=True)
 
 
 # ── CSV discovery ─────────────────────────────────────────────────────────────
@@ -201,7 +206,8 @@ def generate_health_report(user_id, run_id=None, custom_path=None):
         plt.tight_layout(rect=[0, 0, 1, 0.97])
 
         fname = f"{user_id}_{run_id}_report.png" if run_id else f"{user_id}_report.png"
-        out   = BASE_DIR / "reports" / fname
+        out   = _REPORTS_DIR / fname
+        out.parent.mkdir(parents=True, exist_ok=True)
         plt.savefig(out, dpi=150)
         plt.close(fig)
         return f"{BASE_URL}/view-reports/{fname}"
@@ -249,7 +255,8 @@ def generate_forecast_report(user_id, run_id=None):
 
         plt.tight_layout()
         fname = f"{user_id}_{run_id}_forecast.png" if run_id else f"{user_id}_forecast.png"
-        out   = BASE_DIR / "reports" / fname
+        out   = _REPORTS_DIR / fname
+        out.parent.mkdir(parents=True, exist_ok=True)
         plt.savefig(out, dpi=130)
         plt.close(fig)
         return f"{BASE_URL}/view-reports/{fname}"
@@ -308,7 +315,8 @@ def generate_comparison_report(user_id: str, baseline_df: pd.DataFrame,
 
         ts    = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         fname = f"{user_id}_whatif_{ts}.png"
-        out   = BASE_DIR / "reports" / fname
+        out   = _REPORTS_DIR / fname
+        out.parent.mkdir(parents=True, exist_ok=True)
         plt.savefig(out, dpi=140)
         plt.close(fig)
         return f"{BASE_URL}/view-reports/{fname}"

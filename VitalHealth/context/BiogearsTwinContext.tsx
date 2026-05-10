@@ -508,11 +508,32 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
     } catch (err: any) {
       console.log(`[BioGearsContext] Registration FAILED:`, err);
       setTwinStatus('error');
-      // BiogearsError.detail can be a FastAPI validation dict or a plain string
-      const detail = err.detail;
-      const msg = typeof detail === 'string'
-        ? detail
-        : (detail?.detail || detail?.message || err.message || 'Registration failed');
+
+      // err.detail is the FastAPI `detail` field from the 422 response.
+      // It can be:
+      //   - A plain string:                "Engine convergence failure."
+      //   - A validation dict:             {"validation_errors": ["...", ...]}
+      //   - A message dict:               {"message": "...", "log_snippet": "..."}
+      //   - A FastAPI Pydantic error list: [{"loc": [...], "msg": "..."}]
+      let msg = 'Registration failed';
+      try {
+        const detail = err.detail;
+        if (typeof detail === 'string') {
+          msg = detail;
+        } else if (detail && typeof detail === 'object') {
+          if (Array.isArray(detail.validation_errors) && detail.validation_errors.length > 0) {
+            msg = `Validation failed:\n${detail.validation_errors.slice(0, 5).map((e: string) => `• ${e}`).join('\n')}`;
+          } else if (detail.message) {
+            msg = detail.message;
+          } else if (Array.isArray(detail) && detail[0]?.msg) {
+            // FastAPI Pydantic field errors
+            msg = detail.map((d: any) => `• ${d.loc?.slice(-1)[0] ?? 'field'}: ${d.msg}`).join('\n');
+          }
+        }
+      } catch {
+        msg = err.message || 'Registration failed';
+      }
+
       setTwinStatusError(msg);
       throw err;
     }
@@ -584,22 +605,35 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
       simStartRef.current = null;
       setSimulationStatus('failed');
 
-      // The job store serialises the 500 detail as a JSON string, e.g.:
-      //   '{"message":"Engine execution failed.","log_snippet":"..."}'
-      // Parse it back so we show a clean, human-readable message instead of
-      // the raw JSON blob (which previously also contained ANSI escape codes).
+      // The job store serialises error details as a JSON string.
+      // Parse it back so we show a clean, human-readable message.
+      // Handles three shapes:
+      //   1. Validation errors: {"validation_errors": ["Event[3] ...", ...]}
+      //   2. Engine errors:     {"message": "...", "log_snippet": "..."}
+      //   3. Plain string:      "Engine convergence failure."
       let friendlyError = err.message || 'Simulation failed';
       try {
         // err.detail is set by BiogearsError — may be a raw string or object
         const raw = err.detail?.detail ?? err.detail ?? err.message ?? '';
         const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
         if (parsed && typeof parsed === 'object') {
-          const msg = parsed.message || '';
-          const snippet = (parsed.log_snippet || '').trim();
-          if (msg) {
-            friendlyError = snippet
-              ? `${msg}\n\n${snippet.split('\n').slice(0, 5).join('\n')}`
-              : msg;
+          // ── Shape 1: validation_errors array ──────────────────────────────
+          if (Array.isArray(parsed.validation_errors) && parsed.validation_errors.length > 0) {
+            const bullets = parsed.validation_errors
+              .slice(0, 5)
+              .map((e: string) => `• ${e}`)
+              .join('\n');
+            friendlyError = `Input validation failed:\n${bullets}`;
+          }
+          // ── Shape 2: engine error with optional log snippet ─────────────
+          else {
+            const msg = parsed.message || '';
+            const snippet = (parsed.log_snippet || '').trim();
+            if (msg) {
+              friendlyError = snippet
+                ? `${msg}\n\n${snippet.split('\n').slice(0, 5).join('\n')}`
+                : msg;
+            }
           }
         }
       } catch { /* raw string — use as-is */ }

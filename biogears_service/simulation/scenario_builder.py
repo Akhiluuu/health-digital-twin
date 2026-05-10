@@ -27,7 +27,11 @@ from biogears_service.simulation.config import (
 from biogears_service.simulation.substance_registry import SUBSTANCE_REGISTRY
 
 # ── Expanded DataRequests block (14 vitals) ──────────────────────────────
-_DATA_REQUESTS = """    <DataRequests Filename="{prefix}">
+# IMPORTANT: The Filename attribute must include the subdirectory path relative
+# to BIOGEARS_BIN_DIR (its CWD). BioGears writes the CSV to this path verbatim.
+# We use 'Scenarios/API/{prefix}Results.csv' so the file lands in SCENARIO_API_DIR
+# where server.py already searches via rglob.
+_DATA_REQUESTS = """    <DataRequests Filename="Scenarios/API/{prefix}Results.csv">
         <DataRequest xsi:type="PhysiologyDataRequestData" Name="HeartRate"                  Unit="1/min"  Precision="2"/>
         <DataRequest xsi:type="PhysiologyDataRequestData" Name="RespirationRate"             Unit="1/min"  Precision="2"/>
         <DataRequest xsi:type="PhysiologyDataRequestData" Name="SystolicArterialPressure"   Unit="mmHg"   Precision="1"/>
@@ -216,13 +220,23 @@ def _environment_xml(env_name: str) -> str:
     )
 
 
+import logging as _sb_logger
+_sb_log = _sb_logger.getLogger("DigitalTwin.ScenarioBuilder")
+
+
 def _exercise_xml(intensity: float) -> str:
+    """Emit BioGears ExerciseData XML. Intensity is ALWAYS clamped to [0.0, 1.0]."""
+    clamped = max(0.0, min(1.0, float(intensity)))
+    if clamped != float(intensity):
+        _sb_log.warning(
+            f"_exercise_xml: intensity {intensity} out of [0,1] — clamped to {clamped:.4f}. "
+            f"Fix the caller to send a normalised value."
+        )
     return (
         f'        <Action xsi:type="ExerciseData">'
-        f'<GenericExercise><Intensity value="{intensity}"/></GenericExercise>'
+        f'<GenericExercise><Intensity value="{clamped:.4f}"/></GenericExercise>'
         f'</Action>\n'
     )
-
 
 
 def _advance_xml(seconds: int) -> str:
@@ -567,6 +581,9 @@ def build_batch_reconstruction(user_id, state_path, events: list, user_weight_kg
     scenario_file = SCENARIO_API_DIR / f"batch_{run_id}.xml"
     abs_state_in  = Path(state_path).absolute().as_posix()
     abs_state_out = (BIOGEARS_BIN_DIR / f"batch_{user_id}.xml").as_posix()
+    # csv_prefix is used as the DataRequests Filename stem only (no path, no extension).
+    # _DATA_REQUESTS template now hardcodes 'Scenarios/API/{prefix}Results.csv'
+    # so BioGears writes to SCENARIO_API_DIR/{csv_prefix}Results.csv.
     csv_prefix    = f"batch_{run_id}"
 
     # ── Resolve all event timestamps upfront ────────────────────────────────
@@ -855,12 +872,16 @@ def build_batch_reconstruction(user_id, state_path, events: list, user_weight_kg
         engine_clock += 60
 
 
-    # Write Meta File for future Fast-Continuations
+    # Write Meta File for future Fast-Continuations.
+    # IMPORTANT: store raw event_dicts (pre-timeline-split), NOT sorted_events.
+    # The fast-continuation check compares incoming raw events against stored raw events.
+    # Storing timeline_events (with _start/_end markers) would cause a type mismatch
+    # and fast continuation would never activate.
     try:
         import json
         meta_dict = {
             "engine_sim_time": engine_clock,
-            "events_processed": event_dicts # store the FULL list of events, not just new ones
+            "events_processed": event_dicts  # RAW events (pre-split, same format as input)
         }
         Path(state_path).with_suffix(".meta.json").write_text(json.dumps(meta_dict), encoding="utf-8")
     except Exception as e:
@@ -876,6 +897,8 @@ def build_batch_reconstruction(user_id, state_path, events: list, user_weight_kg
     )
     scenario_file.write_text(xml, encoding="utf-8")
     _log.info(f"[{user_id}] Scenario written → {scenario_file.name}")
+    # Return the csv_prefix so server.py can construct the exact expected filename:
+    # SCENARIO_API_DIR / f"{csv_prefix}Results.csv"
     return str(scenario_file.absolute()), run_id, csv_prefix
 
 

@@ -214,14 +214,21 @@ export default function ActivityLab() {
       met,
     });
 
-    // Log to Bio-GARES Digital Twin
+    // Log to BioGears Digital Twin
+    // BioGears ExerciseData.GenericExercise.Intensity expects a value in [0.0, 1.0].
+    // We normalize MET → BioGears intensity using the linear map:
+    //   intensity = (MET - 1) / (MET_MAX - 1), clamped to [0.05, 1.0]
+    // MET reference: 1.0 = rest, ~14 = max sprint.  BioGears: 0.0 = rest, 1.0 = max.
     try {
       const now = new Date();
       const wallTime = now.toTimeString().slice(0, 5); // HH:MM format
+      const rawMet = MET_TABLE[selected]?.[intensity] ?? 4.0;
+      const MET_MAX = 14.0;   // upper bound of our MET table (sprint / HIIT max)
+      const biogears_intensity = Math.max(0.05, Math.min(1.0, (rawMet - 1.0) / (MET_MAX - 1.0)));
 
       addEvent({
         event_type: "exercise",
-        value: MET_TABLE[selected]?.[intensity] ?? 0.5,
+        value: parseFloat(biogears_intensity.toFixed(3)),
         duration_seconds: duration * 60,
         wallTime,
         displayLabel: `${selected} · ${duration} min (${intensity})`,

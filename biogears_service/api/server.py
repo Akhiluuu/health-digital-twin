@@ -397,7 +397,19 @@ def _run_batch_sync_blocking(user_id: str, events: list) -> dict:
         time.sleep(1)  # poll every 1s (was 2s × 6 = 12s worst-case; now 1s × 12 = same cap, faster response)
 
     if not found:
-        raise HTTPException(status_code=500, detail="Engine output file missing.")
+        # Also try the direct path in SCENARIO_API_DIR as a fast-path fallback
+        direct_path = SCENARIO_API_DIR / f"{csv_prefix}Results.csv"
+        if direct_path.exists():
+            try:
+                shutil.copy2(str(direct_path), str(dest_csv))
+                os.remove(str(direct_path))
+                found = True
+                logger.info(f"✅ Results captured from direct path: {direct_path.name}")
+            except Exception as e:
+                logger.warning(f"⚠️ Direct path copy failed: {e}")
+
+    if not found:
+        raise HTTPException(status_code=500, detail="Engine output file missing. Check server logs for BioGears errors.")
 
     # ── [6/6] Validate Data & Analytics ──────────────────────────────────────
     logger.info(f"[6/6] [{user_id}] Validating output and generating report... ({_elapsed()})")
@@ -409,22 +421,43 @@ def _run_batch_sync_blocking(user_id: str, events: list) -> dict:
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Engine output CSV is malformed: {e}")
 
-    # Check for "Dead Twin" (NaNs in critical vitals like HeartRate)
-    if 'HeartRate' in df.columns and df['HeartRate'].isnull().any():
-        logger.error(f"\u274c [{user_id}] Engine produced NaN values (Twin died). Rolling back state.")
+    # Check for "Dead Twin" (NaNs or zeros in critical vitals)
+    # BioGears exits 0 even when it diverges — catch that here.
+    critical_cols = [
+        col for col in ['HeartRate', 'SystolicArterialPressure', 'OxygenSaturation']
+        if col in df.columns
+    ]
+    nan_detected = any(df[col].isnull().any() for col in critical_cols)
+    # Also check for all-zero HeartRate — engine crash can produce zeros
+    if 'HeartRate' in df.columns and not df['HeartRate'].isnull().all():
+        hr_nonzero = df['HeartRate'].dropna()
+        zero_hr = (hr_nonzero == 0.0).all() and len(hr_nonzero) > 0
+    else:
+        zero_hr = False
+
+    if nan_detected or zero_hr:
+        failure_reason = "NaN values in critical vitals" if nan_detected else "all-zero HeartRate (engine divergence)"
+        logger.error(f"❌ [{user_id}] Engine produced {failure_reason}. Rolling back state.")
         # Attempt to restore the most recent backup so the state file is usable
         bak_dir  = USER_STATES_DIR / "backups" / user_id
         backups  = sorted(bak_dir.glob(f"{user_id}_*.xml"), key=os.path.getmtime, reverse=True) if bak_dir.exists() else []
         if backups:
             try:
                 shutil.copy2(str(backups[0]), str(state_file))
-                logger.info(f"\u267b\ufe0f [{user_id}] State rolled back from backup: {backups[0].name}")
+                logger.info(f"♻️ [{user_id}] State rolled back from backup: {backups[0].name}")
             except Exception as rb_err:
-                logger.warning(f"\u26a0\ufe0f [{user_id}] Rollback failed: {rb_err}")
+                logger.warning(f"⚠️ [{user_id}] Rollback failed: {rb_err}")
+        else:
+            logger.warning(f"⚠️ [{user_id}] No backup available for rollback — twin may be in invalid state.")
         raise HTTPException(
             status_code=500,
-            detail="Simulation resulted in physiological failure (NaN values in HeartRate). "
-                   "State has been rolled back to the previous backup."
+            detail={
+                "message": f"Simulation resulted in physiological failure ({failure_reason}). "
+                           + ("State has been rolled back to the previous backup."
+                              if backups else
+                              "No backup was available — please re-register the twin."),
+                "log_snippet": engine_runner.get_latest_log(user_id) or ""
+            }
         )
 
     vitals = _build_vitals_from_df(df)
@@ -443,6 +476,20 @@ def _run_batch_sync_blocking(user_id: str, events: list) -> dict:
         # Fallback: scan subdirectories (some BioGears versions write to subdirs)
         candidates = list(BIOGEARS_BIN_DIR.rglob(f"batch_{user_id}.xml"))
         updated_state_path = candidates[0] if candidates else None
+    
+    # ── Data-gap warning ──────────────────────────────────────────────────────────────
+    # Use the meta.json engine_sim_time rather than the state file's mtime.
+    # os.path.getmtime() drifts whenever any process touches the file (e.g. backup
+    # copy), causing false "data gap" warnings.
+    meta_path = state_file.with_suffix(".meta.json")
+    try:
+        import json as _gap_json
+        _meta = _gap_json.loads(meta_path.read_text(encoding="utf-8")) if meta_path.exists() else {}
+        _engine_sim_t = float(_meta.get("engine_sim_time", 0))
+        gap_seconds   = time.time() - _engine_sim_t if _engine_sim_t > 0 else gap_seconds
+    except Exception:
+        pass  # fall back to the mtime-based gap_seconds already computed above
+
     if updated_state_path and Path(updated_state_path).exists():
         try:
             os.replace(str(updated_state_path), str(state_file))
@@ -1239,7 +1286,9 @@ def predict_whatif(data: WhatIfRequest):
         raise HTTPException(status_code=500, detail="Baseline simulation failed.")
 
     base_csv_name = f"{base_prefix}Results.csv"
-    base_candidates = list(BIOGEARS_BIN_DIR.rglob(base_csv_name))
+    # Check SCENARIO_API_DIR first (fast path) then fall back to rglob
+    base_direct = SCENARIO_API_DIR / base_csv_name
+    base_candidates = [base_direct] if base_direct.exists() else list(BIOGEARS_BIN_DIR.rglob(base_csv_name))
     if not base_candidates:
         raise HTTPException(status_code=500, detail="Baseline output CSV not found.")
     base_df = pd.read_csv(str(base_candidates[0]), index_col=False)
@@ -1253,7 +1302,9 @@ def predict_whatif(data: WhatIfRequest):
         raise HTTPException(status_code=500, detail="Intervention simulation failed.")
 
     evt_csv_name = f"{evt_prefix}Results.csv"
-    evt_candidates = list(BIOGEARS_BIN_DIR.rglob(evt_csv_name))
+    # Check SCENARIO_API_DIR first (fast path) then fall back to rglob
+    evt_direct = SCENARIO_API_DIR / evt_csv_name
+    evt_candidates = [evt_direct] if evt_direct.exists() else list(BIOGEARS_BIN_DIR.rglob(evt_csv_name))
     if not evt_candidates:
         raise HTTPException(status_code=500, detail="Intervention output CSV not found.")
     evt_df = pd.read_csv(str(evt_candidates[0]), index_col=False)
@@ -1289,7 +1340,6 @@ def get_engine_log(user_id: str):
     Returns the content of the most recent engine log file for a twin.
     Useful for diagnosing simulation failures without SSH access to the server.
     """
-    user_id = user_id
     log_content = engine_runner.get_latest_log(user_id)
     if log_content is None:
         raise HTTPException(

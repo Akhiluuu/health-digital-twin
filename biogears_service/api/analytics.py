@@ -29,6 +29,8 @@ NORMAL = {
 
 def _clean_df(csv_path: Path) -> Optional[pd.DataFrame]:
     """Load a vitals CSV and normalize column names."""
+    import logging as _log
+    _logger = _log.getLogger("DigitalTwin.Analytics")
     try:
         if not csv_path.exists() or csv_path.stat().st_size == 0:
             return None
@@ -37,7 +39,8 @@ def _clean_df(csv_path: Path) -> Optional[pd.DataFrame]:
         df = df.loc[:, ~df.columns.str.contains('^Unnamed')]
         df.columns = [c.split('(')[0].strip() for c in df.columns]
         return df
-    except Exception:
+    except Exception as e:
+        _logger.debug(f"_clean_df: could not read '{csv_path}': {e}")
         return None
 
 
@@ -166,6 +169,15 @@ def compute_session_stats(csv_path: Path) -> Dict[str, Any]:
     }
 
     stats = {}
+    # Direct unit mapping avoids fragile string-replace chains
+    _unit_map = {
+        "heart_rate":       "bpm",
+        "systolic_bp":      "mmHg",
+        "diastolic_bp":     "mmHg",
+        "respiration_rate": "br/min",
+        "glucose":          "mg/dL",
+        "exercise_level":   "unitless",
+    }
     for col, alias in columns_of_interest.items():
         if col in df.columns:
             series = df[col].dropna()
@@ -176,7 +188,7 @@ def compute_session_stats(csv_path: Path) -> Dict[str, Any]:
                 "max":  round(float(series.max()), 2),
                 "mean": round(float(series.mean()), 2),
                 "std":  round(float(series.std()), 2),
-                "unit": NORMAL.get(alias.replace("_bp", "").replace("systolic_", "").replace("diastolic_", ""), {}).get("label", ""),
+                "unit": _unit_map.get(alias, ""),
             }
 
     # duration

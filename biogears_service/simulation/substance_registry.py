@@ -198,12 +198,12 @@ SUBSTANCE_REGISTRY: Dict[str, Any] = {
 
     # ── Hormones / Metabolic ───────────────────────────────────────────────────
     "Insulin": {
-        "route": "IV_BOLUS", "unit": "U",
+        "route": "IV_BOLUS", "unit": "mg",
         "category": "Hormone",
-        "safe_min": 2, "safe_max": 50,
+        "safe_min": 0.1, "safe_max": 10.0,
         "safety_level": "caution",
-        "warning": "⚠️ INSULIN — Hypoglycemia risk. Monitor glucose closely.",
-        "note": "DKA: 0.1 U/kg/h. Never exceed 50 U bolus without monitoring.",
+        "warning": "⚠️ INSULIN — Hypoglycemia risk. BioGears doses Insulin in mg (not IU). Monitor glucose closely.",
+        "note": "BioGears CDM: Insulin.xml dose in mg. Typical 0.1–10 mg IV bolus.",
         "effects": "↓ blood glucose, ↑ cellular glucose uptake",
     },
 
