@@ -42,6 +42,7 @@ export interface RoutineEvent extends BiogearsHealthEvent {
   wallTime: string;       // "HH:MM" — wall clock time user selected
   displayLabel: string;   // e.g. "Idli (2 pieces) · 140 kcal"
   displayIcon: string;    // emoji
+  simulated?: boolean;    // whether this event has been simulated
 }
 
 export interface BiogearsTwinContextValue {
@@ -307,6 +308,15 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
     await BiogearsAPI.saveSessionMeta(twinUserId!, sessionMeta);
     setSessions(prev => [sessionMeta, ...prev]);
 
+    // Mark all current events as simulated so they don't get kept in the queue indefinitely
+    setTodayEvents(prev => {
+      const updated = prev.map(e => ({ ...e, simulated: true }));
+      if (twinUserId) {
+        AsyncStorage.setItem(TODAY_EVENTS_KEY(twinUserId), JSON.stringify(updated)).catch(() => {});
+      }
+      return updated;
+    });
+
     setSimulationStatus('done');
     setSimulationProgress('Simulation complete!');
     setSimulationName('');
@@ -328,11 +338,11 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
       const raw = await AsyncStorage.getItem(TODAY_EVENTS_KEY(twinUserId));
       if (raw) {
         const stored = JSON.parse(raw) as RoutineEvent[];
-        // Only keep today's events (don't carry over from yesterday)
+        // Keep today's events, AND keep any past events that haven't been simulated yet
         const todayStr = new Date().toDateString();
         const fresh = stored.filter(e => {
-          if (!e.timestamp) return true;
-          return new Date(e.timestamp * 1000).toDateString() === todayStr;
+          const isToday = e.timestamp ? new Date(e.timestamp * 1000).toDateString() === todayStr : true;
+          return isToday || !e.simulated;
         });
         setTodayEvents(fresh);
       }
