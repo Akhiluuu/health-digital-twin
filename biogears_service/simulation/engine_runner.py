@@ -1,14 +1,21 @@
 """
-engine_runner.py — BioGears subprocess launcher (v3).
+engine_runner.py — BioGears subprocess launcher (v5).
 
-Improvements vs v2:
-  - Real-time stdout streaming (no more silent 5-minute wait)
-  - Progress heartbeat every 30s so you can see it's still running
-  - Key BioGears lines (Time, Completed, Error) printed at INFO level
-  - Configurable timeout via ENGINE_TIMEOUT_SECONDS env var
+Improvements vs v4:
+  - ANSI escape code stripping: BioGears uses terminal control sequences
+    (\u001b[0K, \r, etc.) for its progress bar. These are now stripped from
+    every captured line so logs and API error responses are clean.
+  - Progress-bar noise lines ("Progress 1/1; Elapsed Time ...") are filtered
+    from the stored output, keeping logs readable.
+  - Timeout configured via ENGINE_TIMEOUT_SECONDS env var (default 24h)
+  - Expanded silent-failure detection: catches "Patient stabilization failed",
+    "Serialization failed", "failed to stabilize", "[Fatal]", and more
+  - Heartbeat interval exposed via env var ENGINE_HEARTBEAT_SECONDS
+  - Better progress logging with elapsed time on every heartbeat
 """
 
 import os
+import re
 import subprocess
 import datetime
 import logging
@@ -16,18 +23,54 @@ import threading
 import time
 from pathlib import Path
 
+# ── ANSI escape code stripper ────────────────────────────────────────────────
+# BioGears emits terminal control sequences like \u001b[0K (erase line), \u001b[?25l
+# (hide cursor), and colour codes (\u001b[32m etc.) as part of its progress bar.
+# These are meaningful for a TTY but become garbage in log files and API responses.
+_ANSI_RE = re.compile(r'\x1b(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
+
+
+def _strip_ansi(text: str) -> str:
+    """Remove all ANSI/VT100 escape sequences from *text*."""
+    return _ANSI_RE.sub('', text)
+
+
+# Lines whose sole content (after ANSI stripping) matches BioGears' progress
+# bar pattern are excluded from stored output — they add no diagnostic value.
+_PROGRESS_RE = re.compile(r'^\d+\s+process;\s+Progress\s+\d+/\d+;\s+Elapsed\s+Time', re.IGNORECASE)
+
 from biogears_service.simulation.config import (
     BIOGEARS_EXECUTABLE, BIOGEARS_BIN_DIR, LOGS_DIR
 )
 
 logger = logging.getLogger("DigitalTwin.Engine")
 
-ENGINE_TIMEOUT_SECONDS = int(os.environ.get("ENGINE_TIMEOUT_SECONDS", "600"))
+# Default 24 hours — accommodates very long simulations on the VM.
+# You can override this via ENGINE_TIMEOUT_SECONDS env var.
+ENGINE_TIMEOUT_SECONDS   = int(os.environ.get("ENGINE_TIMEOUT_SECONDS", "86400"))
+ENGINE_HEARTBEAT_SECONDS = int(os.environ.get("ENGINE_HEARTBEAT_SECONDS", "30"))
 
 # BioGears output lines shown at INFO level (everything else at DEBUG)
 _IMPORTANT_PREFIXES = (
     "Time:", "Simulation Time", "Completed", "Error", "Warning",
     "Physiology", "Patient", "Loading", "Running", "[Fatal]", "[ERROR]",
+    "Serialization", "stabilize",
+)
+
+# Strings that indicate a silent failure even when exit code is 0.
+# BioGears exits 0 even on XML parse errors, missing patient files, etc.
+_FAILURE_STRINGS = (
+    "Error while processing",
+    "Unable to load",
+    "no declaration found",
+    "Patient stabilization failed",
+    "failed to stabilize",
+    "Serialization failed",
+    "[Fatal]",
+    "scenario failed",
+    "Could not find",
+    "unable to find",
+    "Error reading",
 )
 
 
@@ -45,12 +88,12 @@ class EngineResult:
         return f"EngineResult(success={self.success}, rc={self.return_code})"
 
 
-def _heartbeat(user_id: str, stop_evt: threading.Event, interval: int = 30):
+def _heartbeat(user_id: str, stop_evt: threading.Event, start_time: float,
+               interval: int = ENGINE_HEARTBEAT_SECONDS):
     """Background thread: prints a progress line every `interval` seconds."""
-    elapsed = 0
     while not stop_evt.wait(interval):
-        elapsed += interval
-        logger.info(f"⏳  [{user_id}] BioGears still running... ({elapsed}s elapsed)")
+        elapsed = round(time.time() - start_time, 0)
+        logger.info(f"⏳  [{user_id}] BioGears still running... ({int(elapsed)}s elapsed)")
 
 
 def run_biogears(scenario_path: str, user_id: str = "unknown") -> EngineResult:
@@ -100,7 +143,7 @@ def run_biogears(scenario_path: str, user_id: str = "unknown") -> EngineResult:
         stop_heartbeat   = threading.Event()
         heartbeat_thread = threading.Thread(
             target=_heartbeat,
-            args=(user_id, stop_heartbeat, 30),
+            args=(user_id, stop_heartbeat, start_time, ENGINE_HEARTBEAT_SECONDS),
             daemon=True,
         )
         heartbeat_thread.start()
@@ -112,9 +155,23 @@ def run_biogears(scenario_path: str, user_id: str = "unknown") -> EngineResult:
 
         try:
             for line in proc.stdout:
+                # BioGears uses \r to overwrite the progress bar in the same
+                # terminal line. Split on \r and take the last segment so we
+                # always get the final content of each overwritten line.
                 line = line.rstrip()
+                if '\r' in line:
+                    line = line.split('\r')[-1].rstrip()
+
+                # Strip ANSI escape sequences (progress bar colour/erase codes)
+                line = _strip_ansi(line)
+
                 if not line:
                     continue
+
+                # Filter out pure progress-bar noise ("N process; Progress M/M; Elapsed Time ...")
+                if _PROGRESS_RE.match(line.strip()):
+                    continue
+
                 output_lines.append(line)
 
                 # Enforce deadline on each line read
@@ -126,7 +183,8 @@ def run_biogears(scenario_path: str, user_id: str = "unknown") -> EngineResult:
 
                 # Important lines → INFO, rest → DEBUG
                 stripped = line.strip()
-                if any(stripped.startswith(p) for p in _IMPORTANT_PREFIXES):
+                if any(stripped.startswith(p) or p.lower() in stripped.lower()
+                       for p in _IMPORTANT_PREFIXES):
                     logger.info(f"⚙️   [{user_id}] {stripped}")
                 else:
                     logger.debug(f"     {stripped}")
@@ -145,15 +203,12 @@ def run_biogears(scenario_path: str, user_id: str = "unknown") -> EngineResult:
             return EngineResult(success=False, log_path=str(log_path), return_code=-1)
 
         proc.wait(timeout=10)
-        rc      = proc.returncode
+        rc = proc.returncode
 
-        # ── Detect "silent failure": engine exits 0 but state was not produced ─
+        # ── Detect "silent failure": engine exits 0 but scenario did not run ─
         # BioGears exits 0 even when it fails to parse the scenario XML.
-        # We detect this by looking for the failure string in stdout output.
         engine_failed = any(
-            "Error while processing" in line or
-            "Unable to load" in line or
-            "no declaration found" in line
+            any(fail_str.lower() in line.lower() for fail_str in _FAILURE_STRINGS)
             for line in output_lines
         )
         success = (rc == 0) and not engine_failed
@@ -165,6 +220,11 @@ def run_biogears(scenario_path: str, user_id: str = "unknown") -> EngineResult:
             logger.info(f"✅  [{user_id}] Engine FINISHED OK  ({elapsed}s)")
         elif engine_failed:
             logger.error(f"❌  [{user_id}] Engine SCENARIO ERROR ({elapsed}s) | log={log_path}")
+            # Log the first failure line found for quick diagnosis
+            for line in output_lines:
+                if any(fs.lower() in line.lower() for fs in _FAILURE_STRINGS):
+                    logger.error(f"    ↳ Failure hint: {line.strip()[:200]}")
+                    break
         else:
             logger.error(f"❌  [{user_id}] Engine FAILED rc={rc}  ({elapsed}s) | log={log_path}")
         logger.info("=" * 55)

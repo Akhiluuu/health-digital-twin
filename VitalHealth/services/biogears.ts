@@ -5,35 +5,71 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as SecureStore from 'expo-secure-store';
 
 // ─── Configuration ────────────────────────────────────────────────────────────
+// LOCAL DEV:  your laptop's Wi-Fi IP (e.g. 'http://10.172.0.79:8000')
+// PRODUCTION: change to your E2E Cloud URL (e.g. 'https://yourdomain.com')
+
 const DEFAULT_BASE_URL = 'http://151.185.42.123';
 const BASE_URL_KEY = '@biogears_base_url';
-const BIOGEARS_IP_KEY = '@biogears_ip_address';
-const BIOGEARS_PORT_KEY = '@biogears_port';
 
-// FIX: properly read ip and port from AsyncStorage
+/** Strip redundant/wrong ports from a BioGears URL.
+ *  :8000 was incorrectly stored by early versions — nginx exposes port 80. */
+function sanitizeBiogearsUrl(raw: string): string {
+  try {
+    const u = new URL(raw);
+    // Remove port 8000 (FastAPI internal, not public) or default HTTP/HTTPS ports
+    if (
+      u.port === '8000' ||
+      (u.protocol === 'http:' && u.port === '80') ||
+      (u.protocol === 'https:' && u.port === '443')
+    ) {
+      return `${u.protocol}//${u.hostname}${u.pathname !== '/' ? u.pathname : ''}`;
+    }
+  } catch { /* not a full URL — return as-is */ }
+  return raw;
+}
+
 export async function getBiogearsBaseUrl(): Promise<string> {
   try {
-    const ip   = await AsyncStorage.getItem(BIOGEARS_IP_KEY);
-    const port = await AsyncStorage.getItem(BIOGEARS_PORT_KEY);
-    if (ip) {
-      const url = port ? `http://${ip}:${port}` : `http://${ip}`;
-      console.log(`[BioGears] Using Base URL: ${url}`);
-      return url;
+    const stored = await AsyncStorage.getItem(BASE_URL_KEY);
+    const raw = stored || DEFAULT_BASE_URL;
+    const url = sanitizeBiogearsUrl(raw);
+
+    // Auto-heal: if we fixed a bad stored URL, persist the clean version
+    if (stored && url !== stored) {
+      console.log(`[BioGears] Auto-fixed stored URL: ${stored} → ${url}`);
+      await AsyncStorage.setItem(BASE_URL_KEY, url);
     }
-  } catch {}
-  console.warn('[BioGears] No IP configured — set it in the Twin screen.');
-  return DEFAULT_BASE_URL;
+
+    console.log(`[BioGears] Using Base URL: ${url}`);
+    return url;
+  } catch {
+    console.log(`[BioGears] Using Default Base URL (Fallback): ${DEFAULT_BASE_URL}`);
+    return DEFAULT_BASE_URL;
+  }
+}
+
+export async function setBiogearsBaseUrl(url: string): Promise<void> {
+  await AsyncStorage.setItem(BASE_URL_KEY, url.replace(/\/$/, ''));
 }
 
 // ─── API Key (stored securely, set once in Settings) ─────────────────────────
 
 const API_KEY_STORE = 'biogears_api_key';
+// Fallback key used when no key has been set in SecureStore.
+// This must match DIGITAL_TWIN_API_KEY in the server's .env file.
+// In production this should only be changed via the Settings screen.
+const _FALLBACK_API_KEY = '8d82c9b7832e7f909ad6629e553888f2084c458a7e94c3d743d99bcc3860d5d6';
 
 export async function setApiKey(key: string): Promise<void> {
   await SecureStore.setItemAsync(API_KEY_STORE, key);
 }
 export async function getApiKey(): Promise<string> {
-  return '70d04318406695d0221ca63b51cd390bddf272bf30059ea5cdbec08bafc7c67c';
+  try {
+    const stored = await SecureStore.getItemAsync(API_KEY_STORE);
+    return stored && stored.trim().length > 0 ? stored.trim() : _FALLBACK_API_KEY;
+  } catch {
+    return _FALLBACK_API_KEY;
+  }
 }
 
 export async function clearApiKey(): Promise<void> {
@@ -91,12 +127,14 @@ export interface BiogearsVitals {
   spo2?: number | null;              // % (1–100)
   core_temperature?: number | null;  // °C
   cardiac_output?: number | null;    // L/min
+  // ── Extended Vitals ───────────────────────────────────────────
   map?: number | null;               // Mean Arterial Pressure (mmHg)
   stroke_volume?: number | null;     // mL
   tidal_volume?: number | null;      // mL
   arterial_ph?: number | null;       // unitless
   exercise_level?: number | null;    // unitless (0–1)
 }
+
 
 export interface BiogearsSimulationResult {
   status: 'success' | 'error';
@@ -168,11 +206,17 @@ export interface VitalsTrendResponse {
 
 export class BiogearsError extends Error {
   constructor(
-    message: string,
+    message: string | any,
     public statusCode?: number,
     public detail?: any
   ) {
-    super(message);
+    let finalMessage = 'Unknown error';
+    if (typeof message === 'object' && message !== null) {
+      finalMessage = message.message || message.detail || JSON.stringify(message);
+    } else if (message) {
+      finalMessage = String(message);
+    }
+    super(finalMessage);
     this.name = 'BiogearsError';
   }
 }
@@ -219,17 +263,28 @@ async function apiFetch<T>(path: string, options?: RequestInit, timeoutMs = 3000
 
 // ─── API Methods ──────────────────────────────────────────────────────────────
 
+/**
+ * Health check — lightweight ping, use to test connectivity
+ */
 export async function healthCheck(): Promise<{ status: string; version: string; engine: string; checks?: Record<string, any> }> {
   return apiFetch('/health', undefined, 5000);
 }
 
+/**
+ * Register a new Digital Twin (calibrates BioGears engine)
+ * This takes 30–120 seconds. Call from a non-blocking context.
+ */
 export async function registerTwin(payload: BiogearsRegistrationPayload): Promise<{ status: string; message: string }> {
   return apiFetch('/register', {
     method: 'POST',
     body: JSON.stringify(payload),
-  }, 600_000);
+  }, 600_000); // 10 min timeout — BioGears patient stabilization takes 2–8 min
 }
 
+/**
+ * Run a synchronous batch simulation (blocking)
+ * Prefer simulateAsync for UI use.
+ */
 export async function syncBatch(
   userId: string,
   events: BiogearsHealthEvent[]
@@ -240,6 +295,10 @@ export async function syncBatch(
   }, 300_000);
 }
 
+/**
+ * Start an async simulation — returns job_id immediately.
+ * Poll getJobStatus() until status === 'done' or 'failed'.
+ */
 export async function simulateAsync(
   userId: string,
   events: BiogearsHealthEvent[]
@@ -250,14 +309,20 @@ export async function simulateAsync(
   }, 10_000);
 }
 
+/**
+ * Poll job status. Call every 2–3 seconds until done or failed.
+ */
 export async function getJobStatus(jobId: string): Promise<BiogearsJob> {
   return apiFetch(`/jobs/${jobId}`, undefined, 10_000);
 }
 
+/**
+ * Poll until job completes. Resolves with result or rejects on failure/timeout.
+ */
 export async function pollUntilDone(
   jobId: string,
   intervalMs = 3000,
-  maxWaitMs = 1_800_000
+  maxWaitMs = 43_200_000  // 12 hours — BioGears can take 10–25 min for full-day scenarios
 ): Promise<BiogearsSimulationResult> {
   const start = Date.now();
   return new Promise((resolve, reject) => {
@@ -278,9 +343,11 @@ export async function pollUntilDone(
         } else if (job.status === 'failed') {
           reject(new BiogearsError(job.error || 'Simulation failed', 500));
         } else {
+          // Still running — keep polling
           setTimeout(check, intervalMs);
         }
       } catch (err) {
+        // Network hiccup — keep polling unless we've timed out
         if (Date.now() - start < maxWaitMs) {
           setTimeout(check, intervalMs * 2);
         } else {
@@ -292,6 +359,9 @@ export async function pollUntilDone(
   });
 }
 
+/**
+ * Run forecast (predict next N hours of physiology, no interventions)
+ */
 export async function predictRecovery(
   userId: string,
   hours = 4
@@ -302,59 +372,100 @@ export async function predictRecovery(
   }, 300_000);
 }
 
+/**
+ * List all simulation sessions for a user
+ */
 export async function getHistory(userId: string): Promise<{ user_id: string; sessions: BiogearsSession[] }> {
   return apiFetch(`/history/${userId}`, undefined, 15_000);
 }
 
+/**
+ * Get timeseries vitals data for a specific session (up to 100 points)
+ */
 export async function getSessionData(userId: string, sessionId: string): Promise<Record<string, number>[]> {
   return apiFetch(`/history/${userId}/${sessionId}`, undefined, 15_000);
 }
 
+/**
+ * Get composite health score
+ */
 export async function getHealthScore(userId: string): Promise<HealthScoreResponse> {
   return apiFetch(`/health-score/${userId}`, undefined, 15_000);
 }
 
+/**
+ * Get organ health scores
+ */
 export async function getOrganScores(userId: string): Promise<any> {
   return apiFetch(`/analytics/organ-scores/${userId}`, undefined, 15_000);
 }
 
+/**
+ * Delete a twin profile entirely
+ */
 export async function deleteTwin(userId: string): Promise<{ status: string; message: string }> {
   return apiFetch(`/profiles/${userId}`, { method: 'DELETE' }, 15_000);
 }
 
+/**
+ * Undo the last simulation (revert engine state to previous backup)
+ */
 export async function undoLastSimulation(userId: string): Promise<{ status: string; message: string }> {
   return apiFetch(`/sync/undo/${userId}`, { method: 'POST' }, 15_000);
 }
 
+/**
+ * Get body composition metrics (BMI, BSA, ideal weight) from stored profile
+ */
 export async function getBodyMetrics(userId: string): Promise<any> {
   return apiFetch(`/metrics/${userId}`, undefined, 10_000);
 }
 
+/**
+ * Get 10-year cardiovascular risk
+ */
 export async function getCVDRisk(userId: string): Promise<CVDRiskResponse> {
   return apiFetch(`/analytics/cvd-risk/${userId}`, undefined, 15_000);
 }
 
+/**
+ * Get Recovery Readiness score
+ */
 export async function getRecoveryReadiness(userId: string): Promise<RecoveryReadinessResponse> {
   return apiFetch(`/analytics/recovery-readiness/${userId}`, undefined, 15_000);
 }
 
+/**
+ * Get Vitals Trends
+ */
 export async function getVitalsTrends(userId: string): Promise<VitalsTrendResponse> {
   return apiFetch(`/vitals/${userId}/trends`, undefined, 15_000);
 }
 
+/**
+ * Get Weekly Summary
+ */
 export async function getWeeklySummary(userId: string): Promise<any> {
   return apiFetch(`/analytics/weekly-summary/${userId}`, undefined, 15_000);
 }
 
+/**
+ * Check whether a twin is registered (state file exists)
+ */
 export async function getTwinProfile(userId: string): Promise<any> {
   return apiFetch(`/profiles/${userId}`, undefined, 10_000);
 }
 
+/**
+ * Get the full substance library from BioGears
+ */
 export async function getSubstances(): Promise<{ substances: Record<string, string[]>; total: number }> {
   return apiFetch('/substances', undefined, 10_000);
 }
 
+
 // ─── Session Metadata (local AsyncStorage) ───────────────────────────────────
+// We store session names and local metadata since the backend only tracks CSVs
 
 const SESSION_META_KEY = (userId: string) => `@biogears_sessions_${userId}`;
 
@@ -402,7 +513,7 @@ export interface SavedRoutine {
   eventCount: number;
   createdAt: string;
   lastUsed?: string;
-  tags?: string[];
+  tags?: string[];  // e.g. ['gym day', 'rest day']
 }
 
 const ROUTINES_KEY = (userId: string) => `@biogears_routines_${userId}`;

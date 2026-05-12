@@ -30,7 +30,7 @@ VALID_MEAL_TYPES = {
 }
 
 VALID_ENVIRONMENTS = {
-    "StandardEnvironment",
+    "Standard",
     "ExerciseEnvironment",
     "AnchorageDecember",
     "AnchorageInside",
@@ -69,33 +69,54 @@ def validate_registration(data: Dict[str, Any]) -> List[str]:
     if sex not in ("Male", "Female"):
         errors.append(f"'sex' must be 'Male' or 'Female', got '{sex}'.")
 
-    age = data.get("age", 0)
-    if not (1 <= int(age) <= 120):
-        errors.append(f"'age' must be 1–120, got {age}.")
+    try:
+        age = int(data.get("age", 0))
+        if not (1 <= age <= 120):
+            errors.append(f"'age' must be 1–120, got {age}.")
+    except (ValueError, TypeError):
+        errors.append(f"'age' must be a valid integer, got '{data.get('age')}'.")
 
-    weight = data.get("weight", 0)
-    if not (1.0 <= float(weight) <= 500.0):
-        errors.append(f"'weight' must be 1–500 kg, got {weight}.")
+    try:
+        weight = float(data.get("weight", 0))
+        if not (1.0 <= weight <= 500.0):
+            errors.append(f"'weight' must be 1–500 kg, got {weight}.")
+    except (ValueError, TypeError):
+        errors.append(f"'weight' must be a valid number, got '{data.get('weight')}'.")
 
-    height = data.get("height", 0)
-    if not (50.0 <= float(height) <= 250.0):
-        errors.append(f"'height' must be 50–250 cm, got {height}.")
+    try:
+        height = float(data.get("height", 0))
+        if not (50.0 <= height <= 250.0):
+            errors.append(f"'height' must be 50–250 cm, got {height}.")
+    except (ValueError, TypeError):
+        errors.append(f"'height' must be a valid number, got '{data.get('height')}'.")
 
-    body_fat = data.get("body_fat", 0.2)
-    if not (0.03 <= float(body_fat) <= 0.70):
-        errors.append(f"'body_fat' must be a fraction 0.03–0.70, got {body_fat}.")
+    try:
+        body_fat = float(data.get("body_fat", 0.2))
+        if not (0.03 <= body_fat <= 0.70):
+            errors.append(f"'body_fat' must be a fraction 0.03–0.70, got {body_fat}.")
+    except (ValueError, TypeError):
+        errors.append(f"'body_fat' must be a decimal fraction (e.g. 0.20), got '{data.get('body_fat')}'.")
 
-    rhr = data.get("resting_hr", 72)
-    if not (30 <= float(rhr) <= 200):
-        errors.append(f"'resting_hr' must be 30–200 bpm, got {rhr}.")
+    try:
+        rhr = float(data.get("resting_hr", 72))
+        if not (30 <= rhr <= 200):
+            errors.append(f"'resting_hr' must be 30–200 bpm, got {rhr}.")
+    except (ValueError, TypeError):
+        errors.append(f"'resting_hr' must be a valid number, got '{data.get('resting_hr')}'.")
 
-    systolic = data.get("systolic_bp", 114)
-    if not (70 <= float(systolic) <= 220):
-        errors.append(f"'systolic_bp' must be 70–220 mmHg, got {systolic}.")
+    try:
+        systolic = float(data.get("systolic_bp", 114))
+        if not (70 <= systolic <= 220):
+            errors.append(f"'systolic_bp' must be 70–220 mmHg, got {systolic}.")
+    except (ValueError, TypeError):
+        errors.append(f"'systolic_bp' must be a valid number, got '{data.get('systolic_bp')}'.")
 
-    diastolic = data.get("diastolic_bp", 73.5)
-    if not (40 <= float(diastolic) <= 140):
-        errors.append(f"'diastolic_bp' must be 40–140 mmHg, got {diastolic}.")
+    try:
+        diastolic = float(data.get("diastolic_bp", 73.5))
+        if not (40 <= diastolic <= 140):
+            errors.append(f"'diastolic_bp' must be 40–140 mmHg, got {diastolic}.")
+    except (ValueError, TypeError):
+        errors.append(f"'diastolic_bp' must be a valid number, got '{data.get('diastolic_bp')}'.")
 
     if data.get("has_type1_diabetes") and data.get("has_type2_diabetes"):
         errors.append("Cannot have both Type 1 and Type 2 diabetes simultaneously.")
@@ -125,21 +146,47 @@ def validate_events(events: List[Dict[str, Any]]) -> List[str]:
             errors.append(f"{label}: Unknown event_type '{etype}'. Valid types: {known}.")
             continue   # Skip per-type checks for unknown types
 
-        if offset is not None and int(offset) < 0:
-            errors.append(f"{label}: time_offset cannot be negative (got {offset}).")
+        if offset is not None:
+            try:
+                if int(offset) < 0:
+                    errors.append(f"{label}: time_offset cannot be negative (got {offset}).")
+            except (ValueError, TypeError):
+                errors.append(f"{label}: time_offset must be an integer, got '{offset}'.")
 
         # ── Per-type checks ────────────────────────────────────────────────
         if etype == "exercise":
             if val is None:
-                errors.append(f"{label}: 'value' (intensity 0.0–1.0) is required.")
-            elif not (0.0 <= float(val) <= 1.0):
-                errors.append(f"{label}: intensity value must be 0.0–1.0, got {val}.")
+                errors.append(f"{label}: 'value' (intensity 0.0\u20131.0) is required.")
+            else:
+                fval = float(val)
+                if fval > 100:
+                    # Clearly wrong unit (e.g. raw MET value > 14 that slipped through)
+                    errors.append(
+                        f"{label}: intensity value must be 0.0\u20131.0 (or at most ~14 if using MET "
+                        f"scale, which must be normalised before submission). Got {val}."
+                    )
+                elif fval > 1.0:
+                    # Likely an un-normalised MET value (e.g. 3.5 from the Activity Lab).
+                    # Clamp to [0.0, 1.0] and warn — do NOT block the simulation.
+                    clamped = round(min(fval / 13.0, 1.0), 2)  # MET scale: (MET-1)/13 ≈ 0–1
+                    logger.warning(
+                        f"{label}: intensity {val} is outside 0.0–1.0 — "
+                        f"will be clamped to {clamped:.2f}. "
+                        f"Please normalise before sending: intensity = (MET - 1) / 13."
+                    )
+                elif fval < 0.0:
+                    errors.append(f"{label}: intensity cannot be negative. Got {val}.")
 
             dur = e.get("duration_seconds")
-            if dur is not None and not (60 <= int(dur) <= 14400):
-                errors.append(
-                    f"{label}: duration_seconds must be 60–14400 s (1 min–4 hrs), got {dur}."
-                )
+            if dur is not None:
+                try:
+                    dur_int = int(float(dur))  # accept floats like 1800.0 from the frontend
+                    if not (60 <= dur_int <= 14400):
+                        errors.append(
+                            f"{label}: duration_seconds must be 60–14400 s (1 min–4 hrs), got {dur}."
+                        )
+                except (ValueError, TypeError):
+                    errors.append(f"{label}: duration_seconds must be a number, got '{dur}'.")
 
         elif etype == "sleep":
             if val is None or float(val) <= 0:
@@ -150,9 +197,9 @@ def validate_events(events: List[Dict[str, Any]]) -> List[str]:
                 )
 
         elif etype == "meal":
-            if val is None or not (50 <= float(val) <= 5000):
+            if val is None or not (5 <= float(val) <= 10000):
                 errors.append(
-                    f"{label}: 'value' (calories) must be 50–5000, got {val}."
+                    f"{label}: 'value' (calories) must be 5–10000, got {val}."
                 )
             mt = e.get("meal_type")
             if mt and mt not in VALID_MEAL_TYPES:
@@ -168,9 +215,9 @@ def validate_events(events: List[Dict[str, Any]]) -> List[str]:
                         )
 
         elif etype == "water":
-            if val is None or not (50 <= float(val) <= 5000):
+            if val is None or not (5 <= float(val) <= 10000):
                 errors.append(
-                    f"{label}: 'value' (water in mL) must be 50–5000, got {val}."
+                    f"{label}: 'value' (water in mL) must be 5–10000, got {val}."
                 )
 
         elif etype == "substance":
@@ -187,27 +234,26 @@ def validate_events(events: List[Dict[str, Any]]) -> List[str]:
                     f"{label}: Substance '{sub}' not found in registry.{hint}"
                 )
             else:
-                DOSE_CAPS = {
-                    "Morphine":      30,    # mg  (acute single dose max)
-                    "Fentanyl":      0.2,   # mg  (200 ug)
-                    "Ketamine":      500,   # mg
-                    "Rocuronium":    200,   # mg
-                    "Succinylcholine": 200, # mg
-                    "Midazolam":     30,    # mg
-                    "Epinephrine":   10,    # mL
-                    "Vasopressin":   40,    # mL
-                    "Insulin":       50,    # u
-                    "Pralidoxime":   2000,  # mg
-                    "Atropine":      20,    # mg
-                    "Naloxone":      10,    # mg
-                    "Caffine":       800,   # mg  (BioGears spelling)
-                }
-                if sub in DOSE_CAPS and val is not None and float(val) > DOSE_CAPS[sub]:
+                info = SUBSTANCE_REGISTRY[sub]
+                unit = info.get("unit", "units")
+                safe_max = info.get("safe_max", None)
+                safety_level = info.get("safety_level", "safe")
+                warning_text = info.get("warning")
+
+                # Hard block on truly dangerous substances above safe_max
+                if safe_max is not None and safe_max > 0 and val is not None and float(val) > safe_max:
                     errors.append(
-                        f"{label}: Dose {val} exceeds safety cap for '{sub}' "
-                        f"(max: {DOSE_CAPS[sub]} {SUBSTANCE_REGISTRY[sub].get('unit', 'units')}). "
-                        f"This limit protects simulation accuracy."
+                        f"{label}: Dose {val} {unit} exceeds safety maximum for '{sub}' "
+                        f"(max: {safe_max} {unit}). "
+                        f"{info.get('note', 'Reduce the dose to proceed.')}"
                     )
+
+                # Log safety level warnings (non-blocking — returned separately)
+                if safety_level in ("danger", "clinical_only") and warning_text:
+                    logger.warning(
+                        f"{label}: '{sub}' is safety_level='{safety_level}': {warning_text}"
+                    )
+
 
         elif etype == "stress":                                     # ── NEW
             if val is None:

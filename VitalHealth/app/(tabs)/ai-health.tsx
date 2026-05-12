@@ -3,7 +3,7 @@
 
 import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter, useFocusEffect } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import React, { useEffect, useRef, useState } from "react";
 import {
@@ -161,81 +161,7 @@ const buildSessionPreview = (messages: Message[]) => {
   return last ? last.text.replace(/\*\*/g, "").slice(0, 80) + "…" : "";
 };
 
-// ─── Server Config Modal ──────────────────────────────────────────────────────
-
-function ServerConfigModal({
-  visible, ip, port, onSave, onClose, c,
-}: {
-  visible: boolean; ip: string; port: string;
-  onSave: (ip: string, port: string) => void;
-  onClose: () => void; c: any;
-}) {
-  const [localIp, setLocalIp]     = useState(ip);
-  const [localPort, setLocalPort] = useState(port);
-  const [testing, setTesting]     = useState(false);
-  const [result, setResult]       = useState<"ok" | "fail" | null>(null);
-
-  useEffect(() => { setLocalIp(ip); setLocalPort(port); setResult(null); }, [ip, port, visible]);
-
-  const test = async () => {
-    setTesting(true); setResult(null);
-    try {
-      const r = await fetch(`${buildUrl(localIp, localPort)}/health`);
-      setResult(r.ok ? "ok" : "fail");
-    } catch { setResult("fail"); } finally { setTesting(false); }
-  };
-
-  if (!visible) return null;
-  return (
-    <Modal visible animationType="slide" transparent onRequestClose={onClose}>
-      <View style={styles.modalOverlay}>
-        <View style={[styles.modalCard, { backgroundColor: c.card, borderColor: c.border }]}>
-          <Text style={[styles.modalTitle, { color: c.text }]}>⚙️ Server Settings</Text>
-          <Text style={[styles.modalSub, { color: c.sub }]}>
-            Enter the full AI server URL (e.g. http://151.185.42.123/ai).{"\n"}
-            Chunking and embedding happen on this device!
-          </Text>
-          <Text style={[styles.fieldLabel, { color: c.sub }]}>Laptop IP Address</Text>
-          <View style={[styles.fieldRow, { backgroundColor: c.bg, borderColor: c.border }]}>
-            <Text style={styles.fieldIcon}>🌐</Text>
-            <TextInput
-              style={[styles.fieldInput, { color: c.text }]} value={localIp} onChangeText={setLocalIp}
-              placeholder="e.g. http://151.185.42.123/ai" placeholderTextColor={c.sub}
-              keyboardType="numeric" autoCapitalize="none" autoCorrect={false}
-            />
-          </View>
-          <Text style={[styles.fieldLabel, { color: c.sub }]}>Port</Text>
-          <View style={[styles.fieldRow, { backgroundColor: c.bg, borderColor: c.border }]}>
-            <Text style={styles.fieldIcon}>🔌</Text>
-            <TextInput
-              style={[styles.fieldInput, { color: c.text }]} value={localPort} onChangeText={setLocalPort}
-              placeholder="8000" placeholderTextColor={c.sub} keyboardType="numeric"
-            />
-          </View>
-          <TouchableOpacity
-            style={[styles.testBtn, { backgroundColor: c.accent }, (testing || !localIp.trim()) && { opacity: 0.5 }]}
-            onPress={test} disabled={testing || !localIp.trim()}
-          >
-            {testing ? <ActivityIndicator color="#fff" size="small" /> :
-              <Text style={styles.testBtnTxt}>🔍 Test Connection</Text>}
-          </TouchableOpacity>
-          {result === "ok"   && <Text style={[styles.resultTxt, { color: "#10b981" }]}>✅ Server reachable!</Text>}
-          {result === "fail" && <Text style={[styles.resultTxt, { color: "#ef4444" }]}>❌ Cannot connect — check IP and WiFi</Text>}
-          <View style={{ flexDirection: "row", marginTop: 6 }}>
-            <TouchableOpacity
-              style={[styles.modalBtn, { marginRight: 10, borderWidth: 1, borderColor: c.border, backgroundColor: c.bg }]}
-              onPress={onClose}
-            ><Text style={[styles.modalBtnTxt, { color: c.sub }]}>Cancel</Text></TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.modalBtn, { backgroundColor: c.accent }, !localIp.trim() && { opacity: 0.4 }]}
-              onPress={() => onSave(localIp, localPort)} disabled={!localIp.trim()}
-            ><Text style={[styles.modalBtnTxt, { color: "#fff" }]}>Save ✓</Text></TouchableOpacity>
-          </View>
-        </View>
-      </View>
-    </Modal>
-  );
-}
+// ─── Server Config Modal removed (moved to /settings-ai) ──────────────────────
 
 // ─── Document Viewer Modal ────────────────────────────────────────────────────
 
@@ -512,10 +438,10 @@ export default function AIHealthScreen() {
   const { activeSymptoms, historySymptoms } = useSymptoms();
 
   // Server
-  const [serverIp, setServerIp]     = useState(DEFAULT_AI_URL);
+  const [serverIp, setServerIp]     = useState("");
   const [serverPort, setServerPort] = useState(DEFAULT_PORT);
   const [connected, setConnected]   = useState(false);
-  const [showConfig, setShowConfig] = useState(false);
+  const router                      = useRouter();
   const [modelLoading, setModelLoading] = useState(false);
 
   // Documents
@@ -674,29 +600,40 @@ const handleVoice = async () => {
     }
   };
 
-  // ── Mount: load everything ───────────────────────────────────────────────────
-
+  // ── Mount: load documents & history ──────────────────────────────────────────
   useEffect(() => {
     (async () => {
       try {
-        const ip      = (await AsyncStorage.getItem(KEY_SERVER_IP))   || "";
-        const port    = (await AsyncStorage.getItem(KEY_SERVER_PORT)) || DEFAULT_PORT;
         const d       = await loadDocuments();
         const ch      = await loadChunks();
         const history = await loadChatHistory();
-
-        setServerIp(ip); setServerPort(port); setDocs(d); setAllChunks(ch); setChatSessions(history);
-
-        if (!ip) { setShowConfig(true); }
-        else {
-          try { const r = await fetch(`${buildUrl(ip, port)}/health`); setConnected(r.ok); } catch { setConnected(false); }
-          await fetchGreeting(ip, port);
-        }
+        setDocs(d); setAllChunks(ch); setChatSessions(history);
         setModelLoading(true);
         generateEmbedding("warmup").finally(() => setModelLoading(false));
       } catch (e) { console.error(e); }
     })();
   }, []);
+
+  // ── Focus: load config ───────────────────────────────────────────────────────
+  useFocusEffect(
+    React.useCallback(() => {
+      (async () => {
+        try {
+          const ip      = (await AsyncStorage.getItem(KEY_SERVER_IP))   || "";
+          const port    = (await AsyncStorage.getItem(KEY_SERVER_PORT)) || DEFAULT_PORT;
+          
+          setServerIp(ip); setServerPort(port);
+          
+          if (!ip) {
+            setConnected(false);
+          } else {
+            try { const r = await fetch(`${buildUrl(ip, port)}/health`); setConnected(r.ok); } catch { setConnected(false); }
+            if (messages.length <= 1) await fetchGreeting(ip, port);
+          }
+        } catch (e) { console.error(e); }
+      })();
+    }, [messages.length])
+  );
 
   // ── Persist current conversation ────────────────────────────────────────────
 
@@ -731,15 +668,7 @@ const handleVoice = async () => {
 
   useEffect(() => { setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 100); }, [messages]);
 
-  // ── Save config ─────────────────────────────────────────────────────────────
-
-  const handleSaveConfig = async (ip: string, port: string) => {
-    const cleanIp = ip.trim(); const cleanPort = (port || DEFAULT_PORT).trim();
-    setServerIp(cleanIp); setServerPort(cleanPort); setShowConfig(false);
-    try { await AsyncStorage.setItem(KEY_SERVER_IP, cleanIp); await AsyncStorage.setItem(KEY_SERVER_PORT, cleanPort); } catch {}
-    try { const r = await fetch(`${buildUrl(cleanIp, cleanPort)}/health`); setConnected(r.ok); } catch { setConnected(false); }
-    await fetchGreeting(cleanIp, cleanPort);
-  };
+  // handleSaveConfig removed (moved to settings-ai.tsx)
 
   // ── New / restore chat ──────────────────────────────────────────────────────
 
@@ -840,8 +769,16 @@ const handleVoice = async () => {
     );
     return (
       <View style={[styles.messageRow, { justifyContent: isUser ? "flex-end" : "flex-start" }]}>
-        {!isUser && <View style={[styles.avatar, { backgroundColor: c.card, borderColor: c.border }]}><Text style={{ fontSize: 14 }}>🩺</Text></View>}
-        <View style={[styles.messageBubble, isUser ? styles.userBubble : styles.aiBubble, { backgroundColor: isUser ? getUserBubbleColor() : getAiBubbleColor(), borderColor: isUser ? getUserBubbleBorder() : getAiBubbleBorder() }]}>
+        {!isUser && (
+          <View style={[styles.avatar, { backgroundColor: theme === 'light' ? '#f8fafc' : '#0f172a', borderColor: c.border }]}>
+            <Text style={{ fontSize: 16 }}>👩‍⚕️</Text>
+          </View>
+        )}
+        <View style={[
+          styles.messageBubble, 
+          isUser ? styles.userBubble : styles.aiBubble, 
+          { backgroundColor: isUser ? getUserBubbleColor() : getAiBubbleColor(), borderColor: isUser ? getUserBubbleBorder() : getAiBubbleBorder() }
+        ]}>
           <RichText text={item.text} style={[styles.messageText, { color: isUser ? "#ffffff" : c.text }]} />
           <Text style={[styles.messageTime, { color: isUser ? "#ffffff80" : c.sub }]}>{fmtTime(item.timestamp.getTime())}</Text>
         </View>
@@ -856,30 +793,27 @@ const handleVoice = async () => {
       <StatusBar style={theme === "dark" ? "light" : "dark"} backgroundColor={c.bg} />
       <Header />
 
-      {/* Page header */}
-      <View style={[styles.header, { backgroundColor: c.bg, borderBottomColor: c.border, paddingTop: 110 }]}>
+      {/* Smart Page Header */}
+      <View style={[styles.header, { backgroundColor: theme === 'light' ? '#ffffff' : '#0f172a', paddingTop: 100, borderBottomWidth: 0, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.05, shadowRadius: 12, elevation: 5 }]}>
         <View style={styles.headerLeft}>
-          {/* Chat History button */}
-          <TouchableOpacity style={[styles.historyBtn, { backgroundColor: c.card, borderColor: c.border }]} onPress={() => setShowHistory(true)}>
-            <Ionicons name="chatbubbles-outline" size={15} color={c.accent} />
-            <Text style={[styles.historyBtnTxt, { color: c.accent }]}>Chats</Text>
-          </TouchableOpacity>
-          <Text style={[styles.headerTitle, { color: c.text }]}>🩺 Health AI</Text>
-          <View style={styles.statusContainer}>
-            <View style={[styles.statusDot, { backgroundColor: connected ? "#10b981" : "#ef4444" }]} />
-            <Text style={[styles.statusLabel, { color: c.sub }]}>{connected ? "Connected" : "Not connected"}</Text>
+          <View style={[styles.avatarContainer, { backgroundColor: c.card, borderColor: c.border }]}>
+            <Text style={{ fontSize: 22 }}>👩‍⚕️</Text>
+            <View style={[styles.statusBadge, { backgroundColor: connected ? "#10b981" : "#ef4444", borderColor: c.bg }]} />
+          </View>
+          <View>
+            <Text style={[styles.headerTitle, { color: c.text }]}>Dr. Aria</Text>
+            <Text style={[styles.statusLabel, { color: connected ? "#10b981" : "#ef4444" }]}>
+              {connected ? "AI Assistant Active" : "Offline (Check Settings)"}
+            </Text>
           </View>
         </View>
+        
         <View style={styles.headerRight}>
-          {/* New chat icon */}
-          <TouchableOpacity style={[styles.newChatIconBtn, { borderColor: c.border, backgroundColor: c.card }]} onPress={handleNewChat}>
-            <Ionicons name="create-outline" size={16} color={c.accent} />
+          <TouchableOpacity style={[styles.actionBtn, { backgroundColor: theme === 'light' ? '#f1f5f9' : '#1e293b' }]} onPress={() => setShowHistory(true)}>
+            <Ionicons name="time-outline" size={20} color={c.accent} />
           </TouchableOpacity>
-          <TouchableOpacity onPress={() => setShowConfig(true)} style={[styles.urlPill, { borderColor: c.border, backgroundColor: c.card }]}>
-            <Text style={[styles.urlPillTxt, { color: c.accent }]} numberOfLines={1}>{serverIp ? buildUrl(serverIp, serverPort) : "⚙ Set server IP"}</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.iconBtn} onPress={() => setShowConfig(true)}>
-            <Text style={[styles.iconBtnTxt, { color: c.text }]}>⚙️</Text>
+          <TouchableOpacity style={[styles.actionBtn, { backgroundColor: theme === 'light' ? '#f1f5f9' : '#1e293b', marginLeft: 8 }]} onPress={handleNewChat}>
+            <Ionicons name="create-outline" size={20} color={c.accent} />
           </TouchableOpacity>
         </View>
       </View>
@@ -913,10 +847,10 @@ const handleVoice = async () => {
             <TouchableOpacity onPress={handleFile} style={styles.iconButton}>
               <Ionicons name="attach" size={24} color={c.sub} />
             </TouchableOpacity>
-            <View style={[styles.inputWrapper, { backgroundColor: c.bg, borderColor: isRecording ? "#ef4444" : c.border }]}>
+            <View style={[styles.inputWrapper, { backgroundColor: theme === 'light' ? '#f8fafc' : '#0f172a', borderColor: isRecording ? "#ef4444" : c.border }]}>
               <TextInput
                 ref={inputRef} value={input} onChangeText={setInput}
-                placeholder={isRecording ? "Listening…" : "Ask about your health…"}
+                placeholder={isRecording ? "Listening…" : "Message Dr. Aria..."}
                 placeholderTextColor={isRecording ? "#ef4444" : c.sub}
                 style={[styles.input, { color: c.text }]}
                 multiline returnKeyType="send" onSubmitEditing={sendMessage} blurOnSubmit={false}
@@ -934,7 +868,6 @@ const handleVoice = async () => {
       </KeyboardAvoidingView>
 
       {/* Modals */}
-      <ServerConfigModal visible={showConfig} ip={serverIp} port={serverPort} onSave={handleSaveConfig} onClose={() => setShowConfig(false)} c={c} />
       <DocViewerModal doc={viewDoc} chunks={allChunks} onClose={() => setViewDoc(null)} c={c} />
       <ProcessingModal visible={uploading} progress={processingProgress} onCancel={() => { setUploading(false); setProcessingProgress(null); }} c={c} />
       <AllChunksModal chunks={allChunks} docs={docs} visible={showAllChunks} onClose={() => setShowAllChunks(false)} c={c} />
@@ -954,42 +887,38 @@ const handleVoice = async () => {
 const styles = StyleSheet.create({
   safe: { flex: 1 }, flex: { flex: 1 }, container: { flex: 1 },
 
-  header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 14, paddingVertical: 8, borderBottomWidth: 1 },
-  headerLeft: { flex: 1 }, headerRight: { flexDirection: "row", alignItems: "center" },
-  headerTitle: { fontSize: 18, fontWeight: "800", lineHeight: 22 },
-  statusContainer: { flexDirection: "row", alignItems: "center" },
-  statusDot: { width: 7, height: 7, borderRadius: 4, marginRight: 4 },
-  statusLabel: { fontSize: 11, lineHeight: 14 },
-  urlPill: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, borderWidth: 1, maxWidth: 150, marginRight: 4 },
-  urlPillTxt: { fontSize: 10, fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace" },
-  iconBtn: { padding: 4 }, iconBtnTxt: { fontSize: 18 },
+  header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 20, paddingBottom: 16, zIndex: 10 },
+  headerLeft: { flexDirection: "row", alignItems: "center", gap: 12, flex: 1 },
+  headerRight: { flexDirection: "row", alignItems: "center" },
+  headerTitle: { fontSize: 20, fontWeight: "800", letterSpacing: -0.5 },
+  statusLabel: { fontSize: 12, fontWeight: "600", marginTop: 2 },
+  
+  avatarContainer: { width: 44, height: 44, borderRadius: 22, borderWidth: 1, alignItems: "center", justifyContent: "center", position: "relative" },
+  statusBadge: { position: "absolute", bottom: -2, right: -2, width: 14, height: 14, borderRadius: 7, borderWidth: 2 },
+  
+  actionBtn: { width: 38, height: 38, borderRadius: 19, alignItems: "center", justifyContent: "center" },
 
-  // New: history + new-chat buttons in header
-  historyBtn: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20, borderWidth: 1, marginBottom: 4, alignSelf: "flex-start" },
-  historyBtnTxt: { fontSize: 12, fontWeight: "600" },
-  newChatIconBtn: { width: 32, height: 32, borderRadius: 10, borderWidth: 1, alignItems: "center", justifyContent: "center", marginRight: 6 },
-
-  ragBar: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingHorizontal: 14, paddingVertical: 6, borderBottomWidth: 1 },
+  ragBar: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingHorizontal: 20, paddingVertical: 10, borderBottomWidth: 1 },
   ragBarTxt: { fontSize: 11, fontWeight: "600" },
 
-  messagesList: { paddingHorizontal: 16, paddingBottom: 10, paddingTop: 10 },
-  messageRow: { flexDirection: "row", alignItems: "flex-end", marginBottom: 8 },
-  avatar: { width: 32, height: 32, borderRadius: 16, borderWidth: 1, alignItems: "center", justifyContent: "center", marginRight: 8, marginBottom: 2 },
-  messageBubble: { maxWidth: "75%", padding: 12, borderRadius: 18, borderWidth: 1 },
-  userBubble: { borderBottomRightRadius: 4, marginLeft: 8 },
-  aiBubble: { borderBottomLeftRadius: 4 },
-  messageText: { fontSize: 15, lineHeight: 20 },
-  messageTime: { fontSize: 10, marginTop: 4, alignSelf: "flex-end" },
-  sysRow: { alignItems: "center", marginVertical: 5 },
-  sysPill: { borderRadius: 12, paddingHorizontal: 14, paddingVertical: 5, borderWidth: 1 },
-  sysTxt: { fontSize: 12, fontStyle: "italic" },
+  messagesList: { paddingHorizontal: 16, paddingBottom: 24, paddingTop: 16 },
+  messageRow: { flexDirection: "row", alignItems: "flex-end", marginBottom: 12 },
+  avatar: { width: 32, height: 32, borderRadius: 16, borderWidth: 1, alignItems: "center", justifyContent: "center", marginRight: 10, marginBottom: 4 },
+  messageBubble: { maxWidth: "80%", paddingHorizontal: 16, paddingVertical: 12, borderRadius: 20, borderWidth: 1 },
+  userBubble: { borderBottomRightRadius: 6, marginLeft: 8 },
+  aiBubble: { borderBottomLeftRadius: 6 },
+  messageText: { fontSize: 16, lineHeight: 22 },
+  messageTime: { fontSize: 10, marginTop: 6, alignSelf: "flex-end" },
+  sysRow: { alignItems: "center", marginVertical: 12 },
+  sysPill: { borderRadius: 16, paddingHorizontal: 16, paddingVertical: 6, borderWidth: 1 },
+  sysTxt: { fontSize: 12, fontStyle: "italic", fontWeight: "500" },
 
-  inputContainer: { flexDirection: "row", alignItems: "center", paddingHorizontal: 12, paddingVertical: 8, borderTopWidth: 1, gap: 8 },
-  iconButton: { width: 40, height: 40, borderRadius: 20, justifyContent: "center", alignItems: "center" },
-  recordingBtn: { backgroundColor: "#ef4444", borderRadius: 20 },
-  inputWrapper: { flex: 1, borderRadius: 24, minHeight: 40, maxHeight: 100, justifyContent: "center", borderWidth: 1 },
-  input: { fontSize: 15, paddingHorizontal: 16, paddingVertical: 8, textAlignVertical: "center" },
-  sendButton: { width: 40, height: 40, borderRadius: 20, justifyContent: "center", alignItems: "center" },
+  inputContainer: { flexDirection: "row", alignItems: "center", paddingHorizontal: 16, paddingVertical: 12, borderTopWidth: 1, gap: 10, paddingBottom: Platform.OS === "ios" ? 30 : 12 },
+  iconButton: { width: 44, height: 44, borderRadius: 22, justifyContent: "center", alignItems: "center" },
+  recordingBtn: { backgroundColor: "#ef4444", borderRadius: 22 },
+  inputWrapper: { flex: 1, borderRadius: 22, minHeight: 44, maxHeight: 120, justifyContent: "center", borderWidth: 1 },
+  input: { fontSize: 16, paddingHorizontal: 18, paddingTop: 12, paddingBottom: 12, textAlignVertical: "center" },
+  sendButton: { width: 44, height: 44, borderRadius: 22, justifyContent: "center", alignItems: "center" },
 
   // Voice indicator
   voiceIndicatorWrap: { backgroundColor: "#ef444415", borderTopWidth: 1, borderTopColor: "#ef444430", paddingHorizontal: 16, paddingVertical: 8 },

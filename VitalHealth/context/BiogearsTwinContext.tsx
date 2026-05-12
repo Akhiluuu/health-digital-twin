@@ -42,6 +42,7 @@ export interface RoutineEvent extends BiogearsHealthEvent {
   wallTime: string;       // "HH:MM" — wall clock time user selected
   displayLabel: string;   // e.g. "Idli (2 pieces) · 140 kcal"
   displayIcon: string;    // emoji
+  simulated?: boolean;    // whether this event has been simulated
 }
 
 export interface BiogearsTwinContextValue {
@@ -126,7 +127,19 @@ function wallTimeToTimestamp(wallTime: string): number {
   // wallTime = "HH:MM"
   const [hh, mm] = wallTime.split(':').map(Number);
   const now = new Date();
+  const current_hh = now.getHours();
+  const current_mm = now.getMinutes();
+
   now.setHours(hh, mm, 0, 0);
+
+  // Smart Date Inference: Health logs are retroactive.
+  // If the time the user entered is strictly in the future compared to right now
+  // (e.g., it is 8:00 AM and they enter 10:00 PM for sleep), we safely 
+  // assume they are logging an event that happened yesterday.
+  if (hh > current_hh || (hh === current_hh && mm > current_mm)) {
+    now.setDate(now.getDate() - 1);
+  }
+
   return Math.floor(now.getTime() / 1000);
 }
 
@@ -170,17 +183,28 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
   const [substances, setSubstances] = useState<Record<string, string[]>>({});
 
   const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const simStartRef = useRef<number | null>(null);   // epoch ms when simulation started
+  const progressTickRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // ── Substances Library ────────────────────────────────────────────────────
 
+  const substanceFetchingRef = useRef(false);
+
   const refreshSubstances = useCallback(async () => {
+    // Guard: don't fire a second request if one is already in-flight
+    if (substanceFetchingRef.current) return;
+    substanceFetchingRef.current = true;
     try {
       const data = await BiogearsAPI.getSubstances();
       setSubstances(data.substances);
-    } catch (err) {
-      console.error('Failed to fetch substances:', err);
+    } catch (err: any) {
+      // Silently ignore network errors — the substance list is non-critical
+      // and the server may simply not be reachable on this network.
+      console.log('[BioGears] Substances unavailable (server unreachable) — will use defaults.');
+    } finally {
+      substanceFetchingRef.current = false;
     }
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
 
   // ── Recheck twin status on server ─────────────────────────────────────────
@@ -206,7 +230,8 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
   // ── Load persisted data on mount ─────────────────────────────────────────
 
   useEffect(() => {
-    refreshSubstances(); // Fetch library on mount
+    // NOTE: substances are NOT fetched here — twin.tsx calls refreshSubstances()
+    // explicitly so this doesn't fire on every screen load.
     if (!twinUserId) return;
     recheckTwinStatus();
     loadTodayFromStorage();
@@ -226,7 +251,86 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
         console.log('[BiogearsTwin] Loaded cached vitals from local DB (offline fallback)');
       }
     }).catch(() => {});
+
+    resumeActiveJob();
   }, [twinUserId]);
+
+  const resumeActiveJob = async () => {
+    try {
+      const jobId = await AsyncStorage.getItem('biogears_active_job');
+      if (!jobId) return;
+      
+      const statusRes = await BiogearsAPI.getJobStatus(jobId);
+      if (statusRes.status === 'running' || statusRes.status === 'pending') {
+        console.log(`[BiogearsTwin] Resuming active job: ${jobId}`);
+        setSimulationStatus('running');
+        setSimulationProgress('Resuming background simulation...');
+        const result = await BiogearsAPI.pollUntilDone(jobId, 3000, 43_200_000);
+        await finishSimulationSuccess(result);
+      } else {
+        await AsyncStorage.removeItem('biogears_active_job');
+      }
+    } catch (err) {
+      console.log('Failed to resume active job:', err);
+      await AsyncStorage.removeItem('biogears_active_job');
+    }
+  };
+
+  const finishSimulationSuccess = async (result: any) => {
+    setLastVitals(result.vitals);
+    setLastAnomalies(result.anomalies || []);
+    setLastInteractionWarnings(result.interaction_warnings || []);
+
+    const sessionId = new Date().toISOString().replace(/[:.]/g, '-');
+    await saveSimulationResult(
+      twinUserId!,
+      sessionId,
+      result.vitals,
+      result.anomalies || []
+    ).catch(err => console.warn('[BiogearsTwin] Local save failed (non-fatal):', err));
+
+    setLastSessionId(sessionId);
+
+    // Generate AI insights from anomalies + vitals
+    const insights = generateInsights(result);
+    setLastAiInsights(insights);
+
+    const sessionMeta: LocalSessionMeta = {
+      session_id: sessionId,
+      name: simulationName || `Simulation ${new Date().toLocaleDateString('en-IN')}`,
+      timestamp: new Date().toISOString(),
+      vitals_snapshot: result.vitals,
+      has_anomaly: result.has_anomaly,
+      events: todayEvents,
+      event_count: todayEvents.length,
+      ai_insights: insights,
+    };
+    await BiogearsAPI.saveSessionMeta(twinUserId!, sessionMeta);
+    setSessions(prev => [sessionMeta, ...prev]);
+
+    // Mark all current events as simulated so they don't get kept in the queue indefinitely
+    setTodayEvents(prev => {
+      const updated = prev.map(e => ({ ...e, simulated: true }));
+      if (twinUserId) {
+        AsyncStorage.setItem(TODAY_EVENTS_KEY(twinUserId), JSON.stringify(updated)).catch(() => {});
+      }
+      return updated;
+    });
+
+    setSimulationStatus('done');
+    setSimulationProgress('Simulation complete!');
+    setSimulationName('');
+    // Stop progress ticker
+    if (progressTickRef.current) {
+      clearInterval(progressTickRef.current);
+      progressTickRef.current = null;
+    }
+    simStartRef.current = null;
+    await AsyncStorage.removeItem('biogears_active_job');
+
+    await refreshSessions();
+    await refreshAnalytics();
+  };
 
   const loadTodayFromStorage = async () => {
     if (!twinUserId) return;
@@ -234,11 +338,11 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
       const raw = await AsyncStorage.getItem(TODAY_EVENTS_KEY(twinUserId));
       if (raw) {
         const stored = JSON.parse(raw) as RoutineEvent[];
-        // Only keep today's events (don't carry over from yesterday)
+        // Keep today's events, AND keep any past events that haven't been simulated yet
         const todayStr = new Date().toDateString();
         const fresh = stored.filter(e => {
-          if (!e.timestamp) return true;
-          return new Date(e.timestamp * 1000).toDateString() === todayStr;
+          const isToday = e.timestamp ? new Date(e.timestamp * 1000).toDateString() === todayStr : true;
+          return isToday || !e.simulated;
         });
         setTodayEvents(fresh);
       }
@@ -265,7 +369,9 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
   }, [twinUserId]);
 
   const refreshAnalytics = useCallback(async () => {
-    if (!twinUserId) return;  // Only skip if no user ID
+    // Don't hammer the server when the twin isn't registered yet —
+    // all 7 analytics endpoints return 404 and generate noise in logs.
+    if (!twinUserId || twinStatus === 'unregistered' || twinStatus === 'checking') return;
     try {
       const results = await Promise.allSettled([
         BiogearsAPI.getOrganScores(twinUserId),
@@ -287,7 +393,7 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
     } catch (err) {
       console.error('Failed to fetch analytics:', err);
     }
-  }, [twinUserId]);
+  }, [twinUserId, twinStatus]);
 
 
   useEffect(() => {
@@ -412,7 +518,33 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
     } catch (err: any) {
       console.log(`[BioGearsContext] Registration FAILED:`, err);
       setTwinStatus('error');
-      setTwinStatusError(err.detail?.detail || err.message || 'Registration failed');
+
+      // err.detail is the FastAPI `detail` field from the 422 response.
+      // It can be:
+      //   - A plain string:                "Engine convergence failure."
+      //   - A validation dict:             {"validation_errors": ["...", ...]}
+      //   - A message dict:               {"message": "...", "log_snippet": "..."}
+      //   - A FastAPI Pydantic error list: [{"loc": [...], "msg": "..."}]
+      let msg = 'Registration failed';
+      try {
+        const detail = err.detail;
+        if (typeof detail === 'string') {
+          msg = detail;
+        } else if (detail && typeof detail === 'object') {
+          if (Array.isArray(detail.validation_errors) && detail.validation_errors.length > 0) {
+            msg = `Validation failed:\n${detail.validation_errors.slice(0, 5).map((e: string) => `• ${e}`).join('\n')}`;
+          } else if (detail.message) {
+            msg = detail.message;
+          } else if (Array.isArray(detail) && detail[0]?.msg) {
+            // FastAPI Pydantic field errors
+            msg = detail.map((d: any) => `• ${d.loc?.slice(-1)[0] ?? 'field'}: ${d.msg}`).join('\n');
+          }
+        }
+      } catch {
+        msg = err.message || 'Registration failed';
+      }
+
+      setTwinStatusError(msg);
       throw err;
     }
   }, []);
@@ -422,6 +554,10 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
   const runSimulation = useCallback(async () => {
     if (!twinUserId || twinStatus !== 'ready') {
       throw new Error('Twin not registered');
+    }
+    if (simulationStatus === 'running' || simulationStatus === 'queued') {
+      console.warn('Simulation already in progress');
+      return;
     }
     if (todayEvents.length === 0) {
       throw new Error('No events logged for today');
@@ -451,53 +587,68 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
       setSimulationProgress('Starting BioGears engine...');
       setSimulationStatus('running');
       const { job_id } = await BiogearsAPI.simulateAsync(twinUserId, events);
+      await AsyncStorage.setItem('biogears_active_job', job_id);
+
+      // Start live elapsed-time ticker so user sees progress
+      simStartRef.current = Date.now();
+      setSimulationProgress('BioGears engine initialising...');
+      progressTickRef.current = setInterval(() => {
+        const elapsed = Math.round((Date.now() - (simStartRef.current ?? Date.now())) / 1000);
+        const mins = Math.floor(elapsed / 60);
+        const secs = elapsed % 60;
+        const timeStr = mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
+        setSimulationProgress(`BioGears computing physiology... (${timeStr} elapsed)`);
+      }, 5000);
 
       // Poll progress — BioGears engine can take 10–25 minutes for a full-day scenario
-      setSimulationProgress('BioGears engine computing physiology (10–25 min)...');
-      const result = await BiogearsAPI.pollUntilDone(job_id, 3000, 1_800_000);
+      const result = await BiogearsAPI.pollUntilDone(job_id, 3000, 43_200_000);  // 12 hour timeout
 
-      // Success: update state
-      setLastVitals(result.vitals);
-      setLastAnomalies(result.anomalies || []);
-      setLastInteractionWarnings(result.interaction_warnings || []);
+      await finishSimulationSuccess(result);
 
-      // ── Persist result locally (offline cache + Drive backup) ─────────
-      const sessionId = new Date().toISOString().replace(/[:.]/g, '-');
-      await saveSimulationResult(
-        twinUserId,
-        sessionId,
-        result.vitals,
-        result.anomalies || []
-      ).catch(err => console.warn('[BiogearsTwin] Local save failed (non-fatal):', err));
-      setLastSessionId(sessionId);
 
-      // Generate AI insights from anomalies + vitals
-      const insights = generateInsights(result);
-      setLastAiInsights(insights);
-
-      const sessionMeta: LocalSessionMeta = {
-        session_id: sessionId,
-        name: simulationName || `Simulation ${new Date().toLocaleDateString('en-IN')}`,
-        timestamp: new Date().toISOString(),
-        vitals_snapshot: result.vitals,
-        has_anomaly: result.has_anomaly,
-        events: todayEvents,
-        event_count: todayEvents.length,
-        ai_insights: insights,
-      };
-      await BiogearsAPI.saveSessionMeta(twinUserId, sessionMeta);
-      setSessions(prev => [sessionMeta, ...prev]);
-
-      setSimulationStatus('done');
-      setSimulationProgress('Simulation complete!');
-      setSimulationName('');
-      
-      // Refresh historical data and analytics
-      refreshSessions();
-      refreshAnalytics();
     } catch (err: any) {
+      // Stop progress ticker on failure too
+      if (progressTickRef.current) {
+        clearInterval(progressTickRef.current);
+        progressTickRef.current = null;
+      }
+      simStartRef.current = null;
       setSimulationStatus('failed');
-      setSimulationError(err.message || 'Simulation failed');
+
+      // The job store serialises error details as a JSON string.
+      // Parse it back so we show a clean, human-readable message.
+      // Handles three shapes:
+      //   1. Validation errors: {"validation_errors": ["Event[3] ...", ...]}
+      //   2. Engine errors:     {"message": "...", "log_snippet": "..."}
+      //   3. Plain string:      "Engine convergence failure."
+      let friendlyError = err.message || 'Simulation failed';
+      try {
+        // err.detail is set by BiogearsError — may be a raw string or object
+        const raw = err.detail?.detail ?? err.detail ?? err.message ?? '';
+        const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+        if (parsed && typeof parsed === 'object') {
+          // ── Shape 1: validation_errors array ──────────────────────────────
+          if (Array.isArray(parsed.validation_errors) && parsed.validation_errors.length > 0) {
+            const bullets = parsed.validation_errors
+              .slice(0, 5)
+              .map((e: string) => `• ${e}`)
+              .join('\n');
+            friendlyError = `Input validation failed:\n${bullets}`;
+          }
+          // ── Shape 2: engine error with optional log snippet ─────────────
+          else {
+            const msg = parsed.message || '';
+            const snippet = (parsed.log_snippet || '').trim();
+            if (msg) {
+              friendlyError = snippet
+                ? `${msg}\n\n${snippet.split('\n').slice(0, 5).join('\n')}`
+                : msg;
+            }
+          }
+        }
+      } catch { /* raw string — use as-is */ }
+
+      setSimulationError(friendlyError);
       setSimulationProgress('');
       throw err;
     }
@@ -587,9 +738,8 @@ function generateInsights(result: any): string[] {
   }
 
   if (v.spo2 != null) {
-    const spoPct = Math.round(v.spo2 * 100);
-    if (spoPct < 94) insights.push(`🫁 SpO₂ at ${spoPct}% is below normal — watch for breathlessness.`);
-    else insights.push(`✅ Oxygen saturation healthy at ${spoPct}%.`);
+    if (v.spo2 < 94) insights.push(`🫁 SpO₂ at ${v.spo2}% is below normal — watch for breathlessness.`);
+    else insights.push(`✅ Oxygen saturation healthy at ${v.spo2}%.`);
   }
 
   if (v.glucose != null) {

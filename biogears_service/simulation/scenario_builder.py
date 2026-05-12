@@ -27,7 +27,11 @@ from biogears_service.simulation.config import (
 from biogears_service.simulation.substance_registry import SUBSTANCE_REGISTRY
 
 # ── Expanded DataRequests block (14 vitals) ──────────────────────────────
-_DATA_REQUESTS = """    <DataRequests Filename="{prefix}">
+# IMPORTANT: The Filename attribute must include the subdirectory path relative
+# to BIOGEARS_BIN_DIR (its CWD). BioGears writes the CSV to this path verbatim.
+# We use 'Scenarios/API/{prefix}Results.csv' so the file lands in SCENARIO_API_DIR
+# where server.py already searches via rglob.
+_DATA_REQUESTS = """    <DataRequests Filename="Scenarios/API/{prefix}Results.csv">
         <DataRequest xsi:type="PhysiologyDataRequestData" Name="HeartRate"                  Unit="1/min"  Precision="2"/>
         <DataRequest xsi:type="PhysiologyDataRequestData" Name="RespirationRate"             Unit="1/min"  Precision="2"/>
         <DataRequest xsi:type="PhysiologyDataRequestData" Name="SystolicArterialPressure"   Unit="mmHg"   Precision="1"/>
@@ -112,21 +116,42 @@ def _water_xml(ml: float) -> str:
 
 
 def _substance_xml(name: str, val: float, is_stacked: bool = False) -> str:
-    """Routes a substance to the correct BioGears administration action."""
+    """
+    Routes a substance to the correct BioGears administration action.
+
+    BioGears IV bolus CDM requires:
+      <Concentration value="C" unit="mg/mL"/> + <Dose value="V" unit="mL"/>
+      where Dose (mg) = C × V
+    We use C = 1 mg/mL (or 1000 ug/mL for ug-dosed drugs) so V = dose_mg numerically.
+
+    ORAL uses SubstanceOralDoseData with dose in mg directly.
+    NASAL uses SubstanceNasalDoseData with dose in ug directly.
+    """
+    if name == "Caffeine":
+        # BioGears does not natively ship with Caffeine.xml!
+        # We mimic the sympathetic effect (HR increase) via AcuteStressData.
+        # 100mg caffeine -> ~0.05 severity.
+        severity = min(0.15, val / 2000.0)
+        return (
+            f'        <Action xsi:type="AcuteStressData">\n'
+            f'            <Severity value="{severity:.4f}"/>\n'
+            f'        </Action>\n'
+        )
+
     info = SUBSTANCE_REGISTRY.get(name)
     if info is None:
-        # Fallback — unknown substance goes IV bolus
+        # Unknown substance — try as 1 mg/mL IV bolus
         return (
             f'        <Action xsi:type="SubstanceBolusData" AdminRoute="Intravenous">\n'
             f'            <Substance>{name}</Substance>\n'
             f'            <Concentration value="1.0" unit="mg/mL"/>\n'
-            f'            <Dose value="{val}" unit="mL"/>\n'
+            f'            <Dose value="{round(val, 4)}" unit="mL"/>\n'
             f'        </Action>\n'
         )
 
-    effective_val = round(val * 1.15, 4) if is_stacked else val
+    effective_val = round(val * 1.15, 4) if is_stacked else round(val, 4)
     route = info["route"]
-    unit  = info["unit"]
+    unit  = info["unit"]   # "mg", "ug", "mL/min", or "U" (insulin units)
 
     if route == "IV_COMPOUND":
         return (
@@ -136,30 +161,53 @@ def _substance_xml(name: str, val: float, is_stacked: bool = False) -> str:
             f'            <Rate value="{effective_val}" unit="{unit}"/>\n'
             f'        </Action>\n'
         )
+
     elif route == "ORAL":
+        # SubstanceOralDoseData: dose in mg directly
         return (
             f'        <Action xsi:type="SubstanceOralDoseData" AdminRoute="Gastrointestinal">\n'
             f'            <Substance>{name}</Substance>\n'
-            f'            <Dose value="{effective_val}" unit="{unit}"/>\n'
+            f'            <Dose value="{effective_val}" unit="mg"/>\n'
             f'        </Action>\n'
         )
+
     elif route == "NASAL":
+        # SubstanceNasalDoseData: dose in ug directly
         return (
             f'        <Action xsi:type="SubstanceNasalDoseData">\n'
             f'            <Substance>{name}</Substance>\n'
-            f'            <Dose value="{effective_val}" unit="{unit}"/>\n'
+            f'            <Dose value="{effective_val}" unit="ug"/>\n'
             f'        </Action>\n'
         )
+
     else:  # IV_BOLUS
-        conc = "1000.0" if unit == "ug" else "1.0"
-        conc_unit = "ug/mL" if unit == "ug" else "mg/mL"
+        # BioGears CDM: Concentration × Volume = Dose
+        # Use concentration 1 mg/mL → volume_mL = dose_mg (numerically equivalent)
+        # For ug-dosed drugs (Fentanyl): 1000 ug/mL → volume_mL = dose_ug / 1000
+        if unit == "ug":
+            # Fentanyl and other ug-dosed IV drugs
+            conc_val  = 1000.0              # ug/mL
+            conc_unit = "ug/mL"
+            dose_vol  = round(effective_val / 1000.0, 6)  # ug ÷ (ug/mL) = mL
+        elif unit == "U":
+            # Insulin — Units dosed at 100 U/mL concentration
+            conc_val  = 100.0
+            conc_unit = "U/mL"
+            dose_vol  = round(effective_val / 100.0, 6)   # U ÷ (U/mL) = mL
+        else:
+            # mg-dosed drugs: 1 mg/mL → volume = dose_mg numerically
+            conc_val  = 1.0
+            conc_unit = "mg/mL"
+            dose_vol  = effective_val                       # mg ÷ (mg/mL) = mL
+
         return (
             f'        <Action xsi:type="SubstanceBolusData" AdminRoute="Intravenous">\n'
             f'            <Substance>{name}</Substance>\n'
-            f'            <Concentration value="{conc}" unit="{conc_unit}"/>\n'
-            f'            <Dose value="{effective_val}" unit="mL"/>\n'
+            f'            <Concentration value="{conc_val}" unit="{conc_unit}"/>\n'
+            f'            <Dose value="{dose_vol}" unit="mL"/>\n'
             f'        </Action>\n'
         )
+
 
 
 def _environment_xml(env_name: str) -> str:
@@ -172,16 +220,55 @@ def _environment_xml(env_name: str) -> str:
     )
 
 
+import logging as _sb_logger
+_sb_log = _sb_logger.getLogger("DigitalTwin.ScenarioBuilder")
+
+
 def _exercise_xml(intensity: float) -> str:
+    """Emit BioGears ExerciseData XML. Intensity is ALWAYS clamped to [0.0, 1.0]."""
+    clamped = max(0.0, min(1.0, float(intensity)))
+    if clamped != float(intensity):
+        _sb_log.warning(
+            f"_exercise_xml: intensity {intensity} out of [0,1] — clamped to {clamped:.4f}. "
+            f"Fix the caller to send a normalised value."
+        )
     return (
         f'        <Action xsi:type="ExerciseData">'
-        f'<GenericExercise><Intensity value="{intensity}"/></GenericExercise>'
+        f'<GenericExercise><Intensity value="{clamped:.4f}"/></GenericExercise>'
         f'</Action>\n'
     )
 
 
 def _advance_xml(seconds: int) -> str:
     return f'        <Action xsi:type="AdvanceTimeData"><Time value="{seconds}" unit="s"/></Action>\n'
+
+
+# Maximum seconds for a single AdvanceTimeData action sent to BioGears.
+# Larger advances are automatically split into multiple chunks.
+# Keeping this at ≤1800 s (30 min) prevents the engine from running for
+# hours on a single action and then crashing from physiological divergence.
+_MAX_ADVANCE_CHUNK_S = 1800
+
+
+def _chunked_advance_xml(total_seconds: int) -> str:
+    """
+    Splits a large AdvanceTime into multiple ≤1800-second chunks.
+
+    BioGears can be asked to simulate many hours of physiology in one
+    AdvanceTimeData action, which causes the engine to run for a very long
+    wall-clock time and then crash from physiological divergence. Chunking
+    keeps each advance short so the engine writes progress checkpoints and
+    is less likely to diverge.
+    """
+    if total_seconds <= 0:
+        return ''
+    xml = ''
+    remaining = int(total_seconds)
+    while remaining > 0:
+        chunk = min(remaining, _MAX_ADVANCE_CHUNK_S)
+        xml += _advance_xml(chunk)
+        remaining -= chunk
+    return xml
 
 
 def _stress_xml(intensity: float) -> str:
@@ -213,14 +300,20 @@ def _stress_xml(intensity: float) -> str:
 def _alcohol_xml(standard_drinks: float, weight_kg: float = 70.0) -> str:
     """
     Models alcohol consumption (1 standard drink = 14g ethanol = 10 mL absolute alcohol).
-    Ethanol is administered as oral dose. BioGears Ethanol substance supports this.
+    Ethanol is administered as oral dose via SubstanceOralDoseData.
+
+    UNIT NOTE: BioGears Ethanol.xml substance definition uses mass 'g' as its dose unit
+    (unlike most other substances which use 'mg'). SubstanceOralDoseData for Ethanol
+    must use unit='g'. This is correct and validated against the BioGears CDM.
+
     Effects: vasodilation, mild bradycardia, impaired glucose regulation.
+    Standard drink = 14g ethanol (US definition, NIAAA).
     """
-    ethanol_g = standard_drinks * 14.0
+    ethanol_g = round(standard_drinks * 14.0, 1)
     return (
         f'        <Action xsi:type="SubstanceOralDoseData" AdminRoute="Gastrointestinal">\n'
         f'            <Substance>Ethanol</Substance>\n'
-        f'            <Dose value="{round(ethanol_g, 1)}" unit="g"/>\n'
+        f'            <Dose value="{ethanol_g}" unit="g"/>\n'
         f'        </Action>\n'
     )
 
@@ -247,7 +340,9 @@ def _fasting_xml(hours: float) -> str:
     seconds = int(hours * 3600)
     # Pure time advance — BioGears metabolic model handles glucose drop,
     # free fatty acid mobilization, and ketogenesis automatically.
-    return _advance_xml(seconds)
+    # Use _chunked_advance_xml so even a 48h fast (172800s) is split into
+    # <=1800s pieces and doesn't run the engine for hours on one action.
+    return _chunked_advance_xml(seconds)
 
 
 def _circadian_phase_xml(wall_hour: int) -> str:
@@ -285,32 +380,41 @@ def _circadian_phase_xml(wall_hour: int) -> str:
 def _catchup_routine_xml(weight_kg: float) -> str:
     """
     Simulates a generic 24-hour day to catch up physiological state after missing a day.
-    Includes normal hydration, 3 meals (2000 kcal), and 8 hours of sleep.
+    Includes normal hydration, 3 meals (~2000 kcal total), and 8 hours of sleep.
+
+    TIMING (total = 86400s exactly = 24h):
+      0h    wake up, water
+      0.5h  breakfast (500 kcal)
+      4.5h  lunch with water (700 kcal)
+      9.5h  dinner with water (800 kcal)
+      16h   sleep start
+      24h   sleep end
     """
     xml = "        <!-- START CATCH-UP ROUTINE (simulating missing day) -->\n"
-    # Wake up, drink water (250mL)
+
+    # 0h: Wake up, drink water (250 mL), advance 30 min
     xml += _water_xml(250.0)
-    xml += _advance_xml(1800) # 0.5 h
+    xml += _chunked_advance_xml(1800)   # 0 → 0.5h
 
-    # Breakfast (500 kcal)
+    # 0.5h: Breakfast (500 kcal), advance 4h
     xml += _meal_xml(500, "balanced")
-    xml += _advance_xml(14400) # 4 h
+    xml += _chunked_advance_xml(14400)  # 0.5 → 4.5h
 
-    # Lunch (700 kcal) + water
+    # 4.5h: Lunch + water (700 kcal), advance 5h
     xml += _water_xml(300.0)
     xml += _meal_xml(700, "balanced")
-    xml += _advance_xml(18000) # 5 h
+    xml += _chunked_advance_xml(18000)  # 4.5 → 9.5h
 
-    # Dinner (800 kcal) + water
+    # 9.5h: Dinner + water (800 kcal), advance 6.5h
     xml += _water_xml(300.0)
     xml += _meal_xml(800, "balanced")
-    xml += _advance_xml(23400) # 6.5 h
+    xml += _chunked_advance_xml(23400)  # 9.5 → 16h
 
-    # Sleep (8 hours)
+    # 16h: Sleep 8 hours
     xml += '        <Action xsi:type="SleepData" Sleep="On"/>\n'
-    xml += _advance_xml(28800) # 8 h
+    xml += _chunked_advance_xml(28800)  # 16 → 24h
     xml += '        <Action xsi:type="SleepData" Sleep="Off"/>\n'
-    
+
     xml += "        <!-- END CATCH-UP ROUTINE -->\n"
     return xml
 
@@ -450,7 +554,7 @@ def build_registration_scenario(user_id, age, weight, height, sex, body_fat,
         f'        <PatientFile>{abs_patient}</PatientFile>\n'
         f'{conditions_block}'
         '    </InitialParameters>\n'
-        '        <Action xsi:type="AdvanceTimeData"><Time value="120" unit="s"/></Action>\n'
+        '        <Action xsi:type="AdvanceTimeData"><Time value="300" unit="s"/></Action>\n'
         f'        <Action xsi:type="SerializeStateData" Type="Save"><Filename>{abs_state_out}</Filename></Action>\n'
         '</Scenario>'
     )
@@ -477,11 +581,45 @@ def build_batch_reconstruction(user_id, state_path, events: list, user_weight_kg
     scenario_file = SCENARIO_API_DIR / f"batch_{run_id}.xml"
     abs_state_in  = Path(state_path).absolute().as_posix()
     abs_state_out = (BIOGEARS_BIN_DIR / f"batch_{user_id}.xml").as_posix()
+    # csv_prefix is used as the DataRequests Filename stem only (no path, no extension).
+    # _DATA_REQUESTS template now hardcodes 'Scenarios/API/{prefix}Results.csv'
+    # so BioGears writes to SCENARIO_API_DIR/{csv_prefix}Results.csv.
     csv_prefix    = f"batch_{run_id}"
 
     # ── Resolve all event timestamps upfront ────────────────────────────────
     now_ts       = time.time()
-    engine_mtime = os.path.getmtime(state_path)  # when the state file was last saved
+    
+    # Load Smart Continuation Meta
+    meta_path = Path(state_path).with_suffix(".meta.json")
+    state_meta = {}
+    if meta_path.exists():
+        try:
+            import json
+            state_meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+            
+    engine_sim_time = state_meta.get("engine_sim_time", None)
+    if engine_sim_time is None:
+        # No meta.json exists yet (e.g. user registered before meta-write was added).
+        # Default to 30 minutes ago so the normal path is used with a minimal basal gap.
+        # Also heal the missing file immediately so future simulations don't fall back again.
+        engine_sim_time = now_ts - 1800
+        _log.warning(
+            f"[{user_id}] No meta.json found for state '{state_path}'. "
+            f"Healing: setting engine_sim_time = now - 30min ({engine_sim_time:.0f}). "
+            f"Writing meta.json for future runs."
+        )
+        try:
+            import json as _j
+            Path(state_path).with_suffix(".meta.json").write_text(
+                _j.dumps({"engine_sim_time": int(engine_sim_time), "healed": True}),
+                encoding="utf-8"
+            )
+        except Exception as _he:
+            _log.warning(f"[{user_id}] meta.json heal-write failed: {_he}")
+    processed_events = state_meta.get("events_processed", [])
+
 
     event_dicts = []
     for ev in events:
@@ -493,7 +631,72 @@ def build_batch_reconstruction(user_id, state_path, events: list, user_weight_kg
         ev_copy["timestamp"] = ts
         event_dicts.append(ev_copy)
 
-    sorted_events = sorted(event_dicts, key=lambda x: float(x["timestamp"]))
+    # ── Timeline Splitting for Overlapping Events ───────────────────────────
+    timeline_events = []
+    for ev in event_dicts:
+        ts = ev["timestamp"]
+        etype = ev.get("event_type")
+        val = ev.get("value", 0)
+
+        if etype == "exercise":
+            dur = max(60, min(int(float(ev.get("duration_seconds") or 1800)), 14400))
+            timeline_events.append({"timestamp": ts, "event_type": "exercise_start", "value": val})
+            timeline_events.append({"timestamp": ts + dur, "event_type": "exercise_end"})
+            
+        elif etype == "sleep":
+            sleep_sec = int(max(0.25, min(float(val or 0), 12.0)) * 3600)
+            timeline_events.append({"timestamp": ts, "event_type": "sleep_start"})
+            timeline_events.append({"timestamp": ts + sleep_sec, "event_type": "sleep_end"})
+            
+        elif etype == "stress":
+            intensity = max(0.0, min(1.0, float(val or 0)))
+            dur = max(60, min(int(float(ev.get("duration_seconds") or 300)), 3600))
+            timeline_events.append({"timestamp": ts, "event_type": "stress_start", "value": intensity})
+            if intensity > 0.05:
+                timeline_events.append({"timestamp": ts + dur, "event_type": "stress_decay", "value": intensity * 0.3})
+                timeline_events.append({"timestamp": ts + dur + 300, "event_type": "stress_end"})
+            else:
+                timeline_events.append({"timestamp": ts + dur, "event_type": "stress_end"})
+                
+        elif etype == "fast":
+            fast_sec = int(max(1.0, min(48.0, float(val or 0))) * 3600)
+            timeline_events.append({"timestamp": ts, "event_type": "fast_start"})
+            timeline_events.append({"timestamp": ts + fast_sec, "event_type": "fast_end"})
+            
+        elif etype == "alcohol":
+            # Alcohol requires an anchor to allow absorption
+            timeline_events.append({"timestamp": ts, "event_type": "alcohol_start", "value": val})
+            timeline_events.append({"timestamp": ts + 1800, "event_type": "alcohol_end"})
+            
+        else:
+            timeline_events.append(ev)
+
+    sorted_events = sorted(timeline_events, key=lambda x: float(x["timestamp"]))
+
+    # ── Smart Fast-Continuation Check ───────────────────────────────────────
+    can_fast_continue = False
+    new_events = []
+    
+    if processed_events and len(sorted_events) >= len(processed_events):
+        # Check if the incoming events perfectly match the start of the processed events
+        match = True
+        for i, pe in enumerate(processed_events):
+            inc = sorted_events[i]
+            if inc.get("event_type") != pe.get("event_type") or abs(float(inc["timestamp"]) - float(pe["timestamp"])) > 1.0:
+                match = False
+                break
+                
+        if match:
+            # They only appended new events!
+            new_events_candidate = sorted_events[len(processed_events):]
+            # Ensure the new events don't require time-travel backward
+            if not new_events_candidate or float(new_events_candidate[0]["timestamp"]) >= engine_sim_time:
+                can_fast_continue = True
+                new_events = new_events_candidate
+                
+    if can_fast_continue:
+        _log.info(f"[{user_id}] ⚡ FAST CONTINUATION: Ignoring {len(processed_events)} previously simulated events.")
+        sorted_events = new_events
 
     # ── Determine the true simulation start time ─────────────────────────────
     # If the earliest event is BEFORE the engine state was created, we must
@@ -502,7 +705,32 @@ def build_batch_reconstruction(user_id, state_path, events: list, user_weight_kg
     earliest_ev_ts  = float(sorted_events[0]["timestamp"]) if sorted_events else now_ts
     latest_ev_ts    = float(sorted_events[-1]["timestamp"]) if sorted_events else now_ts
 
-    if earliest_ev_ts < engine_mtime:
+    # Edge case: zero events (e.g. all filtered by Fast Continuation) — just advance 60s
+    if not sorted_events:
+        _log.info(f"[{user_id}] No events to replay — advancing engine 60s (baseline only).")
+        engine_clock = engine_sim_time
+        actions_xml  = _circadian_phase_xml(datetime.datetime.now().hour)
+        actions_xml += _advance_xml(60)
+        engine_clock += 60
+        # Write meta and return
+        try:
+            import json as _j
+            Path(state_path).with_suffix(".meta.json").write_text(
+                _j.dumps({"engine_sim_time": engine_clock, "events_processed": event_dicts}),
+                encoding="utf-8"
+            )
+        except Exception: pass
+        data_req = _DATA_REQUESTS.format(prefix=csv_prefix)
+        xml = (
+            _scenario_header(abs_state_in, data_req)
+            + actions_xml
+            + _serialize_state_xml(abs_state_out)
+            + "\n" + _scenario_footer()
+        )
+        scenario_file.write_text(xml, encoding="utf-8")
+        return str(scenario_file.absolute()), run_id, csv_prefix
+
+    if earliest_ev_ts < engine_sim_time and not can_fast_continue:
         # ── PAST-EVENT PATH: events are before twin creation ─────────────────
         # Reset to midnight of the earliest event's LOCAL calendar day so the
         # engine has a physiologically valid "start of day" anchor.
@@ -514,7 +742,7 @@ def build_batch_reconstruction(user_id, state_path, events: list, user_weight_kg
         _log.info(
             f"[{user_id}] PAST-EVENT RECONSTRUCTION: earliest event is "
             f"{earliest_dt.strftime('%H:%M')} but twin was created at "
-            f"{datetime.datetime.fromtimestamp(engine_mtime).strftime('%H:%M')}. "
+            f"{datetime.datetime.fromtimestamp(engine_sim_time).strftime('%H:%M')}. "
             f"Rewinding engine clock to midnight ({midnight_dt.strftime('%Y-%m-%d 00:00')})."
         )
 
@@ -525,36 +753,40 @@ def build_batch_reconstruction(user_id, state_path, events: list, user_weight_kg
         # (person was asleep from midnight up to whenever they woke and started logging)
         pre_event_gap = int(earliest_ev_ts - midnight_ts)
         if pre_event_gap > 60:
-            # Simulate sleep from midnight to ~first-event time for proper basal state
-            sleep_hours = min(pre_event_gap / 3600.0, 9.0)  # cap sleep at 9h
+            # Cap sleep to 2 hours — enough to model an overnight physiological baseline
+            # without running the engine for hours before even the first event.
+            sleep_hours = min(pre_event_gap / 3600.0, 2.0)  # HARD CAP: 2h max sleep advance
             sleep_sec   = int(sleep_hours * 3600)
             _log.info(f"[{user_id}] Injecting {sleep_hours:.1f}h sleep (midnight → first event).")
             actions_xml += '        <Action xsi:type="SleepData" Sleep="On"/>\n'
-            actions_xml += _advance_xml(sleep_sec)
+            actions_xml += _chunked_advance_xml(sleep_sec)
             actions_xml += '        <Action xsi:type="SleepData" Sleep="Off"/>\n'
             engine_clock += sleep_sec
 
-            # Small morning wakeup buffer (15 min basal settle after sleep)
+            # Morning wakeup buffer — cap to 30 min max so we don't add another huge block
             remaining_to_first = int(earliest_ev_ts - engine_clock)
+            remaining_to_first = min(remaining_to_first, _MAX_ADVANCE_CHUNK_S)  # HARD CAP: 30 min
             if remaining_to_first > 60:
-                actions_xml += _advance_xml(remaining_to_first)
+                actions_xml += _chunked_advance_xml(remaining_to_first)
                 engine_clock += remaining_to_first
     else:
         # ── NORMAL PATH: events are at/after twin creation ───────────────────
-        engine_clock = engine_mtime
+        engine_clock = engine_sim_time
         wall_hour    = datetime.datetime.now().hour
         actions_xml  = _circadian_phase_xml(wall_hour)
 
-        # Catch up full missing days before the first event
-        while (earliest_ev_ts - engine_clock) >= 86400:
-            actions_xml  += _catchup_routine_xml(user_weight_kg)
-            engine_clock += 86400
+        # Hard cap pre-event basal gap to 30 minutes of simulated time.
+        # Larger gaps are silently fast-forwarded on the logical clock only.
+        time_jump = earliest_ev_ts - engine_clock
+        if time_jump > _MAX_ADVANCE_CHUNK_S:
+            engine_clock += (time_jump - _MAX_ADVANCE_CHUNK_S)  # logical fast-forward
 
         gap_to_first = int(earliest_ev_ts - engine_clock)
         if gap_to_first > 30:
             actions_xml  += f"        <!-- Basal gap: {gap_to_first}s since last sync to first event -->\n"
-            actions_xml  += _advance_xml(gap_to_first)
+            actions_xml  += _chunked_advance_xml(gap_to_first)
             engine_clock += gap_to_first
+
 
     # ── Log engine timeline for debugging ───────────────────────────────────
     _log.info(
@@ -567,22 +799,35 @@ def build_batch_reconstruction(user_id, state_path, events: list, user_weight_kg
 
     # ── Replay each event at its correct engine time ─────────────────────────
     last_substance_time = -99999
+    # Minimum advance between any two actions so BioGears doesn't receive
+    # back-to-back actions with zero time (which can confuse the CDM parser).
+    _MIN_ADVANCE_S = 10
 
     for event in sorted_events:
         ev_ts     = float(event["timestamp"])
         wait_time = int(ev_ts - engine_clock)
 
-        if wait_time > 0:
-            actions_xml  += _advance_xml(wait_time)
-            engine_clock += wait_time
-        elif wait_time < 0:
-            # Event is behind engine clock — skip with warning (shouldn't happen after sort)
+        # Cap long gaps between events to _MAX_ADVANCE_CHUNK_S (30 min) and
+        # fast-forward the logical clock for anything beyond that.
+        if wait_time > _MAX_ADVANCE_CHUNK_S:
+            engine_clock += (wait_time - _MAX_ADVANCE_CHUNK_S)
+            wait_time = _MAX_ADVANCE_CHUNK_S
+
+        # If an event is genuinely behind the engine clock, skip it.
+        if wait_time < -60:
             _log.warning(
                 f"[{user_id}] Skipping event '{event.get('event_type')}' at "
                 f"{datetime.datetime.fromtimestamp(ev_ts).strftime('%H:%M')} — "
                 f"already past engine clock ({datetime.datetime.fromtimestamp(engine_clock).strftime('%H:%M')})."
             )
             continue
+
+        # Enforce minimum advance so BioGears always has at least 10s between actions.
+        # Use _chunked_advance_xml so no single AdvanceTimeData node is > 1800 s.
+        effective_wait = max(wait_time, _MIN_ADVANCE_S)
+        if effective_wait > 0:
+            actions_xml  += _chunked_advance_xml(effective_wait)
+            engine_clock += effective_wait
 
         etype = event["event_type"]
         val   = event.get("value", 0)
@@ -591,22 +836,15 @@ def build_batch_reconstruction(user_id, state_path, events: list, user_weight_kg
             f"@ engine_t={datetime.datetime.fromtimestamp(engine_clock).strftime('%H:%M:%S')}"
         )
 
-        if etype == "exercise":
-            intensity    = float(val)
-            duration_sec = int(float(event.get("duration_seconds") or 1800))
-            duration_sec = max(60, min(duration_sec, 14400))
-            actions_xml += _exercise_xml(intensity)
-            actions_xml += _advance_xml(duration_sec)
-            engine_clock += duration_sec
+        if etype == "exercise_start":
+            actions_xml += _exercise_xml(float(val))
+        elif etype == "exercise_end":
             actions_xml += _exercise_xml(0.0)
 
-        elif etype == "sleep":
-            hours        = max(0.25, min(float(val or 0), 12.0))
-            sleep_sec    = int(hours * 3600)
+        elif etype == "sleep_start":
             actions_xml += '        <Action xsi:type="SleepData" Sleep="On"/>\n'
-            actions_xml += _advance_xml(sleep_sec)
+        elif etype == "sleep_end":
             actions_xml += '        <Action xsi:type="SleepData" Sleep="Off"/>\n'
-            engine_clock += sleep_sec
 
         elif etype == "meal":
             actions_xml += _meal_xml(
@@ -627,56 +865,58 @@ def build_batch_reconstruction(user_id, state_path, events: list, user_weight_kg
             last_substance_time = ev_ts
 
         elif etype == "environment":
-            env_name    = event.get("environment_name", "StandardEnvironment")
+            env_name    = event.get("environment_name", "Standard")
             actions_xml += _environment_xml(env_name)
 
-        elif etype == "stress":
-            intensity   = max(0.0, min(1.0, float(val or 0)))
-            dur         = int(float(event.get("duration_seconds") or 300))
-            dur         = max(60, min(dur, 3600))  # clamp 1min–60min
-
-            # Pattern: peak stress → gradual decay (mimics cortisol response kinetics)
-            # Phase 1: Full stress for user-specified duration
-            actions_xml += _stress_xml(intensity)
-            actions_xml += _advance_xml(dur)
-            engine_clock += dur
-            # Phase 2: 30% residual stress (simulates slow cortisol clearance)
-            if intensity > 0.05:
-                actions_xml += _stress_xml(intensity * 0.3)
-                actions_xml += _advance_xml(300)  # 5 min decay window
-                engine_clock += 300
-            # Phase 3: Full clearance — AcuteStressData severity=0.0 properly resets state
+        elif etype == "stress_start":
+            actions_xml += _stress_xml(float(val))
+        elif etype == "stress_decay":
+            actions_xml += _stress_xml(float(val))
+        elif etype == "stress_end":
             actions_xml += _stress_xml(0.0)
 
-        elif etype == "alcohol":
+        elif etype == "alcohol_start":
             actions_xml += _alcohol_xml(float(val or 0), weight_kg=user_weight_kg)
-            actions_xml += _advance_xml(1800)
-            engine_clock += 1800
+        elif etype == "alcohol_end":
+            pass # structural anchor
 
-        elif etype == "fast":
-            hours    = max(1.0, min(48.0, float(val or 0)))
-            fast_sec = int(hours * 3600)
-            actions_xml  += _fasting_xml(hours)
-            engine_clock += fast_sec  # _fasting_xml advances exactly fast_sec internally
+        elif etype in ("fast_start", "fast_end"):
+            pass # structural anchor; engine advances time automatically
 
-    # ── Final stabilisation: advance engine to present time ──────────────────
-    # Cap at 8 hours to avoid excessive compute, but do NOT use the old 4h cap.
-    # 8 hours matches the documented basal-gap cap in the rest of the codebase.
+    # Cap final stabilization gap to 30 minutes and chunk it
     final_gap = int(now_ts - engine_clock)
     _log.info(f"[{user_id}] Final gap to 'now': {final_gap}s ({round(final_gap/3600, 1)}h)")
 
-    if final_gap > 10:
-        while final_gap >= 86400:
-            actions_xml  += _catchup_routine_xml(user_weight_kg)
-            engine_clock += 86400
-            final_gap    -= 86400
-        # Cap at 8 hours (28800s) — physiologically sufficient, avoids very long compute
-        capped_gap = min(final_gap, 28800)
-        if capped_gap > 0:
-            actions_xml += _advance_xml(capped_gap)
+    # Guard: if engine_clock is already ahead of wall time (e.g. fast-continuation
+    # overshoot or clock drift), skip the final advance to avoid negative chunks.
+    if final_gap < 0:
+        _log.warning(f"[{user_id}] engine_clock ahead of now by {-final_gap}s — skipping final advance.")
+        final_gap = 0
+
+    capped_gap = min(final_gap, _MAX_ADVANCE_CHUNK_S)
+    if capped_gap > 10:
+        actions_xml += _chunked_advance_xml(capped_gap)
+        engine_clock += capped_gap
     else:
         # Minimum baseline padding so BioGears writes at least a few data rows
         actions_xml += _advance_xml(60)
+        engine_clock += 60
+
+
+    # Write Meta File for future Fast-Continuations.
+    # IMPORTANT: store raw event_dicts (pre-timeline-split), NOT sorted_events.
+    # The fast-continuation check compares incoming raw events against stored raw events.
+    # Storing timeline_events (with _start/_end markers) would cause a type mismatch
+    # and fast continuation would never activate.
+    try:
+        import json
+        meta_dict = {
+            "engine_sim_time": engine_clock,
+            "events_processed": event_dicts  # RAW events (pre-split, same format as input)
+        }
+        Path(state_path).with_suffix(".meta.json").write_text(json.dumps(meta_dict), encoding="utf-8")
+    except Exception as e:
+        _log.warning(f"Failed to write state meta: {e}")
 
     data_req = _DATA_REQUESTS.format(prefix=csv_prefix)
     xml = (
@@ -688,6 +928,8 @@ def build_batch_reconstruction(user_id, state_path, events: list, user_weight_kg
     )
     scenario_file.write_text(xml, encoding="utf-8")
     _log.info(f"[{user_id}] Scenario written → {scenario_file.name}")
+    # Return the csv_prefix so server.py can construct the exact expected filename:
+    # SCENARIO_API_DIR / f"{csv_prefix}Results.csv"
     return str(scenario_file.absolute()), run_id, csv_prefix
 
 
@@ -697,14 +939,17 @@ def build_forecast_scenario(user_id, state_path, hours=4):
     run_id        = f"{user_id}_forecast_{int(time.time())}"
     scenario_file = SCENARIO_API_DIR / f"forecast_{run_id}.xml"
     abs_state_in  = Path(state_path).absolute().as_posix()
-    # ✅ FIX: Save forecast state so forecasts can be chained
     abs_state_out = (BIOGEARS_BIN_DIR / f"forecast_{user_id}.xml").as_posix()
     csv_prefix    = f"forecast_{run_id}"
+
+    # Clamp forecast window: min 1h, max 12h — beyond 12h the engine diverges
+    hours     = max(1, min(12, int(hours)))
+    total_sec = hours * 3600
 
     data_req = _DATA_REQUESTS.format(prefix=csv_prefix)
     xml = (
         _scenario_header(abs_state_in, data_req)
-        + _advance_xml(hours * 3600)
+        + _chunked_advance_xml(total_sec)   # chunked so no single advance > 1800s
         + _serialize_state_xml(abs_state_out)
         + "\n"
         + _scenario_footer()
@@ -717,7 +962,7 @@ def build_forecast_scenario(user_id, state_path, hours=4):
 def build_whatif_scenario(user_id, state_path, event: dict, hours=4):
     """
     Builds two scenario files from the same engine state:
-      1. Baseline  — just advances time (no interventions)
+      1. Baseline     — just advances time (no interventions)
       2. Intervention — applies the event, then advances time
 
     Returns (baseline_path, intervention_path, base_run_id, evt_run_id,
@@ -725,6 +970,8 @@ def build_whatif_scenario(user_id, state_path, event: dict, hours=4):
     """
     ts            = int(time.time())
     abs_state_in  = Path(state_path).absolute().as_posix()
+    # Clamp to a reasonable window so the engine doesn't run for hours
+    hours         = max(1, min(12, int(hours)))
     seconds       = hours * 3600
 
     # ── Baseline ─────────────────────────────────────────────────────────────
@@ -734,7 +981,7 @@ def build_whatif_scenario(user_id, state_path, event: dict, hours=4):
     base_data_req = _DATA_REQUESTS.format(prefix=base_prefix)
     base_xml = (
         _scenario_header(abs_state_in, base_data_req)
-        + _advance_xml(seconds)
+        + _chunked_advance_xml(seconds)     # chunked baseline advance
         + _scenario_footer()
     )
     base_file.write_text(base_xml, encoding="utf-8")
@@ -750,27 +997,72 @@ def build_whatif_scenario(user_id, state_path, event: dict, hours=4):
 
     if etype == "exercise":
         dur = int(event.get("duration_seconds") or min(seconds // 2, 3600))
+        dur = max(60, min(dur, seconds))          # clamp to scenario window
         event_action  = _exercise_xml(float(val))
-        event_action += _advance_xml(dur)
+        event_action += _chunked_advance_xml(dur)
         event_action += _exercise_xml(0.0)
         remaining = max(0, seconds - dur)
         if remaining:
-            event_action += _advance_xml(remaining)
+            event_action += _chunked_advance_xml(remaining)
+
+    elif etype == "sleep":
+        sleep_h   = max(0.25, min(float(val or 0), 12.0))
+        sleep_sec = int(sleep_h * 3600)
+        sleep_sec = min(sleep_sec, seconds)       # clamp to scenario window
+        event_action += '        <Action xsi:type="SleepData" Sleep="On"/>\n'
+        event_action += _chunked_advance_xml(sleep_sec)
+        event_action += '        <Action xsi:type="SleepData" Sleep="Off"/>\n'
+        remaining = max(0, seconds - sleep_sec)
+        if remaining:
+            event_action += _chunked_advance_xml(remaining)
+
+    elif etype == "fast":
+        fast_h   = max(1.0, min(48.0, float(val or 0)))
+        fast_sec = int(fast_h * 3600)
+        fast_sec = min(fast_sec, seconds)         # clamp to scenario window
+        # Pure time advance — BioGears metabolic model handles fasting physiology
+        event_action += _chunked_advance_xml(fast_sec)
+        remaining = max(0, seconds - fast_sec)
+        if remaining:
+            event_action += _chunked_advance_xml(remaining)
+
     elif etype == "meal":
         event_action  = _meal_xml(float(val), event.get("meal_type", "balanced"),
                                   event.get("carb_g"), event.get("fat_g"), event.get("protein_g"))
-        event_action += _advance_xml(seconds)
+        event_action += _chunked_advance_xml(seconds)
+
     elif etype == "water":
         event_action  = _water_xml(float(val))
-        event_action += _advance_xml(seconds)
+        event_action += _chunked_advance_xml(seconds)
+
     elif etype == "substance":
         event_action  = _substance_xml(event.get("substance_name", "Caffeine"), float(val))
-        event_action += _advance_xml(seconds)
+        event_action += _chunked_advance_xml(seconds)
+
+    elif etype == "alcohol":
+        # Use _alcohol_xml (standard drinks → grams ethanol) not _substance_xml
+        drinks = max(0.0, float(val or 0))
+        event_action  = _alcohol_xml(drinks)
+        event_action += _chunked_advance_xml(seconds)
+
     elif etype == "environment":
-        event_action  = _environment_xml(event.get("environment_name", "StandardEnvironment"))
-        event_action += _advance_xml(seconds)
+        event_action  = _environment_xml(event.get("environment_name", "Standard"))
+        event_action += _chunked_advance_xml(seconds)
+
+    elif etype == "stress":
+        intensity = max(0.0, min(1.0, float(val or 0)))
+        dur = int(float(event.get("duration_seconds") or 300))
+        dur = max(60, min(dur, seconds))          # clamp to scenario window
+        # Use AcuteStressData (not exercise) to correctly model sympathetic surge
+        event_action += _stress_xml(intensity)
+        event_action += _chunked_advance_xml(dur)
+        event_action += _stress_xml(0.0)          # clear stress after duration
+        remaining = max(0, seconds - dur)
+        if remaining:
+            event_action += _chunked_advance_xml(remaining)
+
     else:
-        event_action = _advance_xml(seconds)
+        event_action = _chunked_advance_xml(seconds)
 
     evt_data_req = _DATA_REQUESTS.format(prefix=evt_prefix)
     evt_xml = (

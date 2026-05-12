@@ -11,7 +11,6 @@ import "../tasks/stepTrackingTask";
 import { Stack } from "expo-router";
 import React, { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, View } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as SplashScreen from "expo-splash-screen";
 
 ///////////////////////////////////////////////////////////
@@ -26,8 +25,6 @@ import { StepProvider } from "../context/StepContext";
 import { SymptomsProvider } from "../context/SymptomContext";
 import { ThemeProvider } from "../context/ThemeContext";
 import { FamilyProvider } from "../context/FamilyContext";
-import SimProgressOverlay from "../components/twin/SimProgressOverlay";
-import { useBiogearsTwin } from "../context/BiogearsTwinContext";
 
 ///////////////////////////////////////////////////////////
 // DATABASE INITIALIZATION
@@ -75,22 +72,6 @@ const StepProviderWrapper: React.FC<{ children: React.ReactNode }> = ({
     </StepProvider>
   );
 };
-
-///////////////////////////////////////////////////////////
-// GLOBAL SIMULATION BANNER — persists across all tabs/screens
-///////////////////////////////////////////////////////////
-function GlobalSimBanner() {
-  const { simulationStatus, simulationProgress, simulationError } = useBiogearsTwin();
-  const insets = useSafeAreaInsets();
-  return (
-    <SimProgressOverlay
-      status={simulationStatus as any}
-      progress={simulationProgress}
-      error={simulationError}
-      bottomOffset={60 + insets.bottom}
-    />
-  );
-}
 
 ///////////////////////////////////////////////////////////
 // ROOT LAYOUT
@@ -220,9 +201,8 @@ export default function RootLayout() {
                         <Stack.Screen name="symptom-chat" />
                         <Stack.Screen name="backup-restore" />
                         <Stack.Screen name="settings-server" />
+                        <Stack.Screen name="settings-ai" />
                       </Stack>
-                      {/* Global BioGears banner — visible on every screen */}
-                      <GlobalSimBanner />
                     </NutritionProvider>
                   </SymptomsProvider>
                 </BiogearsTwinProvider>

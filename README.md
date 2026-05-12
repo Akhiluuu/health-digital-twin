@@ -78,57 +78,57 @@ This is not a heuristic or a statistical model — it is a **mechanistic, organ-
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
-│                     VitalHealth Mobile App                        │
-│                 (React Native + Expo Router)                       │
-│                                                                    │
+│                     VitalHealth Mobile App                       │
+│                 (React Native + Expo Router)                     │
+│                                                                  │
 │  ┌──────────┐ ┌────────────┐ ┌──────────┐ ┌───────────────────┐  │
 │  │  Twin    │ │  Insights  │ │ AI Health│ │   Brain Lab       │  │
 │  │ Screen   │ │  Screen    │ │  (RAG)   │ │ (Cognitive Tests) │  │
 │  └────┬─────┘ └─────┬──────┘ └────┬─────┘ └───────────────────┘  │
-│       │             │             │                                │
+│       │             │             │                              │
 │  ┌────▼─────────────▼─────────────▼──────────────────────────┐   │
-│  │              BiogearsTwinContext (React)                    │   │
-│  │   + NutritionContext + StepContext + HydrationContext      │   │
-│  │   + MedicineContext  + SymptomContext + FamilyContext      │   │
-│  └──────────────────────────┬─────────────────────────────────┘   │
-│                              │                                     │
-│  ┌───────────────────────────▼──────────────────────────────────┐ │
-│  │                   Services Layer                              │ │
+│  │              BiogearsTwinContext (React)                  │   │
+│  │   + NutritionContext + StepContext + HydrationContext     │   │
+│  │   + MedicineContext  + SymptomContext + FamilyContext     │   │
+│  └──────────────────────────┬────────────────────────────────┘   │
+│                              │                                   │
+│  ┌───────────────────────────▼─────────────────────────────────┐ │
+│  │                   Services Layer                            │ │
 │  │  biogears.ts · firebaseSync.ts · notifeeService.ts          │ │
 │  │  embeddingService.ts · documentProcessing.ts                │ │
-│  └────────────────────────────────────────────────────────────── │
+│  └─────────────────────────────────────────────────────────────┘ │
 └───────────────────────────────┬──────────────────────────────────┘
                                 │ HTTP / REST (axios)
                                 │ port 8000
 ┌───────────────────────────────▼──────────────────────────────────┐
-│                  BioGears Digital Twin API                        │
-│                    (Python / FastAPI)                             │
-│                                                                   │
+│                  BioGears Digital Twin API                       │
+│                    (Python / FastAPI)                            │
+│                                                                  │
 │  ┌─────────────────────────────────────────────────────────────┐ │
 │  │  api/server.py   — All REST endpoints (~1,300 lines)        │ │
-│  │  api/analytics.py — Health scores, CVD risk, HbA1c, TIR    │ │
+│  │  api/analytics.py — Health scores, CVD risk, HbA1c, TIR     │ │
 │  │  api/streaming.py — SSE live vitals streaming               │ │
-│  │  api/db.py — JSON flat-file patient profile store          │ │
+│  │  api/db.py — JSON flat-file patient profile store           │ │
 │  └──────────────────────────┬──────────────────────────────────┘ │
-│                              │                                    │
-│  ┌───────────────────────────▼──────────────────────────────────┐ │
-│  │  simulation/                                                  │ │
-│  │  ├── config.py           All path constants                  │ │
-│  │  ├── scenario_builder.py  BioGears XML generation            │ │
-│  │  ├── engine_runner.py    Subprocess management + streaming   │ │
-│  │  ├── patient_builder.py  Patient XML from demographics       │ │
-│  │  ├── result_parser.py    CSV parsing + anomaly detection     │ │
-│  │  ├── validator.py        Event + drug interaction validation │ │
+│                              │                                   │
+│  ┌───────────────────────────▼─────────────────────────────────┐ │
+│  │  simulation/                                                │ │
+│  │  ├── config.py           All path constants                 │ │
+│  │  ├── scenario_builder.py  BioGears XML generation           │ │
+│  │  ├── engine_runner.py    Subprocess management + streaming  │ │
+│  │  ├── patient_builder.py  Patient XML from demographics      │ │
+│  │  ├── result_parser.py    CSV parsing + anomaly detection    │ │
+│  │  ├── validator.py        Event + drug interaction validation│ │
 │  │  ├── substance_registry.py  79-substance database           │ │
 │  │  └── visualizer.py       matplotlib health report PNGs      │ │
 │  └──────────────────────────┬──────────────────────────────────┘ │
-│                              │                                    │
-│  ┌───────────────────────────▼──────────────────────────────────┐ │
+│                              │                                   │
+│  ┌───────────────────────────▼─────────────────────────────────┐ │
 │  │            BioGears Engine (bg-cli.exe / bg-cli)            │ │
 │  │         Precompiled C++ binary — Windows x86-64             │ │
 │  │         (Linux build also available from BioGears team)     │ │
 │  └─────────────────────────────────────────────────────────────┘ │
-└───────────────────────────────────────────────────────────────────┘
+└──────────────────────────────────────────────────────────────────┘
 ```
 
 ---

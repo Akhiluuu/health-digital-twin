@@ -81,7 +81,8 @@ export default function SettingsScreen() {
 
         {Item("Data Sharing", "/settings-data")}
         {Item("☁️  Backup & Restore", "/backup-restore")}
-        {Item("🌐  Server Configuration", "/settings-server")}
+        {Item("🌐  BioGears Simulation Engine", "/settings-server")}
+        {Item("🤖  Health AI Chatbot", "/settings-ai")}
         {Item("Security", "/settings-security")}
         {Item("Emergency Contacts", "/settings-contacts")}
         {Item("Language", "/settings-language")}

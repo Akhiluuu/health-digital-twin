@@ -5,7 +5,7 @@ from fastapi.responses import StreamingResponse, Response
 from fastapi.security.api_key import APIKeyHeader
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
-import shutil, os, math, json, threading
+import shutil, os, math, json, threading, re
 import datetime
 import time
 import uuid
@@ -77,9 +77,10 @@ app.mount("/view-reports", StaticFiles(directory=str(REPORT_DIR)), name="reports
 # ---------------------------------------------------------------------------
 # OPTIONAL API KEY AUTH
 # ---------------------------------------------------------------------------
-# Set env var DIGITAL_TWIN_API_KEY to enable API key protection.
-# If not set, all endpoints are open (dev mode).
-API_KEY_ENV = os.environ.get("DIGITAL_TWIN_API_KEY", "")
+# Set env var DIGITAL_TWIN_API_KEY to require callers to pass an API key.
+# If DIGITAL_TWIN_API_KEY is not set, endpoints are OPEN (dev/local mode).
+# NEVER commit a real key into this file — use the env var on the server.
+API_KEY_ENV = os.environ.get("DIGITAL_TWIN_API_KEY", "")  # empty = open (no auth)
 api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 
 async def require_api_key(key: str = Depends(api_key_header)):
@@ -93,7 +94,7 @@ async def require_api_key(key: str = Depends(api_key_header)):
 # Thread-safe via _jobs_lock. Jobs older than JOB_TTL_SECONDS are pruned.
 # ---------------------------------------------------------------------------
 _jobs_lock     = threading.Lock()
-JOB_TTL_SECONDS = 7200  # 2 hours
+JOB_TTL_SECONDS = 86400  # 24 hours
 
 
 def _load_jobs() -> Dict[str, Dict[str, Any]]:
@@ -247,7 +248,10 @@ class AsyncSyncRequest(BaseModel):
 # ---------------------------------------------------------------------------
 # INTERNAL HELPERS
 # ---------------------------------------------------------------------------
-BASE_URL = "http://151.185.42.123:8001"
+# BASE_URL is used for constructing poll URLs returned to the client.
+# In production, set SERVER_BASE_URL env var to your public domain.
+# Fallback to localhost only for local dev.
+BASE_URL = os.environ.get("SERVER_BASE_URL", "http://127.0.0.1:8000").rstrip("/")
 
 def _build_vitals_from_df(df: pd.DataFrame) -> dict:
     try:
@@ -256,26 +260,43 @@ def _build_vitals_from_df(df: pd.DataFrame) -> dict:
 
         def _safe(key):
             v = latest.get(key)
-            return None if v is None or (isinstance(v, float) and math.isnan(v)) else v
+            if v is None: return None
+            val = result_parser.safe_float(v)
+            return None if (math.isnan(val) or math.isinf(val)) else val
 
-        # Cache BP values — guard BOTH fields together to prevent int(None)
+        # Pre-fetch ALL values once — avoids double (or more) lookups per key
+        hr   = _safe('HeartRate')
         sys_bp = _safe('SystolicArterialPressure')
         dia_bp = _safe('DiastolicArterialPressure')
+        gluc = _safe('Glucose-BloodConcentration')
+        rr   = _safe('RespirationRate')
+        spo2 = _safe('OxygenSaturation')
+        temp = _safe('CoreTemperature')
+        co   = _safe('CardiacOutput')
+        map_ = _safe('MeanArterialPressure')
+        sv   = _safe('HeartStrokeVolume')
+        tv   = _safe('TidalVolume')
+        ph   = _safe('ArterialBloodPH')
+        exlv = _safe('AchievedExerciseLevel')
 
         return {
-            "heart_rate":       round(_safe("HeartRate"), 1)           if _safe("HeartRate") is not None else None,
-            "blood_pressure":   f"{int(sys_bp)}/{int(dia_bp)}"         if (sys_bp is not None and dia_bp is not None) else None,
-            "glucose":          round(_safe("Glucose-BloodConcentration"), 2) if _safe("Glucose-BloodConcentration") is not None else None,
-            "respiration":      round(_safe("RespirationRate"), 1)     if _safe("RespirationRate") is not None else None,
-            "spo2":             round(_safe("OxygenSaturation") * 100, 1)      if _safe("OxygenSaturation") is not None else None,
-            "core_temperature": round(_safe("CoreTemperature"), 2)     if _safe("CoreTemperature") is not None else None,
-            "cardiac_output":   round(_safe("CardiacOutput"), 2)       if _safe("CardiacOutput") is not None else None,
+            "heart_rate":       round(hr, 1)           if hr   is not None else None,
+            "blood_pressure":   (
+                f"{int(sys_bp)}/{int(dia_bp)}"
+                if (sys_bp is not None and sys_bp > 0 and dia_bp is not None and dia_bp > 0)
+                else None
+            ),
+            "glucose":          round(gluc, 2)         if gluc is not None else None,
+            "respiration":      round(rr, 1)           if rr   is not None else None,
+            "spo2":             round(spo2 * 100, 1)   if spo2 is not None else None,
+            "core_temperature": round(temp, 2)         if temp is not None else None,
+            "cardiac_output":   round(co, 2)           if co   is not None else None,
             # ── Extended Vitals ─────────────────────────────────────────
-            "map":              round(_safe("MeanArterialPressure"), 1) if _safe("MeanArterialPressure") is not None else None,
-            "stroke_volume":    round(_safe("HeartStrokeVolume"), 1)   if _safe("HeartStrokeVolume") is not None else None,
-            "tidal_volume":     round(_safe("TidalVolume"), 1)         if _safe("TidalVolume") is not None else None,
-            "arterial_ph":      round(_safe("ArterialBloodPH"), 2)     if _safe("ArterialBloodPH") is not None else None,
-            "exercise_level":   round(_safe("AchievedExerciseLevel"), 3) if _safe("AchievedExerciseLevel") is not None else None,
+            "map":              round(map_, 1)          if map_ is not None else None,
+            "stroke_volume":    round(sv, 1)            if sv   is not None else None,
+            "tidal_volume":     round(tv, 1)            if tv   is not None else None,
+            "arterial_ph":      round(ph, 2)            if ph   is not None else None,
+            "exercise_level":   round(exlv, 3)          if exlv is not None else None,
         }
     except Exception as e:
         logger.error(f"_build_vitals_from_df error: {e}")
@@ -333,10 +354,24 @@ def _run_batch_sync_blocking(user_id: str, events: list) -> dict:
     # ── [4/6] Run BioGears engine ─────────────────────────────────────────────
     logger.info(f"[4/6] [{user_id}] Handing off to BioGears engine... ({_elapsed()})")
     if not engine_runner.run_biogears(path, user_id=user_id):
-        log = engine_runner.get_latest_log(user_id)
+        log = engine_runner.get_latest_log(user_id) or ""
+        # Strip ANSI escape sequences and BioGears progress-bar noise before
+        # returning the snippet so it's human-readable on mobile.
+        _ansi = re.compile(r'\x1b(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
+        _prog = re.compile(r'^\d+\s+process;\s+Progress\s+\d+/\d+', re.IGNORECASE)
+        clean_lines = [
+            _ansi.sub('', ln).strip()
+            for ln in log.splitlines()
+            if ln.strip() and not _prog.match(_ansi.sub('', ln).strip())
+        ]
+        # Prefer lines that look like errors; fall back to last 20 clean lines
+        _err_kw = ('error', 'failed', 'fatal', 'unable', 'could not', 'missing')
+        error_lines = [ln for ln in clean_lines if any(k in ln.lower() for k in _err_kw)]
+        snippet_lines = error_lines[-10:] if error_lines else clean_lines[-20:]
+        snippet = "\n".join(snippet_lines)
         raise HTTPException(status_code=500,
                             detail={"message": "Engine execution failed.",
-                                    "log_snippet": (log or "")[-500:]})
+                                    "log_snippet": snippet})
 
     # ── [5/6] Capture results ─────────────────────────────────────────────────
     logger.info(f"[5/6] [{user_id}] Capturing CSV output... ({_elapsed()})")
@@ -348,42 +383,100 @@ def _run_batch_sync_blocking(user_id: str, events: list) -> dict:
     # ── Search using csv_prefix from scenario_builder (consistent naming) ─
     target_filename = f"{csv_prefix}Results.csv"
     found = False
-    logger.info(f"🔎 Scanning for: {target_filename}")
-    for attempt in range(12):  # up to 12 attempts × 1s = 12s max
-        possible_files = list(BIOGEARS_BIN_DIR.rglob(target_filename))
-        if possible_files:
-            ps = possible_files[0]
+    logger.info(f"\U0001f50e Scanning for: {target_filename}")
+
+    # Fast path: BioGears writes directly to SCENARIO_API_DIR (set via _DATA_REQUESTS).
+    # Check there first to avoid an expensive 12-second rglob loop.
+    direct_csv = SCENARIO_API_DIR / target_filename
+    for attempt in range(12):  # up to 12 attempts x 1s = 12s max
+        if direct_csv.exists() and direct_csv.stat().st_size > 0:
             try:
-                shutil.copy2(str(ps), str(dest_csv))
-                os.remove(str(ps))
+                shutil.copy2(str(direct_csv), str(dest_csv))
+                os.remove(str(direct_csv))
                 found = True
-                logger.info(f"✅ Results captured from {ps}")
+                logger.info(f"\u2705 Results captured from direct path: {direct_csv.name}")
                 break
             except Exception as e:
-                logger.warning(f"⏳ File locked, retrying... ({e})")
-        if found:
-            break
-        time.sleep(1)  # poll every 1s (was 2s × 6 = 12s worst-case; now 1s × 12 = same cap, faster response)
+                logger.warning(f"\u23f3 File locked, retrying... ({e})")
+        else:
+            # Fallback rglob for older engine versions that may write elsewhere
+            possible_files = list(BIOGEARS_BIN_DIR.rglob(target_filename))
+            if possible_files:
+                ps = possible_files[0]
+                try:
+                    shutil.copy2(str(ps), str(dest_csv))
+                    os.remove(str(ps))
+                    found = True
+                    logger.info(f"\u2705 Results captured via rglob: {ps}")
+                    break
+                except Exception as e:
+                    logger.warning(f"\u23f3 File locked (rglob), retrying... ({e})")
+        time.sleep(1)
 
     if not found:
-        raise HTTPException(status_code=500, detail="Engine output file missing.")
+        # Also try the direct path in SCENARIO_API_DIR as a fast-path fallback
+        direct_path = SCENARIO_API_DIR / f"{csv_prefix}Results.csv"
+        if direct_path.exists():
+            try:
+                shutil.copy2(str(direct_path), str(dest_csv))
+                os.remove(str(direct_path))
+                found = True
+                logger.info(f"✅ Results captured from direct path: {direct_path.name}")
+            except Exception as e:
+                logger.warning(f"⚠️ Direct path copy failed: {e}")
 
-    # Update state file
-    updated_state_filename = f"batch_{user_id}.xml"
-    possible_states = list(BIOGEARS_BIN_DIR.rglob(updated_state_filename))
-    if possible_states:
-        try:
-            os.replace(str(possible_states[0]), str(state_file))
-            logger.info("🔄 State synchronized.")
-        except Exception as e:
-            logger.warning(f"⚠️ State sync skipped: {e}")
+    if not found:
+        raise HTTPException(status_code=500, detail="Engine output file missing. Check server logs for BioGears errors.")
 
-    # ── [6/6] Analytics & report ─────────────────────────────────────────────
-    logger.info(f"[6/6] [{user_id}] Running analytics and generating report... ({_elapsed()})")
+    # ── [6/6] Validate Data & Analytics ──────────────────────────────────────
+    logger.info(f"[6/6] [{user_id}] Validating output and generating report... ({_elapsed()})")
 
     # Fix for BioGears extra column bug: tell pandas not to use col 0 as index
-    df = pd.read_csv(dest_csv, index_col=False)
-    df = df.loc[:, ~df.columns.str.contains('^Unnamed')]
+    try:
+        df = pd.read_csv(dest_csv, index_col=False)
+        df = df.loc[:, ~df.columns.str.contains('^Unnamed')]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Engine output CSV is malformed: {e}")
+
+    # Check for "Dead Twin" (NaNs or zeros in critical vitals)
+    # BioGears exits 0 even when it diverges — catch that here.
+    critical_cols = [
+        col for col in ['HeartRate', 'SystolicArterialPressure', 'OxygenSaturation']
+        if col in df.columns
+    ]
+    nan_detected = any(df[col].isnull().any() for col in critical_cols)
+    # Also check for all-zero HeartRate — engine crash can produce zeros
+    if 'HeartRate' in df.columns and not df['HeartRate'].isnull().all():
+        hr_nonzero = df['HeartRate'].dropna()
+        zero_hr = (hr_nonzero == 0.0).all() and len(hr_nonzero) > 0
+    else:
+        zero_hr = False
+
+    if nan_detected or zero_hr:
+        failure_reason = "NaN values in critical vitals" if nan_detected else "all-zero HeartRate (engine divergence)"
+        logger.error(f"❌ [{user_id}] Engine produced {failure_reason}. Rolling back state.")
+        # Attempt to restore the most recent backup so the state file is usable
+        bak_dir  = USER_STATES_DIR / "backups" / user_id
+        backups  = sorted(bak_dir.glob(f"{user_id}_*.xml"), key=os.path.getmtime, reverse=True) if bak_dir.exists() else []
+        if backups:
+            try:
+                shutil.copy2(str(backups[0]), str(state_file))
+                logger.info(f"♻️ [{user_id}] State rolled back from backup: {backups[0].name}")
+            except Exception as rb_err:
+                logger.warning(f"⚠️ [{user_id}] Rollback failed: {rb_err}")
+        else:
+            logger.warning(f"⚠️ [{user_id}] No backup available for rollback — twin may be in invalid state.")
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "message": f"Simulation resulted in physiological failure ({failure_reason}). "
+                           + ("State has been rolled back to the previous backup."
+                              if backups else
+                              "No backup was available — please re-register the twin."),
+                "log_snippet": engine_runner.get_latest_log(user_id) or ""
+            }
+        )
+
     vitals = _build_vitals_from_df(df)
     report_url = visualizer.generate_health_report(user_id, custom_path=dest_csv)
 
@@ -391,6 +484,35 @@ def _run_batch_sync_blocking(user_id: str, events: list) -> dict:
     anomalies = result_parser.detect_anomalies(df)
     if anomalies:
         logger.warning(f"🚨 Anomalies for {user_id}: {[a['label'] for a in anomalies]}")
+
+    # Update state file ONLY IF successful and healthy.
+    # The BioGears engine writes the serialized state to a predictable direct path;
+    # use that first (fast), fall back to rglob only if needed.
+    updated_state_path = BIOGEARS_BIN_DIR / f"batch_{user_id}.xml"
+    if not updated_state_path.exists():
+        # Fallback: scan subdirectories (some BioGears versions write to subdirs)
+        candidates = list(BIOGEARS_BIN_DIR.rglob(f"batch_{user_id}.xml"))
+        updated_state_path = candidates[0] if candidates else None
+    
+    # ── Data-gap warning ──────────────────────────────────────────────────────────────
+    # Use the meta.json engine_sim_time rather than the state file's mtime.
+    # os.path.getmtime() drifts whenever any process touches the file (e.g. backup
+    # copy), causing false "data gap" warnings.
+    meta_path = state_file.with_suffix(".meta.json")
+    try:
+        import json as _gap_json
+        _meta = _gap_json.loads(meta_path.read_text(encoding="utf-8")) if meta_path.exists() else {}
+        _engine_sim_t = float(_meta.get("engine_sim_time", 0))
+        gap_seconds   = time.time() - _engine_sim_t if _engine_sim_t > 0 else gap_seconds
+    except Exception:
+        pass  # fall back to the mtime-based gap_seconds already computed above
+
+    if updated_state_path and Path(updated_state_path).exists():
+        try:
+            os.replace(str(updated_state_path), str(state_file))
+            logger.info("\U0001f504 State synchronized safely.")
+        except Exception as e:
+            logger.warning(f"\u26a0\ufe0f State sync skipped: {e}")
 
     # ── Auto-backup state after every successful simulation ──────────────────
     try:
@@ -665,6 +787,23 @@ def register(data: RegistrationRequest):
             shutil.copy2(str(target_file), str(perm_state))
             os.remove(str(target_file))
 
+            # ── Write .meta.json so scenario_builder has accurate engine_sim_time ──
+            # Without this, scenario_builder falls back to os.path.getmtime(), which
+            # drifts every day and causes multi-hour simulation gaps (the root cause of
+            # the 77,000-second AdvanceTime that made the engine run for 20+ minutes).
+            try:
+                import json as _json
+                _now_epoch = int(datetime.datetime.now().timestamp())
+                _meta_path = perm_state.with_suffix(".meta.json")
+                _meta_path.write_text(_json.dumps({
+                    "engine_sim_time": _now_epoch,
+                    "registered_at": datetime.datetime.now().isoformat(),
+                    "user_id": data.user_id,
+                }))
+                logger.info(f"[{data.user_id}] meta.json written: engine_sim_time={_now_epoch}")
+            except Exception as _me:
+                logger.warning(f"[{data.user_id}] Failed to write meta.json: {_me}")
+
             # Build conditions list for metadata
             conditions = []
             if data.is_smoker: conditions.append("Smoker / COPD")
@@ -749,7 +888,9 @@ def _background_sync(job_id: str, user_id: str, events: list):
         _set_job(job_id, job)
     except HTTPException as e:
         job["status"] = "failed"
-        job["error"]  = e.detail
+        # Serialize detail properly whether it's a dict or a plain string
+        detail = e.detail
+        job["error"] = detail if isinstance(detail, str) else json.dumps(detail, default=str)
         _set_job(job_id, job)
     except Exception as e:
         job["status"] = "failed"
@@ -768,6 +909,15 @@ def simulate_async(data: AsyncSyncRequest, background_tasks: BackgroundTasks):
     state_file = USER_STATES_DIR / f"{data.user_id}.xml"
     if not state_file.exists():
         raise HTTPException(status_code=404, detail=f"Twin '{data.user_id}' not found.")
+
+    # Prevent duplicate jobs: Check if user already has a running simulation
+    with _jobs_lock:
+        jobs = _load_jobs()
+        for j_id, j_data in jobs.items():
+            if j_data.get("user_id") == data.user_id and j_data.get("status") in ("pending", "running"):
+                logger.info(f"🔄 Re-attaching {data.user_id} to existing running job {j_id}")
+                return {"job_id": j_id, "status": "running", "poll_url": f"{BASE_URL}/jobs/{j_id}"}
+
 
     job_id = str(uuid.uuid4())
     _set_job(job_id, {
@@ -802,7 +952,7 @@ def get_job_status(job_id: str):
             status_code=404,
             detail=(
                 f"Job '{job_id}' not found. "
-                "It may have expired (jobs are kept for 2 hours) or the ID is incorrect."
+                "It may have expired (jobs are kept for 24 hours) or the ID is incorrect."
             )
         )
     return {
@@ -1153,7 +1303,9 @@ def predict_whatif(data: WhatIfRequest):
         raise HTTPException(status_code=500, detail="Baseline simulation failed.")
 
     base_csv_name = f"{base_prefix}Results.csv"
-    base_candidates = list(BIOGEARS_BIN_DIR.rglob(base_csv_name))
+    # Check SCENARIO_API_DIR first (fast path) then fall back to rglob
+    base_direct = SCENARIO_API_DIR / base_csv_name
+    base_candidates = [base_direct] if base_direct.exists() else list(BIOGEARS_BIN_DIR.rglob(base_csv_name))
     if not base_candidates:
         raise HTTPException(status_code=500, detail="Baseline output CSV not found.")
     base_df = pd.read_csv(str(base_candidates[0]), index_col=False)
@@ -1167,7 +1319,9 @@ def predict_whatif(data: WhatIfRequest):
         raise HTTPException(status_code=500, detail="Intervention simulation failed.")
 
     evt_csv_name = f"{evt_prefix}Results.csv"
-    evt_candidates = list(BIOGEARS_BIN_DIR.rglob(evt_csv_name))
+    # Check SCENARIO_API_DIR first (fast path) then fall back to rglob
+    evt_direct = SCENARIO_API_DIR / evt_csv_name
+    evt_candidates = [evt_direct] if evt_direct.exists() else list(BIOGEARS_BIN_DIR.rglob(evt_csv_name))
     if not evt_candidates:
         raise HTTPException(status_code=500, detail="Intervention output CSV not found.")
     evt_df = pd.read_csv(str(evt_candidates[0]), index_col=False)
@@ -1203,7 +1357,6 @@ def get_engine_log(user_id: str):
     Returns the content of the most recent engine log file for a twin.
     Useful for diagnosing simulation failures without SSH access to the server.
     """
-    user_id = user_id
     log_content = engine_runner.get_latest_log(user_id)
     if log_content is None:
         raise HTTPException(

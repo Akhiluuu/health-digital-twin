@@ -26,11 +26,13 @@ def _load() -> Dict[str, Any]:
 
 
 def _save(data: Dict[str, Any]) -> None:
-    """Atomically write the database dict to disk."""
+    """Atomically write the database dict to disk (POSIX-safe)."""
     tmp = DB_PATH.with_suffix(".tmp")
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2)
-    shutil.move(str(tmp), str(DB_PATH))
+    # os.replace() is atomic on POSIX (rename syscall) — avoids partial writes
+    # and works on same filesystem. shutil.move() can fail cross-device.
+    os.replace(str(tmp), str(DB_PATH))
 
 
 # ---------------------------------------------------------------------------

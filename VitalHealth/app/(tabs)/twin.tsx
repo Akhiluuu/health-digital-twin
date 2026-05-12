@@ -1,14 +1,12 @@
 // app/(tabs)/twin.tsx — Clinical Command Center
 // Mode 1: Dashboard — vitals, organ scores, analytics, session history
 // Mode 2: Log Routine — 7-tab full-detail event logger perfectly wired to BioGears
-// FIX: Meal tab simplified — only Time of Meal + Add Meal (navigates to Nutrition)
-// FIX: Clock drag fixed — uses pageX/pageY + clock layout measurement
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  ActivityIndicator, Alert, Animated, Dimensions,
+  ActivityIndicator, Alert, Animated, Dimensions, FlatList,
   GestureResponderEvent,
-  KeyboardAvoidingView, LayoutChangeEvent, Modal, Platform,
+  KeyboardAvoidingView, Modal, Platform, Pressable,
   ScrollView, StyleSheet, Text, TextInput,
   TouchableOpacity, View,
 } from 'react-native';
@@ -16,23 +14,18 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { useBiogearsTwin } from '../../context/BiogearsTwinContext';
 import { useTheme } from '../../context/ThemeContext';
 import { colors as themeColors } from '../../theme/colors';
 import Header from '../components/Header';
-import CircadianClock from '../../components/twin/CircadianClock';
-import QuickAddRow from '../../components/twin/QuickAddRow';
-import BodyMap from '../../components/twin/BodyMap';
+import CircadianClock    from '../../components/twin/CircadianClock';
+import QuickAddRow       from '../../components/twin/QuickAddRow';
+import BodyMap           from '../../components/twin/BodyMap';
 
 const { width: W } = Dimensions.get('window');
 
-// ─── Storage keys ─────────────────────────────────────────────────────────────
-const BIOGEARS_IP_KEY   = '@biogears_ip_address';
-const BIOGEARS_PORT_KEY = '@biogears_port';
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+// ─── Helpers ────────────────────────────────────────────────────────────────
 
 const pad = (n: number) => String(n).padStart(2, '0');
 
@@ -59,20 +52,8 @@ function clamp(val: number, min: number, max: number) {
   return Math.max(min, Math.min(max, val));
 }
 
-function isValidIP(ip: string): boolean {
-  const ipv4     = /^(\d{1,3}\.){3}\d{1,3}$/;
-  const hostname = /^[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z]{2,})*$/;
-  return ip === 'localhost' || ipv4.test(ip) || hostname.test(ip);
-}
+// ─── Event tab definitions ────────────────────────────────────────────────────
 
-function isValidPort(port: string): boolean {
-  const n = parseInt(port, 10);
-  return !isNaN(n) && n >= 1 && n <= 65535;
-}
-
-// ─── Event / Dash tab types ───────────────────────────────────────────────────
-
-type MealType = 'balanced' | 'high_carb' | 'high_protein' | 'fast_food' | 'ketogenic' | 'custom';
 type EventTab = 'meal' | 'exercise' | 'sleep' | 'water' | 'substance' | 'stress' | 'other';
 type DashTab  = 'overview' | 'organs' | 'trends';
 
@@ -86,238 +67,16 @@ const EVENT_TABS: { id: EventTab; label: string; icon: string; accent: string }[
   { id: 'other',     label: 'Other',     icon: '⚡', accent: '#ec4899' },
 ];
 
-type ConnectionStatus = 'unconfigured' | 'testing' | 'connected' | 'failed' | 'saved';
-
-// ─── IP Config Modal ──────────────────────────────────────────────────────────
-
-function IPConfigModal({
-  visible, onClose, onSave, currentIP, currentPort, c,
-}: {
-  visible: boolean; onClose: () => void;
-  onSave: (ip: string, port: string) => void;
-  currentIP: string; currentPort: string; c: any;
-}) {
-  const [ip,         setIp]         = useState(currentIP);
-  const [port,       setPort]       = useState(currentPort || '8080');
-  const [testing,    setTesting]    = useState(false);
-  const [testResult, setTestResult] = useState<'idle' | 'ok' | 'fail'>('idle');
-  const [testMsg,    setTestMsg]    = useState('');
-
-  useEffect(() => {
-    if (visible) {
-      setIp(currentIP); setPort(currentPort || '8080');
-      setTestResult('idle'); setTestMsg('');
-    }
-  }, [visible, currentIP, currentPort]);
-
-  const handleTest = async () => {
-    if (!isValidIP(ip.trim())) { setTestResult('fail'); setTestMsg('Invalid IP address or hostname.'); return; }
-    if (!isValidPort(port.trim())) { setTestResult('fail'); setTestMsg('Invalid port number (1–65535).'); return; }
-    setTesting(true); setTestResult('idle'); setTestMsg('');
-    try {
-      const url = `http://${ip.trim()}:${port.trim()}/health`;
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 5000);
-      const res = await fetch(url, { signal: controller.signal });
-      clearTimeout(timeout);
-      if (res.ok) {
-        setTestResult('ok');
-        setTestMsg(`Connected! BioGears engine at ${ip.trim()}:${port.trim()} is responding.`);
-      } else {
-        setTestResult('fail');
-        setTestMsg(`Server responded with status ${res.status}. Check your BioGears REST API configuration.`);
-      }
-    } catch (e: any) {
-      setTestResult('fail');
-      setTestMsg(e.name === 'AbortError'
-        ? 'Connection timed out. Check IP and that BioGears is running.'
-        : `Could not reach server: ${e.message}`);
-    } finally { setTesting(false); }
-  };
-
-  const handleSave = () => {
-    if (!isValidIP(ip.trim())) { Alert.alert('Invalid IP', 'Please enter a valid IP address or hostname.'); return; }
-    if (!isValidPort(port.trim())) { Alert.alert('Invalid Port', 'Please enter a valid port number (1–65535).'); return; }
-    onSave(ip.trim(), port.trim());
-  };
-
-  const PRESETS = [
-    { label: 'Localhost',   ip: 'localhost',   port: '8080' },
-    { label: '192.168.1.x', ip: '192.168.1.',  port: '8080' },
-    { label: '10.0.0.x',   ip: '10.0.0.',      port: '8080' },
-  ];
-
-  return (
-    <Modal visible={visible} transparent animationType="slide">
-      <KeyboardAvoidingView style={ipStyles.overlay} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <View style={[ipStyles.sheet, { backgroundColor: c.card }]}>
-          <View style={ipStyles.headerRow}>
-            <View style={ipStyles.headerLeft}>
-              <View style={ipStyles.iconWrap}><Ionicons name="server" size={22} color="#38bdf8" /></View>
-              <View>
-                <Text style={[ipStyles.title, { color: c.text }]}>BioGears Connection</Text>
-                <Text style={[ipStyles.subtitle, { color: c.sub }]}>Configure engine server address</Text>
-              </View>
-            </View>
-            <TouchableOpacity onPress={onClose} style={ipStyles.closeBtn}>
-              <Ionicons name="close" size={20} color={c.sub} />
-            </TouchableOpacity>
-          </View>
-
-          <View style={[ipStyles.divider, { backgroundColor: c.border }]} />
-
-          <Text style={[ipStyles.label, { color: c.sub }]}>QUICK PRESETS</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 16 }}>
-            {PRESETS.map(p => (
-              <TouchableOpacity key={p.label}
-                onPress={() => { setIp(p.ip); setPort(p.port); setTestResult('idle'); setTestMsg(''); }}
-                style={[ipStyles.presetChip, { borderColor: c.border, backgroundColor: c.bg }]}>
-                <Ionicons name="flash" size={12} color="#38bdf8" />
-                <Text style={[ipStyles.presetTxt, { color: c.text }]}>{p.label}</Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
-
-          <Text style={[ipStyles.label, { color: c.sub }]}>IP ADDRESS / HOSTNAME</Text>
-          <View style={[ipStyles.inputWrap, { backgroundColor: c.bg, borderColor: testResult === 'fail' ? '#ef4444' : testResult === 'ok' ? '#10b981' : c.border }]}>
-            <Ionicons name="globe-outline" size={18} color="#38bdf8" style={{ marginRight: 10 }} />
-            <TextInput style={[ipStyles.input, { color: c.text }]} value={ip}
-              onChangeText={t => { setIp(t); setTestResult('idle'); setTestMsg(''); }}
-              placeholder="e.g. 192.168.1.100 or localhost" placeholderTextColor={c.sub}
-              autoCapitalize="none" autoCorrect={false} keyboardType="url" />
-            {ip.length > 0 && (
-              <TouchableOpacity onPress={() => { setIp(''); setTestResult('idle'); setTestMsg(''); }}>
-                <Ionicons name="close-circle" size={18} color={c.sub} />
-              </TouchableOpacity>
-            )}
-          </View>
-
-          <Text style={[ipStyles.label, { color: c.sub, marginTop: 12 }]}>PORT</Text>
-          <View style={[ipStyles.inputWrap, { backgroundColor: c.bg, borderColor: c.border }]}>
-            <Ionicons name="git-network-outline" size={18} color="#38bdf8" style={{ marginRight: 10 }} />
-            <TextInput style={[ipStyles.input, { color: c.text }]} value={port}
-              onChangeText={t => { setPort(t); setTestResult('idle'); setTestMsg(''); }}
-              placeholder="8080" placeholderTextColor={c.sub} keyboardType="number-pad" />
-          </View>
-
-          {ip.length > 0 && (
-            <View style={[ipStyles.urlPreview, { backgroundColor: '#38bdf810', borderColor: '#38bdf830' }]}>
-              <Ionicons name="link-outline" size={13} color="#38bdf8" />
-              <Text style={ipStyles.urlTxt} numberOfLines={1}>http://{ip.trim() || '…'}:{port.trim() || '…'}/api</Text>
-            </View>
-          )}
-
-          {testMsg.length > 0 && (
-            <View style={[ipStyles.resultBox, { backgroundColor: testResult === 'ok' ? '#10b98115' : '#ef444415', borderColor: testResult === 'ok' ? '#10b98140' : '#ef444440' }]}>
-              <Ionicons name={testResult === 'ok' ? 'checkmark-circle' : 'warning'} size={16} color={testResult === 'ok' ? '#10b981' : '#ef4444'} />
-              <Text style={[ipStyles.resultTxt, { color: testResult === 'ok' ? '#10b981' : '#ef4444' }]}>{testMsg}</Text>
-            </View>
-          )}
-
-          <View style={[ipStyles.infoBox, { backgroundColor: '#f59e0b10', borderColor: '#f59e0b30' }]}>
-            <Ionicons name="information-circle-outline" size={14} color="#f59e0b" />
-            <Text style={[ipStyles.infoTxt, { color: '#f59e0b' }]}>
-              Ensure BioGears REST engine is running and reachable on the same network. Default port is 8080.
-            </Text>
-          </View>
-
-          <View style={ipStyles.actionRow}>
-            <TouchableOpacity onPress={handleTest} disabled={testing || ip.trim().length === 0}
-              style={[ipStyles.testBtn, { borderColor: '#38bdf8', opacity: (testing || ip.trim().length === 0) ? 0.5 : 1 }]}>
-              {testing ? <ActivityIndicator size="small" color="#38bdf8" /> : <Ionicons name="pulse" size={16} color="#38bdf8" />}
-              <Text style={ipStyles.testBtnTxt}>{testing ? 'Testing…' : 'Test'}</Text>
-            </TouchableOpacity>
-            <TouchableOpacity onPress={handleSave} style={[ipStyles.saveBtn, { backgroundColor: '#38bdf8' }]}>
-              <Ionicons name="checkmark-circle" size={16} color="#fff" />
-              <Text style={ipStyles.saveBtnTxt}>Save & Connect</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </KeyboardAvoidingView>
-    </Modal>
-  );
-}
-
-const ipStyles = StyleSheet.create({
-  overlay:    { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'flex-end' },
-  sheet:      { borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: 24, paddingBottom: 36 },
-  headerRow:  { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
-  headerLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  iconWrap:   { width: 44, height: 44, borderRadius: 14, backgroundColor: '#38bdf815', borderWidth: 1, borderColor: '#38bdf840', justifyContent: 'center', alignItems: 'center' },
-  title:      { fontSize: 17, fontWeight: '700' },
-  subtitle:   { fontSize: 12, marginTop: 2 },
-  closeBtn:   { width: 32, height: 32, borderRadius: 16, backgroundColor: '#33415520', justifyContent: 'center', alignItems: 'center' },
-  divider:    { height: 1, marginBottom: 18 },
-  label:      { fontSize: 10, fontWeight: '700', letterSpacing: 1, marginBottom: 8 },
-  presetChip: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 12, paddingVertical: 7, borderRadius: 20, borderWidth: 1, marginRight: 8 },
-  presetTxt:  { fontSize: 12, fontWeight: '600' },
-  inputWrap:  { flexDirection: 'row', alignItems: 'center', borderRadius: 14, borderWidth: 1.5, paddingHorizontal: 14, paddingVertical: 12 },
-  input:      { flex: 1, fontSize: 15, fontWeight: '500' },
-  urlPreview: { flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 10, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 7, marginTop: 10 },
-  urlTxt:     { color: '#38bdf8', fontSize: 12, fontWeight: '500', flex: 1 },
-  resultBox:  { flexDirection: 'row', alignItems: 'flex-start', gap: 8, borderRadius: 12, borderWidth: 1, padding: 12, marginTop: 12 },
-  resultTxt:  { fontSize: 13, flex: 1, lineHeight: 18 },
-  infoBox:    { flexDirection: 'row', alignItems: 'flex-start', gap: 8, borderRadius: 10, borderWidth: 1, padding: 10, marginTop: 12 },
-  infoTxt:    { fontSize: 12, flex: 1, lineHeight: 17 },
-  actionRow:  { flexDirection: 'row', gap: 10, marginTop: 20 },
-  testBtn:    { flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 14, borderWidth: 1.5, paddingHorizontal: 18, paddingVertical: 13 },
-  testBtnTxt: { color: '#38bdf8', fontWeight: '700', fontSize: 14 },
-  saveBtn:    { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, borderRadius: 14, paddingVertical: 13 },
-  saveBtnTxt: { color: '#fff', fontWeight: '700', fontSize: 14 },
-});
-
-// ─── Connection Status Bar ────────────────────────────────────────────────────
-
-function ConnectionBar({ ip, port, status, onPress, c }: {
-  ip: string; port: string; status: ConnectionStatus; onPress: () => void; c: any;
-}) {
-  const pulseAnim = useRef(new Animated.Value(1)).current;
-
-  useEffect(() => {
-    if (status === 'testing') {
-      Animated.loop(
-        Animated.sequence([
-          Animated.timing(pulseAnim, { toValue: 0.4, duration: 600, useNativeDriver: true }),
-          Animated.timing(pulseAnim, { toValue: 1,   duration: 600, useNativeDriver: true }),
-        ])
-      ).start();
-    } else {
-      pulseAnim.setValue(1);
-    }
-  }, [status]);
-
-  const dotColor  = status === 'connected' ? '#10b981' : status === 'failed' ? '#ef4444' : status === 'testing' ? '#f59e0b' : status === 'saved' ? '#38bdf8' : '#64748b';
-  const label     = status === 'unconfigured' ? 'Tap to configure BioGears IP' : status === 'testing' ? 'Testing connection…' : status === 'connected' ? `Connected · ${ip}:${port}` : status === 'failed' ? `Unreachable · ${ip}:${port}` : `${ip}:${port}`;
-  const bgColor   = status === 'connected' ? '#10b98115' : status === 'failed' ? '#ef444415' : status === 'unconfigured' ? '#f59e0b15' : '#38bdf810';
-  const borderClr = status === 'connected' ? '#10b98140' : status === 'failed' ? '#ef444440' : status === 'unconfigured' ? '#f59e0b40' : '#38bdf840';
-
-  return (
-    <TouchableOpacity onPress={onPress} activeOpacity={0.75}
-      style={[connBarStyles.bar, { backgroundColor: bgColor, borderColor: borderClr }]}>
-      <Animated.View style={[connBarStyles.dot, { backgroundColor: dotColor, opacity: pulseAnim }]} />
-      <Ionicons name="server-outline" size={13} color={dotColor} />
-      <Text style={[connBarStyles.label, { color: dotColor }]} numberOfLines={1}>{label}</Text>
-      <Ionicons name="settings-outline" size={13} color={dotColor} style={{ marginLeft: 'auto' }} />
-    </TouchableOpacity>
-  );
-}
-
-const connBarStyles = StyleSheet.create({
-  bar:   { flexDirection: 'row', alignItems: 'center', gap: 7, marginHorizontal: 12, marginBottom: 8, borderRadius: 12, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 9 },
-  dot:   { width: 7, height: 7, borderRadius: 4 },
-  label: { fontSize: 12, fontWeight: '600', flex: 1 },
-});
-
 // ─── Simulation stepper ───────────────────────────────────────────────────────
 
 const SIM_STEPS = ['Queue', 'Engine', 'Analyzing', 'Done'];
 
 function SimStepper({ progress, status }: { progress: string; status: string }) {
   const stepIdx =
-    status === 'queued'  ? 0
+    status === 'queued' ? 0
     : status === 'running' && progress.toLowerCase().includes('analy') ? 2
     : status === 'running' ? 1
-    : status === 'done'  ? 3
+    : status === 'done' ? 3
     : 0;
   return (
     <View style={ss.stepperRow}>
@@ -331,19 +90,24 @@ function SimStepper({ progress, status }: { progress: string; status: string }) 
             </View>
             <Text style={[ss.stepLabel, i <= stepIdx && ss.stepLabelActive]}>{s}</Text>
           </View>
-          {i < SIM_STEPS.length - 1 && <View style={[ss.stepLine, i < stepIdx && ss.stepLineActive]} />}
+          {i < SIM_STEPS.length - 1 && (
+            <View style={[ss.stepLine, i < stepIdx && ss.stepLineActive]} />
+          )}
         </React.Fragment>
       ))}
     </View>
   );
 }
 
+// ─── Time Picker ─────────────────────────────────────────────────────────────
+
 // ─── Clock Time Picker ────────────────────────────────────────────────────────
-// FIX: Use pageX/pageY + clock layout to compute correct angle during drag
+// Replace your existing TimePicker component with this entire block
+
 
 const CLOCK_SIZE = 260;
 const CLOCK_R    = CLOCK_SIZE / 2;
-const DOT_R      = 22;
+const DOT_R      = 22; // radius of the number dot
 
 function polarToXY(angleDeg: number, r: number) {
   const rad = ((angleDeg - 90) * Math.PI) / 180;
@@ -351,8 +115,9 @@ function polarToXY(angleDeg: number, r: number) {
 }
 
 function xyToAngle(x: number, y: number): number {
-  // x,y are relative to the center of the clock face
-  let angle = Math.atan2(y, x) * (180 / Math.PI) + 90;
+  const dx = x - CLOCK_R;
+  const dy = y - CLOCK_R;
+  let angle = Math.atan2(dy, dx) * (180 / Math.PI) + 90;
   if (angle < 0) angle += 360;
   return angle;
 }
@@ -369,125 +134,113 @@ function angleToMinute(angle: number): number {
 type ClockMode = 'hour' | 'minute';
 
 function ClockFace({
-  mode, hour, minute, accent, onHourChange, onMinuteChange,
+  mode,
+  hour,
+  minute,
+  ampm,
+  accent,
+  onHourChange,
+  onMinuteChange,
 }: {
-  mode: ClockMode; hour: number; minute: number; ampm: 'AM' | 'PM';
-  accent: string; onHourChange: (h: number) => void; onMinuteChange: (m: number) => void;
+  mode: ClockMode;
+  hour: number;
+  minute: number;
+  ampm: 'AM' | 'PM';
+  accent: string;
+  onHourChange: (h: number) => void;
+  onMinuteChange: (m: number) => void;
 }) {
-  const clockRef    = useRef<View>(null);
-  const clockLayout = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+  const clockRef = useRef<View>(null);
+  const [clockLayout, setClockLayout] = useState({ x: 0, y: 0 });
+  const handAnim = useRef(new Animated.Value(0)).current;
 
-  const currentAngle = mode === 'hour' ? ((hour % 12) / 12) * 360 : (minute / 60) * 360;
-
-  // Single source of truth — drives BOTH the hand rotation AND the dot position
-  const handAngle = useRef(new Animated.Value(currentAngle)).current;
-
-  // Mirror of handAngle as plain state so the dot re-renders in sync
-  const [dotAngle, setDotAngle] = useState(currentAngle);
+  const currentAngle =
+    mode === 'hour'
+      ? ((hour % 12) / 12) * 360
+      : (minute / 60) * 360;
 
   useEffect(() => {
-    // Add a listener so dotAngle always matches the animated value
-    const id = handAngle.addListener(({ value }) => setDotAngle(value));
-    return () => handAngle.removeListener(id);
-  }, [handAngle]);
-
-  useEffect(() => {
-    Animated.spring(handAngle, {
+    Animated.spring(handAnim, {
       toValue: currentAngle,
       useNativeDriver: false,
-      tension: 120,
-      friction: 8,
+      tension: 80,
+      friction: 10,
     }).start();
   }, [currentAngle]);
 
-  const onLayout = useCallback((_e: LayoutChangeEvent) => {
-    clockRef.current?.measureInWindow((px, py) => {
-      clockLayout.current = { x: px, y: py };
-    });
-  }, []);
+  const handleTouch = (evt: GestureResponderEvent) => {
+    const { locationX, locationY } = evt.nativeEvent;
+    const angle = xyToAngle(locationX, locationY);
+    if (mode === 'hour') onHourChange(angleToHour(angle));
+    else onMinuteChange(angleToMinute(angle));
+  };
 
-  const touchToAngle = useCallback((pageX: number, pageY: number): number => {
-    const localX = pageX - clockLayout.current.x - CLOCK_R;
-    const localY = pageY - clockLayout.current.y - CLOCK_R;
-    return xyToAngle(localX, localY);
-  }, []);
-
-  const handleTouch = useCallback((evt: GestureResponderEvent) => {
-    const { pageX, pageY } = evt.nativeEvent;
-    const angle = touchToAngle(pageX, pageY);
-    if (mode === 'hour') {
-      const h = angleToHour(angle);
-      const snapped = ((h % 12) / 12) * 360;
-      handAngle.setValue(snapped);
-      setDotAngle(snapped);
-      onHourChange(h);
-    } else {
-      const m = angleToMinute(angle);
-      const snapped = (m / 60) * 360;
-      handAngle.setValue(snapped);
-      setDotAngle(snapped);
-      onMinuteChange(m);
-    }
-  }, [mode, touchToAngle, onHourChange, onMinuteChange]);
-
-  const HOURS   = [12, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
+  // Hour numbers 1–12 arranged in circle
+  const HOURS = [12, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
+  // Minute markers: every 5 mins shown as number
   const MINUTES = Array.from({ length: 12 }, (_, i) => i * 5);
 
-  // Dot always reads from dotAngle (synced listener) — never from currentAngle
-  const handPos = polarToXY(dotAngle, CLOCK_R - 44);
-
-  // Hand length: from center (CLOCK_R) up to where the dot circle center sits
-  const HAND_R      = CLOCK_R - 44;          // radius of the dot circle center
-  const HAND_LENGTH = HAND_R - DOT_R;         // stop the line at the dot edge
-  const HAND_TOP    = CLOCK_R - HAND_LENGTH;  // top offset so bottom of hand = center
+  const handPos = polarToXY(currentAngle, CLOCK_R - 44);
 
   return (
     <View
       ref={clockRef}
-      onLayout={onLayout}
       style={[clockStyles.face, { width: CLOCK_SIZE, height: CLOCK_SIZE, borderRadius: CLOCK_R }]}
       onStartShouldSetResponder={() => true}
       onMoveShouldSetResponder={() => true}
       onResponderGrant={handleTouch}
       onResponderMove={handleTouch}
     >
-      {/* Center pivot dot */}
+      {/* Center dot */}
       <View style={[clockStyles.centerDot, { backgroundColor: accent }]} />
 
-      {/* Hand line — rotates around the center, stops just before the dot */}
-      <Animated.View style={[clockStyles.hand, {
-        backgroundColor: accent,
-        height: HAND_LENGTH,
-        top: HAND_TOP,
-        left: CLOCK_R - 1,          // centered horizontally (1px wide)
-        transform: [{
-          rotate: handAngle.interpolate({
-            inputRange: [0, 360],
-            outputRange: ['0deg', '360deg'],
-          }),
-        }],
-        transformOrigin: `1px ${HAND_LENGTH}px`, // pivot at bottom of line = clock center
-      }]} />
+      {/* Hand line — rendered as a thin rectangle rotated */}
+      <Animated.View
+        style={[
+          clockStyles.hand,
+          {
+            backgroundColor: accent,
+            transform: [
+              { rotate: handAnim.interpolate({ inputRange: [0, 360], outputRange: ['0deg', '360deg'] }) },
+            ],
+          },
+        ]}
+      />
 
-      {/* End dot — position driven by dotAngle listener, always in sync */}
-      <View style={[clockStyles.handEnd, {
-        backgroundColor: accent,
-        left: handPos.x - DOT_R,
-        top:  handPos.y - DOT_R,
-      }]} />
+      {/* Hand end circle */}
+      <View
+        style={[
+          clockStyles.handEnd,
+          {
+            backgroundColor: accent,
+            left: handPos.x - DOT_R,
+            top: handPos.y - DOT_R,
+          },
+        ]}
+      />
 
+      {/* Numbers */}
       {(mode === 'hour' ? HOURS : MINUTES).map((num, i) => {
-        const angle      = i * 30;
-        const pos        = polarToXY(angle, CLOCK_R - 44);
-        const isSelected = mode === 'hour' ? num === hour : num === minute;
+        const angle = i * 30;
+        const pos = polarToXY(angle, CLOCK_R - 44);
+        const isSelected =
+          mode === 'hour'
+            ? num === hour
+            : num === minute;
         return (
           <TouchableOpacity
             key={num}
-            style={[clockStyles.numDot, {
-              left: pos.x - DOT_R, top: pos.y - DOT_R,
-              width: DOT_R * 2, height: DOT_R * 2, borderRadius: DOT_R,
-              backgroundColor: isSelected ? accent : 'transparent',
-            }]}
+            style={[
+              clockStyles.numDot,
+              {
+                left: pos.x - DOT_R,
+                top:  pos.y - DOT_R,
+                width: DOT_R * 2,
+                height: DOT_R * 2,
+                borderRadius: DOT_R,
+                backgroundColor: isSelected ? accent : 'transparent',
+              },
+            ]}
             onPress={() => {
               if (mode === 'hour') onHourChange(num);
               else onMinuteChange(num);
@@ -504,17 +257,27 @@ function ClockFace({
   );
 }
 
-function TimePicker({ value, onChange, accent = '#38bdf8' }: {
-  value: string; onChange: (t: string) => void; accent?: string;
+// ─── Main TimePicker component ────────────────────────────────────────────────
+// This REPLACES your existing TimePicker entirely
+
+function TimePicker({
+  value,
+  onChange,
+  accent = '#38bdf8',
+}: {
+  value: string;
+  onChange: (t: string) => void;
+  accent?: string;
 }) {
   const [modalVisible, setModalVisible] = useState(false);
 
+  // Parse current value
   const parseTime = (v: string) => {
     const [hStr, mStr] = (v || currentTime()).split(':');
     const h24 = parseInt(hStr, 10);
     const m   = parseInt(mStr, 10);
     const isPM = h24 >= 12;
-    const h12  = h24 % 12 === 0 ? 12 : h24 % 12;
+    const h12 = h24 % 12 === 0 ? 12 : h24 % 12;
     return { hour: h12, minute: m, ampm: (isPM ? 'PM' : 'AM') as 'AM' | 'PM' };
   };
 
@@ -526,7 +289,8 @@ function TimePicker({ value, onChange, accent = '#38bdf8' }: {
 
   const openModal = () => {
     const p = parseTime(value);
-    setHour(p.hour); setMinute(p.minute); setAmpm(p.ampm); setMode('hour');
+    setHour(p.hour); setMinute(p.minute); setAmpm(p.ampm);
+    setMode('hour');
     setModalVisible(true);
   };
 
@@ -537,6 +301,7 @@ function TimePicker({ value, onChange, accent = '#38bdf8' }: {
     setModalVisible(false);
   };
 
+  // Format display label
   const displayTime = () => {
     const p = parseTime(value);
     return `${p.hour}:${pad(p.minute)} ${p.ampm}`;
@@ -544,9 +309,12 @@ function TimePicker({ value, onChange, accent = '#38bdf8' }: {
 
   return (
     <>
-      <TouchableOpacity onPress={openModal}
+      {/* Tappable time display — replaces old chevron UI */}
+      <TouchableOpacity
+        onPress={openModal}
         style={[clockStyles.timeDisplay, { borderColor: accent + '60', backgroundColor: accent + '15' }]}
-        activeOpacity={0.8}>
+        activeOpacity={0.8}
+      >
         <Text style={[clockStyles.timeDisplayTxt, { color: accent }]}>{displayTime()}</Text>
         <Ionicons name="time-outline" size={16} color={accent} />
       </TouchableOpacity>
@@ -554,39 +322,72 @@ function TimePicker({ value, onChange, accent = '#38bdf8' }: {
       <Modal visible={modalVisible} transparent animationType="fade">
         <View style={clockStyles.overlay}>
           <View style={clockStyles.sheet}>
-            {/* Digital display row */}
+
+            {/* ── Digital display at top ── */}
             <View style={[clockStyles.digitalRow, { backgroundColor: '#1e293b' }]}>
+              {/* Hour */}
               <TouchableOpacity onPress={() => setMode('hour')}>
-                <Text style={[clockStyles.digitalNum, { color: mode === 'hour' ? accent : '#94a3b8' }]}>
+                <Text style={[
+                  clockStyles.digitalNum,
+                  { color: mode === 'hour' ? accent : '#94a3b8' },
+                ]}>
                   {String(hour).padStart(2, '0')}
                 </Text>
               </TouchableOpacity>
+
               <Text style={[clockStyles.digitalColon, { color: accent }]}>:</Text>
+
+              {/* Minute */}
               <TouchableOpacity onPress={() => setMode('minute')}>
-                <Text style={[clockStyles.digitalNum, { color: mode === 'minute' ? accent : '#94a3b8' }]}>
+                <Text style={[
+                  clockStyles.digitalNum,
+                  { color: mode === 'minute' ? accent : '#94a3b8' },
+                ]}>
                   {pad(minute)}
                 </Text>
               </TouchableOpacity>
+
+              {/* AM / PM */}
               <View style={clockStyles.ampmCol}>
                 {(['AM', 'PM'] as const).map(period => (
-                  <TouchableOpacity key={period} onPress={() => setAmpm(period)}
-                    style={[clockStyles.ampmBtn, ampm === period && { backgroundColor: accent }]}>
-                    <Text style={[clockStyles.ampmTxt, { color: ampm === period ? '#fff' : '#64748b' }]}>{period}</Text>
+                  <TouchableOpacity
+                    key={period}
+                    onPress={() => setAmpm(period)}
+                    style={[
+                      clockStyles.ampmBtn,
+                      ampm === period && { backgroundColor: accent },
+                    ]}
+                  >
+                    <Text style={[
+                      clockStyles.ampmTxt,
+                      { color: ampm === period ? '#fff' : '#64748b' },
+                    ]}>
+                      {period}
+                    </Text>
                   </TouchableOpacity>
                 ))}
               </View>
             </View>
 
-            <Text style={clockStyles.modeLabel}>{mode === 'hour' ? 'SELECT HOUR' : 'SELECT MINUTE'}</Text>
+            {/* ── Mode label ── */}
+            <Text style={clockStyles.modeLabel}>
+              {mode === 'hour' ? 'SELECT HOUR' : 'SELECT MINUTE'}
+            </Text>
 
+            {/* ── Clock face ── */}
             <View style={{ alignItems: 'center', marginVertical: 10 }}>
               <ClockFace
-                mode={mode} hour={hour} minute={minute} ampm={ampm} accent={accent}
-                onHourChange={(h) => { setHour(h); setTimeout(() => setMode('minute'), 120); }}
+                mode={mode}
+                hour={hour}
+                minute={minute}
+                ampm={ampm}
+                accent={accent}
+                onHourChange={(h) => { setHour(h); setMode('minute'); }}
                 onMinuteChange={setMinute}
               />
             </View>
 
+            {/* ── Actions ── */}
             <View style={clockStyles.actions}>
               <TouchableOpacity onPress={() => setModalVisible(false)} style={clockStyles.cancelBtn}>
                 <Text style={{ color: '#64748b', fontWeight: '700', fontSize: 15 }}>CANCEL</Text>
@@ -595,6 +396,7 @@ function TimePicker({ value, onChange, accent = '#38bdf8' }: {
                 <Text style={[clockStyles.okTxt, { color: accent }]}>OK</Text>
               </TouchableOpacity>
             </View>
+
           </View>
         </View>
       </Modal>
@@ -602,29 +404,90 @@ function TimePicker({ value, onChange, accent = '#38bdf8' }: {
   );
 }
 
+// ─── Clock styles ─────────────────────────────────────────────────────────────
+
 const clockStyles = StyleSheet.create({
-  timeDisplay:    { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 12, borderWidth: 1.5 },
+  // Tappable trigger
+  timeDisplay: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    paddingHorizontal: 14, paddingVertical: 8,
+    borderRadius: 12, borderWidth: 1.5,
+  },
   timeDisplayTxt: { fontSize: 18, fontWeight: '800', letterSpacing: 1 },
-  overlay:        { flex: 1, backgroundColor: 'rgba(0,0,0,0.75)', justifyContent: 'center', alignItems: 'center', padding: 20 },
-  sheet:          { width: '100%', maxWidth: 340, backgroundColor: '#0f172a', borderRadius: 28, overflow: 'hidden' },
-  digitalRow:     { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, paddingHorizontal: 24, paddingVertical: 20 },
-  digitalNum:     { fontSize: 56, fontWeight: '300', letterSpacing: -2, minWidth: 70, textAlign: 'center' },
-  digitalColon:   { fontSize: 48, fontWeight: '300', marginHorizontal: 4, marginBottom: 8 },
-  ampmCol:        { flexDirection: 'column', gap: 4, marginLeft: 12 },
-  ampmBtn:        { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8 },
-  ampmTxt:        { fontSize: 14, fontWeight: '700' },
-  modeLabel:      { textAlign: 'center', fontSize: 11, fontWeight: '700', color: '#475569', letterSpacing: 1.5, marginTop: 4 },
-  face:           { backgroundColor: '#1e293b', position: 'relative' },
-  centerDot:      { position: 'absolute', width: 10, height: 10, borderRadius: 5, left: CLOCK_R - 5, top: CLOCK_R - 5, zIndex: 10 },
-  // hand: top/height/left are set inline; only static props here
-  hand:           { position: 'absolute', width: 2, zIndex: 5 },
-  handEnd:        { position: 'absolute', width: DOT_R * 2, height: DOT_R * 2, borderRadius: DOT_R, zIndex: 6, alignItems: 'center', justifyContent: 'center' },
-  numDot:         { position: 'absolute', alignItems: 'center', justifyContent: 'center', zIndex: 7 },
-  numTxt:         { fontSize: 15, fontWeight: '600', color: '#cbd5e1' },
-  actions:        { flexDirection: 'row', justifyContent: 'flex-end', gap: 8, padding: 16, paddingTop: 8 },
-  cancelBtn:      { paddingHorizontal: 16, paddingVertical: 10 },
-  okBtn:          { paddingHorizontal: 16, paddingVertical: 10 },
-  okTxt:          { fontWeight: '800', fontSize: 15 },
+
+  // Modal
+  overlay: {
+    flex: 1, backgroundColor: 'rgba(0,0,0,0.75)',
+    justifyContent: 'center', alignItems: 'center', padding: 20,
+  },
+  sheet: {
+    width: '100%', maxWidth: 340,
+    backgroundColor: '#0f172a',
+    borderRadius: 28, overflow: 'hidden',
+  },
+
+  // Digital row
+  digitalRow: {
+    flexDirection: 'row', alignItems: 'center',
+    justifyContent: 'center', gap: 4,
+    paddingHorizontal: 24, paddingVertical: 20,
+  },
+  digitalNum: { fontSize: 56, fontWeight: '300', letterSpacing: -2, minWidth: 70, textAlign: 'center' },
+  digitalColon: { fontSize: 48, fontWeight: '300', marginHorizontal: 4, marginBottom: 8 },
+
+  ampmCol: { flexDirection: 'column', gap: 4, marginLeft: 12 },
+  ampmBtn: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8 },
+  ampmTxt: { fontSize: 14, fontWeight: '700' },
+
+  modeLabel: {
+    textAlign: 'center', fontSize: 11, fontWeight: '700',
+    color: '#475569', letterSpacing: 1.5, marginTop: 4,
+  },
+
+  // Clock face
+  face: {
+    backgroundColor: '#1e293b',
+    position: 'relative',
+  },
+
+  centerDot: {
+    position: 'absolute',
+    width: 10, height: 10, borderRadius: 5,
+    left: CLOCK_R - 5, top: CLOCK_R - 5,
+    zIndex: 10,
+  },
+
+  hand: {
+    position: 'absolute',
+    width: 2,
+    height: CLOCK_R - 44,
+    left: CLOCK_R - 1,
+    top: 44,
+    transformOrigin: 'bottom center',
+    zIndex: 5,
+  },
+
+  handEnd: {
+    position: 'absolute',
+    width: DOT_R * 2, height: DOT_R * 2, borderRadius: DOT_R,
+    zIndex: 6, alignItems: 'center', justifyContent: 'center',
+  },
+
+  numDot: {
+    position: 'absolute',
+    alignItems: 'center', justifyContent: 'center',
+    zIndex: 7,
+  },
+  numTxt: { fontSize: 15, fontWeight: '600', color: '#cbd5e1' },
+
+  // Actions
+  actions: {
+    flexDirection: 'row', justifyContent: 'flex-end',
+    gap: 8, padding: 16, paddingTop: 8,
+  },
+  cancelBtn: { paddingHorizontal: 16, paddingVertical: 10 },
+  okBtn:     { paddingHorizontal: 16, paddingVertical: 10 },
+  okTxt:     { fontWeight: '800', fontSize: 15 },
 });
 
 // ─── Reusable sub-components ──────────────────────────────────────────────────
@@ -633,19 +496,20 @@ function SectionLabel({ text, c }: { text: string; c: any }) {
   return <Text style={[ss.sectionLbl, { color: c.sub }]}>{text.toUpperCase()}</Text>;
 }
 
-function ChipRow<T extends string>({
-  options, selected, onSelect, accent,
-}: {
-  options: { label: string; value: T }[];
-  selected: T;
-  onSelect: (v: T) => void;
+function ChipRow({ options, selected, onSelect, accent }: {
+  options: { label: string; value: string }[];
+  selected: string;
+  onSelect: (v: string) => void;
   accent: string;
 }) {
   return (
     <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
       {options.map(opt => (
-        <TouchableOpacity key={opt.value} onPress={() => onSelect(opt.value)}
-          style={[ss.chip, selected === opt.value && { backgroundColor: accent, borderColor: accent }]}>
+        <TouchableOpacity
+          key={opt.value}
+          onPress={() => onSelect(opt.value)}
+          style={[ss.chip, selected === opt.value && { backgroundColor: accent, borderColor: accent }]}
+        >
           <Text style={[ss.chipTxt, selected === opt.value && { color: '#fff' }]}>{opt.label}</Text>
         </TouchableOpacity>
       ))}
@@ -654,21 +518,38 @@ function ChipRow<T extends string>({
 }
 
 function NumericInput({ value, onChange, placeholder, suffix, c }: {
-  value: string; onChange: (v: string) => void; placeholder: string; suffix?: string; c: any;
+  value: string;
+  onChange: (v: string) => void;
+  placeholder: string;
+  suffix?: string;
+  c: any;
 }) {
   return (
     <View style={[ss.numRow, { backgroundColor: c.card, borderColor: c.border }]}>
-      <TextInput style={[ss.numInput, { color: c.text }]} value={value} onChangeText={onChange}
-        placeholder={placeholder} placeholderTextColor={c.sub} keyboardType="numeric" />
+      <TextInput
+        style={[ss.numInput, { color: c.text }]}
+        value={value}
+        onChangeText={onChange}
+        placeholder={placeholder}
+        placeholderTextColor={c.sub}
+        keyboardType="numeric"
+      />
       {suffix ? <Text style={[ss.numSuffix, { color: c.sub }]}>{suffix}</Text> : null}
     </View>
   );
 }
 
 function SliderRow({ label, value, min, max, step, onChange, accent, c }: {
-  label: string; value: number; min: number; max: number; step: number;
-  onChange: (v: number) => void; accent: string; c: any;
+  label: string;
+  value: number;
+  min: number;
+  max: number;
+  step: number;
+  onChange: (v: number) => void;
+  accent: string;
+  c: any;
 }) {
+  const steps = Math.round((max - min) / step);
   const pct = (value - min) / (max - min);
   return (
     <View style={{ marginBottom: 14 }}>
@@ -684,7 +565,7 @@ function SliderRow({ label, value, min, max, step, onChange, accent, c }: {
           style={[ss.sliderBtn, { borderColor: c.border }]}>
           <Text style={{ color: c.text, fontSize: 16, fontWeight: '700' }}>−</Text>
         </TouchableOpacity>
-        <Text style={{ color: c.sub, fontSize: 11 }}>{min} → {max}</Text>
+        <Text style={[{ color: c.sub, fontSize: 11 }]}>{min} → {max}</Text>
         <TouchableOpacity onPress={() => onChange(clamp(parseFloat((value + step).toFixed(2)), min, max))}
           style={[ss.sliderBtn, { borderColor: c.border }]}>
           <Text style={{ color: c.text, fontSize: 16, fontWeight: '700' }}>+</Text>
@@ -700,6 +581,35 @@ function AddButton({ label, accent, onPress }: { label: string; accent: string; 
       <Ionicons name="add-circle" size={18} color="#fff" />
       <Text style={ss.addBtnTxt}>{label}</Text>
     </TouchableOpacity>
+  );
+}
+
+// ─── Vital Card ──────────────────────────────────────────────────────────────
+
+function VitalCard({ label, value, unit, icon, color, normal, c: themeC }: any) {
+  return (
+    <View style={[ss.vitalCard, { borderColor: color + '40', backgroundColor: themeC?.card ?? '#0f172a' }]}>
+      <Text style={ss.vitalIcon}>{icon}</Text>
+      <Text style={[ss.vitalValue, { color }]}>{value ?? '—'}</Text>
+      <Text style={[ss.vitalUnit, { color: themeC?.sub ?? '#64748b' }]}>{unit}</Text>
+      <Text style={[ss.vitalLabel, { color: themeC?.sub ?? '#94a3b8' }]}>{label}</Text>
+      {normal && <Text style={[ss.vitalNormal, { color: themeC?.sub ?? '#475569' }]}>{normal}</Text>}
+    </View>
+  );
+}
+
+function OrganCard({ name, score, status, c: themeC }: any) {
+  const clr = status === 'critical' ? '#ef4444' : status === 'warning' ? '#f59e0b' : '#10b981';
+  const icons: Record<string, string> = { heart: '🫀', lungs: '🫁', gut: '🦠', brain: '🧠', liver: '🫀', legs: '🦵' };
+  return (
+    <View style={[ss.organCard, { backgroundColor: themeC?.card ?? '#0f172a', borderColor: themeC?.border ?? '#1e293b' }]}>
+      <Text style={{ fontSize: 24 }}>{icons[name] ?? '🔬'}</Text>
+      <Text style={[ss.organScore, { color: clr }]}>{score}%</Text>
+      <Text style={[ss.organName, { color: themeC?.sub ?? '#94a3b8' }]}>{name.charAt(0).toUpperCase() + name.slice(1)}</Text>
+      <View style={[ss.organBar, { backgroundColor: themeC?.border ?? '#1e293b' }]}>
+        <View style={[ss.organBarFill, { width: `${score}%`, backgroundColor: clr }]} />
+      </View>
+    </View>
   );
 }
 
@@ -726,50 +636,32 @@ export default function TwinScreen() {
     todayMacros,
   } = useBiogearsTwin();
 
-  // ── IP / Connection state ─────────────────────────────────────────────────
-  const [biogearsIP,   setBiogearsIP]   = useState('');
-  const [biogearsPort, setBiogearsPort] = useState('8080');
-  const [connStatus,   setConnStatus]   = useState<ConnectionStatus>('unconfigured');
-  const [showIPModal,  setShowIPModal]  = useState(false);
+  // ── Mode ──────────────────────────────────────────────────────────────────
+  const [mode, setMode] = useState<'dashboard' | 'routine'>('dashboard');
+  const [dashTab, setDashTab] = useState<DashTab>('overview');  // dashboard inner tab
+  const fabAnim = useRef(new Animated.Value(0)).current;
+
+  // ── Simulation elapsed timer ───────────────────────────────────────────────
+  const simStartRef = useRef<number | null>(null);
+  const [elapsedSecs, setElapsedSecs] = useState(0);
 
   useEffect(() => {
-    (async () => {
-      try {
-        const savedIP   = await AsyncStorage.getItem(BIOGEARS_IP_KEY);
-        const savedPort = await AsyncStorage.getItem(BIOGEARS_PORT_KEY);
-        if (savedIP) {
-          setBiogearsIP(savedIP);
-          setBiogearsPort(savedPort || '8080');
-          setConnStatus('saved');
-        } else {
-          setShowIPModal(true);
-        }
-      } catch (_) {}
-    })();
-  }, []);
+    if (simulationStatus === 'running' || simulationStatus === 'queued') {
+      if (!simStartRef.current) simStartRef.current = Date.now();
+      const id = setInterval(() => {
+        setElapsedSecs(Math.floor((Date.now() - simStartRef.current!) / 1000));
+      }, 1000);
+      return () => clearInterval(id);
+    } else {
+      simStartRef.current = null;
+      setElapsedSecs(0);
+    }
+  }, [simulationStatus]);
 
-  const handleSaveIP = async (ip: string, port: string) => {
-    try {
-      await AsyncStorage.setItem(BIOGEARS_IP_KEY, ip);
-      await AsyncStorage.setItem(BIOGEARS_PORT_KEY, port);
-      setBiogearsIP(ip);
-      setBiogearsPort(port);
-      setConnStatus('testing');
-      setShowIPModal(false);
-      try {
-        const controller = new AbortController();
-        const t = setTimeout(() => controller.abort(), 5000);
-        const res = await fetch(`http://${ip}:${port}/health`, { signal: controller.signal });
-        clearTimeout(t);
-        setConnStatus(res.ok ? 'connected' : 'failed');
-      } catch { setConnStatus('failed'); }
-    } catch { Alert.alert('Error', 'Could not save IP address.'); }
+  const fmtElapsed = (s: number) => {
+    const m = Math.floor(s / 60); const sec = s % 60;
+    return m > 0 ? `${m}m ${sec}s` : `${sec}s`;
   };
-
-  // ── Mode ──────────────────────────────────────────────────────────────────
-  const [mode,    setMode]    = useState<'dashboard' | 'routine'>('dashboard');
-  const [dashTab, setDashTab] = useState<DashTab>('overview');
-  const fabAnim = useRef(new Animated.Value(0)).current;
 
   const switchMode = (next: 'dashboard' | 'routine') => {
     Animated.spring(fabAnim, { toValue: next === 'routine' ? 1 : 0, useNativeDriver: true }).start();
@@ -780,26 +672,40 @@ export default function TwinScreen() {
   const [activeTab, setActiveTab] = useState<EventTab>('meal');
   const tabAccent = EVENT_TABS.find(t => t.id === activeTab)?.accent ?? '#38bdf8';
 
-  // ── Times per tab ─────────────────────────────────────────────────────────
-  const [mealTime,     setMealTime]     = useState(currentTime());
-  const [exerciseTime, setExerciseTime] = useState(currentTime());
-  const [sleepTime,    setSleepTime]    = useState(currentTime());
-  const [waterTime,    setWaterTime]    = useState(currentTime());
-  const [subTime,      setSubTime]      = useState(currentTime());
-  const [stressTime,   setStressTime]   = useState(currentTime());
-  const [otherTime,    setOtherTime]    = useState(currentTime());
+  // ── Shared time per tab ───────────────────────────────────────────────────
+  const [mealTime,      setMealTime]      = useState(currentTime());
+  const [exerciseTime,  setExerciseTime]  = useState(currentTime());
+  const [sleepTime,     setSleepTime]     = useState(currentTime());
+  const [waterTime,     setWaterTime]     = useState(currentTime());
+  const [subTime,       setSubTime]       = useState(currentTime());
+  const [stressTime,    setStressTime]    = useState(currentTime());
+  const [otherTime,     setOtherTime]     = useState(currentTime());
 
-  // ── Meal state (kept for addEvent compatibility) ──────────────────────────
-  const [mealType] = useState<MealType>('balanced');
+  // ── Meal state ────────────────────────────────────────────────────────────
+  const MEAL_TYPES = [
+    { label: 'Balanced', value: 'balanced' },
+    { label: 'High Carb', value: 'high_carb' },
+    { label: 'High Protein', value: 'high_protein' },
+    { label: 'Fast Food', value: 'fast_food' },
+    { label: 'Ketogenic', value: 'ketogenic' },
+    { label: 'Custom', value: 'custom' },
+  ];
+  const [mealType, setMealType]     = useState<'balanced' | 'high_carb' | 'high_protein' | 'fast_food' | 'ketogenic' | 'custom'>('balanced');
+  const [mealKcal, setMealKcal]     = useState('500');
+  const [mealCarb, setMealCarb]     = useState('');
+  const [mealFat,  setMealFat]      = useState('');
+  const [mealProt, setMealProt]     = useState('');
 
   // ── Exercise state ────────────────────────────────────────────────────────
   const EXERCISE_PRESETS = [
-    { label: 'Walk', value: '0.2' }, { label: 'Easy Jog', value: '0.35' },
-    { label: 'Run',  value: '0.55' }, { label: 'HIIT',    value: '0.75' },
-    { label: 'Max',  value: '0.95' },
+    { label: 'Walk', value: '0.2' },
+    { label: 'Easy Jog', value: '0.35' },
+    { label: 'Run', value: '0.55' },
+    { label: 'HIIT', value: '0.75' },
+    { label: 'Max', value: '0.95' },
   ];
   const [exIntensity, setExIntensity] = useState(0.5);
-  const [exDuration,  setExDuration]  = useState('30');
+  const [exDuration,  setExDuration]  = useState('30');  // minutes
 
   // ── Sleep state ───────────────────────────────────────────────────────────
   const [sleepHours, setSleepHours] = useState(7.5);
@@ -809,15 +715,18 @@ export default function TwinScreen() {
   const WATER_QUICK = [150, 250, 300, 500, 750, 1000];
 
   // ── Substance state ───────────────────────────────────────────────────────
+  // Substances grouped by route — fetched from backend
+  // We expose ORAL ones prominently + allow any
   const COMMON_SUBS = ['Caffeine', 'Ethanol', 'Aspirin', 'Acetaminophen', 'Morphine', 'Nicotine'];
-  const [subName,       setSubName]       = useState('Caffeine');
-  const [subSearch,     setSubSearch]     = useState('');
-  const [subDose,       setSubDose]       = useState('200');
+  const [subName,   setSubName]   = useState('Caffeine');
+  const [subSearch, setSubSearch] = useState('');
+  const [subDose,   setSubDose]   = useState('200');
   const [showSubPicker, setShowSubPicker] = useState(false);
 
   const allSubNames = React.useMemo(() => {
     const fromBackend = Object.values(substances).flat().map((s: any) => typeof s === 'string' ? s : s.name);
-    return [...new Set([...COMMON_SUBS, ...fromBackend])].sort();
+    const combined = [...new Set([...COMMON_SUBS, ...fromBackend])];
+    return combined.sort();
   }, [substances]);
 
   const filteredSubs = subSearch.trim()
@@ -826,39 +735,57 @@ export default function TwinScreen() {
 
   // ── Stress state ──────────────────────────────────────────────────────────
   const STRESS_PRESETS = [
-    { label: 'Mild', value: 0.2 }, { label: 'Moderate', value: 0.5 },
-    { label: 'High', value: 0.75 }, { label: 'Severe',  value: 1.0 },
+    { label: 'Mild', value: 0.2 },
+    { label: 'Moderate', value: 0.5 },
+    { label: 'High', value: 0.75 },
+    { label: 'Severe', value: 1.0 },
   ];
   const [stressLevel, setStressLevel] = useState(0.3);
-  const [stressDur,   setStressDur]   = useState('15');
+  const [stressDur,   setStressDur]   = useState('15'); // minutes
 
-  // ── Other state ───────────────────────────────────────────────────────────
-  const [otherMode,     setOtherMode]   = useState<'alcohol' | 'fast'>('alcohol');
-  const [alcoholDrinks, setAlcohol]     = useState('1');
-  const [fastHours,     setFastHours]   = useState(16);
+  // ── Other (Alcohol + Fast) ────────────────────────────────────────────────
+  const [otherMode, setOtherMode]     = useState<'alcohol' | 'fast'>('alcohol');
+  const [alcoholDrinks, setAlcohol]   = useState('1');
+  const [fastHours, setFastHours]     = useState(16);
 
   // ── UI modals ─────────────────────────────────────────────────────────────
   const [saveRoutineModal, setSaveRoutineModal] = useState(false);
-  const [routineName,      setRoutineName]      = useState('');
-  const [simNameModal,     setSimNameModal]      = useState(false);
-  const [pendingSimName,   setPendingSimName]    = useState('');
+  const [routineName, setRoutineName]           = useState('');
+  const [simNameModal, setSimNameModal]          = useState(false);
+  const [pendingSimName, setPendingSimName]       = useState('');
 
-  useEffect(() => { refreshSubstances(); refreshSessions(); refreshAnalytics(); }, []);
+  useEffect(() => {
+    refreshSubstances();
+    refreshSessions();
+    refreshAnalytics();
+  }, []);
 
   // ── addEvent handlers ─────────────────────────────────────────────────────
 
-  // FIX: Meal tab now just navigates to Nutrition — no calorie entry here.
-  // We log a minimal placeholder event so the queue shows something,
-  // then immediately push to the nutrition screen.
-  const handleGoToNutrition = () => {
-    // Navigate to the nutrition tab
-     router.push('/nutrition' as any);
+  const addMeal = () => {
+    const kcal = parseFloat(mealKcal);
+    if (!kcal || kcal <= 0) return Alert.alert('Enter calories', 'Please enter a calorie amount.');
+    const extra = mealType === 'custom' ? {
+      carb_g: parseFloat(mealCarb) || undefined,
+      fat_g:  parseFloat(mealFat) || undefined,
+      protein_g: parseFloat(mealProt) || undefined,
+    } : {};
+    addEvent({
+      event_type: 'meal', value: kcal, wallTime: mealTime,
+      meal_type: mealType,
+      ...extra,
+      displayLabel: `${mealType === 'custom' ? 'Custom' : MEAL_TYPES.find(m => m.value === mealType)?.label} Meal · ${kcal} kcal`,
+      displayIcon: '🍽️',
+    });
+    setMealKcal('500');
+    setMealCarb(''); setMealFat(''); setMealProt('');
   };
 
   const addExercise = () => {
     const dur = Math.max(1, parseInt(exDuration, 10) || 30) * 60;
     addEvent({
-      event_type: 'exercise', value: exIntensity, wallTime: exerciseTime, duration_seconds: dur,
+      event_type: 'exercise', value: exIntensity, wallTime: exerciseTime,
+      duration_seconds: dur,
       displayLabel: `Exercise · ${Math.round(exIntensity * 100)}% intensity · ${exDuration}min`,
       displayIcon: '🏃',
     });
@@ -866,50 +793,71 @@ export default function TwinScreen() {
 
   const addSleep = () => {
     const hours = clamp(sleepHours, 0.25, 12);
-    addEvent({ event_type: 'sleep', value: hours, wallTime: sleepTime, displayLabel: `Sleep · ${hours}h`, displayIcon: '😴' });
+    addEvent({
+      event_type: 'sleep', value: hours, wallTime: sleepTime,
+      displayLabel: `Sleep · ${hours}h`,
+      displayIcon: '😴',
+    });
   };
 
   const addWater = () => {
     const ml = parseFloat(waterMl);
     if (!ml || ml <= 0) return Alert.alert('Enter amount', 'Please enter how much water.');
-    addEvent({ event_type: 'water', value: ml, wallTime: waterTime, displayLabel: `Water · ${ml} mL`, displayIcon: '💧' });
+    addEvent({
+      event_type: 'water', value: ml, wallTime: waterTime,
+      displayLabel: `Water · ${ml} mL`,
+      displayIcon: '💧',
+    });
   };
 
   const addSubstance = () => {
     const dose = parseFloat(subDose);
     if (!subName) return Alert.alert('Select substance');
     if (!dose || dose <= 0) return Alert.alert('Enter dose', 'Please enter a dose.');
-    addEvent({ event_type: 'substance', value: dose, wallTime: subTime, substance_name: subName, displayLabel: `${subName} · ${dose}`, displayIcon: '💊' });
+    addEvent({
+      event_type: 'substance', value: dose, wallTime: subTime,
+      substance_name: subName,
+      displayLabel: `${subName} · ${dose}`,
+      displayIcon: '💊',
+    });
   };
 
   const addStress = () => {
     const dur = Math.max(1, parseInt(stressDur, 10) || 15) * 60;
     addEvent({
-      event_type: 'stress', value: stressLevel, wallTime: stressTime, duration_seconds: dur,
-      displayLabel: `Stress · ${Math.round(stressLevel * 100)}% · ${stressDur}min`, displayIcon: '🧘',
+      event_type: 'stress', value: stressLevel, wallTime: stressTime,
+      duration_seconds: dur,
+      displayLabel: `Stress · ${Math.round(stressLevel * 100)}% · ${stressDur}min`,
+      displayIcon: '🧘',
     });
   };
 
   const addAlcohol = () => {
     const drinks = parseFloat(alcoholDrinks);
     if (!drinks || drinks <= 0) return Alert.alert('Enter drinks');
-    addEvent({ event_type: 'alcohol', value: drinks, wallTime: otherTime, displayLabel: `Alcohol · ${drinks} standard drink${drinks !== 1 ? 's' : ''}`, displayIcon: '🍺' });
+    addEvent({
+      event_type: 'alcohol', value: drinks, wallTime: otherTime,
+      displayLabel: `Alcohol · ${drinks} standard drink${drinks !== 1 ? 's' : ''}`,
+      displayIcon: '🍺',
+    });
   };
 
   const addFast = () => {
     const hours = clamp(fastHours, 1, 48);
-    addEvent({ event_type: 'fast', value: hours, wallTime: otherTime, displayLabel: `Fasting · ${hours}h`, displayIcon: '⏳' });
+    addEvent({
+      event_type: 'fast', value: hours, wallTime: otherTime,
+      displayLabel: `Fasting · ${hours}h`,
+      displayIcon: '⏳',
+    });
   };
 
   // ── Simulate ──────────────────────────────────────────────────────────────
 
   const handleSimulate = () => {
-    if (todayEvents.length === 0) return Alert.alert('No Events', 'Log at least one event before simulating.');
-    if (!biogearsIP) return Alert.alert('No IP Configured', 'Tap the connection bar to set the BioGears server address.', [
-      { text: 'Configure', onPress: () => setShowIPModal(true) },
-      { text: 'Cancel', style: 'cancel' },
-    ]);
-    if (twinStatus !== 'ready') return Alert.alert('Twin Not Ready', 'Complete your clinical profile first (Profile → Calibrate Twin).');
+    if (todayEvents.length === 0)
+      return Alert.alert('No Events', 'Log at least one event before simulating.');
+    if (twinStatus !== 'ready')
+      return Alert.alert('Twin Not Ready', 'Complete your clinical profile first (Profile → Calibrate Twin).');
     setSimNameModal(true);
   };
 
@@ -918,9 +866,13 @@ export default function TwinScreen() {
     setPendingSimName('');
     setSimNameModal(false);
     switchMode('dashboard');
-    setDashTab('overview');
+    setDashTab('overview'); // jump to overview so user sees the progress overlay
     try { await runSimulation(); }
-    catch (e: any) { console.warn('[Twin] Simulation error:', e.message); }
+    catch (e: any) {
+      // Error is already stored in simulationError state (shown in-page).
+      // Do NOT show an Alert — the SimProgressOverlay handles the failed state.
+      console.warn('[Twin] Simulation error:', e.message);
+    }
   };
 
   const handleLoadRoutine = (routineId: string, name: string) => {
@@ -952,19 +904,67 @@ export default function TwinScreen() {
   // TAB CONTENT
   // ────────────────────────────────────────────────────────────────────────────
 
-  // FIX: Meal tab — ONLY time picker + navigate button. No calorie/macro inputs.
   const renderMealTab = () => (
     <View>
-      {/* Info card explaining the flow */}
-      <View style={[ss.mealInfoCard, { backgroundColor: '#f59e0b15', borderColor: '#f59e0b40' }]}>
-        <Text style={ss.mealInfoEmoji}>🍽️</Text>
-        <View style={{ flex: 1 }}>
-          <Text style={[ss.mealInfoTitle, { color: '#f59e0b' }]}>Log meals in Nutrition</Text>
-          <Text style={[ss.mealInfoSub, { color: '#f59e0b99' }]}>
-            Use the Nutrition page to log your meals with full calorie &amp; macro tracking. They sync here automatically.
-          </Text>
+      <SectionLabel text="Meal Type" c={c} />
+      <ChipRow
+        options={MEAL_TYPES}
+        selected={mealType}
+        onSelect={setMealType}
+        accent="#f59e0b"
+      />
+
+      <SectionLabel text="Total Calories" c={c} />
+      <NumericInput value={mealKcal} onChange={setMealKcal} placeholder="e.g. 450" suffix="kcal" c={c} />
+
+      {mealType === 'custom' && (
+        <>
+          <SectionLabel text="Custom Macros (grams)" c={c} />
+          <View style={ss.triRow}>
+            <View style={{ flex: 1 }}>
+              <Text style={[ss.macroLbl, { color: c.sub }]}>Carbs</Text>
+              <NumericInput value={mealCarb} onChange={setMealCarb} placeholder="g" c={c} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={[ss.macroLbl, { color: c.sub }]}>Protein</Text>
+              <NumericInput value={mealProt} onChange={setMealProt} placeholder="g" c={c} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={[ss.macroLbl, { color: c.sub }]}>Fat</Text>
+              <NumericInput value={mealFat} onChange={setMealFat} placeholder="g" c={c} />
+            </View>
+          </View>
+        </>
+      )}
+
+      {mealType !== 'custom' && (
+        <View style={[ss.previewBox, { backgroundColor: c.bg, borderColor: c.border }]}>
+          <Text style={[ss.previewTitle, { color: c.sub }]}>AUTO MACRO SPLIT</Text>
+          <View style={ss.triRow}>
+            {(() => {
+              const kcal = parseFloat(mealKcal) || 0;
+              const presets: Record<string, { carb: number; fat: number; protein: number }> = {
+                balanced:     { carb: 0.40, fat: 0.30, protein: 0.30 },
+                high_carb:    { carb: 0.60, fat: 0.20, protein: 0.20 },
+                high_protein: { carb: 0.30, fat: 0.20, protein: 0.50 },
+                fast_food:    { carb: 0.45, fat: 0.40, protein: 0.15 },
+                ketogenic:    { carb: 0.05, fat: 0.75, protein: 0.20 },
+              };
+              const p = presets[mealType] || presets['balanced'];
+              return [
+                { label: 'Carbs', g: Math.round(kcal * p.carb / 4), color: '#f59e0b' },
+                { label: 'Protein', g: Math.round(kcal * p.protein / 4), color: '#10b981' },
+                { label: 'Fat', g: Math.round(kcal * p.fat / 9), color: '#ef4444' },
+              ].map(item => (
+                <View key={item.label} style={{ flex: 1, alignItems: 'center' }}>
+                  <Text style={[ss.macroG, { color: item.color }]}>{item.g}g</Text>
+                  <Text style={[ss.macroLbl, { color: c.sub }]}>{item.label}</Text>
+                </View>
+              ));
+            })()}
+          </View>
         </View>
-      </View>
+      )}
 
       <SectionLabel text="Time of Meal" c={c} />
       <View style={ss.timeRow}>
@@ -973,16 +973,7 @@ export default function TwinScreen() {
         <TimePicker value={mealTime} onChange={setMealTime} accent="#f59e0b" />
       </View>
 
-      {/* CTA button → Nutrition page */}
-      <TouchableOpacity
-        style={[ss.addBtn, { backgroundColor: '#f59e0b' }]}
-        onPress={handleGoToNutrition}
-        activeOpacity={0.85}
-      >
-        <Ionicons name="restaurant" size={18} color="#fff" />
-        <Text style={ss.addBtnTxt}>Go to Today's Meals</Text>
-        <Ionicons name="chevron-forward" size={16} color="rgba(255,255,255,0.8)" />
-      </TouchableOpacity>
+      <AddButton label="Add Meal" accent="#f59e0b" onPress={addMeal} />
     </View>
   );
 
@@ -991,14 +982,24 @@ export default function TwinScreen() {
       <SectionLabel text="Exercise Intensity" c={c} />
       <View style={ss.rowCentered}>
         {EXERCISE_PRESETS.map(p => (
-          <TouchableOpacity key={p.value} onPress={() => setExIntensity(parseFloat(p.value))}
-            style={[ss.chipSm, Math.abs(exIntensity - parseFloat(p.value)) < 0.01 && { backgroundColor: '#10b981', borderColor: '#10b981' }]}>
-            <Text style={[ss.chipTxt, Math.abs(exIntensity - parseFloat(p.value)) < 0.01 && { color: '#fff' }]}>{p.label}</Text>
+          <TouchableOpacity
+            key={p.value}
+            onPress={() => setExIntensity(parseFloat(p.value))}
+            style={[ss.chipSm, Math.abs(exIntensity - parseFloat(p.value)) < 0.01 && { backgroundColor: '#10b981', borderColor: '#10b981' }]}
+          >
+            <Text style={[ss.chipTxt, Math.abs(exIntensity - parseFloat(p.value)) < 0.01 && { color: '#fff' }]}>
+              {p.label}
+            </Text>
           </TouchableOpacity>
         ))}
       </View>
-      <SliderRow label={`Intensity: ${Math.round(exIntensity * 100)}% (${exIntensity <= 0.25 ? 'Light' : exIntensity <= 0.5 ? 'Moderate' : exIntensity <= 0.75 ? 'Vigorous' : 'Maximum'})`}
-        value={exIntensity} min={0.05} max={1.0} step={0.05} onChange={setExIntensity} accent="#10b981" c={c} />
+
+      <SliderRow
+        label={`Intensity: ${Math.round(exIntensity * 100)}% (${exIntensity <= 0.25 ? 'Light' : exIntensity <= 0.5 ? 'Moderate' : exIntensity <= 0.75 ? 'Vigorous' : 'Maximum'})`}
+        value={exIntensity} min={0.05} max={1.0} step={0.05}
+        onChange={setExIntensity} accent="#10b981" c={c}
+      />
+
       <SectionLabel text="Duration" c={c} />
       <View style={ss.rowCentered}>
         {['10', '20', '30', '45', '60', '90'].map(m => (
@@ -1009,18 +1010,21 @@ export default function TwinScreen() {
         ))}
       </View>
       <NumericInput value={exDuration} onChange={setExDuration} placeholder="Duration (min)" suffix="min" c={c} />
+
       <View style={[ss.infoBox, { backgroundColor: '#10b98115', borderColor: '#10b98140' }]}>
         <Ionicons name="flash" size={14} color="#10b981" />
         <Text style={{ color: '#10b981', fontSize: 12, flex: 1, marginLeft: 6 }}>
-          BioGears simulates cardiac output, O₂ consumption, glucose burn &amp; exercise recovery in real-time.
+          BioGears simulates cardiac output, O₂ consumption, glucose burn & exercise recovery in real-time.
         </Text>
       </View>
+
       <SectionLabel text="Occurred at" c={c} />
       <View style={ss.timeRow}>
         <Ionicons name="time-outline" size={14} color={c.sub} />
         <Text style={[ss.timeLbl, { color: c.sub }]}>Started at</Text>
         <TimePicker value={exerciseTime} onChange={setExerciseTime} accent="#10b981" />
       </View>
+
       <AddButton label="Add Exercise" accent="#10b981" onPress={addExercise} />
     </View>
   );
@@ -1028,11 +1032,18 @@ export default function TwinScreen() {
   const renderSleepTab = () => (
     <View>
       <SectionLabel text="Hours of Sleep" c={c} />
+
       <View style={[ss.bigDisplay, { borderColor: '#6366f140' }]}>
         <Text style={[ss.bigNum, { color: '#6366f1' }]}>{sleepHours.toFixed(1)}</Text>
         <Text style={[ss.bigUnit, { color: c.sub }]}>hours</Text>
       </View>
-      <SliderRow label="Sleep duration" value={sleepHours} min={0.5} max={12} step={0.5} onChange={setSleepHours} accent="#6366f1" c={c} />
+
+      <SliderRow
+        label="Sleep duration"
+        value={sleepHours} min={0.5} max={12} step={0.5}
+        onChange={setSleepHours} accent="#6366f1" c={c}
+      />
+
       <View style={ss.rowCentered}>
         {[4, 5, 6, 7, 7.5, 8, 9].map(h => (
           <TouchableOpacity key={h} onPress={() => setSleepHours(h)}
@@ -1041,18 +1052,21 @@ export default function TwinScreen() {
           </TouchableOpacity>
         ))}
       </View>
+
       <View style={[ss.infoBox, { backgroundColor: '#6366f115', borderColor: '#6366f140', marginTop: 12 }]}>
         <Ionicons name="moon" size={14} color="#6366f1" />
         <Text style={{ color: '#6366f1', fontSize: 12, flex: 1, marginLeft: 6 }}>
           Sleep activates BioGears SleepData action — parasympathetic dominance, HR drops, glucose resets.
         </Text>
       </View>
+
       <SectionLabel text="Sleep start time" c={c} />
       <View style={ss.timeRow}>
         <Ionicons name="time-outline" size={14} color={c.sub} />
         <Text style={[ss.timeLbl, { color: c.sub }]}>Slept at</Text>
         <TimePicker value={sleepTime} onChange={setSleepTime} accent="#6366f1" />
       </View>
+
       <AddButton label="Log Sleep" accent="#6366f1" onPress={addSleep} />
     </View>
   );
@@ -1060,10 +1074,12 @@ export default function TwinScreen() {
   const renderWaterTab = () => (
     <View>
       <SectionLabel text="Amount" c={c} />
+
       <View style={[ss.bigDisplay, { borderColor: '#0ea5e940' }]}>
         <Text style={[ss.bigNum, { color: '#0ea5e9' }]}>{waterMl}</Text>
         <Text style={[ss.bigUnit, { color: c.sub }]}>mL</Text>
       </View>
+
       <SectionLabel text="Quick add" c={c} />
       <View style={ss.quickGrid}>
         {WATER_QUICK.map(ml => (
@@ -1073,20 +1089,24 @@ export default function TwinScreen() {
           </TouchableOpacity>
         ))}
       </View>
+
       <SectionLabel text="Custom amount" c={c} />
       <NumericInput value={waterMl} onChange={setWaterMl} placeholder="e.g. 350" suffix="mL" c={c} />
+
       <View style={[ss.infoBox, { backgroundColor: '#0ea5e915', borderColor: '#0ea5e940', marginTop: 4 }]}>
         <Ionicons name="water" size={14} color="#0ea5e9" />
         <Text style={{ color: '#0ea5e9', fontSize: 12, flex: 1, marginLeft: 6 }}>
           Modeled as ConsumeNutrientsData (Water). Affects blood volume, BP, and kidney function.
         </Text>
       </View>
+
       <SectionLabel text="Time" c={c} />
       <View style={ss.timeRow}>
         <Ionicons name="time-outline" size={14} color={c.sub} />
         <Text style={[ss.timeLbl, { color: c.sub }]}>Drank at</Text>
         <TimePicker value={waterTime} onChange={setWaterTime} accent="#0ea5e9" />
       </View>
+
       <AddButton label="Add Water" accent="#0ea5e9" onPress={addWater} />
     </View>
   );
@@ -1094,34 +1114,44 @@ export default function TwinScreen() {
   const renderSubstanceTab = () => (
     <View>
       <SectionLabel text="Substance" c={c} />
-      <TouchableOpacity style={[ss.subSelector, { backgroundColor: c.card, borderColor: '#8b5cf6' }]} onPress={() => setShowSubPicker(true)}>
+
+      {/* Selected substance display */}
+      <TouchableOpacity
+        style={[ss.subSelector, { backgroundColor: c.card, borderColor: '#8b5cf6' }]}
+        onPress={() => setShowSubPicker(true)}
+      >
         <Text style={{ fontSize: 16, fontWeight: '700', color: '#8b5cf6' }}>{subName}</Text>
         <Ionicons name="chevron-down" size={16} color="#8b5cf6" />
       </TouchableOpacity>
+
+      {/* Common quick picks */}
       <SectionLabel text="Common substances" c={c} />
       <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
-        {['Caffeine', 'Aspirin', 'Acetaminophen', 'Ethanol', 'Albuterol', 'Morphine', 'Nicotine'].map(s => (
-          <TouchableOpacity key={s}
-            onPress={() => { setSubName(s); setSubDose(s === 'Caffeine' ? '200' : s === 'Ethanol' ? '14000' : '500'); }}
+        {['Caffeine', 'Aspirin', 'Acetaminophen', 'Albuterol', 'Insulin', 'Morphine'].map(s => (
+          <TouchableOpacity key={s} onPress={() => { setSubName(s); setSubDose(s === 'Caffeine' ? '100' : s === 'Insulin' ? '10' : '500'); }}
             style={[ss.chip, subName === s && { backgroundColor: '#8b5cf6', borderColor: '#8b5cf6' }]}>
             <Text style={[ss.chipTxt, subName === s && { color: '#fff' }]}>{s}</Text>
           </TouchableOpacity>
         ))}
       </ScrollView>
+
       <SectionLabel text="Dose" c={c} />
       <NumericInput value={subDose} onChange={setSubDose} placeholder="Amount" suffix="mg / mL" c={c} />
+
       <View style={[ss.infoBox, { backgroundColor: '#8b5cf615', borderColor: '#8b5cf640' }]}>
         <Ionicons name="medical" size={14} color="#8b5cf6" />
         <Text style={{ color: '#8b5cf6', fontSize: 12, flex: 1, marginLeft: 6 }}>
           79 substances supported. Oral (Caffeine, Aspirin), Nasal (Albuterol), IV Bolus, IV Compound. BioGears models full PK/PD kinetics.
         </Text>
       </View>
+
       <SectionLabel text="Time taken" c={c} />
       <View style={ss.timeRow}>
         <Ionicons name="time-outline" size={14} color={c.sub} />
         <Text style={[ss.timeLbl, { color: c.sub }]}>Taken at</Text>
         <TimePicker value={subTime} onChange={setSubTime} accent="#8b5cf6" />
       </View>
+
       <AddButton label="Add Substance" accent="#8b5cf6" onPress={addSubstance} />
     </View>
   );
@@ -1129,12 +1159,15 @@ export default function TwinScreen() {
   const renderStressTab = () => (
     <View>
       <SectionLabel text="Stress Level" c={c} />
+
       <View style={[ss.bigDisplay, { borderColor: '#ef444440' }]}>
         <Text style={[ss.bigNum, { color: '#ef4444' }]}>{Math.round(stressLevel * 100)}%</Text>
         <Text style={[ss.bigUnit, { color: c.sub }]}>
           {stressLevel <= 0.25 ? 'Mild' : stressLevel <= 0.5 ? 'Moderate' : stressLevel <= 0.75 ? 'High' : 'Severe'}
         </Text>
       </View>
+
+      {/* Preset buttons */}
       <View style={ss.rowCentered}>
         {STRESS_PRESETS.map(p => (
           <TouchableOpacity key={p.label} onPress={() => setStressLevel(p.value)}
@@ -1143,7 +1176,13 @@ export default function TwinScreen() {
           </TouchableOpacity>
         ))}
       </View>
-      <SliderRow label="Intensity" value={stressLevel} min={0.05} max={1.0} step={0.05} onChange={setStressLevel} accent="#ef4444" c={c} />
+
+      <SliderRow
+        label="Intensity"
+        value={stressLevel} min={0.05} max={1.0} step={0.05}
+        onChange={setStressLevel} accent="#ef4444" c={c}
+      />
+
       <SectionLabel text="Duration" c={c} />
       <View style={ss.rowCentered}>
         {['5', '10', '15', '20', '30', '60'].map(m => (
@@ -1154,18 +1193,21 @@ export default function TwinScreen() {
         ))}
       </View>
       <NumericInput value={stressDur} onChange={setStressDur} placeholder="Duration (min)" suffix="min" c={c} />
+
       <View style={[ss.infoBox, { backgroundColor: '#ef444415', borderColor: '#ef444440', marginTop: 4 }]}>
         <Ionicons name="warning" size={14} color="#ef4444" />
         <Text style={{ color: '#ef4444', fontSize: 12, flex: 1, marginLeft: 6 }}>
           Modeled via PainStimulusData (sympathetic pathway). Raises HR, BP, glucose, and respiratory rate.
         </Text>
       </View>
+
       <SectionLabel text="Occurred at" c={c} />
       <View style={ss.timeRow}>
         <Ionicons name="time-outline" size={14} color={c.sub} />
         <Text style={[ss.timeLbl, { color: c.sub }]}>Started at</Text>
         <TimePicker value={stressTime} onChange={setStressTime} accent="#ef4444" />
       </View>
+
       <AddButton label="Add Stress Event" accent="#ef4444" onPress={addStress} />
     </View>
   );
@@ -1183,6 +1225,7 @@ export default function TwinScreen() {
           </TouchableOpacity>
         ))}
       </View>
+
       {otherMode === 'alcohol' ? (
         <>
           <SectionLabel text="Standard Drinks" c={c} />
@@ -1220,7 +1263,11 @@ export default function TwinScreen() {
             <Text style={[ss.bigNum, { color: '#ec4899' }]}>{fastHours}</Text>
             <Text style={[ss.bigUnit, { color: c.sub }]}>hours</Text>
           </View>
-          <SliderRow label="Fasting hours" value={fastHours} min={1} max={48} step={1} onChange={setFastHours} accent="#ec4899" c={c} />
+          <SliderRow
+            label="Fasting hours"
+            value={fastHours} min={1} max={48} step={1}
+            onChange={setFastHours} accent="#ec4899" c={c}
+          />
           <View style={ss.rowCentered}>
             {[8, 12, 14, 16, 18, 24, 36, 48].map(h => (
               <TouchableOpacity key={h} onPress={() => setFastHours(h)}
@@ -1264,20 +1311,77 @@ export default function TwinScreen() {
   // DASHBOARD
   // ────────────────────────────────────────────────────────────────────────────
 
+  // ─── Dashboard inner-tab renderers ──────────────────────────────────────────
+
   const renderOverviewTab = () => {
-    const v  = lastVitals;
+    const v = lastVitals;
     const bp = parseBP(v?.blood_pressure);
+
+    // Per-vital status helper
     const vStatus = (val: number | null | undefined, lo: number, hi: number) =>
       val == null ? null : val < lo ? '#f59e0b' : val > hi ? '#ef4444' : '#10b981';
 
     return (
       <>
+        {/* ── Inline Simulation Status Card (replaces floating overlay) ── */}
+        {(simulationStatus === 'queued' || simulationStatus === 'running') && (
+          <LinearGradient
+            colors={['#0ea5e920', '#38bdf820', '#0ea5e910']}
+            start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+            style={[ss.simCard, { borderColor: '#38bdf840' }]}
+          >
+            {/* Top row: icon + title + elapsed */}
+            <View style={ss.simCardHeader}>
+              <View style={[ss.simPulse, { backgroundColor: '#38bdf820', borderColor: '#38bdf860' }]}>
+                <ActivityIndicator color='#38bdf8' size='small' />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[ss.simCardTitle, { color: c.text }]}>BioGears Simulating…</Text>
+                <Text style={[ss.simCardSub, { color: c.sub }]}>{simulationProgress || 'Initialising engine…'}</Text>
+              </View>
+              <View style={[ss.simElapsedBadge, { backgroundColor: '#38bdf815', borderColor: '#38bdf840' }]}>
+                <Ionicons name='time-outline' size={11} color='#38bdf8' />
+                <Text style={ss.simElapsedTxt}>{fmtElapsed(elapsedSecs)}</Text>
+              </View>
+            </View>
+            {/* Progress dots */}
+            <View style={ss.simDotsRow}>
+              {['Engine init', 'Running physics', 'Computing vitals', 'Finalising'].map((label, i) => {
+                // Realistic BioGears timing: init ~30s, physics bulk ~2min, vitals ~8min, done ~15min
+                const thresholds = [30, 120, 480, 900];
+                const done   = simulationStatus === 'running' && elapsedSecs > thresholds[i];
+                const active = simulationStatus === 'running' && !done &&
+                               elapsedSecs > (i === 0 ? 0 : thresholds[i - 1]);
+                return (
+                  <View key={label} style={ss.simDotWrap}>
+                    <View style={[
+                      ss.simDotCircle,
+                      done   && { backgroundColor: '#38bdf8', borderColor: '#38bdf8' },
+                      active && { borderColor: '#38bdf8' },
+                      !done && !active && { borderColor: c.border },
+                    ]}>
+                      {done && <Ionicons name='checkmark' size={10} color='#fff' />}
+                    </View>
+                    <Text style={[ss.simDotLabel, { color: done || active ? '#38bdf8' : c.sub }]}>{label}</Text>
+                  </View>
+                );
+              })}
+            </View>
+            <Text style={[ss.simNote, { color: c.sub }]}>
+              ⏱ BioGears runs up to 12 h of physiology — this takes 10–25 min. You can use other parts of the app.
+            </Text>
+          </LinearGradient>
+        )}
+
+        {/* Simulation error banner */}
         {simulationStatus === 'failed' && (
           <View style={[ss.errorBox, { backgroundColor: '#ef444420' }]}>
             <Ionicons name="warning" size={18} color="#ef4444" />
             <Text style={ss.errorTxt}>{simulationError || 'Simulation failed — check server logs.'}</Text>
           </View>
         )}
+
+        {/* Drug Interaction Banner */}
         {lastInteractionWarnings.length > 0 && (
           <View style={ss.interactionBanner}>
             <Ionicons name="medical" size={16} color="#fbbf24" />
@@ -1285,8 +1389,10 @@ export default function TwinScreen() {
           </View>
         )}
 
+        {/* Circadian Clock */}
         <CircadianClock />
 
+        {/* Health Score */}
         {healthScore && (
           <LinearGradient
             colors={healthScore.grade === 'A' ? ['#10b981','#059669'] : healthScore.grade === 'B' ? ['#38bdf8','#0284c7'] : healthScore.grade === 'C' ? ['#f59e0b','#d97706'] : ['#ef4444','#dc2626']}
@@ -1302,20 +1408,22 @@ export default function TwinScreen() {
           </LinearGradient>
         )}
 
+        {/* Quick Add row */}
         <QuickAddRow addEvent={addEvent} />
 
+        {/* Vitals Grid */}
         <Text style={[ss.section, { color: c.text }]}>Simulation Vitals</Text>
         {v ? (
           <View style={ss.vitalsGrid}>
             {[
-              { label: 'Heart Rate',   val: v.heart_rate   ? Math.round(v.heart_rate)   : null, unit: 'bpm',    icon: '🫀', color: '#ef4444', lo: 60,   hi: 100  },
-              { label: 'Systolic BP',  val: bp.sys         ? Math.round(bp.sys!)         : null, unit: 'mmHg',   icon: '🩸', color: '#f59e0b', lo: 90,   hi: 120  },
-              { label: 'Diastolic BP', val: bp.dia         ? Math.round(bp.dia!)         : null, unit: 'mmHg',   icon: '🩸', color: '#f97316', lo: 60,   hi: 80   },
-              { label: 'Glucose',      val: v.glucose      ? Math.round(v.glucose)       : null, unit: 'mg/dL',  icon: '🍬', color: '#6366f1', lo: 70,   hi: 140  },
-              { label: 'SpO₂',         val: v.spo2         ? Math.round(v.spo2)          : null, unit: '%',      icon: '🫁', color: '#38bdf8', lo: 94,   hi: 100  },
-              { label: 'Resp. Rate',   val: v.respiration  ? Math.round(v.respiration)   : null, unit: 'br/min', icon: '💨', color: '#10b981', lo: 12,   hi: 20   },
-              ...(v.map             != null ? [{ label: 'MAP',       val: Math.round(v.map!),                            unit: 'mmHg', icon: '📈', color: '#a78bfa', lo: 70,   hi: 100  }] : []),
-              ...(v.core_temperature != null ? [{ label: 'Core Temp', val: Number((v.core_temperature!).toFixed(1)),    unit: '°C',   icon: '🌡️', color: '#fb923c', lo: 36.5, hi: 37.5 }] : []),
+              { label: 'Heart Rate',   val: v.heart_rate   ? Math.round(v.heart_rate)   : null, unit: 'bpm',    icon: '🫀', color: '#ef4444', lo: 60, hi: 100 },
+              { label: 'Systolic BP',  val: bp.sys          ? Math.round(bp.sys!)         : null, unit: 'mmHg',   icon: '🩸', color: '#f59e0b', lo: 90, hi: 120 },
+              { label: 'Diastolic BP', val: bp.dia          ? Math.round(bp.dia!)         : null, unit: 'mmHg',   icon: '🩸', color: '#f97316', lo: 60, hi: 80  },
+              { label: 'Glucose',      val: v.glucose       ? Math.round(v.glucose)       : null, unit: 'mg/dL',  icon: '🍬', color: '#6366f1', lo: 70, hi: 140 },
+              { label: 'SpO₂',         val: v.spo2          ? Math.round(v.spo2)          : null, unit: '%',      icon: '🫁', color: '#38bdf8', lo: 94, hi: 100 },
+              { label: 'Resp. Rate',   val: v.respiration   ? Math.round(v.respiration)   : null, unit: 'br/min', icon: '💨', color: '#10b981', lo: 12, hi: 20  },
+              ...(v.map            != null ? [{ label: 'MAP',       val: Math.round(v.map!),                unit: 'mmHg', icon: '📈', color: '#a78bfa', lo: 70, hi: 100 }] : []),
+              ...(v.core_temperature != null ? [{ label: 'Core Temp', val: Number((v.core_temperature!).toFixed(1)), unit: '°C', icon: '🌡️', color: '#fb923c', lo: 36.5, hi: 37.5 }] : []),
             ].map(({ label, val, unit, icon, color, lo, hi }) => {
               const dot = vStatus(val, lo, hi);
               return (
@@ -1325,7 +1433,7 @@ export default function TwinScreen() {
                     {dot && <View style={[ss.statusDot, { backgroundColor: dot }]} />}
                   </View>
                   <Text style={[ss.vitalValue, { color }]}>{val ?? '—'}</Text>
-                  <Text style={[ss.vitalUnit, { color: c.sub }]}>{unit}</Text>
+                  <Text style={[ss.vitalUnit,  { color: c.sub }]}>{unit}</Text>
                   <Text style={[ss.vitalLabel, { color: c.sub }]}>{label}</Text>
                 </View>
               );
@@ -1335,10 +1443,11 @@ export default function TwinScreen() {
           <View style={[ss.emptyCard, { backgroundColor: c.card }]}>
             <Text style={{ fontSize: 40 }}>🔬</Text>
             <Text style={[ss.emptyTitle, { color: c.text }]}>No Simulation Yet</Text>
-            <Text style={[ss.emptySub, { color: c.sub }]}>Tap + to log your routine and run a simulation</Text>
+            <Text style={[ss.emptySub,  { color: c.sub }]}>Tap + to log your routine and run a simulation</Text>
           </View>
         )}
 
+        {/* AI Insights */}
         {lastAiInsights.length > 0 && (
           <>
             <Text style={[ss.section, { color: c.text }]}>AI Insights</Text>
@@ -1350,10 +1459,12 @@ export default function TwinScreen() {
           </>
         )}
 
+        {/* Macro Rings */}
         {todayMacros.calories > 0 && (
           <>
             <Text style={[ss.section, { color: c.text }]}>Today's Nutrition</Text>
             <View style={[ss.macroRingsCard, { backgroundColor: c.card }]}>
+              {/* Calorie ring (large) */}
               <View style={ss.macroRingWrap}>
                 <View style={[ss.macroOuterRing, { borderColor: '#f59e0b40', width: 100, height: 100, borderRadius: 50 }]}>
                   <View style={[ss.macroInnerRing, { backgroundColor: c.card, width: 72, height: 72, borderRadius: 36 }]}>
@@ -1363,6 +1474,7 @@ export default function TwinScreen() {
                 </View>
                 <Text style={[ss.macroRingLabel, { color: c.sub }]}>Calories</Text>
               </View>
+              {/* Mini rings */}
               {[
                 { label: 'Carbs',   val: todayMacros.carbs,   color: '#f59e0b', target: 250 },
                 { label: 'Protein', val: todayMacros.protein, color: '#10b981', target: 60  },
@@ -1385,6 +1497,7 @@ export default function TwinScreen() {
           </>
         )}
 
+        {/* CVD / Recovery */}
         {(cvdRisk || recoveryReadiness) && (
           <View style={ss.row}>
             {cvdRisk && (
@@ -1414,6 +1527,7 @@ export default function TwinScreen() {
       {organScores?.scores ? (
         <>
           <BodyMap scores={organScores.scores} c={c} />
+          {/* Horizontal scrollable organ cards below the map */}
           <Text style={[ss.section, { color: c.text }]}>Scores Breakdown</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false}>
             {(Object.keys(organScores.scores) as string[]).map(name => {
@@ -1437,7 +1551,7 @@ export default function TwinScreen() {
         <View style={[ss.emptyCard, { backgroundColor: c.card }]}>
           <Text style={{ fontSize: 40 }}>🏥</Text>
           <Text style={[ss.emptyTitle, { color: c.text }]}>No Organ Data Yet</Text>
-          <Text style={[ss.emptySub, { color: c.sub }]}>Run a simulation to see organ health scores</Text>
+          <Text style={[ss.emptySub,  { color: c.sub }]}>Run a simulation to see organ health scores</Text>
         </View>
       )}
     </>
@@ -1445,6 +1559,7 @@ export default function TwinScreen() {
 
   const renderTrendsTab = () => (
     <>
+      {/* Saved Routines */}
       {savedRoutines.length > 0 && (
         <>
           <Text style={[ss.section, { color: c.text }]}>Saved Routines</Text>
@@ -1466,6 +1581,7 @@ export default function TwinScreen() {
         </>
       )}
 
+      {/* Session History */}
       {sessions.length > 0 ? (
         <>
           <View style={ss.rowBetween}>
@@ -1475,7 +1591,8 @@ export default function TwinScreen() {
             </TouchableOpacity>
           </View>
           {sessions.slice(0, 5).map(s => (
-            <TouchableOpacity key={s.session_id} style={[ss.sessionCard, { backgroundColor: c.card }]}
+            <TouchableOpacity key={s.session_id}
+              style={[ss.sessionCard, { backgroundColor: c.card }]}
               onPress={() => router.push(`/session/${s.session_id}`)}>
               <View style={[ss.sessionDot, { backgroundColor: s.has_anomaly ? '#ef444420' : '#10b98120' }]}>
                 <Ionicons name={s.has_anomaly ? 'warning' : 'checkmark-circle'} size={22} color={s.has_anomaly ? '#ef4444' : '#10b981'} />
@@ -1497,7 +1614,7 @@ export default function TwinScreen() {
         <View style={[ss.emptyCard, { backgroundColor: c.card }]}>
           <Text style={{ fontSize: 40 }}>📈</Text>
           <Text style={[ss.emptyTitle, { color: c.text }]}>No History Yet</Text>
-          <Text style={[ss.emptySub, { color: c.sub }]}>Completed simulations will appear here</Text>
+          <Text style={[ss.emptySub,  { color: c.sub }]}>Completed simulations will appear here</Text>
         </View>
       )}
     </>
@@ -1509,10 +1626,13 @@ export default function TwinScreen() {
       { id: 'organs',   label: 'Organs',   icon: '🏥' },
       { id: 'trends',   label: 'Trends',   icon: '📈' },
     ];
+
     return (
       <ScrollView style={{ flex: 1 }}
         contentContainerStyle={{ padding: 16, paddingTop: insets.top + 62, paddingBottom: 100 }}
         showsVerticalScrollIndicator={false}>
+
+        {/* Dashboard inner tabs */}
         <View style={[ss.dashTabBar, { borderBottomColor: c.border }]}>
           {DASH_TABS.map(t => {
             const active = dashTab === t.id;
@@ -1526,12 +1646,16 @@ export default function TwinScreen() {
             );
           })}
         </View>
+
         {dashTab === 'overview' && renderOverviewTab()}
         {dashTab === 'organs'   && renderOrgansTab()}
         {dashTab === 'trends'   && renderTrendsTab()}
+
       </ScrollView>
     );
   };
+
+
 
   // ────────────────────────────────────────────────────────────────────────────
   // ROUTINE PANEL
@@ -1543,8 +1667,7 @@ export default function TwinScreen() {
         contentContainerStyle={{ paddingTop: insets.top + 62, paddingBottom: 140 }}
         showsVerticalScrollIndicator={false}>
 
-        <ConnectionBar ip={biogearsIP} port={biogearsPort} status={connStatus} onPress={() => setShowIPModal(true)} c={c} />
-
+        {/* ── Event count banner ── */}
         {todayEvents.length > 0 && (
           <View style={[ss.eventBanner, { backgroundColor: tabAccent + '18', borderColor: tabAccent + '40' }]}>
             <Ionicons name="list" size={14} color={tabAccent} />
@@ -1558,6 +1681,7 @@ export default function TwinScreen() {
           </View>
         )}
 
+        {/* ── Tab bar ── */}
         <ScrollView horizontal showsHorizontalScrollIndicator={false}
           style={[ss.tabBar, { borderBottomColor: c.border }]}
           contentContainerStyle={{ paddingHorizontal: 12 }}>
@@ -1573,14 +1697,18 @@ export default function TwinScreen() {
           })}
         </ScrollView>
 
+        {/* ── Tab content panel ── */}
         <View style={[ss.tabPanel, { backgroundColor: c.card, marginHorizontal: 12, borderColor: c.border }]}>
           {renderTabContent()}
         </View>
 
+        {/* ── Today's Timeline ── */}
         {todayEvents.length > 0 && (
           <View style={{ paddingHorizontal: 12 }}>
             <View style={[ss.rowBetween, { marginTop: 20, marginBottom: 10 }]}>
-              <Text style={[ss.section, { color: c.text, marginTop: 0 }]}>Today's Queue ({todayEvents.length})</Text>
+              <Text style={[ss.section, { color: c.text, marginTop: 0 }]}>
+                Today's Queue ({todayEvents.length})
+              </Text>
               <TouchableOpacity onPress={() => Alert.alert('Clear All', 'Remove all queued events?', [
                 { text: 'Cancel', style: 'cancel' },
                 { text: 'Clear', style: 'destructive', onPress: clearToday },
@@ -1588,10 +1716,12 @@ export default function TwinScreen() {
                 <Text style={{ color: '#ef4444', fontSize: 12 }}>Clear All</Text>
               </TouchableOpacity>
             </View>
-            {todayEvents.map(ev => {
+
+            {todayEvents.map((ev, i) => {
               const tabInfo = EVENT_TABS.find(t => t.id === ev.event_type) || { accent: '#64748b' };
               return (
                 <View key={ev.id} style={[ss.timelineRow, { backgroundColor: c.card, borderColor: c.border }]}>
+                  {/* Left accent line */}
                   <View style={[ss.timelineLine, { backgroundColor: tabInfo.accent }]} />
                   <View style={[ss.timelineDot, { backgroundColor: tabInfo.accent + '30', borderColor: tabInfo.accent }]}>
                     <Text style={{ fontSize: 14 }}>{ev.displayIcon}</Text>
@@ -1609,6 +1739,7 @@ export default function TwinScreen() {
           </View>
         )}
 
+        {/* ── Action buttons ── */}
         <View style={[ss.actionRow, { paddingHorizontal: 12 }]}>
           {todayEvents.length > 0 && (
             <TouchableOpacity style={[ss.actionBtn, { backgroundColor: c.card, borderColor: c.border, borderWidth: 1 }]}
@@ -1632,40 +1763,50 @@ export default function TwinScreen() {
   );
 
   // ────────────────────────────────────────────────────────────────────────────
+  // SUBSTANCE PICKER MODAL
+  // ────────────────────────────────────────────────────────────────────────────
+
+  const renderSubPickerModal = () => (
+    <Modal visible={showSubPicker} transparent animationType="slide">
+      <View style={ss.modalOverlay}>
+        <View style={[ss.modalCard, { backgroundColor: c.card, maxHeight: '80%' }]}>
+          <View style={ss.rowBetween}>
+            <Text style={[ss.modalTitle, { color: c.text }]}>Select Substance</Text>
+            <TouchableOpacity onPress={() => setShowSubPicker(false)}>
+              <Ionicons name="close" size={22} color={c.sub} />
+            </TouchableOpacity>
+          </View>
+          <TextInput
+            style={[ss.searchInput, { backgroundColor: c.bg, color: c.text, borderColor: c.border }]}
+            placeholder="Search substances…"
+            placeholderTextColor={c.sub}
+            value={subSearch}
+            onChangeText={setSubSearch}
+          />
+          <ScrollView showsVerticalScrollIndicator={false}>
+            {filteredSubs.map(s => (
+              <TouchableOpacity key={s}
+                style={[ss.subPickerRow, { borderBottomColor: c.border }, s === subName && { backgroundColor: '#8b5cf615' }]}
+                onPress={() => { setSubName(s); setShowSubPicker(false); setSubSearch(''); }}>
+                <Text style={[ss.subPickerName, { color: c.text }]}>{s}</Text>
+                {s === subName && <Ionicons name="checkmark" size={18} color="#8b5cf6" />}
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </View>
+      </View>
+    </Modal>
+  );
+
+  // ────────────────────────────────────────────────────────────────────────────
   // MODALS
   // ────────────────────────────────────────────────────────────────────────────
 
   const renderModals = () => (
     <>
-      <Modal visible={showSubPicker} transparent animationType="slide">
-        <View style={ss.modalOverlay}>
-          <View style={[ss.modalCard, { backgroundColor: c.card, maxHeight: '80%' }]}>
-            <View style={ss.rowBetween}>
-              <Text style={[ss.modalTitle, { color: c.text }]}>Select Substance</Text>
-              <TouchableOpacity onPress={() => setShowSubPicker(false)}>
-                <Ionicons name="close" size={22} color={c.sub} />
-              </TouchableOpacity>
-            </View>
-            <TextInput style={[ss.searchInput, { backgroundColor: c.bg, color: c.text, borderColor: c.border }]}
-              placeholder="Search substances…" placeholderTextColor={c.sub}
-              value={subSearch} onChangeText={setSubSearch} />
-            <ScrollView showsVerticalScrollIndicator={false}>
-              {filteredSubs.map(s => (
-                <TouchableOpacity key={s}
-                  style={[ss.subPickerRow, { borderBottomColor: c.border }, s === subName && { backgroundColor: '#8b5cf615' }]}
-                  onPress={() => { setSubName(s); setShowSubPicker(false); setSubSearch(''); }}>
-                  <Text style={[ss.subPickerName, { color: c.text }]}>{s}</Text>
-                  {s === subName && <Ionicons name="checkmark" size={18} color="#8b5cf6" />}
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-          </View>
-        </View>
-      </Modal>
+      {renderSubPickerModal()}
 
-      <IPConfigModal visible={showIPModal} onClose={() => setShowIPModal(false)}
-        onSave={handleSaveIP} currentIP={biogearsIP} currentPort={biogearsPort} c={c} />
-
+      {/* Save Routine */}
       <Modal visible={saveRoutineModal} transparent animationType="slide">
         <View style={ss.modalOverlay}>
           <View style={[ss.modalCard, { backgroundColor: c.card }]}>
@@ -1686,11 +1827,12 @@ export default function TwinScreen() {
         </View>
       </Modal>
 
+      {/* Sim Name */}
       <Modal visible={simNameModal} transparent animationType="fade">
         <View style={ss.modalOverlay}>
           <View style={[ss.modalCard, { backgroundColor: c.card }]}>
             <Text style={[ss.modalTitle, { color: c.text }]}>Name This Simulation</Text>
-            <Text style={[ss.modalSub, { color: c.sub }]}>{todayEvents.length} events will be sent to BioGears at {biogearsIP}:{biogearsPort}.</Text>
+            <Text style={[ss.modalSub, { color: c.sub }]}>{todayEvents.length} events will be sent to BioGears.</Text>
             <TextInput style={[ss.input, { backgroundColor: c.bg, color: c.text, borderColor: c.border }]}
               placeholder="e.g. 'Monday Gym'" placeholderTextColor={c.sub}
               value={pendingSimName} onChangeText={setPendingSimName} />
@@ -1726,6 +1868,7 @@ export default function TwinScreen() {
 
       {mode === 'dashboard' ? renderDashboard() : renderRoutinePanel()}
 
+      {/* FAB */}
       <TouchableOpacity
         style={[ss.fab, { backgroundColor: mode === 'dashboard' ? c.active : '#ef4444', bottom: insets.bottom + 8 }]}
         onPress={() => switchMode(mode === 'dashboard' ? 'routine' : 'dashboard')}>
@@ -1739,7 +1882,7 @@ export default function TwinScreen() {
   );
 }
 
-// ─── Styles ───────────────────────────────────────────────────────────────────
+// ─── Styles ──────────────────────────────────────────────────────────────────
 
 const ss = StyleSheet.create({
   root: { flex: 1 },
@@ -1748,9 +1891,11 @@ const ss = StyleSheet.create({
   rowBetween: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   rowCentered: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 10 },
 
+  // Notice bar
   noticeBar: { flexDirection: 'row', alignItems: 'center', gap: 8, padding: 10, marginHorizontal: 12, borderRadius: 10, borderWidth: 1, marginBottom: 0 },
   noticeTxt: { color: '#f59e0b', fontSize: 12, flex: 1 },
 
+  // Stepper
   stepperRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginBottom: 8 },
   stepItem: { alignItems: 'center' },
   stepDot: { width: 24, height: 24, borderRadius: 12, backgroundColor: '#334155', justifyContent: 'center', alignItems: 'center' },
@@ -1762,17 +1907,44 @@ const ss = StyleSheet.create({
   stepLineActive: { backgroundColor: '#38bdf8' },
   simBox: { borderRadius: 16, padding: 16, marginBottom: 12, borderWidth: 1, alignItems: 'center' },
   simMsg: { fontSize: 12, marginTop: 4, textAlign: 'center' },
+
+  // Inline Simulation Status Card
+  simCard: {
+    borderRadius: 20, padding: 18, marginBottom: 16, borderWidth: 1,
+  },
+  simCardHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 16 },
+  simPulse: {
+    width: 42, height: 42, borderRadius: 21, borderWidth: 1.5,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  simCardTitle: { fontSize: 15, fontWeight: '700', marginBottom: 2 },
+  simCardSub: { fontSize: 12, lineHeight: 17 },
+  simElapsedBadge: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    borderRadius: 20, paddingHorizontal: 10, paddingVertical: 5, borderWidth: 1,
+  },
+  simElapsedTxt: { color: '#38bdf8', fontSize: 12, fontWeight: '700' },
+  simDotsRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 14 },
+  simDotWrap: { alignItems: 'center', flex: 1 },
+  simDotCircle: {
+    width: 22, height: 22, borderRadius: 11, borderWidth: 2,
+    alignItems: 'center', justifyContent: 'center', marginBottom: 5,
+  },
+  simDotLabel: { fontSize: 9, fontWeight: '600', textAlign: 'center', letterSpacing: 0.2 },
+  simNote: { fontSize: 11, lineHeight: 17, textAlign: 'center', fontStyle: 'italic' },
   errorBox: { borderRadius: 12, padding: 12, flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 },
   errorTxt: { color: '#ef4444', fontSize: 13, flex: 1 },
   interactionBanner: { backgroundColor: '#fbbf2420', borderRadius: 10, padding: 10, flexDirection: 'row', gap: 8, marginBottom: 10, borderWidth: 1, borderColor: '#fbbf24' },
   interactionTxt: { color: '#fbbf24', fontSize: 12, flex: 1 },
 
+  // Score
   scoreBadge: { borderRadius: 20, padding: 20, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
   scoreLetter: { fontSize: 48, fontWeight: '900', color: '#fff' },
   scoreLabel: { color: 'rgba(255,255,255,0.8)', fontSize: 14, fontWeight: '600' },
   scoreNum: { fontSize: 36, fontWeight: '800', color: '#fff' },
   scoreSubLabel: { color: 'rgba(255,255,255,0.6)', fontSize: 12 },
 
+  // Vitals
   vitalsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
   vitalCard: { width: (W - 52) / 2, borderRadius: 16, padding: 14, borderWidth: 1 },
   vitalIcon: { fontSize: 20, marginBottom: 4 },
@@ -1805,6 +1977,7 @@ const ss = StyleSheet.create({
   sessionMeta: { fontSize: 12, marginTop: 2 },
   sessionInsight: { fontSize: 11, marginTop: 4, fontStyle: 'italic' },
 
+  // Routine
   eventBanner: { flexDirection: 'row', alignItems: 'center', gap: 8, padding: 10, marginHorizontal: 12, marginBottom: 8, borderRadius: 10, borderWidth: 1 },
   eventBannerTxt: { flex: 1, fontSize: 13, fontWeight: '600' },
   simBadgeBtn: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8 },
@@ -1814,6 +1987,7 @@ const ss = StyleSheet.create({
   tabBtnLabel: { fontSize: 11, fontWeight: '600' },
   tabPanel: { borderRadius: 20, padding: 18, marginTop: 10, borderWidth: 1 },
 
+  // Form elements
   sectionLbl: { fontSize: 10, fontWeight: '700', letterSpacing: 0.8, marginBottom: 8, marginTop: 14 },
   chip: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20, borderWidth: 1, borderColor: '#334155', backgroundColor: 'transparent', marginRight: 6 },
   chipSm: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 16, borderWidth: 1, borderColor: '#334155', backgroundColor: 'transparent' },
@@ -1825,7 +1999,9 @@ const ss = StyleSheet.create({
   addBtnTxt: { color: '#fff', fontWeight: '700', fontSize: 15 },
   timeRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10 },
   timeLbl: { fontSize: 12, fontWeight: '500' },
+  
 
+  // Slider
   sliderLabel: { fontSize: 12 },
   sliderVal: { fontSize: 14, fontWeight: '700' },
   sliderTrack: { height: 6, borderRadius: 3, marginBottom: 8 },
@@ -1833,31 +2009,38 @@ const ss = StyleSheet.create({
   sliderBtns: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   sliderBtn: { width: 32, height: 32, borderRadius: 8, borderWidth: 1, justifyContent: 'center', alignItems: 'center' },
 
+  // Big display
   bigDisplay: { alignItems: 'center', borderRadius: 20, borderWidth: 1.5, padding: 20, marginBottom: 14 },
   bigNum: { fontSize: 52, fontWeight: '900' },
   bigUnit: { fontSize: 14, marginTop: 2 },
 
+  // Quick grid
   quickGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 12 },
   quickChip: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, borderWidth: 1, borderColor: '#334155' },
   quickChipTxt: { color: '#94a3b8', fontWeight: '600', fontSize: 13 },
 
+  // Info box
   infoBox: { borderRadius: 12, padding: 10, flexDirection: 'row', alignItems: 'flex-start', borderWidth: 1, marginBottom: 6 },
 
+  // Substance selector
   subSelector: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderRadius: 14, borderWidth: 1.5, paddingHorizontal: 16, paddingVertical: 12, marginBottom: 12 },
   searchInput: { borderRadius: 10, borderWidth: 1, padding: 10, marginBottom: 10, fontSize: 14 },
   subPickerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 12, paddingHorizontal: 4, borderBottomWidth: 0.5 },
   subPickerName: { fontSize: 14 },
 
+  // Mode switch (alcohol/fast)
   modeSwitch: { flexDirection: 'row', borderRadius: 12, overflow: 'hidden', borderWidth: 1, borderColor: '#334155', marginBottom: 12 },
   modeSwitchBtn: { flex: 1, paddingVertical: 10, alignItems: 'center' },
   modeSwitchTxt: { fontWeight: '600', fontSize: 14, color: '#94a3b8' },
 
+  // Macro preview
   previewBox: { borderRadius: 14, borderWidth: 1, padding: 12, marginBottom: 12 },
   previewTitle: { fontSize: 9, letterSpacing: 1, fontWeight: '700', marginBottom: 8 },
   triRow: { flexDirection: 'row', gap: 8 },
   macroG: { fontWeight: '800', fontSize: 15 },
   macroLbl: { fontSize: 11, marginTop: 1 },
 
+  // Timeline
   timelineRow: { flexDirection: 'row', alignItems: 'center', borderRadius: 14, marginBottom: 8, overflow: 'hidden', borderWidth: 1 },
   timelineLine: { width: 3, alignSelf: 'stretch' },
   timelineDot: { width: 38, height: 38, borderRadius: 19, justifyContent: 'center', alignItems: 'center', margin: 8, borderWidth: 1 },
@@ -1865,12 +2048,15 @@ const ss = StyleSheet.create({
   eventTime: { fontSize: 11, marginTop: 2 },
   deleteBtn: { padding: 12 },
 
+  // Action row
   actionRow: { flexDirection: 'row', gap: 10, marginTop: 16 },
   actionBtn: { borderRadius: 14, paddingVertical: 14, paddingHorizontal: 18, flexDirection: 'row', alignItems: 'center', gap: 6 },
   actionBtnTxt: { fontWeight: '700', fontSize: 14 },
 
+  // FAB
   fab: { position: 'absolute', right: 20, width: 60, height: 60, borderRadius: 30, alignItems: 'center', justifyContent: 'center', elevation: 8, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8 },
 
+  // Modals
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', padding: 20 },
   modalCard: { borderRadius: 24, padding: 24 },
   modalTitle: { fontSize: 18, fontWeight: '700', marginBottom: 8 },
@@ -1878,14 +2064,17 @@ const ss = StyleSheet.create({
   input: { borderRadius: 12, borderWidth: 1, padding: 12, fontSize: 14, marginBottom: 16 },
   modalBtn: { borderRadius: 12, paddingHorizontal: 20, paddingVertical: 12, flexDirection: 'row', alignItems: 'center', gap: 4 },
 
+  // Dashboard inner tabs
   dashTabBar: { flexDirection: 'row', borderBottomWidth: 1, marginBottom: 16 },
   dashTabBtn: { flex: 1, alignItems: 'center', paddingVertical: 10, gap: 2 },
   dashTabIcon: { fontSize: 18 },
   dashTabLabel: { fontSize: 11, fontWeight: '700', paddingBottom: 6 },
 
+  // Vital card top row with status dot
   vitalTopRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 },
   statusDot: { width: 8, height: 8, borderRadius: 4 },
 
+  // Macro rings card
   macroRingsCard: { borderRadius: 20, padding: 16, flexDirection: 'row', justifyContent: 'space-around', alignItems: 'center', marginBottom: 8 },
   macroRingWrap: { alignItems: 'center' },
   macroOuterRing: { justifyContent: 'center', alignItems: 'center', borderWidth: 7 },
@@ -1893,10 +2082,4 @@ const ss = StyleSheet.create({
   macroRingVal: { fontWeight: '800', fontSize: 16, textAlign: 'center' },
   macroRingUnit: { fontSize: 9, textAlign: 'center', marginTop: -2 },
   macroRingLabel: { fontSize: 11, fontWeight: '600', marginTop: 8 },
-
-  // ── Meal tab simplified styles ──
-  mealInfoCard:  { flexDirection: 'row', alignItems: 'flex-start', gap: 12, borderRadius: 16, borderWidth: 1, padding: 14, marginBottom: 4 },
-  mealInfoEmoji: { fontSize: 28 },
-  mealInfoTitle: { fontSize: 14, fontWeight: '700', marginBottom: 3 },
-  mealInfoSub:   { fontSize: 12, lineHeight: 17 },
 });

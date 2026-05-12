@@ -11,6 +11,7 @@ Improvements vs v1:
 import matplotlib
 matplotlib.use("Agg")   # Non-interactive backend — safe for server use
 
+import os
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 import pandas as pd
@@ -19,9 +20,13 @@ import time
 import datetime
 from pathlib import Path
 
-from biogears_service.simulation.config import BIO_OUTPUT_DIR, BASE_DIR, SCENARIO_API_DIR
+from biogears_service.simulation.config import BIO_OUTPUT_DIR, BASE_DIR, SCENARIO_API_DIR, BIOGEARS_BIN_DIR
 
-BASE_URL = "http://127.0.0.1:8000"
+BASE_URL = os.environ.get("SERVER_BASE_URL", "http://127.0.0.1:8000").rstrip("/")
+
+# Ensure the reports directory exists at import time so saves never fail.
+_REPORTS_DIR = BASE_DIR / "reports"
+_REPORTS_DIR.mkdir(parents=True, exist_ok=True)
 
 
 # ── CSV discovery ─────────────────────────────────────────────────────────────
@@ -30,12 +35,9 @@ def get_csv_path(user_id, run_id=None, prefix="run_"):
     """Locates a BioGears output CSV by trying several candidate locations."""
     filename = f"run_{run_id}Results.csv" if run_id else f"{prefix}{user_id}Results.csv"
 
-    bin_dir          = BASE_DIR / "biogears_service" / "engine" / "BioGears" / "bin"
-    api_scenario_dir = bin_dir / "Scenarios" / "API"
-
     candidates = [
-        api_scenario_dir / filename,
-        bin_dir / filename,
+        BIOGEARS_BIN_DIR / "Scenarios" / "API" / filename,
+        BIOGEARS_BIN_DIR / filename,
         BIO_OUTPUT_DIR / filename,
         SCENARIO_API_DIR / filename,
     ]
@@ -167,10 +169,11 @@ def generate_health_report(user_id, run_id=None, custom_path=None):
 
         # Panel 3: Respiration
         ax = axes[3]
-        ax.plot(T, df["RespirationRate"], color=_COLOURS["respiration"],
-                linewidth=2, label="Resp Rate")
-        ax.axhline(12, color="black", linestyle=":", alpha=0.3)
-        ax.axhline(20, color="black", linestyle=":", alpha=0.3)
+        if "RespirationRate" in df.columns:
+            ax.plot(T, df["RespirationRate"], color=_COLOURS["respiration"],
+                    linewidth=2, label="Resp Rate")
+            ax.axhline(12, color="black", linestyle=":", alpha=0.3)
+            ax.axhline(20, color="black", linestyle=":", alpha=0.3)
         ax.set_ylabel("Breaths/min", fontweight="bold")
         ax.legend(loc="upper right", fontsize=9)
         ax.grid(True, linestyle="--", alpha=0.35)
@@ -203,7 +206,8 @@ def generate_health_report(user_id, run_id=None, custom_path=None):
         plt.tight_layout(rect=[0, 0, 1, 0.97])
 
         fname = f"{user_id}_{run_id}_report.png" if run_id else f"{user_id}_report.png"
-        out   = BASE_DIR / "reports" / fname
+        out   = _REPORTS_DIR / fname
+        out.parent.mkdir(parents=True, exist_ok=True)
         plt.savefig(out, dpi=150)
         plt.close(fig)
         return f"{BASE_URL}/view-reports/{fname}"
@@ -251,7 +255,8 @@ def generate_forecast_report(user_id, run_id=None):
 
         plt.tight_layout()
         fname = f"{user_id}_{run_id}_forecast.png" if run_id else f"{user_id}_forecast.png"
-        out   = BASE_DIR / "reports" / fname
+        out   = _REPORTS_DIR / fname
+        out.parent.mkdir(parents=True, exist_ok=True)
         plt.savefig(out, dpi=130)
         plt.close(fig)
         return f"{BASE_URL}/view-reports/{fname}"
@@ -310,7 +315,8 @@ def generate_comparison_report(user_id: str, baseline_df: pd.DataFrame,
 
         ts    = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         fname = f"{user_id}_whatif_{ts}.png"
-        out   = BASE_DIR / "reports" / fname
+        out   = _REPORTS_DIR / fname
+        out.parent.mkdir(parents=True, exist_ok=True)
         plt.savefig(out, dpi=140)
         plt.close(fig)
         return f"{BASE_URL}/view-reports/{fname}"

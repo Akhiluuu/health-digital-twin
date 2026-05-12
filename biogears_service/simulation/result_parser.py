@@ -113,7 +113,13 @@ def parse_results(user_id: str) -> dict:
     anomalies = detect_anomalies(df)
 
     return {
-        "simulation_end_time": round(safe_float(df.iloc[-1, 0]), 1),
+        # Prefer the named 'Time' column; fall back to column 0 if it's absent
+        # (BioGears always puts simulation time first but the column name may vary).
+        "simulation_end_time": round(
+            safe_float(df["Time"].iloc[-1]) if "Time" in df.columns
+            else safe_float(df.iloc[-1, 0]),
+            1
+        ),
         "heart_rate":          round(_get("HeartRate"), 1),
         "blood_glucose":       round(_get("Glucose-BloodConcentration"), 2),
         "systolic_bp":         round(_get("SystolicArterialPressure"), 1),
