@@ -22,6 +22,23 @@ import Header from '../components/Header';
 import CircadianClock    from '../../components/twin/CircadianClock';
 import QuickAddRow       from '../../components/twin/QuickAddRow';
 import BodyMap           from '../../components/twin/BodyMap';
+import { CSV_FOOD_DB, CsvFoodItem, parseDisplayAmount, scaleNutrients, getQuickQuantities } from '../nutrition';
+
+const CSV_CATEGORIES = [
+  { id: 'all', label: 'All', emoji: '🍽️' },
+  { id: 'breakfast', label: 'Breakfast', emoji: '🥞' },
+  { id: 'meal', label: 'Meal', emoji: '🍛' },
+  { id: 'snack', label: 'Snacks', emoji: '🥨' },
+  { id: 'beverage', label: 'Drinks', emoji: '🥤' },
+  { id: 'fruit', label: 'Fruits', emoji: '🍎' },
+  { id: 'protein', label: 'Protein', emoji: '🥩' },
+  { id: 'vegetable', label: 'Veggies', emoji: '🥦' },
+];
+
+function getCategoryEmoji(cat: string) {
+  const f = CSV_CATEGORIES.find(c => c.id === cat);
+  return f ? f.emoji : '🍲';
+}
 
 const { width: W } = Dimensions.get('window');
 
@@ -695,6 +712,18 @@ export default function TwinScreen() {
   const [mealCarb, setMealCarb]     = useState('');
   const [mealFat,  setMealFat]      = useState('');
   const [mealProt, setMealProt]     = useState('');
+  // Meal tab mode: 'pick' = food-list picker | 'quick' = calories-only | 'custom' = full macros
+  type MealPickerMode = 'pick' | 'quick' | 'custom';
+  const [mealPickerMode, setMealPickerMode] = useState<MealPickerMode>('pick');
+  const [mealSearch,     setMealSearch]     = useState('');
+  const [mealCategory,   setMealCategory]   = useState('all');
+  const [selectedCsvFood, setSelectedCsvFood] = useState<CsvFoodItem | null>(null);
+  const [csvFoodAmount,   setCsvFoodAmount]   = useState(1);
+  const [foodRenderLimit, setFoodRenderLimit] = useState(20);
+
+  useEffect(() => {
+    setFoodRenderLimit(20);
+  }, [mealSearch, mealCategory]);
 
   // ── Exercise state ────────────────────────────────────────────────────────
   const EXERCISE_PRESETS = [
@@ -765,16 +794,45 @@ export default function TwinScreen() {
   const addMeal = () => {
     const kcal = parseFloat(mealKcal);
     if (!kcal || kcal <= 0) return Alert.alert('Enter calories', 'Please enter a calorie amount.');
-    const extra = mealType === 'custom' ? {
-      carb_g: parseFloat(mealCarb) || undefined,
-      fat_g:  parseFloat(mealFat) || undefined,
-      protein_g: parseFloat(mealProt) || undefined,
-    } : {};
+
+    // ── Macro normalization ───────────────────────────────────────────────────
+    // BioGears validator REQUIRES carb_g / fat_g / protein_g when meal_type is
+    // 'custom'. If the user left the macro fields blank, we estimate them from
+    // the balanced preset (40% carb / 30% fat / 30% protein) so the simulation
+    // never fails with a validation error.
+    let finalMealType = mealType;
+    let mealMacros: { carb_g: number; fat_g: number; protein_g: number } | null = null;
+
+    if (mealType === 'custom') {
+      const carbVal  = parseFloat(mealCarb);
+      const fatVal   = parseFloat(mealFat);
+      const protVal  = parseFloat(mealProt);
+      const hasAllMacros = !isNaN(carbVal) && carbVal >= 0
+                        && !isNaN(fatVal)  && fatVal  >= 0
+                        && !isNaN(protVal) && protVal >= 0;
+      if (hasAllMacros) {
+        // User provided explicit macros — send as custom
+        mealMacros = { carb_g: carbVal, fat_g: fatVal, protein_g: protVal };
+      } else {
+        // Estimate macros from balanced preset so the validator passes
+        mealMacros = {
+          carb_g:    Math.round(kcal * 0.40 / 4),
+          fat_g:     Math.round(kcal * 0.30 / 9),
+          protein_g: Math.round(kcal * 0.30 / 4),
+        };
+        // Keep 'custom' type so BioGears uses our explicit values
+      }
+    }
+
+    const mealLabel = mealType === 'custom'
+      ? 'Custom'
+      : MEAL_TYPES.find(m => m.value === mealType)?.label ?? mealType;
+
     addEvent({
       event_type: 'meal', value: kcal, wallTime: mealTime,
-      meal_type: mealType,
-      ...extra,
-      displayLabel: `${mealType === 'custom' ? 'Custom' : MEAL_TYPES.find(m => m.value === mealType)?.label} Meal · ${kcal} kcal`,
+      meal_type: finalMealType,
+      ...(mealMacros ?? {}),
+      displayLabel: `${mealLabel} Meal · ${kcal} kcal`,
       displayIcon: '🍽️',
     });
     setMealKcal('500');
@@ -904,78 +962,272 @@ export default function TwinScreen() {
   // TAB CONTENT
   // ────────────────────────────────────────────────────────────────────────────
 
-  const renderMealTab = () => (
-    <View>
-      <SectionLabel text="Meal Type" c={c} />
-      <ChipRow
-  options={MEAL_TYPES}
-  selected={mealType}
-  onSelect={(v) => setMealType(v as typeof mealType)}
-  accent="#f59e0b"
-/>
+  // ── Meal tab: add from recipe list ───────────────────────────────────
+  const confirmCsvFoodAdd = () => {
+    if (!selectedCsvFood) return;
+    const { base } = parseDisplayAmount(selectedCsvFood.display_amount);
+    const multiplier = csvFoodAmount / base;
+    const scaled = scaleNutrients(selectedCsvFood, multiplier);
 
-      <SectionLabel text="Total Calories" c={c} />
-      <NumericInput value={mealKcal} onChange={setMealKcal} placeholder="e.g. 450" suffix="kcal" c={c} />
+    addEvent({
+      event_type: 'meal',
+      value: scaled.calories,
+      wallTime: mealTime,
+      meal_type: 'custom',
+      carb_g: scaled.carbs,
+      fat_g: scaled.fat,
+      protein_g: scaled.protein,
+      displayLabel: `${getCategoryEmoji(selectedCsvFood.category)} ${selectedCsvFood.food} · ${scaled.calories} kcal`,
+      displayIcon: getCategoryEmoji(selectedCsvFood.category),
+    });
+    Alert.alert('✅ Added', `${selectedCsvFood.food} logged at ${wallTimeToLabel(mealTime)}`);
+    setSelectedCsvFood(null);
+  };
 
-      {mealType === 'custom' && (
-        <>
-          <SectionLabel text="Custom Macros (grams)" c={c} />
-          <View style={ss.triRow}>
-            <View style={{ flex: 1 }}>
-              <Text style={[ss.macroLbl, { color: c.sub }]}>Carbs</Text>
-              <NumericInput value={mealCarb} onChange={setMealCarb} placeholder="g" c={c} />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={[ss.macroLbl, { color: c.sub }]}>Protein</Text>
-              <NumericInput value={mealProt} onChange={setMealProt} placeholder="g" c={c} />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={[ss.macroLbl, { color: c.sub }]}>Fat</Text>
-              <NumericInput value={mealFat} onChange={setMealFat} placeholder="g" c={c} />
-            </View>
-          </View>
-        </>
-      )}
+  const MACRO_PRESETS: Record<string, {carb: number; fat: number; protein: number}> = {
+    balanced:     {carb: 0.40, fat: 0.30, protein: 0.30},
+    high_carb:    {carb: 0.60, fat: 0.20, protein: 0.20},
+    high_protein: {carb: 0.30, fat: 0.20, protein: 0.50},
+    fast_food:    {carb: 0.45, fat: 0.40, protein: 0.15},
+    ketogenic:    {carb: 0.05, fat: 0.75, protein: 0.20},
+  };
 
-      {mealType !== 'custom' && (
-        <View style={[ss.previewBox, { backgroundColor: c.bg, borderColor: c.border }]}>
-          <Text style={[ss.previewTitle, { color: c.sub }]}>AUTO MACRO SPLIT</Text>
-          <View style={ss.triRow}>
-            {(() => {
-              const kcal = parseFloat(mealKcal) || 0;
-              const presets: Record<string, { carb: number; fat: number; protein: number }> = {
-                balanced:     { carb: 0.40, fat: 0.30, protein: 0.30 },
-                high_carb:    { carb: 0.60, fat: 0.20, protein: 0.20 },
-                high_protein: { carb: 0.30, fat: 0.20, protein: 0.50 },
-                fast_food:    { carb: 0.45, fat: 0.40, protein: 0.15 },
-                ketogenic:    { carb: 0.05, fat: 0.75, protein: 0.20 },
-              };
-              const p = presets[mealType] || presets['balanced'];
-              return [
-                { label: 'Carbs', g: Math.round(kcal * p.carb / 4), color: '#f59e0b' },
-                { label: 'Protein', g: Math.round(kcal * p.protein / 4), color: '#10b981' },
-                { label: 'Fat', g: Math.round(kcal * p.fat / 9), color: '#ef4444' },
-              ].map(item => (
-                <View key={item.label} style={{ flex: 1, alignItems: 'center' }}>
-                  <Text style={[ss.macroG, { color: item.color }]}>{item.g}g</Text>
-                  <Text style={[ss.macroLbl, { color: c.sub }]}>{item.label}</Text>
-                </View>
-              ));
-            })()}
-          </View>
+  const renderMealTab = () => {
+    // Filtered food list
+    const filteredRecipes = CSV_FOOD_DB.filter(r => {
+      const matchCat = mealCategory === 'all' || r.category === mealCategory;
+      const matchQ   = !mealSearch || r.food.toLowerCase().includes(mealSearch.toLowerCase());
+      return matchCat && matchQ;
+    });
+
+    return (
+      <View>
+        {/* ── Mode selector ─────────────────────────────── */}
+        <View style={[ss.modeRow, { backgroundColor: c.card, borderColor: c.border }]}>
+          {([
+            { id: 'pick',   label: '🍽️ Food List', icon: 'list' },
+            { id: 'quick',  label: '⚡ Quick',     icon: 'flash' },
+            { id: 'custom', label: '✏️ Custom',    icon: 'create' },
+          ] as { id: 'pick' | 'quick' | 'custom'; label: string; icon: any }[]).map(m => (
+            <TouchableOpacity
+              key={m.id}
+              style={[ss.modeBtn, mealPickerMode === m.id && { backgroundColor: '#f59e0b' }]}
+              onPress={() => setMealPickerMode(m.id)}
+            >
+              <Text style={[ss.modeBtnTxt, { color: mealPickerMode === m.id ? '#fff' : c.sub }]}>
+                {m.label}
+              </Text>
+            </TouchableOpacity>
+          ))}
         </View>
-      )}
 
-      <SectionLabel text="Time of Meal" c={c} />
-      <View style={ss.timeRow}>
-        <Ionicons name="time-outline" size={14} color={c.sub} />
-        <Text style={[ss.timeLbl, { color: c.sub }]}>Eaten at</Text>
-        <TimePicker value={mealTime} onChange={setMealTime} accent="#f59e0b" />
+        {/* ── Time picker (shared) ───────────────────────── */}
+        <View style={[ss.timeRow, { marginBottom: 12 }]}>
+          <Ionicons name="time-outline" size={14} color={c.sub} />
+          <Text style={[ss.timeLbl, { color: c.sub }]}>Eaten at</Text>
+          <TimePicker value={mealTime} onChange={setMealTime} accent="#f59e0b" />
+        </View>
+
+        {/* ════════════════════════════════════════════════
+            MODE 1: FOOD PICKER
+            ════════════════════════════════════════════════ */}
+        {mealPickerMode === 'pick' && (
+          <View>
+            {/* Search */}
+            <View style={[ss.searchRow, { backgroundColor: c.card, borderColor: c.border }]}>
+              <Ionicons name="search" size={16} color={c.sub} />
+              <TextInput
+                style={[ss.searchInput, { color: c.text }]}
+                placeholder="Search food..."
+                placeholderTextColor={c.sub}
+                value={mealSearch}
+                onChangeText={setMealSearch}
+              />
+              {mealSearch.length > 0 && (
+                <TouchableOpacity onPress={() => setMealSearch('')}>
+                  <Ionicons name="close-circle" size={16} color={c.sub} />
+                </TouchableOpacity>
+              )}
+            </View>
+
+            {/* Category filter chips */}
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 10 }}>
+              {CSV_CATEGORIES.map(cat => (
+                <TouchableOpacity
+                  key={cat.id}
+                  style={[ss.chip, mealCategory === cat.id && { backgroundColor: '#f59e0b', borderColor: '#f59e0b' }]}
+                  onPress={() => setMealCategory(cat.id)}
+                >
+                  <Text style={[ss.chipTxt, mealCategory === cat.id && { color: '#fff' }]}>
+                    {cat.emoji} {cat.label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+
+            {/* Food cards grid */}
+            {filteredRecipes.length === 0 ? (
+              <View style={{ alignItems: 'center', paddingVertical: 24 }}>
+                <Text style={{ fontSize: 32 }}>🤷</Text>
+                <Text style={[{ color: c.sub, marginTop: 8, fontSize: 13 }]}>No food found. Try the Quick or Custom tab.</Text>
+              </View>
+            ) : (
+              <View style={{ height: 450, marginTop: 4 }}>
+                <ScrollView
+                  nestedScrollEnabled={true}
+                  showsVerticalScrollIndicator={false}
+                  scrollEventThrottle={100}
+                  onScroll={({ nativeEvent }) => {
+                    const { layoutMeasurement, contentOffset, contentSize } = nativeEvent;
+                    const isCloseToBottom = layoutMeasurement.height + contentOffset.y >= contentSize.height - 300;
+                    if (isCloseToBottom && foodRenderLimit < filteredRecipes.length) {
+                      setFoodRenderLimit(prev => prev + 20);
+                    }
+                  }}
+                >
+                  <View style={ss.foodGrid}>
+                    {filteredRecipes.slice(0, foodRenderLimit).map((recipe, idx) => {
+                      const carbG   = recipe.carbs_g;
+                      const fatG    = recipe.fat_g;
+                      const protG   = recipe.protein_g;
+                      return (
+                        <TouchableOpacity
+                          key={`csv_${idx}`}
+                          style={[ss.foodCard, { backgroundColor: c.card, borderColor: c.border }]}
+                          onPress={() => {
+                            setSelectedCsvFood(recipe);
+                            setCsvFoodAmount(parseDisplayAmount(recipe.display_amount).base);
+                          }}
+                          activeOpacity={0.75}
+                        >
+                          <Text style={ss.foodEmoji}>{getCategoryEmoji(recipe.category)}</Text>
+                          <Text style={[ss.foodName, { color: c.text }]} numberOfLines={2}>{recipe.food}</Text>
+                          <Text style={[ss.foodCal, { color: '#f59e0b' }]}>{recipe.calories} kcal</Text>
+                          <View style={ss.foodMacroRow}>
+                            <Text style={[ss.foodMacro, { color: '#f59e0b' }]}>{carbG}g C</Text>
+                            <Text style={[ss.foodMacro, { color: '#10b981' }]}>{protG}g P</Text>
+                            <Text style={[ss.foodMacro, { color: '#ef4444' }]}>{fatG}g F</Text>
+                          </View>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                </ScrollView>
+              </View>
+            )}
+          </View>
+        )}
+
+        {/* ════════════════════════════════════════════════
+            MODE 2: QUICK ADD
+            ════════════════════════════════════════════════ */}
+        {mealPickerMode === 'quick' && (
+          <View>
+            <SectionLabel text="Meal Preset" c={c} />
+            <ChipRow
+              options={MEAL_TYPES.filter(m => m.value !== 'custom')}
+              selected={mealType as any}
+              onSelect={(v) => setMealType(v as typeof mealType)}
+              accent="#f59e0b"
+            />
+
+            <SectionLabel text="Calories" c={c} />
+            {/* Quick calorie presets */}
+            <View style={ss.rowCentered}>
+              {[200, 350, 450, 600, 750, 900].map(kcal => (
+                <TouchableOpacity
+                  key={kcal}
+                  style={[ss.chipSm, mealKcal === String(kcal) && { backgroundColor: '#f59e0b', borderColor: '#f59e0b' }]}
+                  onPress={() => setMealKcal(String(kcal))}
+                >
+                  <Text style={[ss.chipTxt, mealKcal === String(kcal) && { color: '#fff' }]}>{kcal}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            <NumericInput value={mealKcal} onChange={setMealKcal} placeholder="e.g. 500" suffix="kcal" c={c} />
+
+            {/* Auto macro preview */}
+            <View style={[ss.previewBox, { backgroundColor: c.bg, borderColor: c.border }]}>
+              <Text style={[ss.previewTitle, { color: c.sub }]}>AUTO MACRO SPLIT</Text>
+              <View style={ss.triRow}>
+                {(() => {
+                  const kcal = parseFloat(mealKcal) || 0;
+                  const p = MACRO_PRESETS[mealType] || MACRO_PRESETS['balanced'];
+                  return [
+                    { label: 'Carbs',   g: Math.round(kcal * p.carb    / 4), color: '#f59e0b' },
+                    { label: 'Protein', g: Math.round(kcal * p.protein / 4), color: '#10b981' },
+                    { label: 'Fat',     g: Math.round(kcal * p.fat     / 9), color: '#ef4444' },
+                  ].map(item => (
+                    <View key={item.label} style={{ flex: 1, alignItems: 'center' }}>
+                      <Text style={[ss.macroG, { color: item.color }]}>{item.g}g</Text>
+                      <Text style={[ss.macroLbl, { color: c.sub }]}>{item.label}</Text>
+                    </View>
+                  ));
+                })()}
+              </View>
+            </View>
+
+            <AddButton label="Add Meal" accent="#f59e0b" onPress={addMeal} />
+          </View>
+        )}
+
+        {/* ════════════════════════════════════════════════
+            MODE 3: CUSTOM (full macros)
+            ════════════════════════════════════════════════ */}
+        {mealPickerMode === 'custom' && (
+          <View>
+            <SectionLabel text="Food Name (optional)" c={c} />
+            <View style={[ss.numRow, { backgroundColor: c.card, borderColor: c.border }]}>
+              <TextInput
+                style={[ss.numInput, { color: c.text, flex: 1 }]}
+                placeholder="e.g. Poha, Dal Rice..."
+                placeholderTextColor={c.sub}
+                value={mealSearch}
+                onChangeText={setMealSearch}
+              />
+            </View>
+
+            <SectionLabel text="Calories" c={c} />
+            <NumericInput value={mealKcal} onChange={setMealKcal} placeholder="e.g. 400" suffix="kcal" c={c} />
+
+            <SectionLabel text="Macros in grams — Optional" c={c} />
+            <View style={ss.triRow}>
+              <View style={{ flex: 1 }}>
+                <Text style={[ss.macroLbl, { color: '#f59e0b' }]}>Carbs</Text>
+                <NumericInput value={mealCarb} onChange={setMealCarb} placeholder="g" c={c} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[ss.macroLbl, { color: '#10b981' }]}>Protein</Text>
+                <NumericInput value={mealProt} onChange={setMealProt} placeholder="g" c={c} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[ss.macroLbl, { color: '#ef4444' }]}>Fat</Text>
+                <NumericInput value={mealFat} onChange={setMealFat} placeholder="g" c={c} />
+              </View>
+            </View>
+
+            <View style={[ss.infoBox, { backgroundColor: '#f59e0b15', borderColor: '#f59e0b40', marginTop: 6, marginBottom: 12 }]}>
+              <Ionicons name="information-circle-outline" size={14} color="#f59e0b" />
+              <Text style={{ color: '#f59e0b', fontSize: 12, flex: 1, marginLeft: 6 }}>
+                Leave macros blank — BioGears auto-estimates from a balanced split.
+              </Text>
+            </View>
+
+            <AddButton
+              label={mealSearch.trim() ? `Add ${mealSearch.trim()}` : 'Add Custom Meal'}
+              accent="#f59e0b"
+              onPress={() => {
+                setMealType('custom');
+                addMeal();
+                setMealSearch('');
+              }}
+            />
+          </View>
+        )}
       </View>
+    );
+  };
 
-      <AddButton label="Add Meal" accent="#f59e0b" onPress={addMeal} />
-    </View>
-  );
 
   const renderExerciseTab = () => (
     <View>
@@ -1674,38 +1926,13 @@ export default function TwinScreen() {
             <Text style={[ss.eventBannerTxt, { color: tabAccent }]}>
               {todayEvents.length} event{todayEvents.length !== 1 ? 's' : ''} queued for simulation
             </Text>
-            <TouchableOpacity onPress={handleSimulate} style={[ss.simBadgeBtn, { backgroundColor: tabAccent }]}>
-              <Ionicons name="flash" size={12} color="#fff" />
-              <Text style={{ color: '#fff', fontSize: 11, fontWeight: '700', marginLeft: 3 }}>Run</Text>
-            </TouchableOpacity>
           </View>
         )}
 
-        {/* ── Tab bar ── */}
-        <ScrollView horizontal showsHorizontalScrollIndicator={false}
-          style={[ss.tabBar, { borderBottomColor: c.border }]}
-          contentContainerStyle={{ paddingHorizontal: 12 }}>
-          {EVENT_TABS.map(t => {
-            const active = activeTab === t.id;
-            return (
-              <TouchableOpacity key={t.id} onPress={() => setActiveTab(t.id)}
-                style={[ss.tabBtn, active && { borderBottomWidth: 2.5, borderBottomColor: t.accent }]}>
-                <Text style={{ fontSize: 20 }}>{t.icon}</Text>
-                <Text style={[ss.tabBtnLabel, { color: active ? t.accent : c.sub }]}>{t.label}</Text>
-              </TouchableOpacity>
-            );
-          })}
-        </ScrollView>
-
-        {/* ── Tab content panel ── */}
-        <View style={[ss.tabPanel, { backgroundColor: c.card, marginHorizontal: 12, borderColor: c.border }]}>
-          {renderTabContent()}
-        </View>
-
-        {/* ── Today's Timeline ── */}
+        {/* ── Today's Timeline (Moved to Top) ── */}
         {todayEvents.length > 0 && (
-          <View style={{ paddingHorizontal: 12 }}>
-            <View style={[ss.rowBetween, { marginTop: 20, marginBottom: 10 }]}>
+          <View style={{ paddingHorizontal: 12, marginBottom: 16 }}>
+            <View style={[ss.rowBetween, { marginTop: 10, marginBottom: 10 }]}>
               <Text style={[ss.section, { color: c.text, marginTop: 0 }]}>
                 Today's Queue ({todayEvents.length})
               </Text>
@@ -1736,27 +1963,46 @@ export default function TwinScreen() {
                 </View>
               );
             })}
+
+            {/* ── Action buttons (Moved to Top) ── */}
+            <View style={[ss.actionRow, { marginTop: 10 }]}>
+              <TouchableOpacity style={[ss.actionBtn, { backgroundColor: c.card, borderColor: c.border, borderWidth: 1 }]}
+                onPress={() => setSaveRoutineModal(true)}>
+                <Ionicons name="bookmark-outline" size={16} color={c.active} />
+                <Text style={[ss.actionBtnTxt, { color: c.active }]}>Save</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[ss.actionBtn, { backgroundColor: tabAccent, flex: 1 }]}
+                onPress={handleSimulate}
+                disabled={simulationStatus === 'running' || simulationStatus === 'queued'}>
+                <Ionicons name="flash" size={16} color="#fff" />
+                <Text style={[ss.actionBtnTxt, { color: '#fff' }]}>
+                  {simulationStatus === 'running' ? 'Simulating...' : `Simulate (${todayEvents.length} events)`}
+                </Text>
+              </TouchableOpacity>
+            </View>
           </View>
         )}
 
-        {/* ── Action buttons ── */}
-        <View style={[ss.actionRow, { paddingHorizontal: 12 }]}>
-          {todayEvents.length > 0 && (
-            <TouchableOpacity style={[ss.actionBtn, { backgroundColor: c.card, borderColor: c.border, borderWidth: 1 }]}
-              onPress={() => setSaveRoutineModal(true)}>
-              <Ionicons name="bookmark-outline" size={16} color={c.active} />
-              <Text style={[ss.actionBtnTxt, { color: c.active }]}>Save</Text>
-            </TouchableOpacity>
-          )}
-          <TouchableOpacity
-            style={[ss.actionBtn, { backgroundColor: todayEvents.length > 0 ? tabAccent : c.border, flex: 1 }]}
-            onPress={handleSimulate}
-            disabled={simulationStatus === 'running' || simulationStatus === 'queued'}>
-            <Ionicons name="flash" size={16} color="#fff" />
-            <Text style={[ss.actionBtnTxt, { color: '#fff' }]}>
-              {simulationStatus === 'running' ? 'Simulating...' : `Simulate (${todayEvents.length} events)`}
-            </Text>
-          </TouchableOpacity>
+        {/* ── Tab bar ── */}
+        <ScrollView horizontal showsHorizontalScrollIndicator={false}
+          style={[ss.tabBar, { borderBottomColor: c.border }]}
+          contentContainerStyle={{ paddingHorizontal: 12 }}>
+          {EVENT_TABS.map(t => {
+            const active = activeTab === t.id;
+            return (
+              <TouchableOpacity key={t.id} onPress={() => setActiveTab(t.id)}
+                style={[ss.tabBtn, active && { borderBottomWidth: 2.5, borderBottomColor: t.accent }]}>
+                <Text style={{ fontSize: 20 }}>{t.icon}</Text>
+                <Text style={[ss.tabBtnLabel, { color: active ? t.accent : c.sub }]}>{t.label}</Text>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+
+        {/* ── Tab content panel ── */}
+        <View style={[ss.tabPanel, { backgroundColor: c.card, marginHorizontal: 12, borderColor: c.border }]}>
+          {renderTabContent()}
         </View>
       </ScrollView>
     </KeyboardAvoidingView>
@@ -1805,6 +2051,54 @@ export default function TwinScreen() {
   const renderModals = () => (
     <>
       {renderSubPickerModal()}
+
+      {/* CSV Food Quantity Modal */}
+      {selectedCsvFood && (
+        <Modal visible={true} transparent animationType="fade">
+          <View style={ss.modalOverlay}>
+            <View style={[ss.modalCard, { backgroundColor: c.card }]}>
+              <View style={ss.rowBetween}>
+                <Text style={[ss.modalTitle, { color: c.text }]}>{selectedCsvFood.food}</Text>
+                <TouchableOpacity onPress={() => setSelectedCsvFood(null)}>
+                  <Ionicons name="close" size={22} color={c.sub} />
+                </TouchableOpacity>
+              </View>
+              <Text style={[ss.modalSub, { color: c.sub }]}>
+                {selectedCsvFood.calories} kcal per {selectedCsvFood.display_amount}
+              </Text>
+              
+              <Text style={{ color: c.text, marginBottom: 8, fontWeight: '600' }}>
+                Quantity ({parseDisplayAmount(selectedCsvFood.display_amount).unitLabel})
+              </Text>
+              
+              <View style={[ss.rowBetween, { flexWrap: 'wrap', justifyContent: 'flex-start', gap: 8, marginBottom: 12 }]}>
+                {getQuickQuantities(parseDisplayAmount(selectedCsvFood.display_amount).base, parseDisplayAmount(selectedCsvFood.display_amount).unit).map(q => (
+                  <TouchableOpacity
+                    key={q}
+                    style={[ss.chip, csvFoodAmount === q && { backgroundColor: '#f59e0b', borderColor: '#f59e0b' }]}
+                    onPress={() => setCsvFoodAmount(q)}
+                  >
+                    <Text style={[ss.chipTxt, csvFoodAmount === q && { color: '#fff' }]}>{q}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+              
+              <NumericInput 
+                value={String(csvFoodAmount)} 
+                onChange={(v) => setCsvFoodAmount(parseFloat(v) || 0)} 
+                placeholder="Amount" 
+                c={c} 
+              />
+              
+              <View style={{ marginTop: 12 }}>
+                <TouchableOpacity style={[ss.modalBtn, { backgroundColor: '#f59e0b', justifyContent: 'center' }]} onPress={confirmCsvFoodAdd}>
+                  <Text style={{ color: '#fff', fontWeight: 'bold' }}>Add Meal</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
+      )}
 
       {/* Save Routine */}
       <Modal visible={saveRoutineModal} transparent animationType="slide">
@@ -2024,7 +2318,7 @@ const ss = StyleSheet.create({
 
   // Substance selector
   subSelector: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderRadius: 14, borderWidth: 1.5, paddingHorizontal: 16, paddingVertical: 12, marginBottom: 12 },
-  searchInput: { borderRadius: 10, borderWidth: 1, padding: 10, marginBottom: 10, fontSize: 14 },
+  searchInput: { flex: 1, borderRadius: 10, borderWidth: 1, padding: 10, marginBottom: 10, fontSize: 14 },
   subPickerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 12, paddingHorizontal: 4, borderBottomWidth: 0.5 },
   subPickerName: { fontSize: 14 },
 
@@ -2082,4 +2376,34 @@ const ss = StyleSheet.create({
   macroRingVal: { fontWeight: '800', fontSize: 16, textAlign: 'center' },
   macroRingUnit: { fontSize: 9, textAlign: 'center', marginTop: -2 },
   macroRingLabel: { fontSize: 11, fontWeight: '600', marginTop: 8 },
+  // ── Meal tab — food picker ────────────────────────────────────────────
+  modeRow: {
+    flexDirection: 'row', borderRadius: 16, borderWidth: 1,
+    overflow: 'hidden', marginBottom: 12,
+  },
+  modeBtn: {
+    flex: 1, paddingVertical: 10, alignItems: 'center', justifyContent: 'center',
+  },
+  modeBtnTxt: { fontSize: 13, fontWeight: '700' },
+
+  searchRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    borderRadius: 14, borderWidth: 1,
+    paddingHorizontal: 12, paddingVertical: 10, marginBottom: 10,
+  },
+
+  foodGrid: {
+    flexDirection: 'row', flexWrap: 'wrap',
+    justifyContent: 'space-between',
+  },
+  foodCard: {
+    width: '48%', borderRadius: 16, borderWidth: 1,
+    padding: 12, marginBottom: 10,
+    alignItems: 'flex-start',
+  },
+  foodEmoji:    { fontSize: 28, marginBottom: 4 },
+  foodName:     { fontSize: 13, fontWeight: '700', lineHeight: 17, marginBottom: 2 },
+  foodCal:      { fontSize: 14, fontWeight: '900', marginBottom: 4 },
+  foodMacroRow: { flexDirection: 'row', gap: 4, flexWrap: 'wrap' },
+  foodMacro:    { fontSize: 10, fontWeight: '700' },
 });

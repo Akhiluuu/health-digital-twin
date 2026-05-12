@@ -206,13 +206,15 @@ def validate_events(events: List[Dict[str, Any]]) -> List[str]:
                 errors.append(
                     f"{label}: meal_type '{mt}' unknown. Valid: {', '.join(sorted(VALID_MEAL_TYPES))}."
                 )
-            # For custom meals, verify macros if provided
+            # For custom meals, warn if macros are missing but allow the simulation
+            # to proceed — the scenario_builder will fall back to balanced preset.
             if mt == "custom":
-                for macro in ("carb_g", "fat_g", "protein_g"):
-                    if e.get(macro) is None:
-                        errors.append(
-                            f"{label}: meal_type 'custom' requires '{macro}' field."
-                        )
+                missing = [m for m in ("carb_g", "fat_g", "protein_g") if e.get(m) is None]
+                if missing:
+                    logger.warning(
+                        f"{label}: meal_type 'custom' is missing macro fields: "
+                        f"{missing}. Scenario builder will estimate from balanced preset."
+                    )
 
         elif etype == "water":
             if val is None or not (5 <= float(val) <= 10000):
