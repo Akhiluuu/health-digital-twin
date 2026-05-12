@@ -496,10 +496,10 @@ function SectionLabel({ text, c }: { text: string; c: any }) {
   return <Text style={[ss.sectionLbl, { color: c.sub }]}>{text.toUpperCase()}</Text>;
 }
 
-function ChipRow({ options, selected, onSelect, accent }: {
-  options: { label: string; value: string }[];
-  selected: string;
-  onSelect: (v: string) => void;
+function ChipRow<T extends string>({ options, selected, onSelect, accent }: {
+  options: { label: string; value: T }[];
+  selected: T;
+  onSelect: (v: T) => void;
   accent: string;
 }) {
   return (
@@ -908,11 +908,11 @@ export default function TwinScreen() {
     <View>
       <SectionLabel text="Meal Type" c={c} />
       <ChipRow
-        options={MEAL_TYPES}
-        selected={mealType}
-        onSelect={setMealType}
-        accent="#f59e0b"
-      />
+  options={MEAL_TYPES}
+  selected={mealType}
+  onSelect={(v) => setMealType(v as typeof mealType)}
+  accent="#f59e0b"
+/>
 
       <SectionLabel text="Total Calories" c={c} />
       <NumericInput value={mealKcal} onChange={setMealKcal} placeholder="e.g. 450" suffix="kcal" c={c} />

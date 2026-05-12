@@ -15,6 +15,20 @@ type FamilyContextType = {
   removeMember: (id: string) => Promise<void>;
   getMemberById: (id: string) => FamilyMember | undefined;
   refreshMembers: () => Promise<void>;
+
+  // ── Profile switching ──────────────────────────────────────
+  /** True when currently viewing a family member's profile */
+  isSwitched: boolean;
+  /** True while the switched-to profile is being fetched */
+  isSwitchLoading: boolean;
+  /** The family member being viewed (null = viewing own profile) */
+  activeMemberInfo: FamilyMember | null;
+  /** The active profile — same as activeMemberInfo for now, kept separate for flexibility */
+  activeProfile: FamilyMember | null;
+  /** Switch to a family member's profile */
+  switchToMember: (id: string) => Promise<void>;
+  /** Switch back to own profile */
+  switchToSelf: () => void;
 };
 
 const FamilyContext = createContext<FamilyContextType | null>(null);
@@ -39,6 +53,12 @@ export const FamilyProvider = ({
   const [members, setMembers] = useState<FamilyMember[]>([]);
   const [isLoaded, setIsLoaded] = useState(false);
 
+  // ── Profile switching state ────────────────────────────────
+  const [isSwitched, setIsSwitched] = useState(false);
+  const [isSwitchLoading, setIsSwitchLoading] = useState(false);
+  const [activeMemberInfo, setActiveMemberInfo] = useState<FamilyMember | null>(null);
+  const [activeProfile, setActiveProfile] = useState<FamilyMember | null>(null);
+
   useEffect(() => {
     loadMembers();
   }, []);
@@ -54,8 +74,7 @@ export const FamilyProvider = ({
         const snapshot = await getDoc(userRef);
 
         if (snapshot.exists()) {
-          const firebaseMembers =
-            snapshot.data()?.familyMembers || [];
+          const firebaseMembers = snapshot.data()?.familyMembers || [];
 
           if (Array.isArray(firebaseMembers)) {
             setMembers(firebaseMembers);
@@ -163,9 +182,7 @@ export const FamilyProvider = ({
   };
 
   /* 🔹 Get member by ID */
-  const getMemberById = (
-    id: string
-  ): FamilyMember | undefined => {
+  const getMemberById = (id: string): FamilyMember | undefined => {
     const normalizedId = normalizeId(id);
     if (!normalizedId) return undefined;
 
@@ -182,6 +199,62 @@ export const FamilyProvider = ({
     await loadMembers();
   };
 
+  /* 🔹 Switch to a family member's profile */
+  const switchToMember = async (id: string) => {
+    try {
+      setIsSwitchLoading(true);
+      setIsSwitched(true);
+
+      // First try from already-loaded members list
+      let member = getMemberById(id);
+
+      // If not found locally, try fetching from Firebase
+      if (!member) {
+        const uid = await getUserId();
+        if (uid) {
+          const userRef = doc(db, "users", uid);
+          const snapshot = await getDoc(userRef);
+          if (snapshot.exists()) {
+            const firebaseMembers: FamilyMember[] =
+              snapshot.data()?.familyMembers || [];
+            member = firebaseMembers.find(
+              (m) =>
+                normalizeId(m.id) === normalizeId(id) ||
+                normalizeId(m.uid) === normalizeId(id) ||
+                normalizeId(m.userId) === normalizeId(id)
+            );
+          }
+        }
+      }
+
+      if (member) {
+        setActiveMemberInfo(member);
+        setActiveProfile(member);
+      } else {
+        console.warn("⚠️ Member not found for id:", id);
+        // Reset if not found so banner doesn't show stale data
+        setIsSwitched(false);
+        setActiveMemberInfo(null);
+        setActiveProfile(null);
+      }
+    } catch (error) {
+      console.error("❌ Error switching to member:", error);
+      setIsSwitched(false);
+      setActiveMemberInfo(null);
+      setActiveProfile(null);
+    } finally {
+      setIsSwitchLoading(false);
+    }
+  };
+
+  /* 🔹 Switch back to own profile */
+  const switchToSelf = () => {
+    setIsSwitched(false);
+    setIsSwitchLoading(false);
+    setActiveMemberInfo(null);
+    setActiveProfile(null);
+  };
+
   return (
     <FamilyContext.Provider
       value={{
@@ -191,6 +264,12 @@ export const FamilyProvider = ({
         removeMember,
         getMemberById,
         refreshMembers,
+        isSwitched,
+        isSwitchLoading,
+        activeMemberInfo,
+        activeProfile,
+        switchToMember,
+        switchToSelf,
       }}
     >
       {children}

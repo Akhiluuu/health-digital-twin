@@ -1,16 +1,12 @@
 // app/(tabs)/documents.tsx
-// Full local-storage document vault:
-//  • Saves file to app's document directory (persists across launches)
-//  • Stores metadata in AsyncStorage
-//  • Opens/views any file type (PDF, images, etc.) via expo-sharing or Linking
-//  • Delete support with confirmation
-//  • Search bar
-//  • Works for PDF, JPG, PNG, DOCX, etc.
 
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   Alert,
+  Animated,
+  Dimensions,
   FlatList,
+  Image,
   KeyboardAvoidingView,
   Linking,
   Modal,
@@ -30,6 +26,9 @@ import * as FileSystem from "expo-file-system/legacy";
 import * as Sharing from "expo-sharing";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useTheme } from "../../context/ThemeContext";
+import Header from "../components/Header";
+
+const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get("window");
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -81,6 +80,16 @@ const CATEGORIES: { label: string; value: ReportCategory | "All" }[] = [
   { label: "Other",         value: "Other"        },
 ];
 
+// Animated placeholder items with colors
+const PLACEHOLDER_ITEMS = [
+  { text: "lab reports…",    color: "#2563eb" },
+  { text: "prescriptions…",  color: "#16a34a" },
+  { text: "scans & MRIs…",   color: "#d97706" },
+  { text: "ECG / cardio…",   color: "#dc2626" },
+  { text: "discharge notes…",color: "#9333ea" },
+  { text: "documents…",      color: "#0891b2" },
+];
+
 const UPLOAD_TYPES: {
   label: string;
   value: ReportCategory;
@@ -104,7 +113,7 @@ const CATEGORY_STYLES: Record<ReportCategory, CategoryStyle> = {
   Other:        { icon: "attach-outline",        lightBg: "#f1f5f9", darkBg: "#1e2530", lightIcon: "#64748b", darkIcon: "#8b949e", lightBadge: "#f1f5f9", darkBadge: "#1e2530", lightBadgeText: "#475569", darkBadgeText: "#8b949e" },
 };
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function fileTypeLabel(mimeType: string, originalName: string): string {
   if (mimeType?.includes("pdf"))   return "PDF";
@@ -124,7 +133,203 @@ function formatSize(kb: number): string {
   return `${(kb / 1024).toFixed(1)} MB`;
 }
 
-// ─── Component ────────────────────────────────────────────────────────────────
+function isImage(mimeType: string): boolean {
+  return mimeType?.startsWith("image/");
+}
+
+function isPdf(mimeType: string, name: string): boolean {
+  return mimeType?.includes("pdf") || name?.toLowerCase().endsWith(".pdf");
+}
+
+// ─── Animated Placeholder ─────────────────────────────────────────────────────
+
+function AnimatedPlaceholder() {
+  const [index, setIndex] = useState(0);
+  const fadeAnim  = useRef(new Animated.Value(1)).current;
+  const slideAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    const cycle = () => {
+      // fade + slide out
+      Animated.parallel([
+        Animated.timing(fadeAnim,  { toValue: 0, duration: 350, useNativeDriver: true }),
+        Animated.timing(slideAnim, { toValue: -10, duration: 350, useNativeDriver: true }),
+      ]).start(() => {
+        setIndex((prev) => (prev + 1) % PLACEHOLDER_ITEMS.length);
+        slideAnim.setValue(10);
+        // fade + slide in
+        Animated.parallel([
+          Animated.timing(fadeAnim,  { toValue: 1, duration: 350, useNativeDriver: true }),
+          Animated.timing(slideAnim, { toValue: 0, duration: 350, useNativeDriver: true }),
+        ]).start();
+      });
+    };
+
+    const interval = setInterval(cycle, 2200);
+    return () => clearInterval(interval);
+  }, []);
+
+  const item = PLACEHOLDER_ITEMS[index];
+
+  return (
+    <Animated.Text
+      style={[
+        styles.animatedPlaceholder,
+        {
+          color: item.color,
+          opacity: fadeAnim,
+          transform: [{ translateY: slideAnim }],
+        },
+      ]}
+      pointerEvents="none"
+    >
+      Search {item.text}
+    </Animated.Text>
+  );
+}
+
+// ─── In-App Document Viewer ───────────────────────────────────────────────────
+
+function InAppViewer({
+  doc,
+  onClose,
+  colors,
+  isDark,
+}: {
+  doc: StoredDocument;
+  onClose: () => void;
+  colors: any;
+  isDark: boolean;
+}) {
+  const [imageError, setImageError] = useState(false);
+  const style = CATEGORY_STYLES[doc.category];
+
+  const isImg = isImage(doc.mimeType);
+  const isPdf_ = isPdf(doc.mimeType, doc.originalName);
+
+  return (
+    <Modal visible animationType="slide" onRequestClose={onClose}>
+      <SafeAreaView style={[styles.viewerSafe, { backgroundColor: isDark ? "#0d1117" : "#f6f8fa" }]}>
+        {/* Viewer header */}
+        <View style={[styles.viewerHeader, { backgroundColor: isDark ? "#161b22" : "#fff", borderBottomColor: colors.border }]}>
+          <TouchableOpacity onPress={onClose} style={styles.viewerBackBtn}>
+            <Ionicons name="arrow-back" size={22} color={colors.text} />
+          </TouchableOpacity>
+          <View style={{ flex: 1, marginLeft: 10 }}>
+            <Text style={[styles.viewerTitle, { color: colors.text }]} numberOfLines={1}>{doc.title}</Text>
+            <Text style={[styles.viewerSub, { color: colors.sub }]}>{doc.date} · {fileTypeLabel(doc.mimeType, doc.originalName)} · {formatSize(doc.sizeKb)}</Text>
+          </View>
+          <TouchableOpacity
+            onPress={async () => {
+              const canShare = await Sharing.isAvailableAsync();
+              if (canShare) await Sharing.shareAsync(doc.localUri, { mimeType: doc.mimeType, dialogTitle: doc.title });
+            }}
+            style={styles.viewerShareBtn}
+          >
+            <Ionicons name="share-outline" size={20} color={colors.accentText} />
+          </TouchableOpacity>
+        </View>
+
+        {/* Content */}
+        <ScrollView
+          style={{ flex: 1 }}
+          contentContainerStyle={styles.viewerContent}
+          maximumZoomScale={4}
+          minimumZoomScale={1}
+          showsVerticalScrollIndicator={false}
+        >
+          {isImg && !imageError ? (
+            // ── Image viewer ──────────────────────────────────────────
+            <View style={styles.imageViewerWrap}>
+              <Image
+                source={{ uri: doc.localUri }}
+                style={styles.imageViewer}
+                resizeMode="contain"
+                onError={() => setImageError(true)}
+              />
+            </View>
+          ) : isPdf_ ? (
+            // ── PDF: show metadata card + open externally button ──────
+            // expo-file-system doesn't support in-app PDF rendering without
+            // react-native-pdf. We show a rich preview card and open externally.
+            <View style={[styles.pdfCard, { backgroundColor: isDark ? "#161b22" : "#fff", borderColor: colors.border }]}>
+              <View style={[styles.pdfIconCircle, { backgroundColor: isDark ? style.darkBg : style.lightBg }]}>
+                <Ionicons name="document-text" size={52} color={isDark ? style.darkIcon : style.lightIcon} />
+              </View>
+              <Text style={[styles.pdfCardTitle, { color: colors.text }]}>{doc.title}</Text>
+              <Text style={[styles.pdfCardSub, { color: colors.sub }]}>{doc.originalName}</Text>
+
+              <View style={[styles.pdfMetaBox, { backgroundColor: isDark ? "#0d1117" : "#f6f8fa", borderColor: colors.border }]}>
+                {[
+                  { label: "Type",   value: fileTypeLabel(doc.mimeType, doc.originalName) },
+                  { label: "Size",   value: formatSize(doc.sizeKb) },
+                  { label: "Date",   value: doc.date },
+                  { label: "Source", value: doc.doctor },
+                ].map((row, i) => (
+                  <View key={row.label} style={[styles.pdfMetaRow, i < 3 && { borderBottomWidth: 0.5, borderBottomColor: colors.border }]}>
+                    <Text style={[styles.pdfMetaLabel, { color: colors.sub }]}>{row.label}</Text>
+                    <Text style={[styles.pdfMetaValue, { color: colors.text }]}>{row.value}</Text>
+                  </View>
+                ))}
+              </View>
+
+              <TouchableOpacity
+                style={[styles.pdfOpenBtn, { backgroundColor: isDark ? style.darkBg : style.lightBg }]}
+                onPress={async () => {
+                  try {
+                    if (Platform.OS === "android") {
+                      try {
+                        const IntentLauncher = require("expo-intent-launcher");
+                        const contentUri = await FileSystem.getContentUriAsync(doc.localUri);
+                        await IntentLauncher.startActivityAsync("android.intent.action.VIEW", {
+                          data: contentUri, flags: 1, type: doc.mimeType || "application/pdf",
+                        });
+                        return;
+                      } catch {}
+                    }
+                    const canShare = await Sharing.isAvailableAsync();
+                    if (canShare) await Sharing.shareAsync(doc.localUri, { mimeType: doc.mimeType, dialogTitle: doc.title });
+                  } catch (e: any) { Alert.alert("Error", e.message); }
+                }}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="open-outline" size={20} color={isDark ? style.darkIcon : style.lightIcon} />
+                <Text style={[styles.pdfOpenBtnText, { color: isDark ? style.darkIcon : style.lightIcon }]}>
+                  Open in PDF Viewer
+                </Text>
+              </TouchableOpacity>
+
+              <Text style={[styles.pdfNote, { color: colors.sub }]}>
+                For full PDF rendering, open in your device's PDF reader app.
+              </Text>
+            </View>
+          ) : (
+            // ── Generic file: open externally ─────────────────────────
+            <View style={[styles.pdfCard, { backgroundColor: isDark ? "#161b22" : "#fff", borderColor: colors.border }]}>
+              <View style={[styles.pdfIconCircle, { backgroundColor: isDark ? style.darkBg : style.lightBg }]}>
+                <Ionicons name="document-attach" size={52} color={isDark ? style.darkIcon : style.lightIcon} />
+              </View>
+              <Text style={[styles.pdfCardTitle, { color: colors.text }]}>{doc.title}</Text>
+              <Text style={[styles.pdfCardSub, { color: colors.sub }]}>{doc.originalName}</Text>
+              <TouchableOpacity
+                style={[styles.pdfOpenBtn, { backgroundColor: isDark ? style.darkBg : style.lightBg, marginTop: 20 }]}
+                onPress={async () => {
+                  const canShare = await Sharing.isAvailableAsync();
+                  if (canShare) await Sharing.shareAsync(doc.localUri, { mimeType: doc.mimeType, dialogTitle: doc.title });
+                }}
+              >
+                <Ionicons name="share-outline" size={20} color={isDark ? style.darkIcon : style.lightIcon} />
+                <Text style={[styles.pdfOpenBtnText, { color: isDark ? style.darkIcon : style.lightIcon }]}>Open / Share File</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+        </ScrollView>
+      </SafeAreaView>
+    </Modal>
+  );
+}
+
+// ─── Main Screen ──────────────────────────────────────────────────────────────
 
 export default function DocumentsScreen() {
   const { theme } = useTheme();
@@ -162,6 +367,7 @@ export default function DocumentsScreen() {
   const [documents,        setDocuments]        = useState<StoredDocument[]>([]);
   const [activeFilter,     setActiveFilter]     = useState<ReportCategory | "All">("All");
   const [searchQuery,      setSearchQuery]       = useState("");
+  const [searchFocused,    setSearchFocused]     = useState(false);
   const [showUploadModal,  setShowUploadModal]  = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<ReportCategory | null>(null);
   const [reportName,       setReportName]        = useState("");
@@ -171,6 +377,8 @@ export default function DocumentsScreen() {
   const [pickedSizeKb,     setPickedSizeKb]      = useState<number>(0);
   const [uploading,        setUploading]         = useState(false);
   const [viewingDoc,       setViewingDoc]        = useState<StoredDocument | null>(null);
+  // In-app viewer state
+  const [inAppDoc,         setInAppDoc]          = useState<StoredDocument | null>(null);
 
   // ── Bootstrap ──────────────────────────────────────────────────────────────
 
@@ -187,24 +395,16 @@ export default function DocumentsScreen() {
         parsed.sort((a, b) => b.dateMs - a.dateMs);
         setDocuments(parsed);
       }
-    } catch (e) {
-      console.log("❌ loadDocuments error:", e);
-    }
+    } catch (e) { console.log("❌ loadDocuments error:", e); }
   }, []);
 
   useEffect(() => {
-    (async () => {
-      await ensureDir();
-      await loadDocuments();
-    })();
+    (async () => { await ensureDir(); await loadDocuments(); })();
   }, []);
 
   const saveDocuments = async (docs: StoredDocument[]) => {
-    try {
-      await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(docs));
-    } catch (e) {
-      console.log("❌ saveDocuments error:", e);
-    }
+    try { await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(docs)); }
+    catch (e) { console.log("❌ saveDocuments error:", e); }
   };
 
   // ── Derived ────────────────────────────────────────────────────────────────
@@ -219,204 +419,101 @@ export default function DocumentsScreen() {
   });
 
   const thisMonth = documents.filter((d) => {
-    const now = new Date();
-    const docDate = new Date(d.dateMs);
+    const now = new Date(); const docDate = new Date(d.dateMs);
     return docDate.getMonth() === now.getMonth() && docDate.getFullYear() === now.getFullYear();
   }).length;
 
   // ── Handlers ──────────────────────────────────────────────────────────────
 
   const resetModalState = () => {
-    setSelectedCategory(null);
-    setReportName("");
-    setPickedFileName(null);
-    setPickedFileUri(null);
-    setPickedMime("application/octet-stream");
-    setPickedSizeKb(0);
+    setSelectedCategory(null); setReportName(""); setPickedFileName(null);
+    setPickedFileUri(null); setPickedMime("application/octet-stream"); setPickedSizeKb(0);
   };
 
-  const handleCloseModal = () => {
-    setShowUploadModal(false);
-    resetModalState();
-  };
+  const handleCloseModal = () => { setShowUploadModal(false); resetModalState(); };
 
   const handlePickFile = async () => {
     try {
-      const result = await DocumentPicker.getDocumentAsync({
-        type: "*/*",
-        copyToCacheDirectory: true,
-      });
+      const result = await DocumentPicker.getDocumentAsync({ type: "*/*", copyToCacheDirectory: true });
       if (!result.canceled && result.assets.length > 0) {
         const file = result.assets[0];
-        setPickedFileName(file.name);
-        setPickedFileUri(file.uri);
+        setPickedFileName(file.name); setPickedFileUri(file.uri);
         setPickedMime(file.mimeType ?? "application/octet-stream");
         const info = await FileSystem.getInfoAsync(file.uri);
         setPickedSizeKb(Math.round(((info as any).size ?? 0) / 1024));
-        if (!reportName) {
-          const nameWithoutExt = file.name.replace(/\.[^/.]+$/, "");
-          setReportName(nameWithoutExt);
-        }
+        if (!reportName) setReportName(file.name.replace(/\.[^/.]+$/, ""));
       }
-    } catch {
-      Alert.alert("Error", "Could not open the file picker. Please try again.");
-    }
+    } catch { Alert.alert("Error", "Could not open the file picker. Please try again."); }
   };
 
   const handleConfirmUpload = async () => {
-    if (!reportName.trim()) {
-      Alert.alert("Name required", "Please enter a name for this report.");
-      return;
-    }
-    if (!pickedFileUri || !pickedFileName) {
-      Alert.alert("File required", "Please select a file to upload.");
-      return;
-    }
-
+    if (!reportName.trim()) { Alert.alert("Name required", "Please enter a name for this report."); return; }
+    if (!pickedFileUri || !pickedFileName) { Alert.alert("File required", "Please select a file to upload."); return; }
     setUploading(true);
     try {
       await ensureDir();
-
       const ext = pickedFileName.split(".").pop() ?? "bin";
       const destName = `${Date.now()}_${reportName.trim().replace(/\s+/g, "_")}.${ext}`;
       const destUri  = DOCS_DIR + destName;
-
       await FileSystem.copyAsync({ from: pickedFileUri, to: destUri });
-
       const now = new Date();
       const newDoc: StoredDocument = {
-        id:           Date.now().toString(),
-        title:        reportName.trim(),
-        date:         now.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }),
-        dateMs:       now.getTime(),
-        category:     selectedCategory!,
-        doctor:       "Uploaded by you",
-        localUri:     destUri,
-        originalName: pickedFileName,
-        mimeType:     pickedMime,
-        sizeKb:       pickedSizeKb,
+        id: Date.now().toString(), title: reportName.trim(),
+        date: now.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }),
+        dateMs: now.getTime(), category: selectedCategory!, doctor: "Uploaded by you",
+        localUri: destUri, originalName: pickedFileName, mimeType: pickedMime, sizeKb: pickedSizeKb,
       };
-
       const updated = [newDoc, ...documents];
-      setDocuments(updated);
-      await saveDocuments(updated);
-
+      setDocuments(updated); await saveDocuments(updated);
       handleCloseModal();
       Alert.alert("✅ Saved", `"${newDoc.title}" has been stored locally.`);
-    } catch (e: any) {
-      Alert.alert("Upload failed", e.message ?? "Could not save the file.");
-    } finally {
-      setUploading(false);
-    }
+    } catch (e: any) { Alert.alert("Upload failed", e.message ?? "Could not save the file."); }
+    finally { setUploading(false); }
   };
 
-  /** Open the file directly in an appropriate viewer app (not the share sheet) */
+  /** Open document — images & PDFs open in-app, others open externally */
   const handleOpenDocument = async (doc: StoredDocument) => {
     try {
       const info = await FileSystem.getInfoAsync(doc.localUri);
-      if (!info.exists) {
-        Alert.alert("File not found", "The file may have been deleted from local storage.");
-        return;
-      }
+      if (!info.exists) { Alert.alert("File not found", "The file may have been deleted from local storage."); return; }
 
-      if (Platform.OS === "android") {
-        try {
-          // Lazy require so the module is only loaded on Android at runtime.
-          // This avoids the native-module crash in Expo Go; works fine in
-          // a bare/development build where the native module is linked.
-          const IntentLauncher = require("expo-intent-launcher");
-          const contentUri = await FileSystem.getContentUriAsync(doc.localUri);
-          await IntentLauncher.startActivityAsync("android.intent.action.VIEW", {
-            data: contentUri,
-            flags: 1, // FLAG_GRANT_READ_URI_PERMISSION
-            type: doc.mimeType || "application/octet-stream",
-          });
-          return;
-        } catch {
-          // IntentLauncher not available (e.g. Expo Go) — fall through to sharing
-        }
-      }
-
-      // iOS, or Android fallback: shareAsync with a single mimeType usually
-      // opens the file directly in the matching app without a share sheet.
-      const canShare = await Sharing.isAvailableAsync();
-      if (canShare) {
-        await Sharing.shareAsync(doc.localUri, {
-          mimeType: doc.mimeType,
-          dialogTitle: doc.title,
-          UTI: doc.mimeType,
-        });
-      } else {
-        const canOpen = await Linking.canOpenURL(doc.localUri);
-        if (canOpen) {
-          await Linking.openURL(doc.localUri);
-        } else {
-          Alert.alert(
-            "Cannot open file",
-            "Install a compatible app (e.g. a PDF reader or gallery) to view this file."
-          );
-        }
-      }
-    } catch (e: any) {
-      Alert.alert("Error", e.message ?? "Could not open the file.");
-    }
+      // Always open in-app viewer (handles images natively, PDFs with metadata + external fallback)
+      setViewingDoc(null);
+      setInAppDoc(doc);
+    } catch (e: any) { Alert.alert("Error", e.message ?? "Could not open the file."); }
   };
 
-  /** Share the file via the system share sheet */
   const handleShareDocument = async (doc: StoredDocument) => {
     try {
       const info = await FileSystem.getInfoAsync(doc.localUri);
-      if (!info.exists) {
-        Alert.alert("File not found", "The file may have been deleted from local storage.");
-        return;
-      }
+      if (!info.exists) { Alert.alert("File not found", "The file may have been deleted."); return; }
       const canShare = await Sharing.isAvailableAsync();
-      if (canShare) {
-        await Sharing.shareAsync(doc.localUri, {
-          mimeType: doc.mimeType,
-          dialogTitle: doc.title,
-          UTI: doc.mimeType,
-        });
-      } else {
-        Alert.alert("Sharing not available", "Sharing is not supported on this device.");
-      }
-    } catch (e: any) {
-      Alert.alert("Error", e.message ?? "Could not share the file.");
-    }
+      if (canShare) await Sharing.shareAsync(doc.localUri, { mimeType: doc.mimeType, dialogTitle: doc.title, UTI: doc.mimeType });
+      else Alert.alert("Sharing not available", "Sharing is not supported on this device.");
+    } catch (e: any) { Alert.alert("Error", e.message ?? "Could not share the file."); }
   };
 
   const handleDeleteDocument = (doc: StoredDocument) => {
-    Alert.alert(
-      "Delete Document",
-      `Are you sure you want to permanently delete "${doc.title}"?`,
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Delete",
-          style: "destructive",
-          onPress: async () => {
-            try {
-              const info = await FileSystem.getInfoAsync(doc.localUri);
-              if (info.exists) await FileSystem.deleteAsync(doc.localUri, { idempotent: true });
-              const updated = documents.filter((d) => d.id !== doc.id);
-              setDocuments(updated);
-              await saveDocuments(updated);
-              if (viewingDoc?.id === doc.id) setViewingDoc(null);
-            } catch (e: any) {
-              Alert.alert("Error", e.message ?? "Could not delete the file.");
-            }
-          },
-        },
-      ]
-    );
+    Alert.alert("Delete Document", `Are you sure you want to permanently delete "${doc.title}"?`, [
+      { text: "Cancel", style: "cancel" },
+      { text: "Delete", style: "destructive", onPress: async () => {
+        try {
+          const info = await FileSystem.getInfoAsync(doc.localUri);
+          if (info.exists) await FileSystem.deleteAsync(doc.localUri, { idempotent: true });
+          const updated = documents.filter((d) => d.id !== doc.id);
+          setDocuments(updated); await saveDocuments(updated);
+          if (viewingDoc?.id === doc.id) setViewingDoc(null);
+          if (inAppDoc?.id === doc.id) setInAppDoc(null);
+        } catch (e: any) { Alert.alert("Error", e.message ?? "Could not delete the file."); }
+      }},
+    ]);
   };
 
-  // ── Render helpers ────────────────────────────────────────────────────────
+  // ── Render helpers ─────────────────────────────────────────────────────────
 
   const renderDocument = ({ item }: { item: StoredDocument }) => {
     const style = CATEGORY_STYLES[item.category];
     const fileLabel = fileTypeLabel(item.mimeType, item.originalName);
-
     return (
       <TouchableOpacity
         style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}
@@ -427,22 +524,13 @@ export default function DocumentsScreen() {
         <View style={[styles.iconBox, { backgroundColor: isDark ? style.darkBg : style.lightBg }]}>
           <Ionicons name={style.icon} size={20} color={isDark ? style.darkIcon : style.lightIcon} />
         </View>
-
         <View style={styles.cardInfo}>
-          <Text style={[styles.cardTitle, { color: colors.text }]} numberOfLines={1}>
-            {item.title}
-          </Text>
-          <Text style={[styles.cardMeta, { color: colors.sub }]}>
-            {item.date} · {fileLabel} · {formatSize(item.sizeKb)}
-          </Text>
+          <Text style={[styles.cardTitle, { color: colors.text }]} numberOfLines={1}>{item.title}</Text>
+          <Text style={[styles.cardMeta, { color: colors.sub }]}>{item.date} · {fileLabel} · {formatSize(item.sizeKb)}</Text>
         </View>
-
         <View style={[styles.badge, { backgroundColor: isDark ? style.darkBadge : style.lightBadge }]}>
-          <Text style={[styles.badgeText, { color: isDark ? style.darkBadgeText : style.lightBadgeText }]}>
-            {item.category}
-          </Text>
+          <Text style={[styles.badgeText, { color: isDark ? style.darkBadgeText : style.lightBadgeText }]}>{item.category}</Text>
         </View>
-
         <Ionicons name="chevron-forward" size={14} color={colors.muted} />
       </TouchableOpacity>
     );
@@ -455,19 +543,17 @@ export default function DocumentsScreen() {
       </View>
       <Text style={[styles.emptyTitle, { color: colors.text }]}>No documents yet</Text>
       <Text style={[styles.emptyDesc, { color: colors.sub }]}>
-        {activeFilter === "All"
-          ? "Tap the + button to add your first medical document."
-          : `No ${activeFilter} documents added yet.`}
+        {activeFilter === "All" ? "Tap the + button to add your first medical document." : `No ${activeFilter} documents added yet.`}
       </Text>
     </View>
   );
 
-  // ── Upload Modal: step 1 — choose category ────────────────────────────────
+  // ── Upload Modal ──────────────────────────────────────────────────────────
+
   const renderCategoryStep = () => (
     <ScrollView showsVerticalScrollIndicator={false}>
       <Text style={[styles.modalTitle, { color: colors.text }]}>Add Document</Text>
       <Text style={[styles.modalSub, { color: colors.sub }]}>Select the type of report to upload</Text>
-
       {UPLOAD_TYPES.map((type) => {
         const catStyle = CATEGORY_STYLES[type.value];
         return (
@@ -488,32 +574,25 @@ export default function DocumentsScreen() {
           </TouchableOpacity>
         );
       })}
-
       <TouchableOpacity style={[styles.cancelBtn, { borderColor: colors.border }]} onPress={handleCloseModal}>
         <Text style={[styles.cancelText, { color: colors.sub }]}>Cancel</Text>
       </TouchableOpacity>
     </ScrollView>
   );
 
-  // ── Upload Modal: step 2 — name + file ────────────────────────────────────
   const renderUploadStep = () => {
     const catStyle = CATEGORY_STYLES[selectedCategory!];
     const canSubmit = reportName.trim().length > 0 && pickedFileName !== null;
     const typeInfo  = UPLOAD_TYPES.find((t) => t.value === selectedCategory);
-
     return (
       <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
         <View style={styles.modalTitleRow}>
           <TouchableOpacity onPress={() => setSelectedCategory(null)} style={styles.backBtn}>
             <Ionicons name="arrow-back" size={18} color={colors.sub} />
           </TouchableOpacity>
-          <Text style={[styles.modalTitle, { color: colors.text, marginBottom: 0 }]}>
-            {typeInfo?.label}
-          </Text>
+          <Text style={[styles.modalTitle, { color: colors.text, marginBottom: 0 }]}>{typeInfo?.label}</Text>
         </View>
-        <Text style={[styles.modalSub, { color: colors.sub, marginTop: 4 }]}>
-          Enter a name and attach the file
-        </Text>
+        <Text style={[styles.modalSub, { color: colors.sub, marginTop: 4 }]}>Enter a name and attach the file</Text>
 
         <View style={styles.inputSection}>
           <Text style={[styles.inputLabel, { color: colors.sub }]}>REPORT NAME *</Text>
@@ -521,25 +600,20 @@ export default function DocumentsScreen() {
             style={[styles.textInput, { backgroundColor: colors.uploadRow, borderColor: colors.border, color: colors.text }]}
             placeholder="e.g. Blood Test – Jan 2026"
             placeholderTextColor={colors.sub}
-            value={reportName}
-            onChangeText={setReportName}
-            returnKeyType="done"
+            value={reportName} onChangeText={setReportName} returnKeyType="done"
           />
         </View>
 
         <View style={styles.inputSection}>
           <Text style={[styles.inputLabel, { color: colors.sub }]}>ATTACH FILE *</Text>
-          <Text style={[styles.inputHint, { color: colors.sub }]}>
-            Supports PDF, Images (JPG/PNG), DOCX, and more
-          </Text>
+          <Text style={[styles.inputHint, { color: colors.sub }]}>Supports PDF, Images (JPG/PNG), DOCX, and more</Text>
           <TouchableOpacity
             style={[styles.filePicker, {
               backgroundColor: colors.uploadRow,
               borderColor: pickedFileName ? colors.accent : colors.border,
               borderStyle: pickedFileName ? "solid" : "dashed",
             }]}
-            onPress={handlePickFile}
-            activeOpacity={0.7}
+            onPress={handlePickFile} activeOpacity={0.7}
           >
             {pickedFileName ? (
               <>
@@ -566,21 +640,16 @@ export default function DocumentsScreen() {
 
         <TouchableOpacity
           style={[styles.confirmBtn, { backgroundColor: canSubmit && !uploading ? colors.accent : colors.muted }]}
-          onPress={handleConfirmUpload}
-          activeOpacity={canSubmit ? 0.85 : 1}
-          disabled={uploading}
+          onPress={handleConfirmUpload} activeOpacity={canSubmit ? 0.85 : 1} disabled={uploading}
         >
           {uploading
             ? <Text style={[styles.confirmText, { color: "#fff" }]}>Saving…</Text>
             : <>
                 <Ionicons name="save-outline" size={18} color={canSubmit ? "#fff" : colors.sub} />
-                <Text style={[styles.confirmText, { color: canSubmit ? "#fff" : colors.sub }]}>
-                  Save Document Locally
-                </Text>
+                <Text style={[styles.confirmText, { color: canSubmit ? "#fff" : colors.sub }]}>Save Document Locally</Text>
               </>
           }
         </TouchableOpacity>
-
         <TouchableOpacity style={[styles.cancelBtn, { borderColor: colors.border }]} onPress={handleCloseModal}>
           <Text style={[styles.cancelText, { color: colors.sub }]}>Cancel</Text>
         </TouchableOpacity>
@@ -588,12 +657,12 @@ export default function DocumentsScreen() {
     );
   };
 
-  // ── Document detail modal ─────────────────────────────────────────────────
+  // ── Detail modal ──────────────────────────────────────────────────────────
+
   const renderDetailModal = () => {
     if (!viewingDoc) return null;
-    const style     = CATEGORY_STYLES[viewingDoc.category];
+    const style = CATEGORY_STYLES[viewingDoc.category];
     const fileLabel = fileTypeLabel(viewingDoc.mimeType, viewingDoc.originalName);
-
     return (
       <Modal visible={!!viewingDoc} transparent animationType="fade" onRequestClose={() => setViewingDoc(null)}>
         <View style={[styles.detailOverlay, { backgroundColor: colors.modalOverlay }]}>
@@ -602,13 +671,9 @@ export default function DocumentsScreen() {
             <View style={[styles.detailIconBox, { backgroundColor: isDark ? style.darkBg : style.lightBg }]}>
               <Ionicons name={viewerIcon(viewingDoc.mimeType)} size={34} color={isDark ? style.darkIcon : style.lightIcon} />
             </View>
-            <Text style={[styles.detailTitle, { color: colors.text }]} numberOfLines={2}>
-              {viewingDoc.title}
-            </Text>
+            <Text style={[styles.detailTitle, { color: colors.text }]} numberOfLines={2}>{viewingDoc.title}</Text>
             <View style={[styles.badge, { backgroundColor: isDark ? style.darkBadge : style.lightBadge, marginBottom: 8 }]}>
-              <Text style={[styles.badgeText, { color: isDark ? style.darkBadgeText : style.lightBadgeText }]}>
-                {viewingDoc.category}
-              </Text>
+              <Text style={[styles.badgeText, { color: isDark ? style.darkBadgeText : style.lightBadgeText }]}>{viewingDoc.category}</Text>
             </View>
 
             {[
@@ -626,13 +691,14 @@ export default function DocumentsScreen() {
             ))}
 
             <View style={styles.detailActions}>
+              {/* Open in-app */}
               <TouchableOpacity
                 style={[styles.detailBtn, { backgroundColor: colors.viewBtn, flex: 2 }]}
                 onPress={() => handleOpenDocument(viewingDoc)}
                 activeOpacity={0.8}
               >
                 <Ionicons name="eye-outline" size={18} color={colors.viewBtnText} />
-                <Text style={[styles.detailBtnText, { color: colors.viewBtnText }]}>Open File</Text>
+                <Text style={[styles.detailBtnText, { color: colors.viewBtnText }]}>View File</Text>
               </TouchableOpacity>
 
               <TouchableOpacity
@@ -666,26 +732,26 @@ export default function DocumentsScreen() {
   };
 
   // ─────────────────────────────────────────────────────────────────────────
+
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: colors.bg }]}>
       <StatusBar barStyle={isDark ? "light-content" : "dark-content"} />
 
-      {/* ── Header ──────────────────────────────────────────────────────── */}
-      <View style={[styles.header, { backgroundColor: colors.headerBg }]}>
+      {/* ── App Header (same as other pages) ────────────────────────────── */}
+      <Header />
+
+      {/* ── Page Header ─────────────────────────────────────────────────── */}
+      <View style={[styles.header, { backgroundColor: colors.headerBg, paddingTop: 100 }]}>
         <Text style={[styles.headerSuper, { color: colors.sectionLabel }]}>HEALTH RECORDS</Text>
         <Text style={[styles.headerTitle, { color: colors.text }]}>My Documents</Text>
 
-        {/* Stats strip */}
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.statsScroll}>
           {[
             { label: "Total",      value: String(documents.length)  },
             { label: "This month", value: String(thisMonth)          },
             { label: "Last added", value: documents[0]?.date ?? "—" },
           ].map((s) => (
-            <View
-              key={s.label}
-              style={[styles.statsChip, { backgroundColor: colors.statsChip, borderColor: colors.statsChipBorder }]}
-            >
+            <View key={s.label} style={[styles.statsChip, { backgroundColor: colors.statsChip, borderColor: colors.statsChipBorder }]}>
               <Text style={[styles.statsLabel, { color: colors.statsText }]}>{s.label}  </Text>
               <Text style={[styles.statsValue, { color: colors.statsValue }]}>{s.value}</Text>
             </View>
@@ -693,18 +759,28 @@ export default function DocumentsScreen() {
         </ScrollView>
       </View>
 
-      {/* ── Search bar ──────────────────────────────────────────────────── */}
-      <View style={[styles.searchRow, { backgroundColor: colors.searchBg, borderColor: colors.border }]}>
-        <Ionicons name="search-outline" size={16} color={colors.sub} style={{ marginRight: 8 }} />
-        <TextInput
-          style={[styles.searchInput, { color: colors.text }]}
-          placeholder="Search documents…"
-          placeholderTextColor={colors.sub}
-          value={searchQuery}
-          onChangeText={setSearchQuery}
-          returnKeyType="search"
-          clearButtonMode="while-editing"
-        />
+      {/* ── Animated Search Bar ──────────────────────────────────────────── */}
+      <View style={[styles.searchRow, { backgroundColor: colors.searchBg, borderColor: searchFocused ? colors.accent : colors.border }]}>
+        <Ionicons name="search-outline" size={16} color={searchFocused ? colors.accent : colors.sub} style={{ marginRight: 8 }} />
+
+        <View style={{ flex: 1, justifyContent: "center" }}>
+          <TextInput
+            style={[styles.searchInput, { color: colors.text }]}
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            onFocus={() => setSearchFocused(true)}
+            onBlur={() => setSearchFocused(false)}
+            returnKeyType="search"
+            clearButtonMode="while-editing"
+          />
+          {/* Animated placeholder — only shown when input is empty and not focused */}
+          {searchQuery.length === 0 && !searchFocused && (
+            <View style={styles.placeholderOverlay} pointerEvents="none">
+              <AnimatedPlaceholder />
+            </View>
+          )}
+        </View>
+
         {searchQuery.length > 0 && (
           <TouchableOpacity onPress={() => setSearchQuery("")}>
             <Ionicons name="close-circle" size={16} color={colors.sub} />
@@ -712,10 +788,9 @@ export default function DocumentsScreen() {
         )}
       </View>
 
-      {/* ── Filter pills — immediately below search bar ──────────────────── */}
+      {/* ── Filter pills ─────────────────────────────────────────────────── */}
       <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
+        horizontal showsHorizontalScrollIndicator={false}
         style={[styles.filterScrollView, { borderBottomColor: colors.border }]}
         contentContainerStyle={styles.filterScroll}
       >
@@ -738,7 +813,7 @@ export default function DocumentsScreen() {
         })}
       </ScrollView>
 
-      {/* ── Count label — immediately below filter pills ─────────────────── */}
+      {/* ── Count label ──────────────────────────────────────────────────── */}
       <Text style={[styles.sectionLabel, { color: colors.sectionLabel }]}>
         {activeFilter === "All" ? "ALL DOCUMENTS" : activeFilter.toUpperCase()}
         {"  "}
@@ -748,20 +823,17 @@ export default function DocumentsScreen() {
         )}
       </Text>
 
-      {/* ── Document list ────────────────────────────────────────────────── */}
+      {/* ── Document list ─────────────────────────────────────────────────── */}
       <FlatList
         data={filtered}
         keyExtractor={(item) => item.id}
         renderItem={renderDocument}
-        contentContainerStyle={[
-          styles.listContent,
-          filtered.length === 0 && styles.listContentEmpty,
-        ]}
+        contentContainerStyle={[styles.listContent, filtered.length === 0 && styles.listContentEmpty]}
         showsVerticalScrollIndicator={false}
         ListEmptyComponent={renderEmptyState}
       />
 
-      {/* ── FAB ─────────────────────────────────────────────────────────── */}
+      {/* ── FAB ──────────────────────────────────────────────────────────── */}
       <TouchableOpacity
         style={[styles.fab, { backgroundColor: colors.accent }]}
         onPress={() => setShowUploadModal(true)}
@@ -770,24 +842,25 @@ export default function DocumentsScreen() {
         <Ionicons name="add" size={26} color="#fff" />
       </TouchableOpacity>
 
-      {/* ── Document detail modal ────────────────────────────────────────── */}
+      {/* ── Detail modal ─────────────────────────────────────────────────── */}
       {renderDetailModal()}
 
+      {/* ── In-App Viewer ────────────────────────────────────────────────── */}
+      {inAppDoc && (
+        <InAppViewer
+          doc={inAppDoc}
+          onClose={() => setInAppDoc(null)}
+          colors={colors}
+          isDark={isDark}
+        />
+      )}
+
       {/* ── Upload modal ─────────────────────────────────────────────────── */}
-      <Modal
-        visible={showUploadModal}
-        transparent
-        animationType="slide"
-        onRequestClose={handleCloseModal}
-      >
-        <KeyboardAvoidingView
-          behavior={Platform.OS === "ios" ? "padding" : "height"}
-          style={{ flex: 1 }}
-        >
+      <Modal visible={showUploadModal} transparent animationType="slide" onRequestClose={handleCloseModal}>
+        <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1 }}>
           <TouchableOpacity
             style={[styles.modalOverlay, { backgroundColor: colors.modalOverlay }]}
-            activeOpacity={1}
-            onPress={handleCloseModal}
+            activeOpacity={1} onPress={handleCloseModal}
           />
           <View style={[styles.modalSheet, { backgroundColor: colors.modalBg }]}>
             <View style={[styles.modalHandle, { backgroundColor: colors.border }]} />
@@ -805,61 +878,32 @@ const styles = StyleSheet.create({
   safe: { flex: 1 },
 
   // Header
-  header:      { paddingHorizontal: 20, paddingTop: 14, paddingBottom: 10 },
+  header:      { paddingHorizontal: 20, paddingBottom: 10 },
   headerSuper: { fontSize: 10, fontWeight: "600", letterSpacing: 1.2, marginBottom: 2 },
   headerTitle: { fontSize: 26, fontWeight: "600", marginBottom: 12 },
   statsScroll: { flexDirection: "row" },
-  statsChip:   {
-    flexDirection: "row", alignItems: "center",
-    paddingHorizontal: 14, paddingVertical: 6,
-    borderRadius: 20, borderWidth: 0.5, marginRight: 8,
-  },
-  statsLabel: { fontSize: 12 },
-  statsValue: { fontSize: 12, fontWeight: "600" },
+  statsChip:   { flexDirection: "row", alignItems: "center", paddingHorizontal: 14, paddingVertical: 6, borderRadius: 20, borderWidth: 0.5, marginRight: 8 },
+  statsLabel:  { fontSize: 12 },
+  statsValue:  { fontSize: 12, fontWeight: "600" },
 
-  // Search — sits directly under header
+  // Search
   searchRow: {
     flexDirection: "row", alignItems: "center",
     marginHorizontal: 20, marginBottom: 0,
     paddingHorizontal: 14, paddingVertical: 10,
-    borderRadius: 12, borderWidth: 0.5,
+    borderRadius: 12, borderWidth: 1,
   },
-  searchInput: { flex: 1, fontSize: 14 },
+  searchInput:        { flex: 1, fontSize: 14, color: "transparent" },
+  placeholderOverlay: { position: "absolute", left: 0, right: 0, top: 0, bottom: 0, justifyContent: "center" },
+  animatedPlaceholder:{ fontSize: 14, fontWeight: "500" },
 
-  // Filter pills — sits directly under search, no gap
-  filterScrollView: {
-    flexGrow: 0,
-    flexShrink: 0,
-    height: 50,
-    marginTop: 10,
-    marginBottom: 0,
-    borderBottomWidth: 0,
-  },
-  filterScroll: {
-    paddingHorizontal: 20,
-    gap: 8,
-    alignItems: "center",
-    paddingBottom: 6,
-    paddingTop: 4,
-  },
-  filterPill: {
-    paddingHorizontal: 14,
-    paddingVertical: 7,
-    borderRadius: 20,
-    borderWidth: 0.5,
-    alignSelf: "center",
-  },
-  filterText: { fontSize: 12, fontWeight: "500" },
+  // Filters
+  filterScrollView: { flexGrow: 0, flexShrink: 0, height: 50, marginTop: 10, marginBottom: 0, borderBottomWidth: 0 },
+  filterScroll:     { paddingHorizontal: 20, gap: 8, alignItems: "center", paddingBottom: 6, paddingTop: 4 },
+  filterPill:       { paddingHorizontal: 14, paddingVertical: 7, borderRadius: 20, borderWidth: 0.5, alignSelf: "center" },
+  filterText:       { fontSize: 12, fontWeight: "500" },
 
-  // Section label — immediately below filter pills, no extra gap
-  sectionLabel: {
-    fontSize: 10,
-    fontWeight: "600",
-    letterSpacing: 1,
-    paddingHorizontal: 20,
-    paddingTop: 10,
-    paddingBottom: 8,
-  },
+  sectionLabel: { fontSize: 10, fontWeight: "600", letterSpacing: 1, paddingHorizontal: 20, paddingTop: 10, paddingBottom: 8 },
 
   // List
   listContent:      { paddingHorizontal: 20, paddingBottom: 100, gap: 10 },
@@ -872,50 +916,42 @@ const styles = StyleSheet.create({
   emptyDesc:       { fontSize: 13, textAlign: "center", lineHeight: 20 },
 
   // Card
-  card:      { flexDirection: "row", alignItems: "center", padding: 14, borderRadius: 14, borderWidth: 0.5, gap: 12 },
-  iconBox:   { width: 44, height: 44, borderRadius: 10, alignItems: "center", justifyContent: "center" },
-  cardInfo:  { flex: 1, minWidth: 0 },
-  cardTitle: { fontSize: 14, fontWeight: "500" },
-  cardMeta:  { fontSize: 12, marginTop: 2 },
-  badge:     { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10 },
-  badgeText: { fontSize: 10, fontWeight: "600" },
+  card:     { flexDirection: "row", alignItems: "center", padding: 14, borderRadius: 14, borderWidth: 0.5, gap: 12 },
+  iconBox:  { width: 44, height: 44, borderRadius: 10, alignItems: "center", justifyContent: "center" },
+  cardInfo: { flex: 1, minWidth: 0 },
+  cardTitle:{ fontSize: 14, fontWeight: "500" },
+  cardMeta: { fontSize: 12, marginTop: 2 },
+  badge:    { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10 },
+  badgeText:{ fontSize: 10, fontWeight: "600" },
 
   // FAB
   fab: {
     position: "absolute", bottom: 24, right: 20,
     width: 54, height: 54, borderRadius: 27,
-    alignItems: "center", justifyContent: "center",
-    elevation: 6,
+    alignItems: "center", justifyContent: "center", elevation: 6,
     shadowColor: "#000", shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.25, shadowRadius: 8,
   },
 
   // Upload modal
   modalOverlay: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0 },
-  modalSheet:   {
-    position: "absolute", bottom: 0, left: 0, right: 0,
-    borderTopLeftRadius: 24, borderTopRightRadius: 24,
-    paddingBottom: 40, paddingTop: 12, maxHeight: "88%",
-  },
-  modalHandle:   { width: 40, height: 4, borderRadius: 2, alignSelf: "center", marginBottom: 16 },
-  modalTitle:    { fontSize: 18, fontWeight: "600", paddingHorizontal: 20, marginBottom: 4 },
-  modalSub:      { fontSize: 13, paddingHorizontal: 20, marginBottom: 16 },
-  modalTitleRow: { flexDirection: "row", alignItems: "center", paddingHorizontal: 20, marginBottom: 4, gap: 10 },
-  backBtn:       { padding: 4 },
+  modalSheet:   { position: "absolute", bottom: 0, left: 0, right: 0, borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingBottom: 40, paddingTop: 12, maxHeight: "88%" },
+  modalHandle:  { width: 40, height: 4, borderRadius: 2, alignSelf: "center", marginBottom: 16 },
+  modalTitle:   { fontSize: 18, fontWeight: "600", paddingHorizontal: 20, marginBottom: 4 },
+  modalSub:     { fontSize: 13, paddingHorizontal: 20, marginBottom: 16 },
+  modalTitleRow:{ flexDirection: "row", alignItems: "center", paddingHorizontal: 20, marginBottom: 4, gap: 10 },
+  backBtn:      { padding: 4 },
 
-  // Upload rows
   uploadRow:  { flexDirection: "row", alignItems: "center", paddingVertical: 12, paddingHorizontal: 20, borderBottomWidth: 0.5, gap: 14 },
   uploadIcon: { width: 38, height: 38, borderRadius: 10, alignItems: "center", justifyContent: "center" },
   uploadInfo: { flex: 1 },
   uploadLabel:{ fontSize: 14, fontWeight: "500" },
   uploadDesc: { fontSize: 12, marginTop: 1 },
 
-  // Form
   inputSection: { paddingHorizontal: 20, marginTop: 16 },
   inputLabel:   { fontSize: 11, fontWeight: "600", letterSpacing: 0.8, marginBottom: 8 },
   inputHint:    { fontSize: 11, marginBottom: 8, opacity: 0.7 },
   textInput:    { borderWidth: 0.5, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, fontSize: 14 },
 
-  // File picker
   filePicker:      { borderWidth: 1, borderRadius: 12, paddingHorizontal: 16, paddingVertical: 18, flexDirection: "row", alignItems: "center", gap: 12 },
   filePickerEmpty: { flex: 1, alignItems: "center", gap: 6 },
   fileIconBox:     { width: 36, height: 36, borderRadius: 8, alignItems: "center", justifyContent: "center" },
@@ -924,7 +960,6 @@ const styles = StyleSheet.create({
   filePickerText:  { fontSize: 14, fontWeight: "500" },
   filePickerHint:  { fontSize: 12 },
 
-  // Confirm / cancel
   confirmBtn:  { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, marginHorizontal: 20, marginTop: 24, paddingVertical: 14, borderRadius: 12 },
   confirmText: { fontSize: 15, fontWeight: "600" },
   cancelBtn:   { marginHorizontal: 20, marginTop: 14, paddingVertical: 13, borderRadius: 12, borderWidth: 0.5, alignItems: "center" },
@@ -932,11 +967,7 @@ const styles = StyleSheet.create({
 
   // Detail modal
   detailOverlay: { flex: 1, justifyContent: "center", alignItems: "center", padding: 24 },
-  detailCard:    {
-    width: "100%", borderRadius: 24, padding: 24, alignItems: "center",
-    elevation: 20, shadowColor: "#000", shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.3, shadowRadius: 20,
-  },
+  detailCard:    { width: "100%", borderRadius: 24, padding: 24, alignItems: "center", elevation: 20, shadowColor: "#000", shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.3, shadowRadius: 20 },
   detailIconBox: { width: 72, height: 72, borderRadius: 20, alignItems: "center", justifyContent: "center", marginBottom: 14 },
   detailTitle:   { fontSize: 17, fontWeight: "700", textAlign: "center", marginBottom: 8 },
   metaRow:       { flexDirection: "row", alignItems: "center", width: "100%", paddingVertical: 9, borderBottomWidth: 0.5 },
@@ -946,4 +977,30 @@ const styles = StyleSheet.create({
   detailBtn:     { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, paddingVertical: 13, borderRadius: 12 },
   detailBtnText: { fontSize: 14, fontWeight: "600" },
   detailClose:   { marginTop: 14, width: "100%", paddingVertical: 13, borderRadius: 12, borderWidth: 0.5, alignItems: "center" },
+
+  // In-App Viewer
+  viewerSafe:     { flex: 1 },
+  viewerHeader:   { flexDirection: "row", alignItems: "center", paddingHorizontal: 16, paddingVertical: 14, borderBottomWidth: 0.5 },
+  viewerBackBtn:  { padding: 4, marginRight: 4 },
+  viewerShareBtn: { padding: 4, marginLeft: 8 },
+  viewerTitle:    { fontSize: 15, fontWeight: "600" },
+  viewerSub:      { fontSize: 12, marginTop: 2 },
+  viewerContent:  { flexGrow: 1, alignItems: "center", padding: 16 },
+
+  // Image viewer
+  imageViewerWrap:{ width: "100%", minHeight: SCREEN_H * 0.7, alignItems: "center", justifyContent: "center" },
+  imageViewer:    { width: SCREEN_W - 32, height: SCREEN_H * 0.72 },
+
+  // PDF card (in-app)
+  pdfCard:        { width: "100%", borderRadius: 20, borderWidth: 0.5, padding: 28, alignItems: "center", marginTop: 8 },
+  pdfIconCircle:  { width: 96, height: 96, borderRadius: 24, alignItems: "center", justifyContent: "center", marginBottom: 16 },
+  pdfCardTitle:   { fontSize: 18, fontWeight: "700", textAlign: "center", marginBottom: 6 },
+  pdfCardSub:     { fontSize: 13, textAlign: "center", marginBottom: 20 },
+  pdfMetaBox:     { width: "100%", borderRadius: 14, borderWidth: 0.5, overflow: "hidden", marginBottom: 20 },
+  pdfMetaRow:     { flexDirection: "row", justifyContent: "space-between", paddingHorizontal: 16, paddingVertical: 12 },
+  pdfMetaLabel:   { fontSize: 13 },
+  pdfMetaValue:   { fontSize: 13, fontWeight: "600" },
+  pdfOpenBtn:     { flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 24, paddingVertical: 14, borderRadius: 14, marginBottom: 12 },
+  pdfOpenBtnText: { fontSize: 15, fontWeight: "600" },
+  pdfNote:        { fontSize: 12, textAlign: "center", lineHeight: 18, opacity: 0.7 },
 });

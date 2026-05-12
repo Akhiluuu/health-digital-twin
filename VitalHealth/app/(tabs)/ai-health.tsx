@@ -50,10 +50,6 @@ import {
 } from "../../services/embeddingService";
 
 // ─── Voice Recognition ────────────────────────────────────────────────────────
-// Uses @react-native-voice/voice for real speech-to-text.
-// Install: npx expo install @react-native-voice/voice
-// iOS: add NSMicrophoneUsageDescription & NSSpeechRecognitionUsageDescription to Info.plist
-// Android: add RECORD_AUDIO permission to AndroidManifest.xml
 let Voice: any = null;
 try {
   Voice = require("@react-native-voice/voice").default;
@@ -161,8 +157,6 @@ const buildSessionPreview = (messages: Message[]) => {
   return last ? last.text.replace(/\*\*/g, "").slice(0, 80) + "…" : "";
 };
 
-// ─── Server Config Modal removed (moved to /settings-ai) ──────────────────────
-
 // ─── Document Viewer Modal ────────────────────────────────────────────────────
 
 function DocViewerModal({ doc, chunks, onClose, c }: { doc: Doc | null; chunks: EmbeddedChunk[]; onClose: () => void; c: any }) {
@@ -176,6 +170,7 @@ function DocViewerModal({ doc, chunks, onClose, c }: { doc: Doc | null; chunks: 
             <Text style={[styles.docHeaderTitle, { color: c.text }]} numberOfLines={1}>{doc.name}</Text>
             <Text style={[styles.docHeaderSub, { color: c.sub }]}>{doc.type} · {docChunks.length} chunks · {fmtDate(doc.uploadedAt)}</Text>
           </View>
+          {/* FIX: iconBtn and iconBtnTxt are now defined in StyleSheet below */}
           <TouchableOpacity style={styles.iconBtn} onPress={onClose}>
             <Text style={[styles.iconBtnTxt, { color: "#ef4444" }]}>✕</Text>
           </TouchableOpacity>
@@ -444,6 +439,9 @@ export default function AIHealthScreen() {
   const router                      = useRouter();
   const [modelLoading, setModelLoading] = useState(false);
 
+  // FIX: showConfig state was missing — used in doSend when serverIp is empty
+  const [showConfig, setShowConfig] = useState(false);
+
   // Documents
   const [docs, setDocs]                   = useState<Doc[]>([]);
   const [allChunks, setAllChunks]         = useState<EmbeddedChunk[]>([]);
@@ -475,117 +473,109 @@ export default function AIHealthScreen() {
 
   // ── Voice setup ─────────────────────────────────────────────────────────────
 
-// ── Voice setup ─────────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!Voice) return;
 
-useEffect(() => {
-  if (!Voice) return;
+    Voice.onSpeechStart = () => {
+      setIsRecording(true);
+      setPartialVoiceText("");
+    };
 
-  // Assign handlers once on mount
-  Voice.onSpeechStart = () => {
-    setIsRecording(true);
-    setPartialVoiceText("");
-  };
+    Voice.onSpeechEnd = () => {
+      // Don't set isRecording(false) here — wait for onSpeechResults
+    };
 
-  Voice.onSpeechEnd = () => {
-    // Don't set isRecording(false) here — wait for onSpeechResults
-    // so the UI doesn't flicker before we get the result
-  };
+    Voice.onSpeechError = (e: any) => {
+      setIsRecording(false);
+      setPartialVoiceText("");
+      const code = e?.error?.code?.toString();
+      if (code !== "7") {
+        Alert.alert("Voice Error", e?.error?.message || "Could not recognise speech");
+      }
+    };
 
-  Voice.onSpeechError = (e: any) => {
-    setIsRecording(false);
-    setPartialVoiceText("");
-    const code = e?.error?.code?.toString();
-    // Code "7" = no match (user said nothing), suppress that alert
-    if (code !== "7") {
-      Alert.alert("Voice Error", e?.error?.message || "Could not recognise speech");
+    Voice.onSpeechPartialResults = (e: any) => {
+      setPartialVoiceText(e?.value?.[0] || "");
+    };
+
+    Voice.onSpeechResults = (e: any) => {
+      const result = e?.value?.[0] || "";
+      setPartialVoiceText("");
+      setIsRecording(false);
+      if (result.trim()) {
+        setInput(result.trim());
+      }
+    };
+
+    return () => {
+      Voice.destroy().then(() => {
+        Voice.removeAllListeners();
+      }).catch(() => {});
+    };
+  }, []);
+
+  // ── Request mic permission ───────────────────────────────────────────────────
+
+  const requestMicPermission = async (): Promise<boolean> => {
+    if (Platform.OS === "android") {
+      try {
+        const granted = await PermissionsAndroid.request(
+          PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
+          {
+            title: "Microphone Permission",
+            message: "Health AI needs microphone access for voice input.",
+            buttonPositive: "Allow",
+            buttonNegative: "Deny",
+          }
+        );
+        return granted === PermissionsAndroid.RESULTS.GRANTED;
+      } catch {
+        return false;
+      }
     }
+    return true;
   };
 
-  Voice.onSpeechPartialResults = (e: any) => {
-    setPartialVoiceText(e?.value?.[0] || "");
-  };
+  // ── Voice toggle ─────────────────────────────────────────────────────────────
 
-  Voice.onSpeechResults = (e: any) => {
-    const result = e?.value?.[0] || "";
-    setPartialVoiceText("");
-    setIsRecording(false);
-    if (result.trim()) {
-      setInput(result.trim());
-    }
-  };
-
-  // Cleanup: destroy Voice engine on unmount only
-  return () => {
-    Voice.destroy().then(() => {
-      Voice.removeAllListeners(); // call AFTER destroy resolves
-    }).catch(() => {});
-  };
-}, []); // ← empty array: runs once on mount, cleans up on unmount
-
-
-// ── Request mic permission ───────────────────────────────────────────────────
-
-const requestMicPermission = async (): Promise<boolean> => {
-  if (Platform.OS === "android") {
-    try {
-      const granted = await PermissionsAndroid.request(
-        PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
-        {
-          title: "Microphone Permission",
-          message: "Health AI needs microphone access for voice input.",
-          buttonPositive: "Allow",
-          buttonNegative: "Deny",
-        }
+  const handleVoice = async () => {
+    if (!Voice) {
+      Alert.alert(
+        "Voice Not Available",
+        "Install @react-native-voice/voice and rebuild the app."
       );
-      return granted === PermissionsAndroid.RESULTS.GRANTED;
-    } catch {
-      return false;
+      return;
     }
-  }
-  return true; // iOS: permissions are handled via Info.plist
-};
 
+    if (isRecording) {
+      try {
+        await Voice.stop();
+      } catch {}
+      setIsRecording(false);
+      setPartialVoiceText("");
+      return;
+    }
 
-// ── Voice toggle ─────────────────────────────────────────────────────────────
+    const hasPermission = await requestMicPermission();
+    if (!hasPermission) {
+      Alert.alert(
+        "Permission Denied",
+        "Microphone permission is required for voice input. Enable it in Settings."
+      );
+      return;
+    }
 
-const handleVoice = async () => {
-  if (!Voice) {
-    Alert.alert(
-      "Voice Not Available",
-      "Install @react-native-voice/voice and rebuild the app."
-    );
-    return;
-  }
-
-  if (isRecording) {
-    try {
-      await Voice.stop();
-    } catch {}
-    setIsRecording(false);
     setPartialVoiceText("");
-    return;
-  }
 
-  const hasPermission = await requestMicPermission();
-  if (!hasPermission) {
-    Alert.alert(
-      "Permission Denied",
-      "Microphone permission is required for voice input. Enable it in Settings."
-    );
-    return;
-  }
+    try {
+      await Voice.destroy().catch(() => {});
+      await Voice.start("en-US");
+    } catch (e: any) {
+      setIsRecording(false);
+      Alert.alert("Voice Error", e?.message || "Cannot start voice recognition.");
+    }
+  };
 
-  setPartialVoiceText("");
-
-  try {
-    // Destroy any leftover session before starting a new one
-    await Voice.destroy().catch(() => {});
-    await Voice.start("en-US"); // use en-US for broadest device support
-  } catch (e: any) {
-    setIsRecording(false);
-    Alert.alert("Voice Error", e?.message || "Cannot start voice recognition.");
-  }
-};
   // ── Fetch greeting ──────────────────────────────────────────────────────────
 
   const fetchGreeting = async (ip: string, port: string) => {
@@ -621,9 +611,9 @@ const handleVoice = async () => {
         try {
           const ip      = (await AsyncStorage.getItem(KEY_SERVER_IP))   || "";
           const port    = (await AsyncStorage.getItem(KEY_SERVER_PORT)) || DEFAULT_PORT;
-          
+
           setServerIp(ip); setServerPort(port);
-          
+
           if (!ip) {
             setConnected(false);
           } else {
@@ -667,8 +657,6 @@ const handleVoice = async () => {
   // ── Auto-scroll ─────────────────────────────────────────────────────────────
 
   useEffect(() => { setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 100); }, [messages]);
-
-  // handleSaveConfig removed (moved to settings-ai.tsx)
 
   // ── New / restore chat ──────────────────────────────────────────────────────
 
@@ -748,7 +736,6 @@ const handleVoice = async () => {
     { text: "Cancel", style: "cancel" },
   ]);
 
-
   // ── Bubble colours ──────────────────────────────────────────────────────────
 
   const getUserBubbleColor  = () => theme === "light" ? "#2563eb" : "#3b82f6";
@@ -775,8 +762,8 @@ const handleVoice = async () => {
           </View>
         )}
         <View style={[
-          styles.messageBubble, 
-          isUser ? styles.userBubble : styles.aiBubble, 
+          styles.messageBubble,
+          isUser ? styles.userBubble : styles.aiBubble,
           { backgroundColor: isUser ? getUserBubbleColor() : getAiBubbleColor(), borderColor: isUser ? getUserBubbleBorder() : getAiBubbleBorder() }
         ]}>
           <RichText text={item.text} style={[styles.messageText, { color: isUser ? "#ffffff" : c.text }]} />
@@ -807,7 +794,7 @@ const handleVoice = async () => {
             </Text>
           </View>
         </View>
-        
+
         <View style={styles.headerRight}>
           <TouchableOpacity style={[styles.actionBtn, { backgroundColor: theme === 'light' ? '#f1f5f9' : '#1e293b' }]} onPress={() => setShowHistory(true)}>
             <Ionicons name="time-outline" size={20} color={c.accent} />
@@ -892,10 +879,10 @@ const styles = StyleSheet.create({
   headerRight: { flexDirection: "row", alignItems: "center" },
   headerTitle: { fontSize: 20, fontWeight: "800", letterSpacing: -0.5 },
   statusLabel: { fontSize: 12, fontWeight: "600", marginTop: 2 },
-  
+
   avatarContainer: { width: 44, height: 44, borderRadius: 22, borderWidth: 1, alignItems: "center", justifyContent: "center", position: "relative" },
   statusBadge: { position: "absolute", bottom: -2, right: -2, width: 14, height: 14, borderRadius: 7, borderWidth: 2 },
-  
+
   actionBtn: { width: 38, height: 38, borderRadius: 19, alignItems: "center", justifyContent: "center" },
 
   ragBar: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingHorizontal: 20, paddingVertical: 10, borderBottomWidth: 1 },
@@ -919,6 +906,20 @@ const styles = StyleSheet.create({
   inputWrapper: { flex: 1, borderRadius: 22, minHeight: 44, maxHeight: 120, justifyContent: "center", borderWidth: 1 },
   input: { fontSize: 16, paddingHorizontal: 18, paddingTop: 12, paddingBottom: 12, textAlignVertical: "center" },
   sendButton: { width: 44, height: 44, borderRadius: 22, justifyContent: "center", alignItems: "center" },
+
+  // FIX: Added missing iconBtn and iconBtnTxt styles used in DocViewerModal and AllChunksModal
+  iconBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "rgba(239, 68, 68, 0.1)",
+  },
+  iconBtnTxt: {
+    fontSize: 16,
+    fontWeight: "700",
+  },
 
   // Voice indicator
   voiceIndicatorWrap: { backgroundColor: "#ef444415", borderTopWidth: 1, borderTopColor: "#ef444430", paddingHorizontal: 16, paddingVertical: 8 },

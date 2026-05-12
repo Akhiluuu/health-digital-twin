@@ -42,7 +42,6 @@ export interface RoutineEvent extends BiogearsHealthEvent {
   wallTime: string;       // "HH:MM" — wall clock time user selected
   displayLabel: string;   // e.g. "Idli (2 pieces) · 140 kcal"
   displayIcon: string;    // emoji
-  simulated?: boolean;    // whether this event has been simulated
 }
 
 export interface BiogearsTwinContextValue {
@@ -62,6 +61,15 @@ export interface BiogearsTwinContextValue {
   lastInteractionWarnings: string[];
   lastSessionId: string | null;
   lastAiInsights: string[];
+  lastAiInsightsText: string;
+  aiInsightsLoading: boolean;
+
+  // BioGears AI Query
+  querySimulation: (question: string) => Promise<string>;
+
+  // AI Server URL (shared with healthbot)
+  aiServerUrl: string;
+  setAiServerUrl: (url: string) => void;
 
   // Today's routine
   todayEvents: RoutineEvent[];
@@ -118,7 +126,9 @@ export function useBiogearsTwin(): BiogearsTwinContextValue {
   return ctx;
 }
 
-const TWIN_STATUS_KEY = '@biogears_twin_status';
+const TWIN_STATUS_KEY   = '@biogears_twin_status';
+const AI_SERVER_URL_KEY = '@hai_server_ip';
+const AI_SERVER_PORT_KEY = '@hai_server_port';
 const TODAY_EVENTS_KEY = (uid: string) => `@biogears_today_${uid}`;
 
 // ─── Helper: convert RoutineEvent wall time → Unix epoch timestamp ────────────
@@ -165,6 +175,9 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
   const [lastInteractionWarnings, setLastInteractionWarnings] = useState<string[]>([]);
   const [lastSessionId, setLastSessionId] = useState<string | null>(null);
   const [lastAiInsights, setLastAiInsights] = useState<string[]>([]);
+  const [lastAiInsightsText, setLastAiInsightsText] = useState<string>('');
+  const [aiInsightsLoading, setAiInsightsLoading] = useState<boolean>(false);
+  const [aiServerUrl, setAiServerUrlState] = useState<string>('');
 
   const [todayEvents, setTodayEvents] = useState<RoutineEvent[]>([]);
   const [savedRoutines, setSavedRoutines] = useState<SavedRoutine[]>([]);
@@ -291,9 +304,50 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
 
     setLastSessionId(sessionId);
 
-    // Generate AI insights from anomalies + vitals
-    const insights = generateInsights(result);
-    setLastAiInsights(insights);
+    // Generate quick fallback insights immediately (shown while AI loads)
+    const fallbackInsights = generateInsights(result);
+    setLastAiInsights(fallbackInsights);
+    setLastAiInsightsText('');
+
+    // Async: fetch richer AI insights from the healthbot server
+    (async () => {
+      try {
+        const storedIp   = await AsyncStorage.getItem(AI_SERVER_URL_KEY) || '';
+        const storedPort = await AsyncStorage.getItem(AI_SERVER_PORT_KEY) || '8000';
+        if (!storedIp) return;   // AI server not configured — silently skip
+
+        const baseUrl = storedIp.startsWith('http') ? storedIp : `http://${storedIp}:${storedPort}`;
+        const eventsLabel = todayEvents
+          .map(e => e.displayLabel)
+          .filter(Boolean)
+          .slice(0, 5)
+          .join(', ');
+
+        setAiInsightsLoading(true);
+        const res = await fetch(`${baseUrl}/biogears-insights`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            vitals:               result.vitals || {},
+            anomalies:            result.anomalies || [],
+            has_anomaly:          result.has_anomaly || false,
+            has_drug_interaction: result.has_drug_interaction || false,
+            interaction_warnings: result.interaction_warnings || [],
+            data_gap_warning:     result.data_gap_warning || null,
+            events_summary:       eventsLabel || null,
+          }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.insights_text) setLastAiInsightsText(data.insights_text);
+          if (data.bullet_points?.length > 0) setLastAiInsights(data.bullet_points);
+        }
+      } catch (_e) {
+        // Silently fall back to hardcoded insights
+      } finally {
+        setAiInsightsLoading(false);
+      }
+    })();
 
     const sessionMeta: LocalSessionMeta = {
       session_id: sessionId,
@@ -303,19 +357,11 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
       has_anomaly: result.has_anomaly,
       events: todayEvents,
       event_count: todayEvents.length,
-      ai_insights: insights,
+      ai_insights: fallbackInsights,
+
     };
     await BiogearsAPI.saveSessionMeta(twinUserId!, sessionMeta);
     setSessions(prev => [sessionMeta, ...prev]);
-
-    // Mark all current events as simulated so they don't get kept in the queue indefinitely
-    setTodayEvents(prev => {
-      const updated = prev.map(e => ({ ...e, simulated: true }));
-      if (twinUserId) {
-        AsyncStorage.setItem(TODAY_EVENTS_KEY(twinUserId), JSON.stringify(updated)).catch(() => {});
-      }
-      return updated;
-    });
 
     setSimulationStatus('done');
     setSimulationProgress('Simulation complete!');
@@ -338,11 +384,11 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
       const raw = await AsyncStorage.getItem(TODAY_EVENTS_KEY(twinUserId));
       if (raw) {
         const stored = JSON.parse(raw) as RoutineEvent[];
-        // Keep today's events, AND keep any past events that haven't been simulated yet
+        // Only keep today's events (don't carry over from yesterday)
         const todayStr = new Date().toDateString();
         const fresh = stored.filter(e => {
-          const isToday = e.timestamp ? new Date(e.timestamp * 1000).toDateString() === todayStr : true;
-          return isToday || !e.simulated;
+          if (!e.timestamp) return true;
+          return new Date(e.timestamp * 1000).toDateString() === todayStr;
         });
         setTodayEvents(fresh);
       }
@@ -518,32 +564,11 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
     } catch (err: any) {
       console.log(`[BioGearsContext] Registration FAILED:`, err);
       setTwinStatus('error');
-
-      // err.detail is the FastAPI `detail` field from the 422 response.
-      // It can be:
-      //   - A plain string:                "Engine convergence failure."
-      //   - A validation dict:             {"validation_errors": ["...", ...]}
-      //   - A message dict:               {"message": "...", "log_snippet": "..."}
-      //   - A FastAPI Pydantic error list: [{"loc": [...], "msg": "..."}]
-      let msg = 'Registration failed';
-      try {
-        const detail = err.detail;
-        if (typeof detail === 'string') {
-          msg = detail;
-        } else if (detail && typeof detail === 'object') {
-          if (Array.isArray(detail.validation_errors) && detail.validation_errors.length > 0) {
-            msg = `Validation failed:\n${detail.validation_errors.slice(0, 5).map((e: string) => `• ${e}`).join('\n')}`;
-          } else if (detail.message) {
-            msg = detail.message;
-          } else if (Array.isArray(detail) && detail[0]?.msg) {
-            // FastAPI Pydantic field errors
-            msg = detail.map((d: any) => `• ${d.loc?.slice(-1)[0] ?? 'field'}: ${d.msg}`).join('\n');
-          }
-        }
-      } catch {
-        msg = err.message || 'Registration failed';
-      }
-
+      // BiogearsError.detail can be a FastAPI validation dict or a plain string
+      const detail = err.detail;
+      const msg = typeof detail === 'string'
+        ? detail
+        : (detail?.detail || detail?.message || err.message || 'Registration failed');
       setTwinStatusError(msg);
       throw err;
     }
@@ -614,41 +639,7 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
       }
       simStartRef.current = null;
       setSimulationStatus('failed');
-
-      // The job store serialises error details as a JSON string.
-      // Parse it back so we show a clean, human-readable message.
-      // Handles three shapes:
-      //   1. Validation errors: {"validation_errors": ["Event[3] ...", ...]}
-      //   2. Engine errors:     {"message": "...", "log_snippet": "..."}
-      //   3. Plain string:      "Engine convergence failure."
-      let friendlyError = err.message || 'Simulation failed';
-      try {
-        // err.detail is set by BiogearsError — may be a raw string or object
-        const raw = err.detail?.detail ?? err.detail ?? err.message ?? '';
-        const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
-        if (parsed && typeof parsed === 'object') {
-          // ── Shape 1: validation_errors array ──────────────────────────────
-          if (Array.isArray(parsed.validation_errors) && parsed.validation_errors.length > 0) {
-            const bullets = parsed.validation_errors
-              .slice(0, 5)
-              .map((e: string) => `• ${e}`)
-              .join('\n');
-            friendlyError = `Input validation failed:\n${bullets}`;
-          }
-          // ── Shape 2: engine error with optional log snippet ─────────────
-          else {
-            const msg = parsed.message || '';
-            const snippet = (parsed.log_snippet || '').trim();
-            if (msg) {
-              friendlyError = snippet
-                ? `${msg}\n\n${snippet.split('\n').slice(0, 5).join('\n')}`
-                : msg;
-            }
-          }
-        }
-      } catch { /* raw string — use as-is */ }
-
-      setSimulationError(friendlyError);
+      setSimulationError(err.message || 'Simulation failed');
       setSimulationProgress('');
       throw err;
     }
@@ -662,11 +653,49 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
     setLastVitals(null);
     setLastAnomalies([]);
     setLastAiInsights([]);
+    setLastAiInsightsText('');
+    setAiInsightsLoading(false);
     await refreshSessions();
     await refreshAnalytics();
   }, [twinUserId, refreshSessions, refreshAnalytics]);
 
   // ─────────────────────────────────────────────────────────────────────────────
+
+  // ── AI Server URL helpers ──────────────────────────────────────────────────
+  const setAiServerUrl = useCallback(async (url: string) => {
+    setAiServerUrlState(url);
+    await AsyncStorage.setItem(AI_SERVER_URL_KEY, url).catch(() => {});
+  }, []);
+
+  // Load AI server URL on mount
+  useEffect(() => {
+    AsyncStorage.getItem(AI_SERVER_URL_KEY).then(v => {
+      if (v) setAiServerUrlState(v);
+    }).catch(() => {});
+  }, []);
+
+  // ── Query AI about last simulation ─────────────────────────────────────────
+  const querySimulation = useCallback(async (question: string): Promise<string> => {
+    if (!lastVitals) return 'No simulation data available yet. Run a simulation first.';
+    const storedIp   = await AsyncStorage.getItem(AI_SERVER_URL_KEY).catch(() => '') || '';
+    const storedPort = await AsyncStorage.getItem(AI_SERVER_PORT_KEY).catch(() => '8000') || '8000';
+    if (!storedIp) return 'AI server not configured. Please set your server IP in the AI Health tab.';
+    const baseUrl = storedIp.startsWith('http') ? storedIp : `http://${storedIp}:${storedPort}`;
+    const res = await fetch(`${baseUrl}/biogears-query`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        query:   question,
+        vitals:  lastVitals,
+        anomalies:            lastAnomalies || [],
+        has_anomaly:          lastAnomalies?.length > 0,
+        interaction_warnings: lastInteractionWarnings || [],
+      }),
+    });
+    if (!res.ok) throw new Error(`Server error: ${res.status}`);
+    const data = await res.json();
+    return data.response || 'No response from AI.';
+  }, [lastVitals, lastAnomalies, lastInteractionWarnings]);
 
   const value: BiogearsTwinContextValue = {
     twinStatus,
@@ -680,6 +709,11 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
     lastInteractionWarnings,
     lastSessionId,
     lastAiInsights,
+    lastAiInsightsText,
+    aiInsightsLoading,
+    aiServerUrl,
+    setAiServerUrl,
+    querySimulation,
     todayEvents,
     addEvent,
     removeEvent,
