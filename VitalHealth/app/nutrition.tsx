@@ -4,7 +4,7 @@
 // FIX: KeyboardAvoidingView for custom food modal + fixed search bar layout
 
 import { Ionicons } from "@expo/vector-icons";
-import DateTimePicker from "@react-native-community/datetimepicker";
+import TimePicker from "../components/twin/TimePicker";
 import { BlurView } from "expo-blur";
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
@@ -642,8 +642,7 @@ export default function NutritionScreen() {
   const [customFood, setCustomFood] = useState("");
   const [customCalories, setCustomCalories] = useState("");
   const [showReminderModal, setShowReminderModal] = useState(false);
-  const [editingReminder, setEditingReminder] = useState<typeof mealReminders[0] | null>(null);
-  const [showTimePicker, setShowTimePicker] = useState(false);
+
   const [aiTip, setAiTip] = useState("");
 
   useEffect(() => {
@@ -1254,9 +1253,11 @@ export default function NutritionScreen() {
               <View key={reminder.id} style={[styles.reminderRow, { borderBottomColor: colors.border }]}>
                 <View style={styles.reminderInfo}>
                   <Text style={[styles.reminderMeal, { color: colors.text }]}>{reminder.mealName}</Text>
-                  <TouchableOpacity onPress={() => { setEditingReminder(reminder); setShowTimePicker(true); }}>
-                    <Text style={[styles.reminderTime, { color: colors.accent }]}>{reminder.time}</Text>
-                  </TouchableOpacity>
+                  <TimePicker
+                    value={reminder.time}
+                    onChange={(t) => updateReminderTime(reminder.id, t)}
+                    accent={colors.accent}
+                  />
                 </View>
                 <Switch value={reminder.enabled} onValueChange={() => toggleReminder(reminder.id)}
                   trackColor={{ false: colors.border, true: colors.accent }} />
@@ -1268,24 +1269,6 @@ export default function NutritionScreen() {
           </View>
         </BlurView>
       </Modal>
-
-      {/* Time Picker */}
-      {showTimePicker && editingReminder && (
-        <DateTimePicker
-          value={(() => {
-            const [h, m] = editingReminder.time.split(":").map(Number);
-            const d = new Date(); d.setHours(h, m, 0, 0); return d;
-          })()}
-          mode="time" is24Hour={false} display="default"
-          onChange={(_, date) => {
-            if (date) {
-              const t = date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
-              updateReminderTime(editingReminder.id, t);
-            }
-            setShowTimePicker(false); setEditingReminder(null);
-          }}
-        />
-      )}
     </View>
   );
 }

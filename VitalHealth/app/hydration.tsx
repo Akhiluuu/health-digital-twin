@@ -3,7 +3,7 @@
 
 import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import DateTimePicker from "@react-native-community/datetimepicker";
+import TimePicker from "../components/twin/TimePicker";
 import { useRouter } from "expo-router";
 import { log } from "../utils/logger";
 import React, { useEffect, useRef, useState } from "react";
@@ -114,8 +114,6 @@ export default function HydrationScreen() {
     endTime: new Date(new Date().setHours(21, 0, 0, 0)),
   });
 
-  const [showStartPicker, setShowStartPicker] = useState(false);
-  const [showEndPicker, setShowEndPicker] = useState(false);
   const [toast, setToast] = useState("");
   const [isSleepTime, setIsSleepTime] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
@@ -252,14 +250,10 @@ export default function HydrationScreen() {
     event: any,
     selectedDate?: Date
   ) => {
-    if (type === "start") {
-      setShowStartPicker(false);
-      if (selectedDate)
-        setReminderSettings((prev) => ({ ...prev, startTime: selectedDate }));
-    } else {
-      setShowEndPicker(false);
-      if (selectedDate)
-        setReminderSettings((prev) => ({ ...prev, endTime: selectedDate }));
+    if (type === "start" && selectedDate) {
+      setReminderSettings((prev) => ({ ...prev, startTime: selectedDate }));
+    } else if (type === "end" && selectedDate) {
+      setReminderSettings((prev) => ({ ...prev, endTime: selectedDate }));
     }
     if (reminderSettings.enabled) await scheduleReminder(reminderSettings.interval);
   };
@@ -419,31 +413,29 @@ export default function HydrationScreen() {
               <View style={styles.timeRangeSection}>
                 <Text style={[styles.sectionLabel, { color: colors.sub }]}>Between</Text>
                 <View style={styles.timeRow}>
-                  <TouchableOpacity
-                    style={[styles.timeButton, { backgroundColor: colors.border }]}
-                    onPress={() => setShowStartPicker(true)}
-                  >
-                    <Ionicons name="sunny" size={16} color={colors.accent} />
-                    <Text style={[styles.timeText, { color: colors.text }]}>
-                      {reminderSettings.startTime.toLocaleTimeString([], {
-                        hour: "2-digit", minute: "2-digit", hour12: true,
-                      })}
-                    </Text>
-                  </TouchableOpacity>
+                  <TimePicker
+                    value={`${reminderSettings.startTime.getHours()}:${reminderSettings.startTime.getMinutes()}`}
+                    onChange={(t) => {
+                      const [h, m] = t.split(':');
+                      const d = new Date(reminderSettings.startTime);
+                      d.setHours(parseInt(h, 10), parseInt(m, 10));
+                      onTimeChange("start", null, d);
+                    }}
+                    accent={colors.accent}
+                  />
 
                   <Text style={[styles.timeSeparator, { color: colors.sub }]}>and</Text>
 
-                  <TouchableOpacity
-                    style={[styles.timeButton, { backgroundColor: colors.border }]}
-                    onPress={() => setShowEndPicker(true)}
-                  >
-                    <Ionicons name="moon" size={16} color={colors.accent} />
-                    <Text style={[styles.timeText, { color: colors.text }]}>
-                      {reminderSettings.endTime.toLocaleTimeString([], {
-                        hour: "2-digit", minute: "2-digit", hour12: true,
-                      })}
-                    </Text>
-                  </TouchableOpacity>
+                  <TimePicker
+                    value={`${reminderSettings.endTime.getHours()}:${reminderSettings.endTime.getMinutes()}`}
+                    onChange={(t) => {
+                      const [h, m] = t.split(':');
+                      const d = new Date(reminderSettings.endTime);
+                      d.setHours(parseInt(h, 10), parseInt(m, 10));
+                      onTimeChange("end", null, d);
+                    }}
+                    accent={colors.accent}
+                  />
                 </View>
 
                 {isSleepTime && (
@@ -473,25 +465,7 @@ export default function HydrationScreen() {
           )}
         </View>
 
-        {/* Time Pickers */}
-        {showStartPicker && (
-          <DateTimePicker
-            value={reminderSettings.startTime}
-            mode="time"
-            is24Hour={false}
-            display="default"
-            onChange={(event, date) => onTimeChange("start", event, date)}
-          />
-        )}
-        {showEndPicker && (
-          <DateTimePicker
-            value={reminderSettings.endTime}
-            mode="time"
-            is24Hour={false}
-            display="default"
-            onChange={(event, date) => onTimeChange("end", event, date)}
-          />
-        )}
+
 
         {/* ── SYNC STATUS ── */}
         <View style={[styles.syncStatus, { backgroundColor: colors.card }]}>

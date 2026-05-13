@@ -314,7 +314,7 @@ export default function HomeScreen() {
             <View style={styles.grid}>
               <DataCard label="HYDRATION" emoji="💧" color="#4f83ff" onPress={() => router.push("/hydration")} />
               <DataCard label="ACTIVITY"  emoji="💪" color="#7c5cff" onPress={() => router.push("/activity")} />
-              <DataCard label="NUTRITION" emoji="🍎" color="#ff5e3a" onPress={() => router.push("/nutrition")} />
+              <DataCard label="NUTRITION" emoji="🍎" color="#ff5e3a" onPress={() => router.push({ pathname: "/twin", params: { mode: "routine", tab: "meal" } })} />
               <DataCard label="REST"      emoji="🌙" color="#1f2937" onPress={() => router.push("/rest")} />
             </View>
           </>

@@ -14,7 +14,7 @@ import {
 } from "react-native";
 
 import { Ionicons } from "@expo/vector-icons";
-import DateTimePicker from "@react-native-community/datetimepicker";
+import TimePicker from "../components/twin/TimePicker";
 import { useRouter } from "expo-router";
 
 import { useMedicine } from "../context/MedicineContext";
@@ -36,7 +36,6 @@ export default function AddMedicine() {
   const [meal, setMeal] = useState<"before" | "after">("before");
 
   const [time, setTime] = useState(new Date());
-  const [showPicker, setShowPicker] = useState(false);
   const [saving, setSaving] = useState(false);
 
   const formatted = time.toLocaleTimeString([], {
@@ -313,45 +312,19 @@ export default function AddMedicine() {
           REMINDER TIME
         </Text>
 
-        <TouchableOpacity
-          style={[
-            styles.timePanel,
-            { backgroundColor: c.card },
-          ]}
-          onPress={() => setShowPicker(true)}
-        >
-          <View
-            style={[
-              styles.timeBox,
-              { borderColor: c.border },
-            ]}
-          >
-            <Text
-              style={[
-                styles.timeText,
-                { color: c.accent },
-              ]}
-            >
-              {formatted}
-            </Text>
-          </View>
-          <Text style={[styles.timeHint, { color: c.sub }]}>
-            Tap to change time
-          </Text>
-        </TouchableOpacity>
-
-        {showPicker && (
-          <DateTimePicker
-            value={time}
-            mode="time"
-            is24Hour={false}
-            display="default"
-            onChange={(e, selected) => {
-              setShowPicker(false);
-              if (selected) setTime(selected);
+        <View style={{ alignItems: 'center', marginTop: 15, marginBottom: 15 }}>
+          <TimePicker
+            value={`${time.getHours()}:${time.getMinutes()}`}
+            onChange={(t) => {
+              const [h, m] = t.split(':');
+              const d = new Date(time);
+              d.setHours(parseInt(h, 10));
+              d.setMinutes(parseInt(m, 10));
+              setTime(d);
             }}
+            accent={c.accent}
           />
-        )}
+        </View>
 
         {/* MEAL TIMING */}
         <Text style={[styles.label, { color: c.sub }]}>
