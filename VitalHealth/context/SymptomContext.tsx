@@ -1,4 +1,10 @@
 // context/SymptomContext.tsx
+// ─────────────────────────────────────────────────────────────────
+// KEY FIX: When a family member profile is active (isSwitched=true),
+// symptoms are fetched directly from that member's Firebase doc
+// instead of local AsyncStorage (which is always the logged-in user).
+// When switched back to self, normal local + Firebase merge is used.
+// ─────────────────────────────────────────────────────────────────
 
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import React, {
@@ -19,15 +25,13 @@ import {
 } from "../services/firebaseSync";
 
 import {
-  // ✅ FIX 6: Removed scheduleSymptomCheck (deprecated) from imports.
-  //    updateSymptom was calling the old daily-scheduled version instead
-  //    of the hourly one, meaning rescheduled follow-ups fired at a fixed
-  //    time of day (8pm default) rather than 1 hour from now.
   cancelSymptomNotification,
   scheduleSymptomHourly,
 } from "../services/notifeeService";
 
-const ACTIVE_KEY = "vitaltwin_active_symptoms";
+import { useFamily } from "./FamilyContext";
+
+const ACTIVE_KEY  = "vitaltwin_active_symptoms";
 const HISTORY_KEY = "vitaltwin_symptom_history";
 
 //////////////////////////////////////////////////////////
@@ -53,11 +57,14 @@ export type HistorySymptom = Symptom & {
 };
 
 //////////////////////////////////////////////////////////
+// CONTEXT TYPE
+//////////////////////////////////////////////////////////
 
 type SymptomContextType = {
-  activeSymptoms: Symptom[];
-  historySymptoms: HistorySymptom[];
-  refreshSymptoms: () => Promise<void>;
+  activeSymptoms:   Symptom[];
+  historySymptoms:  HistorySymptom[];
+  isLoadingMemberSymptoms: boolean;
+  refreshSymptoms:  () => Promise<void>;
   logSymptom: (
     categoryId: string,
     optionId: string,
@@ -67,13 +74,10 @@ type SymptomContextType = {
     notes?: string,
     followUpAnswers?: string
   ) => Promise<void>;
-  resolveSymptom: (id: number) => Promise<void>;
-  removeSymptom: (id: number) => Promise<void>;
-  updateSymptom: (
-    id: number,
-    updates: Partial<Symptom>
-  ) => Promise<void>;
-  clearHistory: () => Promise<void>;
+  resolveSymptom:   (id: number) => Promise<void>;
+  removeSymptom:    (id: number) => Promise<void>;
+  updateSymptom:    (id: number, updates: Partial<Symptom>) => Promise<void>;
+  clearHistory:     () => Promise<void>;
   logCustomSymptom: (
     description: string,
     severity?: Symptom["severity"],
@@ -83,152 +87,177 @@ type SymptomContextType = {
 };
 
 //////////////////////////////////////////////////////////
+// CONTEXT DEFAULT
+//////////////////////////////////////////////////////////
 
 const SymptomContext = createContext<SymptomContextType>({
-  activeSymptoms: [],
+  activeSymptoms:  [],
   historySymptoms: [],
-  refreshSymptoms: async () => {},
-  logSymptom: async () => {},
-  resolveSymptom: async () => {},
-  removeSymptom: async () => {},
-  updateSymptom: async () => {},
-  clearHistory: async () => {},
+  isLoadingMemberSymptoms: false,
+  refreshSymptoms:  async () => {},
+  logSymptom:       async () => {},
+  resolveSymptom:   async () => {},
+  removeSymptom:    async () => {},
+  updateSymptom:    async () => {},
+  clearHistory:     async () => {},
   logCustomSymptom: async () => {},
 });
 
-export function useSymptoms() {
-  return useContext(SymptomContext);
-}
+export function useSymptoms() { return useContext(SymptomContext); }
 
 //////////////////////////////////////////////////////////
 // RETRY HELPER
 //////////////////////////////////////////////////////////
 
-const syncWithRetry = async (
-  fn: () => Promise<void>,
-  label: string
-) => {
+const syncWithRetry = async (fn: () => Promise<void>, label: string) => {
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
       await fn();
-      console.log(`✅ ${label} synced (attempt ${attempt})`);
       return;
     } catch (error) {
-      console.log(`⚠️ ${label} attempt ${attempt} failed`, error);
-      if (attempt < 3) {
-        await new Promise((r) => setTimeout(r, attempt * 2000));
-      }
+      if (attempt < 3) await new Promise((r) => setTimeout(r, attempt * 2000));
     }
   }
 };
 
 //////////////////////////////////////////////////////////
+// NORMALIZERS
+//////////////////////////////////////////////////////////
+
+const normalizeActiveSymptoms = (data: any[]): Symptom[] =>
+  data
+    .map((s) => ({
+      id:              Number(s?.id ?? Date.now()),
+      categoryId:      s?.categoryId      ?? "general",
+      optionId:        s?.optionId        ?? "unknown",
+      name:            s?.name            ?? "Unknown Symptom",
+      severity:        s?.severity        ?? "mild",
+      startedAt:       Number(s?.startedAt ?? Date.now()),
+      notes:           s?.notes,
+      followUpMinutes: s?.followUpMinutes,
+      followUpAnswers: s?.followUpAnswers,
+    }))
+    .filter((s) => !isNaN(s.id));
+
+const normalizeHistorySymptoms = (data: any[]): HistorySymptom[] =>
+  data
+    .map((s) => {
+      const startedAt  = Number(s?.startedAt  ?? Date.now());
+      const resolvedAt = Number(s?.resolvedAt ?? Date.now());
+      return {
+        id:              Number(s?.id ?? Date.now()),
+        categoryId:      s?.categoryId      ?? "general",
+        optionId:        s?.optionId        ?? "unknown",
+        name:            s?.name            ?? "Unknown Symptom",
+        severity:        s?.severity        ?? "mild",
+        startedAt,
+        resolvedAt,
+        duration:        Number(s?.duration ?? resolvedAt - startedAt),
+        notes:           s?.notes,
+        followUpMinutes: s?.followUpMinutes,
+        followUpAnswers: s?.followUpAnswers,
+      };
+    })
+    .filter((s) => !isNaN(s.id));
+
+//////////////////////////////////////////////////////////
 // PROVIDER
 //////////////////////////////////////////////////////////
 
-export function SymptomsProvider({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
-  const [activeSymptoms, setActiveSymptoms] = useState<Symptom[]>([]);
+export function SymptomsProvider({ children }: { children: React.ReactNode }) {
+  const [activeSymptoms,  setActiveSymptoms]  = useState<Symptom[]>([]);
   const [historySymptoms, setHistorySymptoms] = useState<HistorySymptom[]>([]);
-  const [isLoaded, setIsLoaded] = useState(false);
+  const [isLoaded,        setIsLoaded]        = useState(false);
+  const [isLoadingMemberSymptoms, setIsLoadingMember] = useState(false);
+
+  // ── Get active profile context ────────────────────────
+  let isSwitched     = false;
+  let activeMemberId = "self";
+  try {
+    const family   = useFamily();
+    isSwitched     = family.isSwitched;
+    activeMemberId = family.activeMemberId;
+  } catch (_) {}
 
   //////////////////////////////////////////////////////////
-  // NORMALIZE FIREBASE DATA
-  //////////////////////////////////////////////////////////
-
-  const normalizeActiveSymptoms = (data: any[]): Symptom[] => {
-    return data
-      .map((s) => ({
-        id: Number(s?.id ?? Date.now()),
-        categoryId: s?.categoryId ?? "general",
-        optionId: s?.optionId ?? "unknown",
-        name: s?.name ?? "Unknown Symptom",
-        severity: s?.severity ?? "mild",
-        startedAt: Number(s?.startedAt ?? Date.now()),
-        notes: s?.notes,
-        followUpMinutes: s?.followUpMinutes,
-        followUpAnswers: s?.followUpAnswers,
-      }))
-      .filter((s) => !isNaN(s.id));
-  };
-
-  const normalizeHistorySymptoms = (data: any[]): HistorySymptom[] => {
-    return data
-      .map((s) => {
-        const startedAt = Number(s?.startedAt ?? Date.now());
-        const resolvedAt = Number(s?.resolvedAt ?? Date.now());
-        return {
-          id: Number(s?.id ?? Date.now()),
-          categoryId: s?.categoryId ?? "general",
-          optionId: s?.optionId ?? "unknown",
-          name: s?.name ?? "Unknown Symptom",
-          severity: s?.severity ?? "mild",
-          startedAt,
-          resolvedAt,
-          duration: Number(s?.duration ?? resolvedAt - startedAt),
-          notes: s?.notes,
-          followUpMinutes: s?.followUpMinutes,
-          followUpAnswers: s?.followUpAnswers,
-        };
-      })
-      .filter((s) => !isNaN(s.id));
-  };
-
-  //////////////////////////////////////////////////////////
-  // REFRESH FROM FIREBASE + LOCAL STORAGE
+  // REFRESH — reacts to profile switching
+  // When switched → fetch ONLY from member's Firebase doc
+  // When on self  → merge local AsyncStorage + own Firebase
   //////////////////////////////////////////////////////////
 
   const refreshSymptoms = useCallback(async () => {
     try {
-      console.log("🔄 Syncing symptoms from Firebase...");
+      if (isSwitched && activeMemberId && activeMemberId !== "self") {
+        // ── Switched: load member's symptoms from Firebase ──
+        setIsLoadingMember(true);
+        console.log("🩺 Loading symptoms from Firebase for member:", activeMemberId);
 
-      const activeRaw = await AsyncStorage.getItem(ACTIVE_KEY);
-      const historyRaw = await AsyncStorage.getItem(HISTORY_KEY);
+        const firebaseActive  = await fetchSymptomsFromFirebase(activeMemberId);
+        const firebaseHistory = await fetchSymptomHistoryFromFirebase(activeMemberId);
 
-      const localActive: Symptom[] = activeRaw ? JSON.parse(activeRaw) : [];
-      const localHistory: HistorySymptom[] = historyRaw ? JSON.parse(historyRaw) : [];
+        const normalizedActive  = normalizeActiveSymptoms(firebaseActive   || []);
+        const normalizedHistory = normalizeHistorySymptoms(firebaseHistory || []);
 
-      const firebaseActive = await fetchSymptomsFromFirebase();
-      const firebaseHistory = await fetchSymptomHistoryFromFirebase();
+        // Filter out any active symptom that also appears in history
+        const filteredActive = normalizedActive.filter(
+          (a) => !normalizedHistory.some((h) => h.id === a.id)
+        );
 
-      const normalizedActive = normalizeActiveSymptoms(firebaseActive || []);
-      const normalizedHistory = normalizeHistorySymptoms(firebaseHistory || []);
+        setActiveSymptoms(filteredActive);
+        setHistorySymptoms(normalizedHistory);
 
-      
+        console.log(
+          `🩺 Member symptoms loaded — active: ${filteredActive.length}, history: ${normalizedHistory.length}`
+        );
+      } else {
+        // ── Self: merge local AsyncStorage + own Firebase ──
+        console.log("🔄 Syncing own symptoms from Firebase...");
 
-      // ✅ FIRST create history
-const mergedHistory = [...localHistory, ...normalizedHistory].filter(
-  (item, index, self) =>
-    index === self.findIndex((t) => t.id === item.id)
-);
+        const activeRaw  = await AsyncStorage.getItem(ACTIVE_KEY);
+        const historyRaw = await AsyncStorage.getItem(HISTORY_KEY);
 
-// ✅ THEN create active
-const mergedActive = [...localActive, ...normalizedActive]
-  .filter(
-    (item, index, self) =>
-      index === self.findIndex((t) => t.id === item.id)
-  )
-  .filter(
-    (item) => !(mergedHistory || []).some((h) => h.id === item.id)
-  );
+        const localActive:  Symptom[]        = activeRaw  ? JSON.parse(activeRaw)  : [];
+        const localHistory: HistorySymptom[]  = historyRaw ? JSON.parse(historyRaw) : [];
 
-      setActiveSymptoms(mergedActive);
-      setHistorySymptoms(mergedHistory);
+        const firebaseActive  = await fetchSymptomsFromFirebase();
+        const firebaseHistory = await fetchSymptomHistoryFromFirebase();
 
-      await AsyncStorage.setItem(ACTIVE_KEY, JSON.stringify(mergedActive));
-      await AsyncStorage.setItem(HISTORY_KEY, JSON.stringify(mergedHistory));
+        const normalizedActive  = normalizeActiveSymptoms(firebaseActive   || []);
+        const normalizedHistory = normalizeHistorySymptoms(firebaseHistory || []);
 
-      console.log("✅ Symptoms synced successfully");
+        const mergedHistory = [...localHistory, ...normalizedHistory].filter(
+          (item, index, self) => index === self.findIndex((t) => t.id === item.id)
+        );
+
+        const mergedActive = [...localActive, ...normalizedActive]
+          .filter((item, index, self) => index === self.findIndex((t) => t.id === item.id))
+          .filter((item) => !mergedHistory.some((h) => h.id === item.id));
+
+        setActiveSymptoms(mergedActive);
+        setHistorySymptoms(mergedHistory);
+
+        await AsyncStorage.setItem(ACTIVE_KEY,  JSON.stringify(mergedActive));
+        await AsyncStorage.setItem(HISTORY_KEY, JSON.stringify(mergedHistory));
+
+        console.log("✅ Own symptoms synced successfully");
+      }
     } catch (error) {
-      console.log("❌ Refresh error:", error);
+      console.log("❌ refreshSymptoms error:", error);
+    } finally {
+      setIsLoadingMember(false);
     }
-  }, []);
+  }, [isSwitched, activeMemberId]);
 
   //////////////////////////////////////////////////////////
-  // LOAD & SYNC ON APP START
+  // Re-load whenever active member changes
+  //////////////////////////////////////////////////////////
+
+  useEffect(() => {
+    refreshSymptoms();
+  }, [isSwitched, activeMemberId]);
+
+  //////////////////////////////////////////////////////////
+  // Initial load
   //////////////////////////////////////////////////////////
 
   useEffect(() => {
@@ -237,26 +266,26 @@ const mergedActive = [...localActive, ...normalizedActive]
       setIsLoaded(true);
     };
     initialize();
-  }, [refreshSymptoms]);
+  }, []);
 
   //////////////////////////////////////////////////////////
-  // AUTO SAVE TO ASYNC STORAGE
+  // Auto-save OWN symptoms to AsyncStorage (only when on self)
   //////////////////////////////////////////////////////////
 
   useEffect(() => {
-    if (isLoaded) {
+    if (isLoaded && !isSwitched) {
       AsyncStorage.setItem(ACTIVE_KEY, JSON.stringify(activeSymptoms));
     }
-  }, [activeSymptoms, isLoaded]);
+  }, [activeSymptoms, isLoaded, isSwitched]);
 
   useEffect(() => {
-    if (isLoaded) {
+    if (isLoaded && !isSwitched) {
       AsyncStorage.setItem(HISTORY_KEY, JSON.stringify(historySymptoms));
     }
-  }, [historySymptoms, isLoaded]);
+  }, [historySymptoms, isLoaded, isSwitched]);
 
   //////////////////////////////////////////////////////////
-  // LOG SYMPTOM
+  // LOG SYMPTOM — always logs to OWN data
   //////////////////////////////////////////////////////////
 
   const logSymptom = useCallback(
@@ -270,33 +299,21 @@ const mergedActive = [...localActive, ...normalizedActive]
       followUpAnswers?: string
     ) => {
       const now = Date.now();
-
       const newSymptom: Symptom = {
-        id: now,
-        categoryId,
-        optionId,
-        name: name.trim(),
-        severity,
-        startedAt: now,
-        notes,
-        followUpMinutes,
-        followUpAnswers,
+        id: now, categoryId, optionId,
+        name: name.trim(), severity, startedAt: now,
+        notes, followUpMinutes, followUpAnswers,
       };
 
       setActiveSymptoms((prev) => [...prev, newSymptom]);
 
-      // 🔔 Schedule hourly follow-up notification
       try {
         await scheduleSymptomHourly(name.trim());
-        console.log("🩺 Symptom hourly notification scheduled for:", name);
       } catch (err) {
         console.log("❌ Symptom notification scheduling failed:", err);
       }
 
-      syncWithRetry(
-        () => syncAddSymptom({ ...newSymptom }),
-        "AddSymptom"
-      );
+      syncWithRetry(() => syncAddSymptom({ ...newSymptom }), "AddSymptom");
     },
     []
   );
@@ -313,16 +330,7 @@ const mergedActive = [...localActive, ...normalizedActive]
       followUpAnswers?: string
     ) => {
       if (!description.trim()) return;
-
-      await logSymptom(
-        "custom",
-        "other",
-        description.trim(),
-        severity,
-        followUpMinutes,
-        description,
-        followUpAnswers
-      );
+      await logSymptom("custom", "other", description.trim(), severity, followUpMinutes, description, followUpAnswers);
     },
     [logSymptom]
   );
@@ -338,42 +346,20 @@ const mergedActive = [...localActive, ...normalizedActive]
         if (!symptom) return;
 
         const resolvedAt = Date.now();
-        const duration = resolvedAt - symptom.startedAt;
-
-        const resolved: HistorySymptom = {
-          ...symptom,
-          resolvedAt,
-          duration,
-        };
+        const duration   = resolvedAt - symptom.startedAt;
+        const resolved: HistorySymptom = { ...symptom, resolvedAt, duration };
 
         const updatedActive = activeSymptoms.filter((s) => s.id !== id);
         setActiveSymptoms([...updatedActive]);
-
         setHistorySymptoms((prev) => [resolved, ...prev]);
 
-        await AsyncStorage.setItem(
-          ACTIVE_KEY,
-          JSON.stringify(updatedActive)
-        );
-
+        await AsyncStorage.setItem(ACTIVE_KEY, JSON.stringify(updatedActive));
         const existingHistory = await AsyncStorage.getItem(HISTORY_KEY);
-        const parsedHistory = existingHistory
-          ? JSON.parse(existingHistory)
-          : [];
-
-        await AsyncStorage.setItem(
-          HISTORY_KEY,
-          JSON.stringify([resolved, ...parsedHistory])
-        );
+        const parsedHistory   = existingHistory ? JSON.parse(existingHistory) : [];
+        await AsyncStorage.setItem(HISTORY_KEY, JSON.stringify([resolved, ...parsedHistory]));
 
         await cancelSymptomNotification();
-
-        syncWithRetry(
-          () => syncResolveSymptom(id, resolvedAt, duration),
-          "ResolveSymptom"
-        );
-
-        console.log("✅ Symptom moved to history:", id);
+        syncWithRetry(() => syncResolveSymptom(id, resolvedAt, duration), "ResolveSymptom");
       } catch (err) {
         console.log("❌ Resolve error:", err);
       }
@@ -387,20 +373,12 @@ const mergedActive = [...localActive, ...normalizedActive]
 
   const removeSymptom = useCallback(async (id: number) => {
     setActiveSymptoms((prev) => prev.filter((s) => s.id !== id));
-
     await cancelSymptomNotification();
-
-    syncWithRetry(
-      () => syncDeleteSymptom(id),
-      "DeleteSymptom"
-    );
+    syncWithRetry(() => syncDeleteSymptom(id), "DeleteSymptom");
   }, []);
 
   //////////////////////////////////////////////////////////
   // UPDATE SYMPTOM
-  // ✅ FIX 6: Replaced deprecated scheduleSymptomCheck (which fired at a
-  //    fixed time of day) with scheduleSymptomHourly (fires 1 hour from now).
-  //    The old function was also still imported — now removed from imports.
   //////////////////////////////////////////////////////////
 
   const updateSymptom = useCallback(
@@ -408,17 +386,11 @@ const mergedActive = [...localActive, ...normalizedActive]
       setActiveSymptoms((prev) =>
         prev.map((s) => (s.id === id ? { ...s, ...updates } : s))
       );
-
       if (updates.name) {
         await cancelSymptomNotification();
         await scheduleSymptomHourly(updates.name);
-        console.log("🩺 Rescheduled hourly notification for updated symptom:", updates.name);
       }
-
-      syncWithRetry(
-        () => syncUpdateSymptom(id, updates),
-        "UpdateSymptom"
-      );
+      syncWithRetry(() => syncUpdateSymptom(id, updates), "UpdateSymptom");
     },
     []
   );
@@ -441,6 +413,7 @@ const mergedActive = [...localActive, ...normalizedActive]
       value={{
         activeSymptoms,
         historySymptoms,
+        isLoadingMemberSymptoms,
         refreshSymptoms,
         logSymptom,
         resolveSymptom,

@@ -827,26 +827,21 @@ export default function AIHealthScreen() {
             showsVerticalScrollIndicator={false} onTouchStart={Keyboard.dismiss} keyboardShouldPersistTaps="handled"
           />
 
-          {/* Voice indicator */}
-          <VoiceIndicator visible={isRecording} partialText={partialVoiceText} />
-
           <View style={[styles.inputContainer, { backgroundColor: c.card, borderTopColor: c.border }]}>
             <TouchableOpacity onPress={handleFile} style={styles.iconButton}>
               <Ionicons name="attach" size={24} color={c.sub} />
             </TouchableOpacity>
-            <View style={[styles.inputWrapper, { backgroundColor: theme === 'light' ? '#f8fafc' : '#0f172a', borderColor: isRecording ? "#ef4444" : c.border }]}>
+
+            <View style={[styles.inputWrapper, { backgroundColor: theme === 'light' ? '#f8fafc' : '#0f172a', borderColor: c.border }]}>
               <TextInput
                 ref={inputRef} value={input} onChangeText={setInput}
-                placeholder={isRecording ? "Listening…" : "Message Dr. Aria..."}
-                placeholderTextColor={isRecording ? "#ef4444" : c.sub}
+                placeholder="Message Dr. Aria..."
+                placeholderTextColor={c.sub}
                 style={[styles.input, { color: c.text }]}
                 multiline returnKeyType="send" onSubmitEditing={sendMessage} blurOnSubmit={false}
               />
             </View>
-            {/* Mic — red pill when recording */}
-            <TouchableOpacity onPress={handleVoice} style={[styles.iconButton, isRecording && styles.recordingBtn]}>
-              <Ionicons name={isRecording ? "stop-circle" : "mic"} size={24} color={isRecording ? "#fff" : c.accent} />
-            </TouchableOpacity>
+
             <TouchableOpacity onPress={sendMessage} style={[styles.sendButton, { backgroundColor: input.trim() ? c.accent : c.border }]} disabled={!input.trim() || loading}>
               {loading ? <ActivityIndicator color="#fff" size="small" /> : <Ionicons name="send" size={20} color={input.trim() ? "#ffffff" : c.sub} />}
             </TouchableOpacity>

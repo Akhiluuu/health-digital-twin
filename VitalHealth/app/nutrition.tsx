@@ -2,6 +2,7 @@
 // PROFESSIONAL NUTRITION PAGE — synced via NutritionContext
 // UPGRADED: Full CSV-powered food search (456 items) + smart quantity picker
 // FIX: KeyboardAvoidingView for custom food modal + fixed search bar layout
+// ADDED: Meal reminder notifications with Notifee + AsyncStorage persistence
 
 import { Ionicons } from "@expo/vector-icons";
 import DateTimePicker from "@react-native-community/datetimepicker";
@@ -26,6 +27,15 @@ import {
 } from "react-native";
 import Svg, { Circle, G } from "react-native-svg";
 
+import notifee, {
+  AndroidImportance,
+  TimestampTrigger,
+  TriggerType,
+  RepeatFrequency,
+} from "@notifee/react-native";
+
+import AsyncStorage from "@react-native-async-storage/async-storage";
+
 import {
   healthProfiles,
   mealTypes,
@@ -49,6 +59,14 @@ export interface CsvFoodItem {
   sodium_mg: number;
   fiber_g: number;
   notes: string;
+}
+
+// ─── MealReminder Interface (FIXED) ──────────────────────────────────────────
+interface MealReminder {
+  id: string;
+  title: string;
+  enabled: boolean;
+  time: Date;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -577,6 +595,7 @@ export const CSV_FOOD_DB: CsvFoodItem[] = [
   { food:"Chia Seeds", cuisine:"Ingredient", category:"seed", display_amount:"1 tbsp", grams_per_display:12.0, protein_g:2.04, carbs_g:5.04, fat_g:3.72, calories:58.3, sugar_g:0.91, sodium_mg:0, fiber_g:0.4, notes:"Dry chia seeds." },
 ];
 
+
 // ─── Modal phase type ─────────────────────────────────────────────────────────
 type ModalPhase = "main" | "search" | "quantity" | "custom";
 
@@ -589,13 +608,53 @@ export default function NutritionScreen() {
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
   const {
-    totals, selectedProfile, foodEntries, mealReminders,
+    totals, selectedProfile, foodEntries,
     addFoodEntry, removeFoodEntry, setProfile,
-    toggleReminder, updateReminderTime, getMealEntries,
+    getMealEntries,
   } = useNutrition();
 
   const { addEvent } = useBiogearsTwin();
   const { calories, protein, carbs, fat, sugar, sodium, fiber } = totals;
+
+  // STEP 1: Only ONE mealReminders declaration (removed the duplicate from useNutrition)
+  const [mealReminders, setMealReminders] = useState<MealReminder[]>([
+    {
+      id: "breakfast",
+      title: "Breakfast",
+      enabled: false,
+      time: new Date(new Date().setHours(8, 0, 0)),
+    },
+    {
+      id: "morning_snack",
+      title: "Morning Snack",
+      enabled: false,
+      time: new Date(new Date().setHours(10, 30, 0)),
+    },
+    {
+      id: "lunch",
+      title: "Lunch",
+      enabled: false,
+      time: new Date(new Date().setHours(13, 0, 0)),
+    },
+    {
+      id: "afternoon_snack",
+      title: "Afternoon Snack",
+      enabled: false,
+      time: new Date(new Date().setHours(16, 30, 0)),
+    },
+    {
+      id: "dinner",
+      title: "Dinner",
+      enabled: false,
+      time: new Date(new Date().setHours(20, 0, 0)),
+    },
+    {
+      id: "evening_snack",
+      title: "Evening Snack",
+      enabled: false,
+      time: new Date(new Date().setHours(22, 0, 0)),
+    },
+  ]);
 
   const colors = theme === "light"
     ? {
@@ -611,6 +670,175 @@ export default function NutritionScreen() {
         orange: "#fb923c", searchBg: "#0f172a",
       };
 
+  // Notifee functions
+  const initializeMealNotifications = async () => {
+    await notifee.requestPermission();
+
+    await notifee.createChannel({
+      id: "meal-reminders",
+      name: "Meal Reminders",
+      importance: AndroidImportance.HIGH,
+      sound: "default",
+    });
+  };
+
+  const scheduleMealNotification = async (meal: MealReminder) => {
+    try {
+      const triggerDate = new Date();
+
+      triggerDate.setHours(
+        new Date(meal.time).getHours()
+      );
+
+      triggerDate.setMinutes(
+        new Date(meal.time).getMinutes()
+      );
+
+      triggerDate.setSeconds(0);
+
+      if (triggerDate <= new Date()) {
+        triggerDate.setDate(
+          triggerDate.getDate() + 1
+        );
+      }
+
+      const trigger: TimestampTrigger = {
+        type: TriggerType.TIMESTAMP,
+        timestamp: triggerDate.getTime(),
+        repeatFrequency: RepeatFrequency.DAILY,
+      };
+
+      await notifee.createTriggerNotification(
+        {
+          id: meal.id,
+          title: "🍽️ Meal Reminder",
+          body: `Time for ${meal.title}`,
+          android: {
+            channelId: "meal-reminders",
+            pressAction: {
+              id: "default",
+            },
+            smallIcon: "ic_launcher",
+          },
+        },
+        trigger
+      );
+    } catch (error) {
+      console.log(error);
+    }
+  };
+
+  const saveMealReminders = async (data: MealReminder[]) => {
+    try {
+      await AsyncStorage.setItem(
+        "mealReminders",
+        JSON.stringify(data)
+      );
+    } catch (error) {
+      console.log("Save meal reminder error:", error);
+    }
+  };
+
+  // STEP 5: Fixed loadMealReminders with time string to Date conversion
+  const loadMealReminders = async () => {
+    try {
+      const saved = await AsyncStorage.getItem(
+        "mealReminders"
+      );
+
+      if (saved) {
+        const parsed = JSON.parse(saved);
+
+        // FIX: Convert time strings back to Date objects
+        const fixedReminders = parsed.map((item: any) => ({
+          ...item,
+          time: new Date(item.time),
+        }));
+
+        setMealReminders(fixedReminders);
+
+        fixedReminders.forEach((meal: MealReminder) => {
+          if (meal.enabled) {
+            scheduleMealNotification(meal);
+          }
+        });
+      }
+    } catch (error) {
+      console.log(error);
+    }
+  };
+
+  const toggleMealReminder = async (
+    Id: string,
+    enabled: boolean
+  ) => {
+    const updated = mealReminders.map(
+      (meal) =>
+        meal.id === Id
+          ? { ...meal, enabled }
+          : meal
+    );
+
+    setMealReminders(updated);
+    saveMealReminders(updated);
+
+    const meal = updated.find(
+      (m) => m.id === Id
+    );
+
+    if (!meal) return;
+
+    if (enabled) {
+      await scheduleMealNotification(
+        meal
+      );
+    } else {
+      await notifee.cancelNotification(
+        meal.id
+      );
+    }
+  };
+
+  const updateMealTime = async (
+    Id: string,
+    selectedTime: Date
+  ) => {
+    const updated = mealReminders.map(
+      (meal) =>
+        meal.id === Id
+          ? {
+              ...meal,
+              time: selectedTime,
+            }
+          : meal
+    );
+
+    setMealReminders(updated);
+    saveMealReminders(updated);
+
+    const meal = updated.find(
+      (m) => m.id === Id
+    );
+
+    if (
+      meal &&
+      meal.enabled
+    ) {
+      await notifee.cancelNotification(
+        meal.id
+      );
+
+      await scheduleMealNotification(
+        meal
+      );
+    }
+  };
+
+  useEffect(() => {
+    initializeMealNotifications();
+    loadMealReminders();
+  }, []);
+
   // ── Modal state ──────────────────────────────────────────────────────────
   const [modalVisible, setModalVisible]           = useState(false);
   const [selectedMeal, setSelectedMeal]           = useState<typeof mealTypes[0] | null>(null);
@@ -622,7 +850,7 @@ export default function NutritionScreen() {
   const [customFood, setCustomFood]               = useState("");
   const [customCalories, setCustomCalories]       = useState("");
   const [showReminderModal, setShowReminderModal] = useState(false);
-  const [editingReminder, setEditingReminder]     = useState<typeof mealReminders[0] | null>(null);
+  const [editingReminder, setEditingReminder]     = useState<MealReminder | null>(null);
   const [showTimePicker, setShowTimePicker]       = useState(false);
   const [aiTip, setAiTip]                         = useState("");
 
@@ -682,16 +910,22 @@ export default function NutritionScreen() {
     return 1;
   })();
 
-  // ── Add confirmed food ───────────────────────────────────────────────────
+  // STEP 4: Fixed addFoodEntry - removed 'id' field
   const confirmFoodWithQuantity = useCallback(() => {
     if (!selectedCsvFood || !selectedMeal || !scaled) return;
     const displayQty = `${quantity} ${parsedUnit.unitLabel}`;
     const label = `${selectedCsvFood.food} (${displayQty})`;
     addFoodEntry({
-      mealId: selectedMeal.id, foodId: `csv_${selectedCsvFood.food.replace(/\s/g,"_")}_${Date.now()}`,
-      foodName: label, calories: scaled.calories, protein: scaled.protein,
-      carbs: scaled.carbs, fat: scaled.fat, sugar: scaled.sugar,
-      sodium: scaled.sodium, fiber: scaled.fiber,
+      mealId: selectedMeal.id,
+      foodId: `csv_${selectedCsvFood.food.replace(/\s/g,"_")}_${Date.now()}`,
+      foodName: label,
+      calories: scaled.calories,
+      protein: scaled.protein,
+      carbs: scaled.carbs,
+      fat: scaled.fat,
+      sugar: scaled.sugar,
+      sodium: scaled.sodium,
+      fiber: scaled.fiber,
     });
     try {
       addEvent({
@@ -707,14 +941,16 @@ export default function NutritionScreen() {
     Alert.alert("✅ Added", `${label} added to ${selectedMeal.label}`);
   }, [selectedCsvFood, selectedMeal, scaled, quantity, parsedUnit]);
 
-  // ── Custom food entry ────────────────────────────────────────────────────
+  // STEP 4: Fixed handleAddCustomFood - removed 'id' field
   const handleAddCustomFood = () => {
     if (!selectedMeal || !customFood || !customCalories) return;
     const cal = parseInt(customCalories);
     if (isNaN(cal)) return;
     addFoodEntry({
-      mealId: selectedMeal.id, foodId: `custom_${Date.now()}`,
-      foodName: customFood, calories: cal,
+      mealId: selectedMeal.id,
+      foodId: `custom_${Date.now()}`,
+      foodName: customFood,
+      calories: cal,
       protein: 0, carbs: 0, fat: 0, sugar: 0, sodium: 0, fiber: 0,
     });
     try {
@@ -858,7 +1094,7 @@ export default function NutritionScreen() {
           <Text style={[styles.sectionTitle, { color:colors.text }]}>Today's Meals</Text>
           {mealTypes.map((meal) => {
             const entries       = getMealEntries(meal.id);
-            const reminder      = mealReminders.find((r) => r.mealId === meal.id);
+            const reminder      = mealReminders.find((r) => r.id === meal.id);
             const totalMealCals = entries.reduce((s, e) => s + e.calories, 0);
             return (
               <TouchableOpacity key={meal.id}
@@ -871,7 +1107,7 @@ export default function NutritionScreen() {
                     <View>
                       <Text style={[styles.mealTitle, { color:colors.text }]}>{meal.label}</Text>
                       {reminder?.enabled && (
-                        <Text style={[styles.mealTime, { color:colors.accent }]}>⏰ {reminder.time}</Text>
+                        <Text style={[styles.mealTime, { color:colors.accent }]}>⏰ {reminder.time.toLocaleTimeString([], { hour:"2-digit", minute:"2-digit" })}</Text>
                       )}
                     </View>
                   </View>
@@ -1222,12 +1458,14 @@ export default function NutritionScreen() {
             {mealReminders.map((reminder) => (
               <View key={reminder.id} style={[styles.reminderRow, { borderBottomColor:colors.border }]}>
                 <View style={styles.reminderInfo}>
-                  <Text style={[styles.reminderMeal, { color:colors.text }]}>{reminder.mealName}</Text>
+                  <Text style={[styles.reminderMeal, { color:colors.text }]}>{reminder.title}</Text>
                   <TouchableOpacity onPress={() => { setEditingReminder(reminder); setShowTimePicker(true); }}>
-                    <Text style={[styles.reminderTime, { color:colors.accent }]}>{reminder.time}</Text>
+                    <Text style={[styles.reminderTime, { color:colors.accent }]}>
+                      {reminder.time.toLocaleTimeString([], { hour:"2-digit", minute:"2-digit" })}
+                    </Text>
                   </TouchableOpacity>
                 </View>
-                <Switch value={reminder.enabled} onValueChange={() => toggleReminder(reminder.id)}
+                <Switch value={reminder.enabled} onValueChange={(value) => toggleMealReminder(reminder.id, value)}
                   trackColor={{ false:colors.border, true:colors.accent }} />
               </View>
             ))}
@@ -1241,17 +1479,16 @@ export default function NutritionScreen() {
       {/* Time Picker */}
       {showTimePicker && editingReminder && (
         <DateTimePicker
-          value={(() => {
-            const [h,m] = editingReminder.time.split(":").map(Number);
-            const d = new Date(); d.setHours(h,m,0,0); return d;
-          })()}
-          mode="time" is24Hour={false} display="default"
+          value={editingReminder.time}
+          mode="time"
+          is24Hour={false}
+          display="default"
           onChange={(_,date) => {
             if (date) {
-              const t = date.toLocaleTimeString([], { hour:"2-digit", minute:"2-digit", hour12:false });
-              updateReminderTime(editingReminder.id, t);
+              updateMealTime(editingReminder.id, date);
             }
-            setShowTimePicker(false); setEditingReminder(null);
+            setShowTimePicker(false);
+            setEditingReminder(null);
           }}
         />
       )}

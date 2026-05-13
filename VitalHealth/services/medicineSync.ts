@@ -1,38 +1,72 @@
-import { collection, getDocs } from "firebase/firestore";
-import { auth, db } from "./firebase";
-import { addMedicine } from "../database/medicineDB";
+// services/medicineSync.ts
+// ─────────────────────────────────────────────────────────────────
+// Syncs medicines FROM Firebase INTO local SQLite on app start.
+//
+// ✅ FIX (Duplicate Bug): Before inserting any Firebase record we
+//    check if a row with that id already exists in SQLite. If it
+//    does, we skip the insert entirely. This prevents duplicates
+//    every time the app restarts.
+// ─────────────────────────────────────────────────────────────────
 
-export const syncMedicinesFromFirebase = async () => {
+import { db } from "../database/index";
+import { fetchMedicinesFromFirebase } from "./firebaseSync";
+
+export async function syncMedicinesFromFirebase(): Promise<void> {
   try {
-    const uid = auth.currentUser?.uid;
-    if (!uid) return;
+    const remoteMedicines = await fetchMedicinesFromFirebase();
 
-    const snapshot = await getDocs(
-      collection(db, "users", uid, "medicines")
-    );
+    if (!remoteMedicines || remoteMedicines.length === 0) {
+      console.log("☁️ No remote medicines to sync");
+      return;
+    }
 
-    console.log("📥 Syncing medicines from Firebase...");
+    let inserted = 0;
+    let skipped  = 0;
 
-    snapshot.forEach((doc) => {
-      const data: any = doc.data();
-
-      addMedicine(
-        data.name || "",
-        data.dose || "",
-        data.type || "",
-        data.time || "",
-        data.timestamp || Date.now(),
-        data.meal || "",
-        data.frequency || "daily",
-        data.startDate || "",
-        data.endDate || "",
-        data.reminder || 1,
-        data.notificationId || null
+    for (const med of remoteMedicines) {
+      // ✅ KEY FIX: check by Firebase id (which equals the SQLite id)
+      const existing = db.getFirstSync<{ id: number }>(
+        "SELECT id FROM medicines WHERE id = ?",
+        [med.id]
       );
-    });
 
-    console.log("✅ Medicines synced to local DB");
-  } catch (error) {
-    console.log("❌ Sync error:", error);
+      if (existing) {
+        // Row already in local DB — skip to avoid duplicate
+        skipped++;
+        continue;
+      }
+
+      // Safe to insert — this medicine is not in local DB yet
+      db.runSync(
+        `INSERT INTO medicines
+          (id, name, dose, type, time, timestamp, meal, frequency,
+           startDate, endDate, reminder, notificationId, taken)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          med.id,
+          med.name           ?? "",
+          med.dose           ?? "",
+          med.type           ?? "",
+          med.time           ?? "",
+          med.timestamp      ?? 0,
+          med.meal           ?? "",
+          med.frequency      ?? "daily",
+          med.startDate      ?? "",
+          med.endDate        ?? "",
+          med.reminder       ?? 0,
+          med.notificationId ?? null,
+          // ✅ Never restore a stale `taken` flag from Firebase.
+          //    Always start fresh as 0; date-scoped logic handles display.
+          0,
+        ]
+      );
+      inserted++;
+    }
+
+    console.log(
+      `☁️ Medicine sync complete — inserted: ${inserted}, skipped (already local): ${skipped}`
+    );
+  } catch (err) {
+    console.log("⚠️ syncMedicinesFromFirebase error (non-critical):", err);
   }
-};
+}

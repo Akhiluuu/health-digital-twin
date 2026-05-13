@@ -31,7 +31,7 @@ import { FamilyProvider } from "../context/FamilyContext";
 ///////////////////////////////////////////////////////////
 import { initAllTables } from "../database/schema";
 import { initHistoryTable } from "../database/historySchema";
-import { initMedicineDB, markMissedMedicines } from "../database/medicineDB";
+import { initMedicineDB, markMissedMedicines, resetDailyTakenIfNewDay } from "../database/medicineDB";
 import { initSymptomDB } from "../database/symptomDB";
 import { initHydrationDB } from "../database/hydrationDB";
 import { initHydrationHistoryDB } from "../database/hydrationHistoryDB";
@@ -56,16 +56,41 @@ import { log, error } from "../utils/logger";
 SplashScreen.preventAutoHideAsync().catch(() => {});
 
 ///////////////////////////////////////////////////////////
+// BRIDGE: Reads selfProfile from ProfileContext and passes
+// it into FamilyProvider so profile switching works.
+// MUST be rendered INSIDE <ProfileProvider>.
+//
+// ⚠️ IMPORTANT: MedicineProvider and SymptomsProvider are
+// placed INSIDE this bridge so they can call useFamily()
+// to detect when the active member changes and reload data
+// from that member's Firebase doc automatically.
+///////////////////////////////////////////////////////////
+const FamilyProviderWithProfile: React.FC<{ children: React.ReactNode }> = ({
+  children,
+}) => {
+  const { profile } = useProfile();
+  return (
+    <FamilyProvider selfProfile={profile}>
+      {/* MedicineProvider and SymptomsProvider MUST be here,
+          inside FamilyProvider, so useFamily() works inside them */}
+      <MedicineProvider>
+        <SymptomsProvider>
+          {children}
+        </SymptomsProvider>
+      </MedicineProvider>
+    </FamilyProvider>
+  );
+};
+
+///////////////////////////////////////////////////////////
 // STEP PROVIDER WRAPPER
 ///////////////////////////////////////////////////////////
 const StepProviderWrapper: React.FC<{ children: React.ReactNode }> = ({
   children,
 }) => {
   const profile = useProfile();
-
   const weightKg = profile?.weightKg ?? 70;
   const heightCm = profile?.heightCm ?? 170;
-
   return (
     <StepProvider weightKg={weightKg} heightCm={heightCm}>
       {children}
@@ -91,28 +116,19 @@ export default function RootLayout() {
       try {
         log("🚀 Initializing VitalTwin App...");
 
-        /////////////////////////////////////////////////////
-        // 🔔 SETUP NOTIFICATIONS
-        /////////////////////////////////////////////////////
         await setupNotifee();
         console.log("🔔 Notifications initialized");
 
         await new Promise((res) => setTimeout(res, 500));
 
-        // 🗄️ INITIALIZE DATABASES
-        /////////////////////////////////////////////////////
-        // One call creates ALL tables in vital_health.db atomically.
-        // Individual initXxxDB() are now no-ops kept for compatibility.
         await initAllTables();
-        await initHistoryTable();    // safe fallback — no-op if already exists
-        await initMedicineDB();      // logs confirmation
-        await initSymptomDB();       // logs confirmation
-        await initHydrationDB();     // logs confirmation
+        await initHistoryTable();
+        await initMedicineDB();
+        resetDailyTakenIfNewDay();
+        await initSymptomDB();
+        await initHydrationDB();
         await initHydrationHistoryDB();
 
-        /////////////////////////////////////////////////////
-        // 🔄 POST-INITIALIZATION TASKS
-        /////////////////////////////////////////////////////
         await markMissedMedicines();
         await syncMedicinesFromFirebase();
 
@@ -130,8 +146,6 @@ export default function RootLayout() {
 
   ///////////////////////////////////////////////////////////
   // FOREGROUND NOTIFICATION HANDLER
-  // ✅ Registered here only — NOT in index.js
-  // index.js only handles the background handler (onBackgroundEvent)
   ///////////////////////////////////////////////////////////
   useEffect(() => {
     const unsubscribe = registerNotifeeForegroundHandler();
@@ -145,14 +159,7 @@ export default function RootLayout() {
   ///////////////////////////////////////////////////////////
   if (!isReady) {
     return (
-      <View
-        style={{
-          flex: 1,
-          justifyContent: "center",
-          alignItems: "center",
-          backgroundColor: "#ffffff",
-        }}
-      >
+      <View style={{ flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: "#ffffff" }}>
         <ActivityIndicator size="large" color="#0ea5e9" />
       </View>
     );
@@ -160,56 +167,68 @@ export default function RootLayout() {
 
   ///////////////////////////////////////////////////////////
   // MAIN NAVIGATION WITH CONTEXT PROVIDERS
+  //
+  // Provider tree (order matters):
+  //
+  //  ThemeProvider
+  //  └─ ProfileProvider                 ← own profile from Firebase
+  //     └─ FamilyProviderWithProfile    ← bridge: passes selfProfile in
+  //        └─ FamilyProvider            ← global activeMemberId + activeProfile
+  //           └─ MedicineProvider       ← reacts to activeMemberId changes ✅
+  //           └─ SymptomsProvider       ← reacts to activeMemberId changes ✅
+  //              └─ StepProviderWrapper
+  //              └─ HydrationProvider
+  //              └─ BiogearsTwinProvider
+  //              └─ NutritionProvider
+  //
+  // MedicineProvider + SymptomsProvider MUST be inside FamilyProvider
+  // so they can call useFamily() and reload when switching profiles.
   ///////////////////////////////////////////////////////////
   return (
     <ThemeProvider defaultTheme="light">
       <ProfileProvider>
-        <FamilyProvider>
+        <FamilyProviderWithProfile>
           <StepProviderWrapper>
             <HydrationProvider>
-              <MedicineProvider>
-                <BiogearsTwinProvider>
-                  <SymptomsProvider>
-                    <NutritionProvider>
-                      <Stack screenOptions={{ headerShown: false }}>
-                        {/* Authentication & Startup */}
-                        <Stack.Screen name="startup" />
-                        <Stack.Screen name="welcome" />
-                        <Stack.Screen name="signin" />
-                        <Stack.Screen name="signup" />
+              <BiogearsTwinProvider>
+                <NutritionProvider>
+                  <Stack screenOptions={{ headerShown: false }}>
+                    {/* Authentication & Startup */}
+                    <Stack.Screen name="startup" />
+                    <Stack.Screen name="welcome" />
+                    <Stack.Screen name="signin" />
+                    <Stack.Screen name="signup" />
 
-                        {/* Onboarding */}
-                        <Stack.Screen name="onboarding/personal" />
-                        <Stack.Screen name="onboarding/medical" />
-                        <Stack.Screen name="onboarding/habits" />
-                        <Stack.Screen name="onboarding/history" />
-                        <Stack.Screen name="onboarding/review" />
+                    {/* Onboarding */}
+                    <Stack.Screen name="onboarding/personal" />
+                    <Stack.Screen name="onboarding/medical" />
+                    <Stack.Screen name="onboarding/habits" />
+                    <Stack.Screen name="onboarding/history" />
+                    <Stack.Screen name="onboarding/review" />
 
-                        {/* Main App Tabs */}
-                        <Stack.Screen name="(tabs)" />
+                    {/* Main App Tabs */}
+                    <Stack.Screen name="(tabs)" />
 
-                        {/* Family Health Screens */}
-                        <Stack.Screen name="family/index" />
-                        <Stack.Screen name="family/member-details" />
+                    {/* Family Health Screens */}
+                    <Stack.Screen name="family/index" />
+                    <Stack.Screen name="family/member-details" />
 
-                        {/* Additional Screens */}
-                        <Stack.Screen name="MedicationVault" />
-                        <Stack.Screen name="member-health" />
-                        <Stack.Screen name="symptom-log" />
-                        <Stack.Screen name="symptom-flow" />
-                        <Stack.Screen name="symptom-followup" />
-                        <Stack.Screen name="symptom-chat" />
-                        <Stack.Screen name="backup-restore" />
-                        <Stack.Screen name="settings-server" />
-                        <Stack.Screen name="settings-ai" />
-                      </Stack>
-                    </NutritionProvider>
-                  </SymptomsProvider>
-                </BiogearsTwinProvider>
-              </MedicineProvider>
+                    {/* Additional Screens */}
+                    <Stack.Screen name="MedicationVault" />
+                    <Stack.Screen name="member-health" />
+                    <Stack.Screen name="symptom-log" />
+                    <Stack.Screen name="symptom-flow" />
+                    <Stack.Screen name="symptom-followup" />
+                    <Stack.Screen name="symptom-chat" />
+                    <Stack.Screen name="backup-restore" />
+                    <Stack.Screen name="settings-server" />
+                    <Stack.Screen name="settings-ai" />
+                  </Stack>
+                </NutritionProvider>
+              </BiogearsTwinProvider>
             </HydrationProvider>
           </StepProviderWrapper>
-        </FamilyProvider>
+        </FamilyProviderWithProfile>
       </ProfileProvider>
     </ThemeProvider>
   );

@@ -8,7 +8,6 @@ import {
   FlatList,
   Image,
   KeyboardAvoidingView,
-  Linking,
   Modal,
   Platform,
   SafeAreaView,
@@ -277,19 +276,38 @@ function InAppViewer({
                 style={[styles.pdfOpenBtn, { backgroundColor: isDark ? style.darkBg : style.lightBg }]}
                 onPress={async () => {
                   try {
-                    if (Platform.OS === "android") {
-                      try {
-                        const IntentLauncher = require("expo-intent-launcher");
-                        const contentUri = await FileSystem.getContentUriAsync(doc.localUri);
-                        await IntentLauncher.startActivityAsync("android.intent.action.VIEW", {
-                          data: contentUri, flags: 1, type: doc.mimeType || "application/pdf",
-                        });
-                        return;
-                      } catch {}
+                    // Copy to cache so other apps can access it
+                    const cacheUri = FileSystem.cacheDirectory + doc.originalName;
+                    const cacheInfo = await FileSystem.getInfoAsync(cacheUri);
+                    if (!cacheInfo.exists) {
+                      await FileSystem.copyAsync({ from: doc.localUri, to: cacheUri });
                     }
-                    const canShare = await Sharing.isAvailableAsync();
-                    if (canShare) await Sharing.shareAsync(doc.localUri, { mimeType: doc.mimeType, dialogTitle: doc.title });
-                  } catch (e: any) { Alert.alert("Error", e.message); }
+
+                    if (Platform.OS === "android") {
+                      const IntentLauncher = require("expo-intent-launcher");
+                      const contentUri = await FileSystem.getContentUriAsync(cacheUri);
+                      await IntentLauncher.startActivityAsync(
+                        "android.intent.action.VIEW",
+                        {
+                          data: contentUri,
+                          flags: 1, // FLAG_GRANT_READ_URI_PERMISSION
+                          type: "application/pdf",
+                        }
+                      );
+                    } else {
+                      // iOS — share sheet opens PDF in-place
+                      await Sharing.shareAsync(cacheUri, {
+                        mimeType: "application/pdf",
+                        dialogTitle: doc.title,
+                        UTI: "com.adobe.pdf",
+                      });
+                    }
+                  } catch (e: any) {
+                    Alert.alert(
+                      "Cannot open PDF",
+                      "Make sure you have a PDF reader installed (Adobe Acrobat, Google Drive, etc.) and run: npx expo install expo-intent-launcher"
+                    );
+                  }
                 }}
                 activeOpacity={0.8}
               >
@@ -300,7 +318,7 @@ function InAppViewer({
               </TouchableOpacity>
 
               <Text style={[styles.pdfNote, { color: colors.sub }]}>
-                For full PDF rendering, open in your device's PDF reader app.
+                Opens directly in your PDF reader app
               </Text>
             </View>
           ) : (
@@ -980,7 +998,7 @@ const styles = StyleSheet.create({
 
   // In-App Viewer
   viewerSafe:     { flex: 1 },
-  viewerHeader:   { flexDirection: "row", alignItems: "center", paddingHorizontal: 16, paddingVertical: 14, borderBottomWidth: 0.5 },
+  viewerHeader:   { flexDirection: "row", alignItems: "center", paddingHorizontal: 16, paddingVertical: 14, paddingTop: Platform.OS === "android" ? 44 : 16, borderBottomWidth: 0.5 },
   viewerBackBtn:  { padding: 4, marginRight: 4 },
   viewerShareBtn: { padding: 4, marginLeft: 8 },
   viewerTitle:    { fontSize: 15, fontWeight: "600" },

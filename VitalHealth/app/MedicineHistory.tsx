@@ -5,7 +5,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useFocusEffect } from "@react-navigation/native";
 import { useRouter } from "expo-router";
 import React, { useCallback, useState } from "react";
-import { 
+import {
   Alert,
   FlatList,
   Modal,
@@ -30,7 +30,7 @@ export type MedicineHistoryEntry = {
   time: string;
   date: string;
   takenAt: string;
-  status: "taken" | "skipped" | "late" | "scheduled" | "deleted"; // ✅ added
+  status: "taken" | "skipped" | "late" | "scheduled" | "deleted";
 };
 
 const HISTORY_STORAGE_KEY = "medicine_history";
@@ -68,11 +68,9 @@ export default function MedicineHistory() {
 
       const parsed: MedicineHistoryEntry[] = JSON.parse(saved);
 
-      // 🔥 Sort latest first
       parsed.sort(
         (a, b) =>
-          new Date(b.takenAt).getTime() -
-          new Date(a.takenAt).getTime()
+          new Date(b.takenAt).getTime() - new Date(a.takenAt).getTime()
       );
 
       setHistory(parsed);
@@ -88,12 +86,7 @@ export default function MedicineHistory() {
 
   const handleDeleteEntry = async (id: string) => {
     const updated = history.filter((entry) => entry.id !== id);
-
-    await AsyncStorage.setItem(
-      HISTORY_STORAGE_KEY,
-      JSON.stringify(updated)
-    );
-
+    await AsyncStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(updated));
     setHistory(updated);
     setModalVisible(false);
   };
@@ -117,36 +110,26 @@ export default function MedicineHistory() {
   };
 
   /////////////////////////////////////////////////////////
-  // STATUS UI
+  // STATUS HELPERS
   /////////////////////////////////////////////////////////
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case "taken":
-        return "#22c55e";
-      case "late":
-        return "#f59e0b";
-      case "skipped":
-        return "#ef4444";
-      case "deleted":
-        return "#6b7280"; // grey
-      default:
-        return c.sub;
+      case "taken":   return "#22c55e";
+      case "late":    return "#f59e0b";
+      case "skipped": return "#ef4444";
+      case "deleted": return "#6b7280";
+      default:        return c.sub;
     }
   };
 
   const getStatusIcon = (status: string) => {
     switch (status) {
-      case "taken":
-        return "checkmark-circle";
-      case "late":
-        return "time";
-      case "skipped":
-        return "close-circle";
-      case "deleted":
-        return "trash";
-      default:
-        return "help-circle";
+      case "taken":   return "checkmark-circle";
+      case "late":    return "time";
+      case "skipped": return "close-circle";
+      case "deleted": return "trash";
+      default:        return "help-circle";
     }
   };
 
@@ -159,6 +142,7 @@ export default function MedicineHistory() {
       <Header />
 
       <View style={styles.container}>
+        {/* Header row */}
         <View style={styles.header}>
           <TouchableOpacity onPress={() => router.back()}>
             <Ionicons name="arrow-back" size={24} color={c.text} />
@@ -173,11 +157,11 @@ export default function MedicineHistory() {
           </TouchableOpacity>
         </View>
 
+        {/* History list */}
         <FlatList
           data={history}
           keyExtractor={(item) => item.id}
           showsVerticalScrollIndicator={false}
-
           ListEmptyComponent={
             <View style={[styles.emptyState, { backgroundColor: c.card }]}>
               <Ionicons name="time-outline" size={48} color={c.sub} />
@@ -186,7 +170,6 @@ export default function MedicineHistory() {
               </Text>
             </View>
           }
-
           renderItem={({ item }) => (
             <TouchableOpacity
               style={[styles.historyCard, { backgroundColor: c.card }]}
@@ -217,10 +200,8 @@ export default function MedicineHistory() {
           )}
         />
 
-        //////////////////////////////////////////////////////
-        // MODAL
-        //////////////////////////////////////////////////////
-
+        {/* ✅ FIXED: was // comment lines inside JSX — caused the
+            "Text strings must be rendered within a <Text>" crash */}
         <Modal visible={modalVisible} transparent animationType="slide">
           <View style={styles.modalOverlay}>
             <View style={[styles.modalContent, { backgroundColor: c.card }]}>

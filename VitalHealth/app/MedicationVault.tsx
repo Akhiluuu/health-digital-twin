@@ -20,13 +20,23 @@ import { useTheme } from "../context/ThemeContext";
 import { colors } from "../theme/colors";
 import Header from "./components/Header";
 
-// DB + Notification
 import { deleteMedicine } from "../database/medicineDB";
 import { cancelMedicineNotification } from "../services/notificationService";
 
-// History
-import { log, error } from "../utils/logger";
+import { log } from "../utils/logger";
 import { addToMedicineHistory } from "../utils/medicineHistory";
+
+///////////////////////////////////////////////////////////
+// Only show taken indicator if takenDate is TODAY.
+// Daily medicines from yesterday are never shown as ticked.
+///////////////////////////////////////////////////////////
+function isTakenToday(medicine: Medicine): boolean {
+  if (!medicine.taken) return false;
+  if (!medicine.takenDate) return false;
+  const today = new Date().toISOString().split("T")[0];
+  return medicine.takenDate === today;
+}
+
 ///////////////////////////////////////////////////////////
 
 export default function MedicationVault() {
@@ -35,11 +45,10 @@ export default function MedicationVault() {
   const c = colors[theme];
 
   const { medicines, reloadMedicines } = useMedicine();
-
   const [filter, setFilter] = useState<"all" | "regular" | "once">("all");
 
   /////////////////////////////////////////////////////////
-  // REFRESH
+  // REFRESH on screen focus
   /////////////////////////////////////////////////////////
 
   useFocusEffect(
@@ -59,7 +68,7 @@ export default function MedicationVault() {
   });
 
   /////////////////////////////////////////////////////////
-  // DELETE HANDLER (FINAL FIX 🔥)
+  // DELETE
   /////////////////////////////////////////////////////////
 
   const handleDelete = (medicine: Medicine) => {
@@ -73,47 +82,27 @@ export default function MedicationVault() {
           style: "destructive",
           onPress: async () => {
             try {
-              ////////////////////////////////////////////////////
-              // 🔥 SAVE TO HISTORY BEFORE DELETE
-              ////////////////////////////////////////////////////
-
               await addToMedicineHistory({
                 medicineId: medicine.id,
                 medicineName: medicine.name,
                 dose: medicine.dose,
                 time: medicine.time,
-                status: "deleted", // 🔥 important
+                status: "deleted",
               });
 
-              ////////////////////////////////////////////////////
-              // 🔕 CANCEL NOTIFICATION
-              ////////////////////////////////////////////////////
-
               if (medicine.notificationId) {
-                await cancelMedicineNotification(
-                  medicine.notificationId
-                );
+                await cancelMedicineNotification(medicine.notificationId);
               }
 
-              ////////////////////////////////////////////////////
-              // 🗑 DELETE FROM DB
-              ////////////////////////////////////////////////////
-
               deleteMedicine(medicine.id);
-
-              ////////////////////////////////////////////////////
-              // 🔄 REFRESH UI
-              ////////////////////////////////////////////////////
-
               reloadMedicines();
 
-log("✅ Deleted + history saved");
-
-            } catch (error) {
-  if (error instanceof Error) {
-    console.log(error.message); // ✅ safe
-  }
-}
+              log("✅ Deleted + history saved");
+            } catch (err) {
+              if (err instanceof Error) {
+                console.log(err.message);
+              }
+            }
           },
         },
       ]
@@ -121,119 +110,108 @@ log("✅ Deleted + history saved");
   };
 
   /////////////////////////////////////////////////////////
-  // MARK AS TAKEN
+  // ITEM RENDER
   /////////////////////////////////////////////////////////
 
-  const handleMarkAsTaken = async (medicine: Medicine) => {
-    try {
-      await addToMedicineHistory({
-        medicineId: medicine.id,
-        medicineName: medicine.name,
-        dose: medicine.dose,
-        time: medicine.time,
-        status: "taken",
-      });
+  const renderMedicine = ({ item }: { item: Medicine }) => {
+    const takenToday = isTakenToday(item);
 
-      Alert.alert("Success", `${medicine.name} marked as taken`);
-    } catch (error) {
-      console.error("Error marking as taken:", error);
-    }
-  };
+    return (
+      <View
+        style={[
+          styles.medCard,
+          {
+            backgroundColor: c.card,
+            // Green border when taken today — visual feedback only
+            borderWidth: takenToday ? 1.5 : 0,
+            borderColor: takenToday ? "#22c55e" : "transparent",
+          },
+        ]}
+      >
+        <View style={styles.medContent}>
+          <View style={styles.medInfo}>
+            <View style={styles.medHeader}>
+              <Text style={[styles.medName, { color: c.text }]}>
+                {item.name}
+              </Text>
 
-  /////////////////////////////////////////////////////////
-  // ITEM
-  /////////////////////////////////////////////////////////
+              {/* Green tick next to name — only if taken today */}
+              {takenToday && (
+                <Ionicons name="checkmark-circle" size={16} color="#22c55e" />
+              )}
 
-  const renderMedicine = ({ item }: { item: Medicine }) => (
-    <View style={[styles.medCard, { backgroundColor: c.card }]}>
-      <View style={styles.medContent}>
-        <View style={styles.medInfo}>
-          <View style={styles.medHeader}>
-            <Text style={[styles.medName, { color: c.text }]}>
-              {item.name}
+              {/* Bell icon — only if reminder set AND not yet taken today */}
+              {item.reminder === 1 && !takenToday && (
+                <Ionicons name="notifications" size={16} color={c.accent} />
+              )}
+            </View>
+
+            <Text style={[styles.medDose, { color: c.sub }]}>
+              {item.dose}
             </Text>
 
-            {item.reminder === 1 && (
-              <Ionicons name="notifications" size={16} color={c.accent} />
-            )}
-          </View>
-
-          <Text style={[styles.medDose, { color: c.sub }]}>
-            {item.dose}
-          </Text>
-
-          <View style={styles.medFooter}>
-            <View
-              style={[
-                styles.timeBadge,
-                { backgroundColor: c.accent + "20" },
-              ]}
-            >
-              <Ionicons name="time" size={12} color={c.accent} />
-              <Text style={[styles.medTime, { color: c.accent }]}>
-                {item.time}
-              </Text>
-            </View>
-
-            {item.meal && (
+            <View style={styles.medFooter}>
               <View
                 style={[
-                  styles.mealBadge,
-                  { backgroundColor: c.border },
+                  styles.timeBadge,
+                  { backgroundColor: c.accent + "20" },
                 ]}
               >
-                <Text style={[styles.mealText, { color: c.sub }]}>
-                  {item.meal === "before" ? "🍽️ Before" : "🍽️ After"}
+                <Ionicons name="time" size={12} color={c.accent} />
+                <Text style={[styles.medTime, { color: c.accent }]}>
+                  {item.time}
                 </Text>
               </View>
-            )}
 
-            <View
-              style={[
-                styles.scheduleBadge,
-                {
-                  backgroundColor:
-                    item.frequency === "once"
-                      ? "#f472b620"
-                      : "#22c55e20",
-                },
-              ]}
-            >
-              <Text
-                style={{
-                  fontSize: 11,
-                  color:
-                    item.frequency === "once"
-                      ? "#f472b6"
-                      : "#22c55e",
-                }}
+              {item.meal && (
+                <View
+                  style={[styles.mealBadge, { backgroundColor: c.border }]}
+                >
+                  <Text style={[styles.mealText, { color: c.sub }]}>
+                    {item.meal === "before" ? "🍽️ Before" : "🍽️ After"}
+                  </Text>
+                </View>
+              )}
+
+              <View
+                style={[
+                  styles.scheduleBadge,
+                  {
+                    backgroundColor:
+                      item.frequency === "once" ? "#f472b620" : "#22c55e20",
+                  },
+                ]}
               >
-                {item.frequency.toUpperCase()}
-              </Text>
+                <Text
+                  style={{
+                    fontSize: 11,
+                    color: item.frequency === "once" ? "#f472b6" : "#22c55e",
+                  }}
+                >
+                  {item.frequency.toUpperCase()}
+                </Text>
+              </View>
             </View>
           </View>
-        </View>
 
-        <View style={styles.actionButtons}>
-          {/* TAKEN */}
-          <TouchableOpacity
-            style={[styles.takenButton, { backgroundColor: "#22c55e20" }]}
-            onPress={() => handleMarkAsTaken(item)}
-          >
-            <Ionicons name="checkmark-circle" size={20} color="#22c55e" />
-          </TouchableOpacity>
-
-          {/* DELETE */}
-          <TouchableOpacity
-            style={styles.deleteButton}
-            onPress={() => handleDelete(item)}
-          >
-            <Ionicons name="trash-outline" size={20} color="#ef4444" />
-          </TouchableOpacity>
+          {/*
+            ✅ REMOVED: The taken (✅) button has been removed from the vault.
+            The tick mark is now set ONLY when the user taps "Taken"
+            on the actual medication reminder notification.
+            This prevents accidental manual ticking.
+          */}
+          <View style={styles.actionButtons}>
+            <TouchableOpacity
+              style={styles.deleteButton}
+              onPress={() => handleDelete(item)}
+            >
+              <Ionicons name="trash-outline" size={20} color="#ef4444" />
+            </TouchableOpacity>
+          </View>
         </View>
       </View>
-    </View>
-  );
+    );
+  };
 
   /////////////////////////////////////////////////////////
   // UI
@@ -267,7 +245,7 @@ log("✅ Deleted + history saved");
         </View>
 
         <View style={[styles.filterBar, { backgroundColor: c.card }]}>
-          {(["all", "regular", "once"] as const).map(type => (
+          {(["all", "regular", "once"] as const).map((type) => (
             <TouchableOpacity
               key={type}
               style={[
@@ -285,7 +263,11 @@ log("✅ Deleted + history saved");
                   fontWeight: "600",
                 }}
               >
-                {type === "all" ? "ALL" : type === "regular" ? "DAILY" : "ONCE"}
+                {type === "all"
+                  ? "ALL"
+                  : type === "regular"
+                  ? "DAILY"
+                  : "ONCE"}
               </Text>
             </TouchableOpacity>
           ))}
@@ -438,11 +420,6 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: 8,
     marginLeft: 10,
-  },
-
-  takenButton: {
-    padding: 8,
-    borderRadius: 8,
   },
 
   deleteButton: {

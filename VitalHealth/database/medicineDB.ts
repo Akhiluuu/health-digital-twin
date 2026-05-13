@@ -21,6 +21,18 @@ export interface Medicine {
   reminder: number;
   notificationId: string;
   taken: number;
+  // ✅ NEW: date the `taken` flag was last set — used for daily reset
+  takenDate: string | null;
+}
+
+///////////////////////////////////////////////////////////
+// HELPERS
+///////////////////////////////////////////////////////////
+
+/** Returns today's date string in YYYY-MM-DD format (local time). */
+function todayStr(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
 ///////////////////////////////////////////////////////////
@@ -28,7 +40,16 @@ export interface Medicine {
 ///////////////////////////////////////////////////////////
 
 export async function initMedicineDB() {
-  // Table is already created by initAllTables(). Nothing to do here.
+  // ✅ FIX: Add takenDate column if it doesn't exist yet (safe migration).
+  //    This runs once and is a no-op on subsequent launches.
+  try {
+    db.runSync(
+      `ALTER TABLE medicines ADD COLUMN takenDate TEXT DEFAULT NULL`
+    );
+    console.log("💊 Added takenDate column to medicines");
+  } catch {
+    // Column already exists — ignore the error
+  }
   console.log("💊 Medicine DB ready (shared vital_health.db)");
 }
 
@@ -51,18 +72,29 @@ export function addMedicine(
 ) {
   db.runSync(
     `INSERT INTO medicines
-    (name, dose, type, time, timestamp, meal, frequency, startDate, endDate, reminder, notificationId, taken)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
+    (name, dose, type, time, timestamp, meal, frequency, startDate, endDate, reminder, notificationId, taken, takenDate)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL)`,
     [name, dose, type, time, timestamp, meal, frequency, startDate, endDate, reminder, notificationId]
   );
 }
 
 ///////////////////////////////////////////////////////////
 // GET ALL
+// ✅ FIX (Auto-tick Bug): `taken` is now date-scoped.
+//    If takenDate is not today, we treat the medicine as NOT taken
+//    in the returned data. This means daily medicines automatically
+//    appear un-ticked each new day without any data mutation.
 ///////////////////////////////////////////////////////////
 
 export function getMedicines(): Medicine[] {
-  return db.getAllSync<Medicine>("SELECT * FROM medicines ORDER BY timestamp ASC");
+  const today = todayStr();
+  const rows = db.getAllSync<Medicine>("SELECT * FROM medicines ORDER BY timestamp ASC");
+
+  return rows.map((med) => ({
+    ...med,
+    // ✅ Only show the tick if taken was set TODAY
+    taken: med.takenDate === today ? med.taken : 0,
+  }));
 }
 
 ///////////////////////////////////////////////////////////
@@ -83,11 +115,16 @@ export function updateMedicineNotificationId(id: number, notificationId: string)
 
 ///////////////////////////////////////////////////////////
 // MARK TAKEN (BY ID)
+// ✅ FIX: Now also writes takenDate so getMedicines() can date-scope it.
 ///////////////////////////////////////////////////////////
 
 export async function markMedicineTaken(medicineId: string) {
   try {
-    await db.runAsync("UPDATE medicines SET taken = 1 WHERE id = ?", [medicineId]);
+    const today = todayStr();
+    await db.runAsync(
+      "UPDATE medicines SET taken = 1, takenDate = ? WHERE id = ?",
+      [today, medicineId]
+    );
     console.log("✅ Medicine marked as taken:", medicineId);
   } catch (error) {
     console.log("❌ Error marking medicine:", error);
@@ -96,10 +133,36 @@ export async function markMedicineTaken(medicineId: string) {
 
 ///////////////////////////////////////////////////////////
 // MARK TAKEN (BY NOTIFICATION ID)
+// ✅ FIX: Now also writes takenDate.
+//    This is the path triggered by the notification "Taken" button.
 ///////////////////////////////////////////////////////////
 
 export function markMedicineTakenByNotificationId(notificationId: string) {
-  db.runSync("UPDATE medicines SET taken = 1 WHERE notificationId = ?", [notificationId]);
+  const today = todayStr();
+  db.runSync(
+    "UPDATE medicines SET taken = 1, takenDate = ? WHERE notificationId = ?",
+    [today, notificationId]
+  );
+  console.log("✅ markMedicineTakenByNotificationId — set taken for today:", today);
+}
+
+///////////////////////////////////////////////////////////
+// RESET DAILY TAKEN
+// ✅ NEW: Call this at app startup (in _layout.tsx after initMedicineDB).
+//    Resets taken=0 for all DAILY medicines whose takenDate is not today.
+//    ONE-TIME medicines keep their taken=1 permanently.
+///////////////////////////////////////////////////////////
+
+export function resetDailyTakenIfNewDay() {
+  const today = todayStr();
+  db.runSync(
+    `UPDATE medicines
+     SET taken = 0, takenDate = NULL
+     WHERE frequency = 'daily'
+       AND (takenDate IS NULL OR takenDate != ?)`,
+    [today]
+  );
+  console.log("🔄 Daily medicines reset for:", today);
 }
 
 ///////////////////////////////////////////////////////////
@@ -127,10 +190,10 @@ export async function markMissedMedicines() {
   try {
     const now = Date.now();
     await db.runAsync(
-      "UPDATE medicines SET taken = -1 WHERE timestamp < ? AND taken = 0",
+      "UPDATE medicines SET taken = -1 WHERE timestamp < ? AND taken = 0 AND frequency = 'once'",
       [now]
     );
-    console.log("⚠️ Missed medicines updated");
+    console.log("⚠️ Missed once-medicines updated");
   } catch (error) {
     console.log("❌ Missed update error:", error);
   }
@@ -142,8 +205,15 @@ export async function markMissedMedicines() {
 
 export async function getTodayMedicineStats() {
   try {
-    const taken: any = await db.getFirstAsync("SELECT COUNT(*) as count FROM medicines WHERE taken = 1");
-    const missed: any = await db.getFirstAsync("SELECT COUNT(*) as count FROM medicines WHERE taken = -1");
+    const today = todayStr();
+    // ✅ FIX: Count taken only if takenDate is today
+    const taken: any = await db.getFirstAsync(
+      "SELECT COUNT(*) as count FROM medicines WHERE taken = 1 AND takenDate = ?",
+      [today]
+    );
+    const missed: any = await db.getFirstAsync(
+      "SELECT COUNT(*) as count FROM medicines WHERE taken = -1"
+    );
     return { taken: taken?.count || 0, missed: missed?.count || 0 };
   } catch (error) {
     console.log("❌ Stats error:", error);

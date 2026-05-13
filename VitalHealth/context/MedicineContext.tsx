@@ -1,4 +1,10 @@
 // context/MedicineContext.tsx
+// ─────────────────────────────────────────────────────────────────
+// KEY FIX: When a family member profile is active (isSwitched=true),
+// medicines are fetched directly from that member's Firebase doc
+// instead of local SQLite (which is always the logged-in user's data).
+// When switched back to self, local SQLite data is used as normal.
+// ─────────────────────────────────────────────────────────────────
 
 import React, { createContext, useContext, useEffect, useState } from "react";
 import { AppState } from "react-native";
@@ -11,15 +17,11 @@ import {
   updateMedicineNotificationId,
 } from "../database/medicineDB";
 
-// ✅ FIX 1: Removed initMedicineDB import — _layout.tsx already calls it
-//    before this provider mounts. Calling it again here caused a race
-//    condition where the DB could be in a partially initialised state
-//    when addMedicine ran, resulting in notificationId never being saved.
-
 import {
   cancelMedicineNotification,
   scheduleMedicineDaily,
   scheduleMedicineOnce,
+  medicineEventBus,
 } from "../services/notifeeService";
 
 import { syncMedicineFile } from "../services/medicineFileSync";
@@ -29,8 +31,13 @@ import {
   syncDeleteMedicine,
   syncMarkMedicineTaken,
   syncUpdateMedicineNotificationId,
+  fetchMedicinesFromFirebase,
 } from "../services/firebaseSync";
 
+import { useFamily } from "./FamilyContext";
+
+///////////////////////////////////////////////////////////
+// TYPE
 ///////////////////////////////////////////////////////////
 
 export type Medicine = {
@@ -46,8 +53,12 @@ export type Medicine = {
   endDate: string;
   reminder: number;
   notificationId: string | null;
+  taken: number;
+  takenDate: string | null;
 };
 
+///////////////////////////////////////////////////////////
+// CONTEXT TYPE
 ///////////////////////////////////////////////////////////
 
 type ContextType = {
@@ -67,12 +78,51 @@ type ContextType = {
   removeMedicine: (id: number) => Promise<void>;
   reloadMedicines: () => Promise<void>;
   markMedicineAsTaken: (notificationId?: string) => Promise<void>;
+  isLoadingMemberMedicines: boolean;
 };
 
+///////////////////////////////////////////////////////////
+// CONTEXT
 ///////////////////////////////////////////////////////////
 
 const MedicineContext = createContext<ContextType | null>(null);
 
+///////////////////////////////////////////////////////////
+// FETCH MEMBER MEDICINES FROM FIREBASE
+// Reads from doc("users", uid).medicines array in Firestore
+///////////////////////////////////////////////////////////
+
+async function fetchMemberMedicinesFromFirebase(memberUid: string): Promise<Medicine[]> {
+  try {
+    // fetchMedicinesFromFirebase reads the logged-in user's medicines.
+    // For a switched member we call it with their uid by temporarily
+    // using the firebaseSync helper that accepts a uid override.
+    const results = await fetchMedicinesFromFirebase(memberUid);
+    if (!results || results.length === 0) return [];
+    return results.map((m: any) => ({
+      id:             m.id             ?? 0,
+      name:           m.name           ?? "",
+      dose:           m.dose           ?? "",
+      type:           m.type           ?? "",
+      time:           m.time           ?? "",
+      timestamp:      m.timestamp      ?? 0,
+      meal:           m.meal           ?? "",
+      frequency:      m.frequency      ?? "daily",
+      startDate:      m.startDate      ?? "",
+      endDate:        m.endDate        ?? "",
+      reminder:       m.reminder       ?? 0,
+      notificationId: m.notificationId ?? null,
+      taken:          m.taken          ?? 0,
+      takenDate:      m.takenDate      ?? null,
+    }));
+  } catch (e) {
+    console.log("❌ fetchMemberMedicinesFromFirebase error:", e);
+    return [];
+  }
+}
+
+///////////////////////////////////////////////////////////
+// PROVIDER
 ///////////////////////////////////////////////////////////
 
 export const MedicineProvider = ({
@@ -80,52 +130,97 @@ export const MedicineProvider = ({
 }: {
   children: React.ReactNode;
 }) => {
-  const [medicines, setMedicines] = useState<Medicine[]>([]);
+  const [medicines, setMedicines]                       = useState<Medicine[]>([]);
+  const [isLoadingMemberMedicines, setIsLoadingMember]  = useState(false);
+
+  // ── Get active profile context ────────────────────────
+  // Safe: if FamilyContext isn't ready yet, fall back to self behaviour
+  let isSwitched     = false;
+  let activeMemberId = "self";
+  try {
+    const family   = useFamily();
+    isSwitched     = family.isSwitched;
+    activeMemberId = family.activeMemberId;
+  } catch (_) {}
 
   ///////////////////////////////////////////////////////////
-
-  useEffect(() => {
-    // ✅ FIX 1: No longer calls initMedicineDB() — _layout.tsx owns that.
-    //    We only load medicines here, which is safe to call after DB is ready.
-    initialize();
-  }, []);
-
-  ///////////////////////////////////////////////////////////
-
-  useEffect(() => {
-    const sub = AppState.addEventListener("change", (state) => {
-      if (state === "active") {
-        loadMedicines();
-      }
-    });
-
-    return () => sub.remove();
-  }, []);
-
-  ///////////////////////////////////////////////////////////
-
-  const initialize = async () => {
-    try {
-      await loadMedicines();
-      await syncMedicineFile();
-
-      console.log("💊 Medicine system ready");
-    } catch (err) {
-      console.log("Init error:", err);
-    }
-  };
-
+  // LOAD MEDICINES
+  // When switched → fetch from Firebase for that member UID
+  // When on self  → read from local SQLite as normal
   ///////////////////////////////////////////////////////////
 
   const loadMedicines = async () => {
     try {
-      const data = getMedicines() as Medicine[];
-      setMedicines([...data]);
+      if (isSwitched && activeMemberId && activeMemberId !== "self") {
+        // ── Switched: load from member's Firebase doc ──────
+        setIsLoadingMember(true);
+        console.log("💊 Loading medicines from Firebase for member:", activeMemberId);
+        const memberMeds = await fetchMemberMedicinesFromFirebase(activeMemberId);
+        setMedicines(memberMeds);
+        console.log(`💊 Loaded ${memberMeds.length} medicines for member:`, activeMemberId);
+      } else {
+        // ── Self: load from local SQLite ───────────────────
+        const data = getMedicines() as Medicine[];
+        setMedicines([...data]);
+      }
     } catch (err) {
-      console.log("Load medicines error:", err);
+      console.log("💊 Load medicines error:", err);
+    } finally {
+      setIsLoadingMember(false);
     }
   };
 
+  ///////////////////////////////////////////////////////////
+  // Re-load whenever active member changes
+  ///////////////////////////////////////////////////////////
+
+  useEffect(() => {
+    loadMedicines();
+  }, [isSwitched, activeMemberId]);
+
+  ///////////////////////////////////////////////////////////
+  // Initial load + file sync
+  ///////////////////////////////////////////////////////////
+
+  useEffect(() => {
+    const initialize = async () => {
+      try {
+        await loadMedicines();
+        if (!isSwitched) await syncMedicineFile();
+        console.log("💊 Medicine system ready");
+      } catch (err) {
+        console.log("💊 Init error:", err);
+      }
+    };
+    initialize();
+  }, []);
+
+  ///////////////////////////////////////////////////////////
+  // Event bus — medicine taken in foreground notification
+  ///////////////////////////////////////////////////////////
+
+  useEffect(() => {
+    const onTaken = () => {
+      console.log("🔄 medicine_taken event — reloading");
+      loadMedicines();
+    };
+    medicineEventBus.on("medicine_taken", onTaken);
+    return () => { medicineEventBus.off("medicine_taken", onTaken); };
+  }, [isSwitched, activeMemberId]);
+
+  ///////////////////////////////////////////////////////////
+  // Reload on app foreground
+  ///////////////////////////////////////////////////////////
+
+  useEffect(() => {
+    const sub = AppState.addEventListener("change", (state) => {
+      if (state === "active") loadMedicines();
+    });
+    return () => sub.remove();
+  }, [isSwitched, activeMemberId]);
+
+  ///////////////////////////////////////////////////////////
+  // ADD — always adds to OWN local DB + Firebase (never member's)
   ///////////////////////////////////////////////////////////
 
   const addMedicine = async (
@@ -141,27 +236,10 @@ export const MedicineProvider = ({
     reminder: number
   ) => {
     try {
-      // ✅ FIX 2: Validate and normalise timestamp.
-      //    If the caller accidentally passes seconds instead of milliseconds
-      //    (e.g. from a date picker that returns Unix seconds), new Date()
-      //    produces a date in 1970 and the notification fires immediately
-      //    or is skipped as "past time". We detect this and convert.
       const normalisedTimestamp =
         timestamp < 1_000_000_000_000 ? timestamp * 1000 : timestamp;
 
-      dbAddMedicine(
-        name,
-        dose,
-        type,
-        time,
-        normalisedTimestamp,
-        meal,
-        frequency,
-        startDate,
-        endDate,
-        reminder,
-        null
-      );
+      dbAddMedicine(name, dose, type, time, normalisedTimestamp, meal, frequency, startDate, endDate, reminder, null);
 
       const allMedicines = getMedicines() as Medicine[];
       const lastMedicine = allMedicines[allMedicines.length - 1];
@@ -169,140 +247,74 @@ export const MedicineProvider = ({
 
       let notifId: string | null = null;
 
-      /////////////////////////////////////////////////////
-      // 🔔 SCHEDULE NOTIFICATION
-      /////////////////////////////////////////////////////
-
       if (reminder) {
         try {
           const dateObj = new Date(normalisedTimestamp);
-          const now = new Date();
-          const freq = frequency.toLowerCase();
+          const now     = new Date();
+          const freq    = frequency.toLowerCase();
 
-          console.log("⏰ Scheduling medicine:", name, "at", dateObj.toISOString());
-
-          if (freq === "once") {
-            if (dateObj.getTime() > now.getTime()) {
-              notifId = await scheduleMedicineOnce(
-                `${name} — ${dose}`,
-                dateObj,
-                lastMedicine.id
-              );
-              console.log("✅ One-time notification scheduled:", notifId);
-            } else {
-              console.log("⚠️ Skipped — medicine time is in the past:", dateObj);
-            }
+          if (freq === "once" && dateObj.getTime() > now.getTime()) {
+            notifId = await scheduleMedicineOnce(`${name} — ${dose}`, dateObj, lastMedicine.id);
           }
-
           if (freq === "daily") {
-            notifId = await scheduleMedicineDaily(
-              `${name} — ${dose}`,
-              dateObj.getHours(),
-              dateObj.getMinutes(),
-              lastMedicine.id
-            );
-            console.log("✅ Daily notification scheduled:", notifId);
+            notifId = await scheduleMedicineDaily(`${name} — ${dose}`, dateObj.getHours(), dateObj.getMinutes(), lastMedicine.id);
           }
-
-          // ✅ FIX 3: Save notifId to DB immediately after scheduling,
-          //    BEFORE calling loadMedicines(). Previously loadMedicines()
-          //    was called first which reloaded stale data (notificationId = null)
-          //    into state, meaning the action handler could never match
-          //    incoming notification IDs to medicines in the DB.
           if (notifId) {
             updateMedicineNotificationId(lastMedicine.id, notifId);
-            console.log("💾 NotificationId saved to DB:", notifId);
           }
-
         } catch (notifError) {
           console.log("❌ Notification scheduling failed:", notifError);
         }
       }
 
-      /////////////////////////////////////////////////////
-      // Sync to Firebase
-      /////////////////////////////////////////////////////
-
       syncAddMedicine({
-        id: lastMedicine.id,
-        name,
-        dose,
-        type,
-        time,
-        timestamp: normalisedTimestamp,
-        meal,
-        frequency,
-        startDate,
-        endDate,
-        reminder,
-        notificationId: notifId,
+        id: lastMedicine.id, name, dose, type, time,
+        timestamp: normalisedTimestamp, meal, frequency,
+        startDate, endDate, reminder, notificationId: notifId,
       });
 
-      if (notifId) {
-        syncUpdateMedicineNotificationId(lastMedicine.id, notifId);
-      }
+      if (notifId) syncUpdateMedicineNotificationId(lastMedicine.id, notifId);
 
-      // ✅ FIX 3 continued: loadMedicines() now runs AFTER the notifId
-      //    has been written to the DB, so state is always fresh and correct.
       await loadMedicines();
-      await syncMedicineFile();
-
-      console.log("💊 Medicine added & synced");
+      if (!isSwitched) await syncMedicineFile();
     } catch (err) {
-      console.log("Add medicine error:", err);
+      console.log("💊 Add medicine error:", err);
     }
   };
 
+  ///////////////////////////////////////////////////////////
+  // MARK TAKEN — only for own medicines
   ///////////////////////////////////////////////////////////
 
   const markMedicineAsTaken = async (notificationId?: string) => {
     try {
       if (!notificationId) return;
-
       markMedicineTakenByNotificationId(notificationId);
-
-      const medicine = (getMedicines() as Medicine[]).find(
-        (m) => m.notificationId === notificationId
-      );
-
-      if (medicine) {
-        syncMarkMedicineTaken(medicine.id);
-      }
-
+      const medicine = (getMedicines() as Medicine[]).find((m) => m.notificationId === notificationId);
+      if (medicine) syncMarkMedicineTaken(medicine.id);
       await loadMedicines();
-
-      console.log("💊 Medicine marked as taken");
     } catch (err) {
-      console.log("Mark taken error:", err);
+      console.log("💊 Mark taken error:", err);
     }
   };
 
+  ///////////////////////////////////////////////////////////
+  // REMOVE — only for own medicines
   ///////////////////////////////////////////////////////////
 
   const removeMedicine = async (id: number) => {
     try {
       const item = medicines.find((m) => m.id === id);
-
-      if (item?.notificationId) {
-        await cancelMedicineNotification(item.notificationId);
-      }
-
+      if (item?.notificationId) await cancelMedicineNotification(item.notificationId);
       deleteMedicine(id);
       syncDeleteMedicine(id);
-
       await loadMedicines();
-
-      console.log("🗑 Medicine removed");
     } catch (err) {
-      console.log("Delete medicine error:", err);
+      console.log("💊 Delete medicine error:", err);
     }
   };
 
-  ///////////////////////////////////////////////////////////
-
-  const reloadMedicines = async () => {
-    await loadMedicines();
-  };
+  const reloadMedicines = async () => { await loadMedicines(); };
 
   ///////////////////////////////////////////////////////////
 
@@ -314,6 +326,7 @@ export const MedicineProvider = ({
         removeMedicine,
         reloadMedicines,
         markMedicineAsTaken,
+        isLoadingMemberMedicines,
       }}
     >
       {children}

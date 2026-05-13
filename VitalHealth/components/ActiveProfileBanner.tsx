@@ -68,15 +68,15 @@ export default function ActiveProfileBanner() {
   const memberName =
     activeMemberInfo
       ? `${activeMemberInfo.firstName ?? ""} ${activeMemberInfo.lastName ?? ""}`.trim()
-      : `${activeProfile?.firstName ?? ""} ${activeProfile?.lastName ?? ""}`.trim();
+      : `${activeProfile.firstName ?? ""} ${activeProfile.lastName ?? ""}`.trim();
 
   const relation = activeMemberInfo?.relation ?? "Family";
 
   const initials = isSwitchLoading
     ? "..."
     : (
-        (activeMemberInfo?.firstName?.charAt(0) ?? activeProfile?.firstName?.charAt(0) ?? "?").toUpperCase() +
-        (activeMemberInfo?.lastName?.charAt(0)  ?? activeProfile?.lastName?.charAt(0)  ?? "").toUpperCase()
+        (activeMemberInfo?.firstName?.charAt(0) ?? activeProfile.firstName?.charAt(0) ?? "?").toUpperCase() +
+        (activeMemberInfo?.lastName?.charAt(0)  ?? activeProfile.lastName?.charAt(0)  ?? "").toUpperCase()
       );
 
   return (

@@ -2,30 +2,48 @@
 
 import notifee, {
   AndroidImportance,
+  AlarmType,
   EventType,
   TriggerType,
   RepeatFrequency,
 } from "@notifee/react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { markMedicineTakenByNotificationId, getMedicineByNotificationId } from "../database/medicineDB";
+import { EventEmitter } from "eventemitter3";
 
-// ✅ FIXED (Bug 2): Import from plain storage utility, NOT from HydrationContext
-import { saveWaterToStorage } from "../utils/hydrationStorage";
+import {
+  markMedicineTakenByNotificationId,
+  getMedicineByNotificationId,
+  deleteMedicine,
+  getMedicines,
+} from "../database/medicineDB";
+
+import { saveWaterToStorage }   from "../utils/hydrationStorage";
+import { addToMedicineHistory } from "../utils/medicineHistory";
+import { syncDeleteMedicine }   from "./firebaseSync";
+
+///////////////////////////////////////////////////////////
+// EVENT BUS
+// ✅ FIX (Tick not appearing): After the foreground handler writes to
+//    SQLite, it emits "medicine_taken" so MedicineContext can call
+//    reloadMedicines() and update React state immediately.
+//    Without this, state stays stale until the user leaves and
+//    returns to the vault screen.
+///////////////////////////////////////////////////////////
+
+export const medicineEventBus = new EventEmitter();
 
 ///////////////////////////////////////////////////////////
 // ACTION IDs
 ///////////////////////////////////////////////////////////
 
-export const ACTION_MEDICINE_TAKEN = "MEDICINE_TAKEN";
+export const ACTION_MEDICINE_TAKEN  = "MEDICINE_TAKEN";
 export const ACTION_MEDICINE_SNOOZE = "MEDICINE_SNOOZE";
 
-export const ACTION_WATER_100 = "HYDRATION_100";
-export const ACTION_WATER_150 = "HYDRATION_150";
-export const ACTION_WATER_200 = "HYDRATION_200";
-export const ACTION_WATER_SKIP = "HYDRATION_SNOOZE";
-
-// Keep old export name for backwards compatibility
-export const ACTION_WATER_DRINK = "HYDRATION_100";
+export const ACTION_WATER_100   = "HYDRATION_100";
+export const ACTION_WATER_150   = "HYDRATION_150";
+export const ACTION_WATER_200   = "HYDRATION_200";
+export const ACTION_WATER_SKIP  = "HYDRATION_SNOOZE";
+export const ACTION_WATER_DRINK = "HYDRATION_100"; // backwards compat
 
 export const ACTION_SYMPTOM_DONE = "SYMPTOM_DONE";
 
@@ -33,8 +51,6 @@ const CHANNEL_ID = "health";
 
 ///////////////////////////////////////////////////////////
 // SETUP
-// ✅ FIXED (Bug 3): Battery optimization prompt is now shown ONCE only,
-//    gated behind an AsyncStorage flag. Previously it popped on every launch.
 ///////////////////////////////////////////////////////////
 
 export async function setupNotifee() {
@@ -52,21 +68,14 @@ export async function setupNotifee() {
     vibration: true,
   });
 
-  // ✅ FIXED: Only prompt for battery optimization once per install
   try {
     const alreadyPrompted = await AsyncStorage.getItem("battery_opt_prompted");
-
     if (!alreadyPrompted) {
       const powerManagerInfo = await notifee.getPowerManagerInfo();
-      console.log("🔋 Power Manager:", powerManagerInfo);
-
       if (powerManagerInfo.activity) {
-        console.log("⚡ Opening battery optimization settings (first time only)...");
         await notifee.openPowerManagerSettings();
         await AsyncStorage.setItem("battery_opt_prompted", "true");
       }
-    } else {
-      console.log("⚡ Battery optimization already prompted — skipping");
     }
   } catch (e) {
     console.log("⚠️ Power manager settings unavailable:", e);
@@ -76,7 +85,7 @@ export async function setupNotifee() {
 }
 
 ///////////////////////////////////////////////////////////
-// 💊 ONE-TIME MEDICINE
+// 💊 ONE-TIME MEDICINE NOTIFICATION
 ///////////////////////////////////////////////////////////
 
 export const scheduleMedicineOnce = async (
@@ -92,8 +101,10 @@ export const scheduleMedicineOnce = async (
       title: "💊 Medicine Reminder",
       body: title,
       data: {
-        type: "medicine",
+        type:       "medicine",
+        // ✅ Store medicineId in notification data so snooze lookups work
         medicineId: String(medicineId ?? ""),
+        frequency:  "once",
       },
       android: {
         channelId: CHANNEL_ID,
@@ -101,17 +112,11 @@ export const scheduleMedicineOnce = async (
         actions: [
           {
             title: "✅ Taken",
-            pressAction: {
-              id: ACTION_MEDICINE_TAKEN,
-              launchActivity: "none",
-            },
+            pressAction: { id: ACTION_MEDICINE_TAKEN, launchActivity: "none" },
           },
           {
-            title: "⏰ Snooze",
-            pressAction: {
-              id: ACTION_MEDICINE_SNOOZE,
-              launchActivity: "none",
-            },
+            title: "⏰ Snooze 5min",
+            pressAction: { id: ACTION_MEDICINE_SNOOZE, launchActivity: "none" },
           },
         ],
       },
@@ -121,6 +126,7 @@ export const scheduleMedicineOnce = async (
       timestamp: date.getTime(),
       alarmManager: {
         allowWhileIdle: true,
+        type: AlarmType.SET_EXACT_AND_ALLOW_WHILE_IDLE,
       },
     }
   );
@@ -129,7 +135,7 @@ export const scheduleMedicineOnce = async (
 };
 
 ///////////////////////////////////////////////////////////
-// 💊 DAILY MEDICINE
+// 💊 DAILY MEDICINE NOTIFICATION
 ///////////////////////////////////////////////////////////
 
 export const scheduleMedicineDaily = async (
@@ -140,16 +146,15 @@ export const scheduleMedicineDaily = async (
 ): Promise<string> => {
   const id = `med_daily_${Date.now()}`;
 
-  const now = new Date();
+  const now     = new Date();
   const trigger = new Date();
-
   trigger.setHours(hour, minute, 0, 0);
 
   if (trigger.getTime() <= now.getTime()) {
     trigger.setDate(trigger.getDate() + 1);
   }
 
-  console.log("📅 Daily trigger:", trigger);
+  console.log("📅 Daily trigger at:", trigger.toISOString());
 
   await notifee.createTriggerNotification(
     {
@@ -157,8 +162,9 @@ export const scheduleMedicineDaily = async (
       title: "💊 Medicine Reminder",
       body: title,
       data: {
-        type: "medicine",
+        type:       "medicine",
         medicineId: String(medicineId ?? ""),
+        frequency:  "daily",
       },
       android: {
         channelId: CHANNEL_ID,
@@ -166,17 +172,11 @@ export const scheduleMedicineDaily = async (
         actions: [
           {
             title: "✅ Taken",
-            pressAction: {
-              id: ACTION_MEDICINE_TAKEN,
-              launchActivity: "none",
-            },
+            pressAction: { id: ACTION_MEDICINE_TAKEN, launchActivity: "none" },
           },
           {
-            title: "⏰ Snooze",
-            pressAction: {
-              id: ACTION_MEDICINE_SNOOZE,
-              launchActivity: "none",
-            },
+            title: "⏰ Snooze 5min",
+            pressAction: { id: ACTION_MEDICINE_SNOOZE, launchActivity: "none" },
           },
         ],
       },
@@ -187,6 +187,7 @@ export const scheduleMedicineDaily = async (
       repeatFrequency: RepeatFrequency.DAILY,
       alarmManager: {
         allowWhileIdle: true,
+        type: AlarmType.SET_EXACT_AND_ALLOW_WHILE_IDLE,
       },
     }
   );
@@ -195,42 +196,42 @@ export const scheduleMedicineDaily = async (
 };
 
 ///////////////////////////////////////////////////////////
-// 💧 HYDRATION REMINDER
+// 🔁 SNOOZE — 5 minutes
 ///////////////////////////////////////////////////////////
 
-export const scheduleHydration = async (
-  minutes: number = 60
+export const snoozeMedicine = async (
+  body:       string,
+  medicineId: string = "",
+  frequency:  string = "daily",
+  minutes:    number = 5
 ): Promise<string> => {
-  const id = `hydration_${Date.now()}`;
+  const id        = `snooze_${Date.now()}`;
   const timestamp = Date.now() + minutes * 60 * 1000;
-
-  console.log("💧 Hydration in minutes:", minutes);
 
   await notifee.createTriggerNotification(
     {
       id,
-      title: "💧 Drink Water",
-      body: "Stay hydrated!",
-      data: { type: "hydration" },
+      title: "💊 Snoozed Reminder",
+      body,
+      data: {
+        type: "medicine",
+        // ✅ KEY FIX: carry the original medicineId through the snooze
+        //    so handleMedicineTaken can look up by medicineId (not notifId)
+        //    when the user taps "Taken" on the snoozed notification.
+        medicineId,
+        frequency,
+      },
       android: {
         channelId: CHANNEL_ID,
         pressAction: { id: "default" },
         actions: [
           {
-            title: "💧 100ml",
-            pressAction: { id: ACTION_WATER_100, launchActivity: "none" },
+            title: "✅ Taken",
+            pressAction: { id: ACTION_MEDICINE_TAKEN, launchActivity: "none" },
           },
           {
-            title: "💧 150ml",
-            pressAction: { id: ACTION_WATER_150, launchActivity: "none" },
-          },
-          {
-            title: "💧 200ml",
-            pressAction: { id: ACTION_WATER_200, launchActivity: "none" },
-          },
-          {
-            title: "Skip",
-            pressAction: { id: ACTION_WATER_SKIP, launchActivity: "none" },
+            title: "⏰ Snooze 5min",
+            pressAction: { id: ACTION_MEDICINE_SNOOZE, launchActivity: "none" },
           },
         ],
       },
@@ -240,60 +241,167 @@ export const scheduleHydration = async (
       timestamp,
       alarmManager: {
         allowWhileIdle: true,
+        type: AlarmType.SET_EXACT_AND_ALLOW_WHILE_IDLE,
       },
+    }
+  );
+
+  console.log(`⏰ Snoozed ${minutes}min — fires at:`, new Date(timestamp).toISOString());
+  return id;
+};
+
+///////////////////////////////////////////////////////////
+// HANDLE "TAKEN"
+// ✅ FIX 1: Looks up medicine by BOTH notifId AND medicineId from data.
+//    The snooze notification has a new notifId but still carries the
+//    original medicineId in its data — so we fall back to that.
+// ✅ FIX 2: Emits "medicine_taken" event so MedicineContext immediately
+//    calls reloadMedicines() and the tick appears without needing to
+//    leave and re-enter the screen.
+///////////////////////////////////////////////////////////
+
+export async function handleMedicineTaken(
+  notifId:    string,
+  medicineId: string = ""   // from notification data — needed for snooze
+) {
+  try {
+    // Step 1: Try to find medicine by notifId first (original notification)
+    let med = getMedicineByNotificationId(notifId);
+
+    // Step 2: If not found (snooze case — new notifId), look up by medicineId
+    if (!med && medicineId) {
+      const all = getMedicines();
+      med = all.find((m) => String(m.id) === String(medicineId)) ?? null;
+    }
+
+    if (med) {
+      // Mark taken in SQLite with today's date
+      markMedicineTakenByNotificationId(med.notificationId || notifId);
+
+      // Log to history
+      await addToMedicineHistory({
+        medicineId:   med.id,
+        medicineName: med.name,
+        dose:         med.dose,
+        time:         med.time,
+        status:       "taken",
+      });
+
+      const freq = med.frequency?.toLowerCase();
+
+      if (freq === "once") {
+        // ✅ One-time: delete from vault entirely
+        deleteMedicine(med.id);
+        syncDeleteMedicine(med.id);
+        await notifee.cancelNotification(notifId);
+        await notifee.cancelNotification(med.notificationId); // cancel original too
+        console.log("🗑 Once medicine deleted from vault:", med.name);
+      } else {
+        // Daily: just dismiss displayed notification; repeat trigger stays alive
+        await notifee.cancelDisplayedNotification(notifId);
+        console.log("✅ Daily medicine marked taken:", med.name);
+      }
+    } else {
+      // Medicine not found — just dismiss
+      console.log("⚠️ Medicine not found for notifId:", notifId, "medicineId:", medicineId);
+      await notifee.cancelDisplayedNotification(notifId);
+    }
+
+    // ✅ FIX 2: Notify MedicineContext to reload state so tick appears immediately
+    medicineEventBus.emit("medicine_taken");
+
+  } catch (err) {
+    console.log("❌ handleMedicineTaken error:", err);
+    await notifee.cancelDisplayedNotification(notifId).catch(() => {});
+    medicineEventBus.emit("medicine_taken"); // still reload on error
+  }
+}
+
+///////////////////////////////////////////////////////////
+// 💧 HYDRATION
+///////////////////////////////////////////////////////////
+
+export const scheduleHydration = async (minutes: number = 60): Promise<string> => {
+  const id        = `hydration_${Date.now()}`;
+  const timestamp = Date.now() + minutes * 60 * 1000;
+
+  await notifee.createTriggerNotification(
+    {
+      id,
+      title: "💧 Drink Water",
+      body:  "Stay hydrated!",
+      data:  { type: "hydration" },
+      android: {
+        channelId: CHANNEL_ID,
+        pressAction: { id: "default" },
+        actions: [
+          { title: "💧 100ml", pressAction: { id: ACTION_WATER_100,  launchActivity: "none" } },
+          { title: "💧 150ml", pressAction: { id: ACTION_WATER_150,  launchActivity: "none" } },
+          { title: "💧 200ml", pressAction: { id: ACTION_WATER_200,  launchActivity: "none" } },
+          { title: "Skip",    pressAction: { id: ACTION_WATER_SKIP, launchActivity: "none" } },
+        ],
+      },
+    },
+    {
+      type: TriggerType.TIMESTAMP,
+      timestamp,
+      alarmManager: { allowWhileIdle: true },
     }
   );
 
   return id;
 };
 
+export const scheduleHydrationReminder = async () => {
+  const value   = await AsyncStorage.getItem("hydration_interval");
+  const minutes = value ? Number(value) : 60;
+  return scheduleHydration(minutes);
+};
+
+export const cancelHydrationReminders = async () => {
+  const notifications = await notifee.getTriggerNotifications();
+  for (const n of notifications) {
+    if (n.notification?.data?.type === "hydration") {
+      await notifee.cancelNotification(n.notification.id!);
+    }
+  }
+};
+
+export const snoozeHydrationReminder = async () => scheduleHydration(10);
+
 ///////////////////////////////////////////////////////////
-// 🩺 SYMPTOM NOTIFICATION (INSTANT)
+// 🩺 SYMPTOM
 ///////////////////////////////////////////////////////////
 
 export const showSymptomNotification = async (symptom: string) => {
   await notifee.displayNotification({
     title: "🩺 Symptom Check",
-    body: `Are you experiencing ${symptom}?`,
-    data: { type: "symptom", symptom },
+    body:  `Are you experiencing ${symptom}?`,
+    data:  { type: "symptom", symptom },
     android: {
       channelId: CHANNEL_ID,
       pressAction: { id: "default" },
       actions: [
-        {
-          title: "I'm fine",
-          pressAction: {
-            id: ACTION_SYMPTOM_DONE,
-            launchActivity: "none",
-          },
-        },
+        { title: "I'm fine", pressAction: { id: ACTION_SYMPTOM_DONE, launchActivity: "none" } },
       ],
     },
   });
 };
 
-export const scheduleSymptomHourly = async (
-  symptom: string
-): Promise<string> => {
+export const scheduleSymptomHourly = async (symptom: string): Promise<string> => {
   const id = `symptom_hourly_${Date.now()}`;
 
   await notifee.createTriggerNotification(
     {
       id,
       title: "🩺 Symptom Check",
-      body: `Are you still experiencing ${symptom}?`,
-      data: { type: "symptom", symptom },
+      body:  `Are you still experiencing ${symptom}?`,
+      data:  { type: "symptom", symptom },
       android: {
         channelId: CHANNEL_ID,
         pressAction: { id: "default" },
         actions: [
-          {
-            title: "I'm fine",
-            pressAction: {
-              id: ACTION_SYMPTOM_DONE,
-              launchActivity: "none",
-            },
-          },
+          { title: "I'm fine", pressAction: { id: ACTION_SYMPTOM_DONE, launchActivity: "none" } },
         ],
       },
     },
@@ -301,94 +409,26 @@ export const scheduleSymptomHourly = async (
       type: TriggerType.TIMESTAMP,
       timestamp: Date.now() + 60 * 60 * 1000,
       repeatFrequency: RepeatFrequency.HOURLY,
-      alarmManager: {
-        allowWhileIdle: true,
-      },
+      alarmManager: { allowWhileIdle: true },
     }
   );
 
   return id;
 };
 
-// DEPRECATED: Use scheduleSymptomHourly instead
-export const scheduleSymptomCheck = async (
-  symptom: string,
-  hour: number = 20,
-  minute: number = 0
-): Promise<string> => {
-  const id = `symptom_${Date.now()}`;
-
-  const trigger = new Date();
-  trigger.setHours(hour, minute, 0, 0);
-
-  if (trigger.getTime() <= Date.now()) {
-    trigger.setDate(trigger.getDate() + 1);
+export const cancelSymptomNotification = async () => {
+  try {
+    const triggers  = await notifee.getTriggerNotifications();
+    const displayed = await notifee.getDisplayedNotifications();
+    for (const n of [...triggers, ...displayed]) {
+      if (n.notification?.data?.type === "symptom") {
+        await notifee.cancelNotification(n.notification.id!);
+      }
+    }
+    console.log("🛑 Symptom notifications cancelled");
+  } catch (error) {
+    console.log("❌ cancelSymptomNotification error:", error);
   }
-
-  await notifee.createTriggerNotification(
-    {
-      id,
-      title: "🩺 Symptom Check",
-      body: `Are you experiencing ${symptom}?`,
-      data: { type: "symptom", symptom },
-      android: {
-        channelId: CHANNEL_ID,
-        pressAction: { id: "default" },
-        actions: [
-          {
-            title: "I'm fine",
-            pressAction: {
-              id: ACTION_SYMPTOM_DONE,
-              launchActivity: "none",
-            },
-          },
-        ],
-      },
-    },
-    {
-      type: TriggerType.TIMESTAMP,
-      timestamp: trigger.getTime(),
-      repeatFrequency: RepeatFrequency.DAILY,
-      alarmManager: {
-        allowWhileIdle: true,
-      },
-    }
-  );
-
-  return id;
-};
-
-///////////////////////////////////////////////////////////
-// 🔁 SNOOZE MEDICINE
-///////////////////////////////////////////////////////////
-
-export const snoozeMedicine = async (
-  title: string,
-  minutes: number = 10
-): Promise<string> => {
-  const id = `snooze_${Date.now()}`;
-  const timestamp = Date.now() + minutes * 60 * 1000;
-
-  await notifee.createTriggerNotification(
-    {
-      id,
-      title: "💊 Snoozed Reminder",
-      body: title,
-      android: {
-        channelId: CHANNEL_ID,
-        pressAction: { id: "default" },
-      },
-    },
-    {
-      type: TriggerType.TIMESTAMP,
-      timestamp,
-      alarmManager: {
-        allowWhileIdle: true,
-      },
-    }
-  );
-
-  return id;
 };
 
 ///////////////////////////////////////////////////////////
@@ -404,148 +444,75 @@ export const cancelMedicineNotification = async (id: string) => {
 };
 
 ///////////////////////////////////////////////////////////
-// ❌ CANCEL SYMPTOM NOTIFICATIONS
-///////////////////////////////////////////////////////////
-
-export const cancelSymptomNotification = async () => {
-  try {
-    const triggers = await notifee.getTriggerNotifications();
-    for (const n of triggers) {
-      if (n.notification?.data?.type === "symptom") {
-        await notifee.cancelNotification(n.notification.id!);
-      }
-    }
-
-    const displayed = await notifee.getDisplayedNotifications();
-    for (const n of displayed) {
-      if (n.notification?.data?.type === "symptom") {
-        await notifee.cancelNotification(n.notification.id!);
-      }
-    }
-
-    console.log("🛑 Symptom notifications cancelled");
-  } catch (error) {
-    console.log("❌ Error cancelling symptom notification:", error);
-  }
-};
-
-///////////////////////////////////////////////////////////
 // FOREGROUND HANDLER
-// ✅ FIXED (Bug 2): Hydration actions now use saveWaterToStorage directly.
-//    Previously used a dynamic import of addWaterFromNotification from
-//    HydrationContext — which risked a race condition if the provider
-//    hadn't mounted yet. saveWaterToStorage always works regardless of
-//    React tree state, and HydrationContext reloads from AsyncStorage
-//    on appState change when the user returns to the app.
-//
-// ✅ Registered here only — NOT in index.js
 ///////////////////////////////////////////////////////////
 
 export function registerNotifeeForegroundHandler() {
   return notifee.onForegroundEvent(async ({ type, detail }) => {
-    if (type === EventType.ACTION_PRESS) {
-      const action = detail.pressAction?.id;
+    if (type !== EventType.ACTION_PRESS) return;
 
-      console.log("⚡ Foreground Action:", action);
+    const action    = detail.pressAction?.id;
+    const notifId   = detail.notification?.id ?? "";
+    const data      = detail.notification?.data ?? {};
+    const medicineId = String(data.medicineId ?? "");
 
-      if (action === ACTION_MEDICINE_SNOOZE) {
-        await snoozeMedicine(detail.notification?.body || "");
-        if (detail.notification?.id) {
-          await notifee.cancelDisplayedNotification(detail.notification.id);
-        }
-        return;
-      }
+    console.log("⚡ Foreground Action:", action, "notifId:", notifId, "medicineId:", medicineId);
 
-      if (action === ACTION_MEDICINE_TAKEN) {
-        const notifId = detail.notification?.id || "";
-        markMedicineTakenByNotificationId(notifId);
-
-        const med = getMedicineByNotificationId(notifId);
-        if (med && med.frequency?.toLowerCase() === "once") {
-          await notifee.cancelNotification(notifId);
-        } else {
-          await notifee.cancelDisplayedNotification(notifId);
-        }
-        return;
-      }
-
-      if (
-        action === ACTION_WATER_100 ||
-        action === ACTION_WATER_150 ||
-        action === ACTION_WATER_200 ||
-        action === ACTION_WATER_SKIP
-      ) {
-        if (action !== ACTION_WATER_SKIP) {
-          const ml =
-            action === ACTION_WATER_100 ? 100
-            : action === ACTION_WATER_150 ? 150
-            : 200;
-
-          // ✅ FIXED: Use saveWaterToStorage instead of dynamic Context import.
-          //    HydrationContext picks up the new value from AsyncStorage the next
-          //    time the user opens the app (via appState "active" handler in the provider).
-          //    If the app is already open and globalAddWater is set, the Context
-          //    will refresh via reloadHistory() on appState change.
-          await saveWaterToStorage(ml);
-
-          // ✅ Also update the live Context if the app is foregrounded
-          //    (globalAddWater will be set if HydrationProvider is mounted)
-          try {
-            const { addWaterFromNotification } = await import("../context/HydrationContext");
-            await addWaterFromNotification(ml);
-          } catch {
-            // Provider not mounted yet — AsyncStorage fallback already handled above
-            console.log("💧 HydrationContext not ready — AsyncStorage updated");
-          }
-        }
-
-        await scheduleHydrationReminder();
-
-        if (detail.notification?.id) {
-          await notifee.cancelDisplayedNotification(detail.notification.id);
-        }
-        return;
-      }
-
-      if (action === ACTION_SYMPTOM_DONE) {
-        console.log("🩺 Symptom resolved");
-        await cancelSymptomNotification();
-        if (detail.notification?.id) {
-          await notifee.cancelDisplayedNotification(detail.notification.id);
-        }
-        return;
-      }
-
-      // Default dismiss
-      if (detail.notification?.id) {
-        await notifee.cancelDisplayedNotification(detail.notification.id);
-      }
+    // ── Medicine: Taken ──────────────────────────────────────────
+    if (action === ACTION_MEDICINE_TAKEN) {
+      // ✅ Pass medicineId from notification data as fallback for snooze case
+      await handleMedicineTaken(notifId, medicineId);
+      return;
     }
+
+    // ── Medicine: Snooze ─────────────────────────────────────────
+    if (action === ACTION_MEDICINE_SNOOZE) {
+      await snoozeMedicine(
+        detail.notification?.body || "Medicine reminder",
+        medicineId,
+        String(data.frequency ?? "daily"),
+        5
+      );
+      await notifee.cancelDisplayedNotification(notifId);
+      return;
+    }
+
+    // ── Hydration ────────────────────────────────────────────────
+    if (
+      action === ACTION_WATER_100 ||
+      action === ACTION_WATER_150 ||
+      action === ACTION_WATER_200
+    ) {
+      const ml =
+        action === ACTION_WATER_100 ? 100
+        : action === ACTION_WATER_150 ? 150
+        : 200;
+      await saveWaterToStorage(ml);
+      try {
+        const { addWaterFromNotification } = await import("../context/HydrationContext");
+        await addWaterFromNotification(ml);
+      } catch {
+        console.log("💧 HydrationContext not ready — AsyncStorage updated");
+      }
+      await scheduleHydrationReminder();
+      await notifee.cancelDisplayedNotification(notifId);
+      return;
+    }
+
+    if (action === ACTION_WATER_SKIP) {
+      await scheduleHydrationReminder();
+      await notifee.cancelDisplayedNotification(notifId);
+      return;
+    }
+
+    // ── Symptom ──────────────────────────────────────────────────
+    if (action === ACTION_SYMPTOM_DONE) {
+      await cancelSymptomNotification();
+      await notifee.cancelDisplayedNotification(notifId);
+      return;
+    }
+
+    // Default dismiss
+    if (notifId) await notifee.cancelDisplayedNotification(notifId);
   });
 }
-
-///////////////////////////////////////////////////////////
-// 🔧 COMPATIBILITY HELPERS
-///////////////////////////////////////////////////////////
-
-export const scheduleHydrationReminder = async () => {
-  const value = await AsyncStorage.getItem("hydration_interval");
-  const minutes = value ? Number(value) : 60;
-
-  console.log("💧 Using hydration interval:", minutes);
-
-  return scheduleHydration(minutes);
-};
-
-export const cancelHydrationReminders = async () => {
-  const notifications = await notifee.getTriggerNotifications();
-  for (const n of notifications) {
-    if (n.notification?.data?.type === "hydration") {
-      await notifee.cancelNotification(n.notification.id!);
-    }
-  }
-};
-
-export const snoozeHydrationReminder = async () => {
-  return scheduleHydration(10);
-};
