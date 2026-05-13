@@ -209,10 +209,11 @@ function ClockFace({
       onResponderMove={handleTouch}
     >
       {/* Center dot */}
-      <View style={[clockStyles.centerDot, { backgroundColor: accent }]} />
+      <View pointerEvents="none" style={[clockStyles.centerDot, { backgroundColor: accent }]} />
 
       {/* Hand line — rendered as a thin rectangle rotated */}
       <Animated.View
+        pointerEvents="none"
         style={[
           clockStyles.hand,
           {
@@ -226,6 +227,7 @@ function ClockFace({
 
       {/* Hand end circle */}
       <View
+        pointerEvents="none"
         style={[
           clockStyles.handEnd,
           {
@@ -245,8 +247,9 @@ function ClockFace({
             ? num === hour
             : num === minute;
         return (
-          <TouchableOpacity
+          <View
             key={num}
+            pointerEvents="none"
             style={[
               clockStyles.numDot,
               {
@@ -258,16 +261,11 @@ function ClockFace({
                 backgroundColor: isSelected ? accent : 'transparent',
               },
             ]}
-            onPress={() => {
-              if (mode === 'hour') onHourChange(num);
-              else onMinuteChange(num);
-            }}
-            activeOpacity={0.8}
           >
             <Text style={[clockStyles.numTxt, isSelected && { color: '#fff' }]}>
               {mode === 'minute' ? String(num).padStart(2, '0') : num}
             </Text>
-          </TouchableOpacity>
+          </View>
         );
       })}
     </View>

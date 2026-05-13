@@ -789,8 +789,8 @@ export default function ProfileScreen() {
       return;
     }
     try {
-      await saveProfileData(localProfile);
       closeModal(setEditMedicalModal);
+      saveProfileData(localProfile).catch(console.error);
 
       const generatedId = getTwinId(localProfile);
       const payload: BiogearsRegistrationPayload = {
@@ -813,10 +813,14 @@ export default function ProfileScreen() {
         vo2max:              localProfile.biogears_vo2max,
         current_medications: localProfile.medications,
       };
-      await registerTwin(payload);
-      Alert.alert("Calibration Successful", "Your Digital Twin has been computed and saved.", [{ text: "Great!", onPress: () => closeModal(setEditMedicalModal) }]);
+      
+      registerTwin(payload).then(() => {
+        Alert.alert("Calibration Successful", "Your Digital Twin has been computed and saved.");
+      }).catch((err: any) => {
+        Alert.alert("Calibration Failed", err.message || "Could not reach BioGears server.");
+      });
     } catch (err: any) {
-      Alert.alert("Calibration Failed", err.message || "Could not reach BioGears server.");
+      Alert.alert("Calibration Error", err.message || "Could not start calibration.");
     }
   };
 
