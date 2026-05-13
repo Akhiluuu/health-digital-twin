@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState } from "react";
 import {
+  Alert,
   View,
   Text,
   StyleSheet,
@@ -118,33 +119,33 @@ export default function RestScreen() {
   const logSleep = () => {
     const hrs = parseFloat(duration);
 
-    if (!hrs || hrs <= 0) {
-      alert("Please enter a valid sleep duration.");
+    if (!hrs || hrs <= 0 || hrs > 14) {
+      Alert.alert("Invalid Duration", "Please enter a valid sleep duration (0.5 – 14 hours).");
       return;
     }
 
     try {
-      // Convert quality index (0–3) to normalized value (0–1)
-      const normalizedQuality = quality / 3;
+      // wallTime = estimated sleep start (now minus sleep duration)
+      // This places the sleep event at the correct physiological timestamp
+      // so BioGears models HR drop and glucose reset at the right time.
+      const sleepStartMs = Date.now() - hrs * 3600 * 1000;
+      const sleepStart   = new Date(sleepStartMs);
+      const pad = (n: number) => String(n).padStart(2, "0");
+      const wallTime = `${pad(sleepStart.getHours())}:${pad(sleepStart.getMinutes())}`;
 
-      // Current time in HH:MM format
-      const now = new Date();
-      const wallTime = now.toTimeString().slice(0, 5);
-
-      // Log sleep event to Bio-GARES
+      // BioGears SleepData: value = hours of sleep. No duration_seconds needed.
       addEvent({
-  event_type: "sleep",
-  value: hrs,
-  wallTime,
-  duration_seconds: hrs * 3600,
-  displayLabel: `Sleep · ${hrs} hrs`,
-  displayIcon: "😴",
-});
+        event_type: "sleep",
+        value: hrs,
+        wallTime,
+        displayLabel: `Sleep · ${hrs}h`,
+        displayIcon: "😴",
+      });
 
-      alert("Sleep session logged successfully!");
+      Alert.alert("✅ Sleep Logged", `${hrs}h sleep synced with BioGears Digital Twin.`);
     } catch (error) {
       console.error("BioGears Sleep Sync Error:", error);
-      alert("Failed to sync with Bio-GARES.");
+      Alert.alert("Sync Error", "Failed to sync sleep session with BioGears.");
     }
   };
 
