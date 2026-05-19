@@ -555,7 +555,15 @@ export default function TwinScreen() {
   };
 
   const startSimulation = async () => {
-    setSimulationName(pendingSimName || `Sim ${new Date().toLocaleDateString('en-IN')}`);
+    const baseName = pendingSimName.trim() || `Sim ${new Date().toLocaleDateString('en-IN')}`;
+    let finalName = baseName;
+    let counter = 1;
+    while (sessions.some(s => s.name === finalName)) {
+      finalName = `${baseName} (${counter})`;
+      counter++;
+    }
+
+    setSimulationName(finalName);
     setPendingSimName('');
     setSimNameModal(false);
     switchMode('dashboard');
@@ -576,11 +584,20 @@ export default function TwinScreen() {
   };
 
   const handleSaveRoutine = async () => {
-    if (!routineName.trim()) return;
-    await saveCurrentRoutine(routineName.trim());
+    const trimmedName = routineName.trim();
+    if (!trimmedName) return;
+
+    let finalName = trimmedName;
+    let counter = 1;
+    while (savedRoutines.some(r => r.name === finalName)) {
+      finalName = `${trimmedName} (${counter})`;
+      counter++;
+    }
+
+    await saveCurrentRoutine(finalName);
     setRoutineName('');
     setSaveRoutineModal(false);
-    Alert.alert('Routine Saved', `"${routineName}" saved with ${todayEvents.length} events.`);
+    Alert.alert('Routine Saved', `"${finalName}" saved with ${todayEvents.length} events.`);
   };
 
   const handleUndo = () => {
