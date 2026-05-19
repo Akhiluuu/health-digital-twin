@@ -50,13 +50,9 @@ else
     DEPLOY_DIR="$SCRIPT_DIR"
 fi
 
-BIOGEARS_VENV="$PROJECT_DIR/venv"
-HEALTHBOT_VENV="$PROJECT_DIR/healthbot_venv"
-
 echo ""
 echo "╔══════════════════════════════════════════════════════════════╗"
 echo "║         VitalHealth Digital Twin — Cloud Setup               ║"
-echo "║         Project : $PROJECT_DIR"
 echo "╚══════════════════════════════════════════════════════════════╝"
 echo ""
 
@@ -83,6 +79,10 @@ if [[ "$PROJECT_DIR" != "$CLONE_DIR" ]] && [[ ! -d "$PROJECT_DIR/.git" ]]; then
 else
     info "Running inside existing repository at $PROJECT_DIR"
 fi
+
+BIOGEARS_VENV="$PROJECT_DIR/venv"
+HEALTHBOT_VENV="$PROJECT_DIR/healthbot_venv"
+echo "  Project : $PROJECT_DIR"
 
 # ══════════════════════════════════════════════════════════════════════════════
 section "Step 1/11 — System packages"
