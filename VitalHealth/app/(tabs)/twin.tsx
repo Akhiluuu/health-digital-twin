@@ -1315,6 +1315,28 @@ export default function TwinScreen() {
         {/* Quick Add row */}
         <QuickAddRow addEvent={addEvent} />
 
+        {/* Saved Routines (Moved here for immediate access on Clinical Twin page) */}
+        {savedRoutines.length > 0 && (
+          <>
+            <Text style={[ss.section, { color: c.text }]}>Saved Routines</Text>
+            {savedRoutines.map(r => (
+              <TouchableOpacity key={r.id} style={[ss.routineCard, { backgroundColor: c.card }]}
+                onPress={() => handleLoadRoutine(r.id, r.name)}
+                onLongPress={() => Alert.alert('Delete', `Delete "${r.name}"?`, [
+                  { text: 'Cancel', style: 'cancel' },
+                  { text: 'Delete', style: 'destructive', onPress: () => deleteRoutine(r.id) },
+                ])}>
+                <View style={ss.routineIcon}><Text style={{ fontSize: 20 }}>📋</Text></View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[ss.routineName, { color: c.text }]}>{r.name}</Text>
+                  <Text style={[ss.routineMeta, { color: c.sub }]}>{r.eventCount} events · {new Date(r.createdAt).toLocaleDateString('en-IN')}</Text>
+                </View>
+                <Ionicons name="play-circle" size={28} color={c.active} />
+              </TouchableOpacity>
+            ))}
+          </>
+        )}
+
         {/* Vitals Grid */}
         <Text style={[ss.section, { color: c.text }]}>Simulation Vitals</Text>
         {v ? (
@@ -1463,28 +1485,6 @@ export default function TwinScreen() {
 
   const renderTrendsTab = () => (
     <>
-      {/* Saved Routines */}
-      {savedRoutines.length > 0 && (
-        <>
-          <Text style={[ss.section, { color: c.text }]}>Saved Routines</Text>
-          {savedRoutines.map(r => (
-            <TouchableOpacity key={r.id} style={[ss.routineCard, { backgroundColor: c.card }]}
-              onPress={() => handleLoadRoutine(r.id, r.name)}
-              onLongPress={() => Alert.alert('Delete', `Delete "${r.name}"?`, [
-                { text: 'Cancel', style: 'cancel' },
-                { text: 'Delete', style: 'destructive', onPress: () => deleteRoutine(r.id) },
-              ])}>
-              <View style={ss.routineIcon}><Text style={{ fontSize: 20 }}>📋</Text></View>
-              <View style={{ flex: 1 }}>
-                <Text style={[ss.routineName, { color: c.text }]}>{r.name}</Text>
-                <Text style={[ss.routineMeta, { color: c.sub }]}>{r.eventCount} events · {new Date(r.createdAt).toLocaleDateString('en-IN')}</Text>
-              </View>
-              <Ionicons name="play-circle" size={28} color={c.active} />
-            </TouchableOpacity>
-          ))}
-        </>
-      )}
-
       {/* Session History */}
       {sessions.length > 0 ? (
         <>
