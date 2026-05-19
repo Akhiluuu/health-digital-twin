@@ -64,7 +64,28 @@ echo ""
 [[ "$EUID" -eq 0 ]] && fail "Run as a regular user (ubuntu), not root. Use sudo where needed."
 
 # ══════════════════════════════════════════════════════════════════════════════
-section "Step 1/10 — System packages"
+section "Step 0/11 — Repository setup"
+# ══════════════════════════════════════════════════════════════════════════════
+REPO_URL="https://github.com/Akhiluuu/health-digital-twin.git"
+CLONE_DIR="$HOME/health-digital-twin"
+
+# If the script is run completely standalone (e.g., via curl), we need to clone it.
+if [[ "$PROJECT_DIR" != "$CLONE_DIR" ]] && [[ ! -d "$PROJECT_DIR/.git" ]]; then
+    info "Running standalone. Ensuring repository is cloned to $CLONE_DIR..."
+    if [[ ! -d "$CLONE_DIR" ]]; then
+        git clone "$REPO_URL" "$CLONE_DIR"
+    else
+        info "Repository already exists at $CLONE_DIR. Pulling latest..."
+        (cd "$CLONE_DIR" && git pull)
+    fi
+    PROJECT_DIR="$CLONE_DIR"
+    DEPLOY_DIR="$CLONE_DIR/deployment"
+else
+    info "Running inside existing repository at $PROJECT_DIR"
+fi
+
+# ══════════════════════════════════════════════════════════════════════════════
+section "Step 1/11 — System packages"
 # ══════════════════════════════════════════════════════════════════════════════
 info "Updating package index and installing system dependencies..."
 sudo apt-get update -qq
@@ -78,7 +99,7 @@ sudo apt-get install -y -qq \
 ok "System packages installed."
 
 # ══════════════════════════════════════════════════════════════════════════════
-section "Step 2/10 — Python virtual environments"
+section "Step 2/11 — Python virtual environments"
 # ══════════════════════════════════════════════════════════════════════════════
 # Two separate venvs because BioGears and Healthbot have conflicting
 # dependency versions (different fastapi, pydantic, numpy).
@@ -92,7 +113,7 @@ python3.11 -m venv "$HEALTHBOT_VENV"
 ok "Healthbot venv ready."
 
 # ══════════════════════════════════════════════════════════════════════════════
-section "Step 3/10 — Python dependencies"
+section "Step 3/11 — Python dependencies"
 # ══════════════════════════════════════════════════════════════════════════════
 info "Installing BioGears dependencies..."
 source "$BIOGEARS_VENV/bin/activate"
@@ -121,7 +142,7 @@ deactivate
 ok "Healthbot dependencies installed."
 
 # ══════════════════════════════════════════════════════════════════════════════
-section "Step 4/10 — Import path symlink (health_ai → healthbot)"
+section "Step 4/11 — Import path symlink (health_ai → healthbot)"
 # ══════════════════════════════════════════════════════════════════════════════
 # The source code imports from 'health_ai.*' but the package folder is
 # 'healthbot/'. We create a symlink so Python can resolve both names.
@@ -136,7 +157,7 @@ else
 fi
 
 # ══════════════════════════════════════════════════════════════════════════════
-section "Step 5/10 — Environment configuration"
+section "Step 5/11 — Environment configuration"
 # ══════════════════════════════════════════════════════════════════════════════
 ENV_FILE="$PROJECT_DIR/.env"
 
@@ -172,7 +193,7 @@ ENVEOF
 fi
 
 # ══════════════════════════════════════════════════════════════════════════════
-section "Step 6/10 — BioGears runtime"
+section "Step 6/11 — BioGears runtime"
 # ══════════════════════════════════════════════════════════════════════════════
 RUNTIME_DIR="$PROJECT_DIR/biogears_runtime"
 BGCLI="$RUNTIME_DIR/bg-cli"
@@ -205,7 +226,7 @@ chmod +x "$BGCLI"
 ok "BioGears runtime verified (bg-cli is executable)."
 
 # ══════════════════════════════════════════════════════════════════════════════
-section "Step 7/10 — LLM model download (Qwen2.5-14B GGUF)"
+section "Step 7/11 — LLM model download (Qwen2.5-14B GGUF)"
 # ══════════════════════════════════════════════════════════════════════════════
 # Model is split into 3 shards (~3 GB each, ~9.8 GB total).
 # wget -c = resumable: safe to re-run if download was interrupted.
@@ -246,7 +267,7 @@ else
 fi
 
 # ══════════════════════════════════════════════════════════════════════════════
-section "Step 8/10 — Systemd services"
+section "Step 8/11 — Systemd services"
 # ══════════════════════════════════════════════════════════════════════════════
 
 # ── Patch service files with the actual project path ──────────────────────────
@@ -297,7 +318,7 @@ else
 fi
 
 # ══════════════════════════════════════════════════════════════════════════════
-section "Step 9/10 — Nginx reverse proxy"
+section "Step 9/11 — Nginx reverse proxy"
 # ══════════════════════════════════════════════════════════════════════════════
 # Patch the project path into nginx.conf (same placeholder as service files)
 sed "s|/home/ubuntu/health-digital-twin|${PROJECT_DIR}|g" \
@@ -315,7 +336,7 @@ else
 fi
 
 # ══════════════════════════════════════════════════════════════════════════════
-section "Step 10/10 — Health checks & validation"
+section "Step 10/11 — Health checks & validation"
 # ══════════════════════════════════════════════════════════════════════════════
 sleep 2
 PASS=0; FAIL=0
