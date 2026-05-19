@@ -1,0 +1,203 @@
+--- app/onboarding/medical.tsx
++++ app/onboarding/medical.tsx
+@@ -14,10 +14,50 @@
+   TextInput,
+   TouchableOpacity,
+   View,
++  Dimensions,
++  Modal,
+ } from "react-native";
+ import { auth, db } from "../../services/firebase";
+ import { useTheme } from "../../context/ThemeContext";
++import { Ionicons } from "@expo/vector-icons";
+ 
+ const BLOOD_GROUPS = ["A+", "A−", "B+", "B−", "AB+", "AB−", "O+", "O−"];
++const HEIGHT_OPTIONS = Array.from({ length: 151 }, (_, i) => String(100 + i));
++const WEIGHT_OPTIONS = Array.from({ length: 171 }, (_, i) => String(30 + i));
++
++const { width } = Dimensions.get("window");
++
++function DropdownPicker({ visible, options, selected, onSelect, onClose, colors, title, accent }: any) {
++  return (
++    <Modal visible={visible} transparent animationType="fade">
++      <TouchableOpacity style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "center", alignItems: "center" }} activeOpacity={1} onPress={onClose}>
++        <View style={{ backgroundColor: colors.card, borderRadius: 20, width: width * 0.75, maxHeight: 400, overflow: "hidden" }}>
++          <View style={{ padding: 16, borderBottomWidth: 1, borderBottomColor: colors.border }}>
++            <Text style={{ color: colors.text, fontSize: 16, fontWeight: "700", textAlign: "center" }}>{title}</Text>
++          </View>
++          <ScrollView>
++            {options.map((opt: string) => (
++              <TouchableOpacity
++                key={opt}
++                style={{
++                  flexDirection: "row",
++                  alignItems: "center",
++                  justifyContent: "space-between",
++                  paddingHorizontal: 20,
++                  paddingVertical: 14,
++                  borderBottomWidth: 0.5,
++                  borderBottomColor: colors.border,
++                  backgroundColor: selected === opt ? accent + "20" : "transparent",
++                }}
++                onPress={() => { onSelect(opt); onClose(); }}
++              >
++                <Text style={{ color: selected === opt ? accent : colors.text, fontSize: 15, fontWeight: selected === opt ? "700" : "400" }}>{opt}</Text>
++                {selected === opt && <Ionicons name="checkmark" size={18} color={accent} />}
++              </TouchableOpacity>
++            ))}
++          </ScrollView>
++        </View>
++      </TouchableOpacity>
++    </Modal>
++  );
++}
+ 
+ export default function Medical() {
+@@ -118,6 +158,10 @@
+   const [heightFocused,    setHeightFocused]    = useState(false);
+   const [weightFocused,    setWeightFocused]    = useState(false);
+   const [allergiesFocused, setAllergiesFocused] = useState(false);
++  
++  const [showHeightPicker, setShowHeightPicker] = useState(false);
++  const [showWeightPicker, setShowWeightPicker] = useState(false);
++  const [showBloodPicker, setShowBloodPicker] = useState(false);
+ 
+   // ── Orb animations ────────────────────────────────────────────────────────
+@@ -248,34 +292,26 @@
+             {/* Height */}
+             <View style={[styles.fieldWrapper, styles.flex]}>
+               <Text style={[styles.fieldLabel, { color: colors.labelText }]}>Height (cm) *</Text>
+-              <View
++              <TouchableOpacity
+                 style={[
+                   styles.inputWrapper,
+                   {
+                     backgroundColor: colors.inputBg,
+-                    borderColor: heightFocused ? colors.inputFocusedBorder : colors.inputBorder,
++                    borderColor: showHeightPicker ? colors.inputFocusedBorder : colors.inputBorder,
+                   },
+                 ]}
++                onPress={() => setShowHeightPicker(true)}
+               >
+                 <Text style={styles.inputIcon}>📏</Text>
+-                <TextInput
+-                  placeholder="175"
+-                  placeholderTextColor={colors.inputPlaceholder}
+-                  value={height}
+-                  onChangeText={setHeight}
+-                  style={[styles.input, { color: colors.inputText }]}
+-                  keyboardType="numeric"
+-                  returnKeyType="next"
+-                  blurOnSubmit={false}
+-                  onFocus={() => {
+-                    setHeightFocused(true);
+-                    scrollToY(heightY.current);
+-                  }}
+-                  onBlur={() => setHeightFocused(false)}
+-                />
+-              </View>
++                <Text style={[styles.input, { color: height ? colors.inputText : colors.inputPlaceholder }]}>
++                  {height || "175"}
++                </Text>
++                <Ionicons name="chevron-down" size={18} color={colors.subText} />
++              </TouchableOpacity>
++              <DropdownPicker visible={showHeightPicker} options={HEIGHT_OPTIONS} selected={height} onSelect={setHeight} onClose={() => setShowHeightPicker(false)} colors={colors} title="Select Height (cm)" accent={colors.nextBtnBg} />
+             </View>
+ 
+             {/* Weight */}
+             <View style={[styles.fieldWrapper, styles.flex]}>
+               <Text style={[styles.fieldLabel, { color: colors.labelText }]}>Weight (kg) *</Text>
+-              <View
++              <TouchableOpacity
+                 style={[
+                   styles.inputWrapper,
+                   {
+                     backgroundColor: colors.inputBg,
+-                    borderColor: weightFocused ? colors.inputFocusedBorder : colors.inputBorder,
++                    borderColor: showWeightPicker ? colors.inputFocusedBorder : colors.inputBorder,
+                   },
+                 ]}
++                onPress={() => setShowWeightPicker(true)}
+               >
+                 <Text style={styles.inputIcon}>⚖️</Text>
+-                <TextInput
+-                  placeholder="70"
+-                  placeholderTextColor={colors.inputPlaceholder}
+-                  value={weight}
+-                  onChangeText={setWeight}
+-                  style={[styles.input, { color: colors.inputText }]}
+-                  keyboardType="numeric"
+-                  returnKeyType="next"
+-                  blurOnSubmit={false}
+-                  onFocus={() => {
+-                    setWeightFocused(true);
+-                    scrollToY(weightY.current);
+-                  }}
+-                  onBlur={() => setWeightFocused(false)}
+-                />
+-              </View>
++                <Text style={[styles.input, { color: weight ? colors.inputText : colors.inputPlaceholder }]}>
++                  {weight || "70"}
++                </Text>
++                <Ionicons name="chevron-down" size={18} color={colors.subText} />
++              </TouchableOpacity>
++              <DropdownPicker visible={showWeightPicker} options={WEIGHT_OPTIONS} selected={weight} onSelect={setWeight} onClose={() => setShowWeightPicker(false)} colors={colors} title="Select Weight (kg)" accent={colors.nextBtnBg} />
+             </View>
+           </View>
+ 
+@@ -321,40 +357,20 @@
+               <Text style={[styles.bloodTip, { color: colors.subText }]}>
+                 Tap to select your blood group
+               </Text>
+             )}
+ 
+-            <View style={styles.bloodGroupGrid}>
+-              {BLOOD_GROUPS.map((bg) => {
+-                const active = bloodGroup === bg;
+-                return (
+-                  <TouchableOpacity
+-                    key={bg}
+-                    style={[
+-                      styles.bloodGroupChip,
+-                      {
+-                        backgroundColor: active ? colors.chipActiveBg  : colors.chipBg,
+-                        borderColor:     active ? colors.chipActiveBorder : colors.chipBorder,
+-                        // Give selected chip a subtle shadow so it "pops"
+-                        shadowColor: active ? colors.chipActiveBg : "transparent",
+-                        shadowOffset: { width: 0, height: 2 },
+-                        shadowOpacity: active ? 0.35 : 0,
+-                        shadowRadius: 4,
+-                        elevation: active ? 4 : 0,
+-                      },
+-                    ]}
+-                    onPress={() => setBloodGroup(bg)}
+-                    activeOpacity={0.75}
+-                  >
+-                    <Text
+-                      style={[
+-                        styles.bloodGroupText,
+-                        { color: active ? colors.chipActiveText : colors.chipText },
+-                      ]}
+-                    >
+-                      {bg}
+-                    </Text>
+-                  </TouchableOpacity>
+-                );
+-              })}
+-            </View>
++            <TouchableOpacity
++              style={[
++                styles.inputWrapper,
++                { backgroundColor: colors.inputBg, borderColor: showBloodPicker ? colors.inputFocusedBorder : colors.inputBorder },
++              ]}
++              onPress={() => setShowBloodPicker(true)}
++            >
++              <Text style={styles.inputIcon}>🩸</Text>
++              <Text style={[styles.input, { color: bloodGroup ? colors.inputText : colors.inputPlaceholder }]}>
++                {bloodGroup || "Select Blood Group"}
++              </Text>
++              <Ionicons name="chevron-down" size={18} color={colors.subText} />
++            </TouchableOpacity>
++            <DropdownPicker visible={showBloodPicker} options={BLOOD_GROUPS} selected={bloodGroup} onSelect={setBloodGroup} onClose={() => setShowBloodPicker(false)} colors={colors} title="Select Blood Group" accent={colors.nextBtnBg} />
+           </View>
+ 

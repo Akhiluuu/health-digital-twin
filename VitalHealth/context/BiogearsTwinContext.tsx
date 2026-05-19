@@ -91,9 +91,12 @@ export interface BiogearsTwinContextValue {
 
   // Saved routines
   savedRoutines: SavedRoutine[];
-  saveCurrentRoutine: (name: string, tags?: string[]) => Promise<void>;
+  saveCurrentRoutine: (name: string, tags?: string[], overwriteId?: string) => Promise<void>;
   loadRoutine: (routineId: string) => void;
   deleteRoutine: (routineId: string) => Promise<void>;
+  setDefaultRoutine: (routineId: string) => Promise<void>;
+  editingRoutineId: string | null;
+  setEditingRoutineId: (id: string | null) => void;
 
   // Substances Library
   substances: Record<string, string[]>;
@@ -179,10 +182,13 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
   const [aiInsightsLoading, setAiInsightsLoading] = useState<boolean>(false);
   const [aiServerUrl, setAiServerUrlState] = useState<string>('');
 
-  const [todayEvents, setTodayEvents] = useState<RoutineEvent[]>([]);
+  const [isTwinRegistered, setIsTwinRegistered] = useState(false);
   const [savedRoutines, setSavedRoutines] = useState<SavedRoutine[]>([]);
+  const [editingRoutineId, setEditingRoutineId] = useState<string | null>(null);
   const [sessions, setSessions] = useState<LocalSessionMeta[]>([]);
   const [simulationName, setSimulationName] = useState('');
+
+  const [todayEvents, setTodayEvents] = useState<RoutineEvent[]>([]);
 
   // Analytics State
   const [organScores, setOrganScores] = useState<OrganScoresResponse | null>(null);
@@ -504,19 +510,29 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
 
   // ── Saved Routines ────────────────────────────────────────────────────────
 
-  const saveCurrentRoutine = useCallback(async (name: string, tags?: string[]) => {
+  const saveCurrentRoutine = useCallback(async (name: string, tags?: string[], overwriteId?: string) => {
     if (!twinUserId || todayEvents.length === 0) return;
     const routine: SavedRoutine = {
-      id: `routine_${Date.now()}`,
+      id: overwriteId || `routine_${Date.now()}`,
       name,
       events: todayEvents,
       eventCount: todayEvents.length,
       createdAt: new Date().toISOString(),
       tags,
     };
+    // Preserve isDefault if overwriting
+    if (overwriteId) {
+      const existing = savedRoutines.find(r => r.id === overwriteId);
+      if (existing?.isDefault) routine.isDefault = true;
+    }
     await BiogearsAPI.saveRoutine(twinUserId, routine);
-    setSavedRoutines(prev => [routine, ...prev]);
-  }, [twinUserId, todayEvents]);
+    
+    setSavedRoutines(prev => {
+      const filtered = prev.filter(r => r.id !== routine.id);
+      return [routine, ...filtered];
+    });
+    setEditingRoutineId(null);
+  }, [twinUserId, todayEvents, savedRoutines]);
 
   const loadRoutine = useCallback((routineId: string) => {
     const routine = savedRoutines.find(r => r.id === routineId);
@@ -541,6 +557,15 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
     if (!twinUserId) return;
     await BiogearsAPI.deleteRoutine(twinUserId, routineId);
     setSavedRoutines(prev => prev.filter(r => r.id !== routineId));
+  }, [twinUserId]);
+
+  const setDefaultRoutine = useCallback(async (routineId: string) => {
+    if (!twinUserId) return;
+    await BiogearsAPI.setDefaultRoutine(twinUserId, routineId);
+    setSavedRoutines(prev => prev.map(r => ({
+      ...r,
+      isDefault: r.id === routineId ? !r.isDefault : false
+    })));
   }, [twinUserId]);
 
   // ── Session History ───────────────────────────────────────────────────────
@@ -719,10 +744,24 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
     removeEvent,
     updateEvent,
     clearToday,
+    refreshAnalytics,
+    organScores,
+    vitalsTrends,
+    cvdRisk,
+    recoveryReadiness,
+    weeklySummary,
+    todayMacros,
+    healthScore,
+    bodyMetrics,
     savedRoutines,
     saveCurrentRoutine,
     loadRoutine,
     deleteRoutine,
+    setDefaultRoutine,
+    editingRoutineId,
+    setEditingRoutineId,
+    substances,
+    refreshSubstances,
     sessions,
     refreshSessions,
     deleteSession,
@@ -731,17 +770,7 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
     registerTwin,
     runSimulation,
     recheckTwinStatus,
-    refreshAnalytics,
-    organScores,
-    vitalsTrends,
-    cvdRisk,
-    recoveryReadiness,
-    weeklySummary,
-    healthScore,
-    bodyMetrics,
-    todayMacros,
-    substances,
-    refreshSubstances,
+
     undoLastSimulation,
   };
 

@@ -257,6 +257,7 @@ export default function TwinScreen() {
     lastVitals, lastAnomalies, lastInteractionWarnings, lastAiInsights,
     todayEvents, addEvent, removeEvent, clearToday,
     savedRoutines, saveCurrentRoutine, loadRoutine, deleteRoutine,
+    editingRoutineId, setEditingRoutineId, setDefaultRoutine,
     sessions, refreshSessions,
     simulationName, setSimulationName,
     runSimulation,
@@ -288,6 +289,35 @@ export default function TwinScreen() {
       setElapsedSecs(0);
     }
   }, [simulationStatus]);
+
+  // ── Auto-Catchup Detection ──────────────────────────────────────────────────
+  const [hasCheckedCatchup, setHasCheckedCatchup] = useState(false);
+
+  useEffect(() => {
+    if (hasCheckedCatchup || sessions.length === 0 || savedRoutines.length === 0) return;
+    if (simulationStatus === 'running' || simulationStatus === 'queued' || todayEvents.length > 0) return;
+    
+    const lastSimTime = new Date(sessions[0].timestamp).getTime();
+    const hoursSinceLastSim = (Date.now() - lastSimTime) / (1000 * 60 * 60);
+    
+    if (hoursSinceLastSim > 24) {
+      const defaultRoutine = savedRoutines.find(r => r.isDefault);
+      if (defaultRoutine) {
+        Alert.alert(
+          'Missed a Day?', 
+          `We noticed you haven't simulated in over 24 hours. Your default catch-up routine "${defaultRoutine.name}" can be loaded instantly to bridge the gap.`,
+          [
+            { text: 'Skip', style: 'cancel' },
+            { text: 'Load Default Routine', onPress: () => {
+                loadRoutine(defaultRoutine.id);
+                switchMode('routine');
+            }}
+          ]
+        );
+      }
+    }
+    setHasCheckedCatchup(true);
+  }, [hasCheckedCatchup, sessions, savedRoutines, todayEvents.length, simulationStatus, loadRoutine]);
 
   const fmtElapsed = (s: number) => {
     const m = Math.floor(s / 60); const sec = s % 60;
@@ -583,18 +613,31 @@ export default function TwinScreen() {
     ]);
   };
 
+  const handleEditRoutine = (routineId: string, name: string) => {
+    loadRoutine(routineId);
+    setEditingRoutineId(routineId);
+    setRoutineName(name);
+    switchMode('routine');
+  };
+
   const handleSaveRoutine = async () => {
     const trimmedName = routineName.trim();
     if (!trimmedName) return;
 
     let finalName = trimmedName;
-    let counter = 1;
-    while (savedRoutines.some(r => r.name === finalName)) {
-      finalName = `${trimmedName} (${counter})`;
-      counter++;
+    
+    // If NOT editing, or they changed the name while editing, check for duplicates
+    const isOverwritingCurrent = editingRoutineId && savedRoutines.find(r => r.id === editingRoutineId)?.name === finalName;
+    
+    if (!isOverwritingCurrent) {
+      let counter = 1;
+      while (savedRoutines.some(r => r.name === finalName)) {
+        finalName = `${trimmedName} (${counter})`;
+        counter++;
+      }
     }
 
-    await saveCurrentRoutine(finalName);
+    await saveCurrentRoutine(finalName, undefined, editingRoutineId || undefined);
     setRoutineName('');
     setSaveRoutineModal(false);
     Alert.alert('Routine Saved', `"${finalName}" saved with ${todayEvents.length} events.`);
@@ -1322,14 +1365,19 @@ export default function TwinScreen() {
             {savedRoutines.map(r => (
               <TouchableOpacity key={r.id} style={[ss.routineCard, { backgroundColor: c.card }]}
                 onPress={() => handleLoadRoutine(r.id, r.name)}
-                onLongPress={() => Alert.alert('Delete', `Delete "${r.name}"?`, [
+                onLongPress={() => Alert.alert('Options', `"${r.name}"`, [
                   { text: 'Cancel', style: 'cancel' },
+                  { text: 'Edit Events', onPress: () => handleEditRoutine(r.id, r.name) },
+                  { text: r.isDefault ? 'Remove Default' : 'Set as Default', onPress: () => setDefaultRoutine(r.id) },
                   { text: 'Delete', style: 'destructive', onPress: () => deleteRoutine(r.id) },
                 ])}>
-                <View style={ss.routineIcon}><Text style={{ fontSize: 20 }}>📋</Text></View>
+                <View style={ss.routineIcon}><Text style={{ fontSize: 20 }}>{r.isDefault ? '⭐' : '📋'}</Text></View>
                 <View style={{ flex: 1 }}>
                   <Text style={[ss.routineName, { color: c.text }]}>{r.name}</Text>
-                  <Text style={[ss.routineMeta, { color: c.sub }]}>{r.eventCount} events · {new Date(r.createdAt).toLocaleDateString('en-IN')}</Text>
+                  <Text style={[ss.routineMeta, { color: c.sub }]}>
+                    {r.eventCount} events · {new Date(r.createdAt).toLocaleDateString('en-IN')}
+                    {r.isDefault && <Text style={{ color: '#f59e0b', fontWeight: 'bold' }}> · Default Catch-up</Text>}
+                  </Text>
                 </View>
                 <Ionicons name="play-circle" size={28} color={c.active} />
               </TouchableOpacity>

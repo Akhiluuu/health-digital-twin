@@ -514,6 +514,7 @@ export interface SavedRoutine {
   createdAt: string;
   lastUsed?: string;
   tags?: string[];  // e.g. ['gym day', 'rest day']
+  isDefault?: boolean;
 }
 
 const ROUTINES_KEY = (userId: string) => `@biogears_routines_${userId}`;
@@ -544,5 +545,14 @@ export async function markRoutineUsed(userId: string, routineId: string): Promis
   const updated = existing.map(r =>
     r.id === routineId ? { ...r, lastUsed: new Date().toISOString() } : r
   );
+  await AsyncStorage.setItem(ROUTINES_KEY(userId), JSON.stringify(updated));
+}
+
+export async function setDefaultRoutine(userId: string, routineId: string): Promise<void> {
+  const existing = await loadSavedRoutines(userId);
+  const updated = existing.map(r => ({
+    ...r,
+    isDefault: r.id === routineId ? !r.isDefault : false // toggle if clicked again, unset others
+  }));
   await AsyncStorage.setItem(ROUTINES_KEY(userId), JSON.stringify(updated));
 }
