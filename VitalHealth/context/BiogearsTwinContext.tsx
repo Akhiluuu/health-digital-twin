@@ -11,6 +11,7 @@ import React, {
 } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useProfile } from './ProfileContext';
+import { buildDefaultRoutine } from '../services/onboardingRoutineBuilder';
 import * as BiogearsAPI from '../services/biogears';
 import { getTwinId } from '../utils/twinUtils';
 import { useMedicine } from './MedicineContext';
@@ -91,7 +92,7 @@ export interface BiogearsTwinContextValue {
 
   // Saved routines
   savedRoutines: SavedRoutine[];
-  saveCurrentRoutine: (name: string, tags?: string[], overwriteId?: string) => Promise<void>;
+  saveCurrentRoutine: (name: string, tags?: string[], overwriteId?: string, autoDefault?: boolean) => Promise<void>;
   loadRoutine: (routineId: string) => void;
   deleteRoutine: (routineId: string) => Promise<void>;
   setDefaultRoutine: (routineId: string) => Promise<void>;
@@ -114,6 +115,7 @@ export interface BiogearsTwinContextValue {
   // Actions
   registerTwin: (payload: BiogearsRegistrationPayload) => Promise<void>;
   runSimulation: () => Promise<void>;
+  runMultiDayCatchup: (days: number) => Promise<void>;
   recheckTwinStatus: () => Promise<void>;
   undoLastSimulation: () => Promise<void>;
 }
@@ -411,6 +413,37 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
   const loadRoutinesFromStorage = async () => {
     if (!twinUserId) return;
     const r = await BiogearsAPI.loadSavedRoutines(twinUserId);
+
+    // Auto-generate "My Typical Day" for users who have onboarding habits
+    // but no saved routines yet (covers new signups + existing users)
+    if (r.length === 0) {
+      try {
+        const allKeys = await AsyncStorage.getAllKeys();
+        const habitsKey = allKeys.find(k => k.startsWith('@onboarding_habits_'));
+        if (habitsKey) {
+          const raw = await AsyncStorage.getItem(habitsKey);
+          if (raw) {
+            const habits = JSON.parse(raw);
+            const heightVal = profile ? parseFloat((profile.height || '').replace(/[^0-9.]/g, '')) : 175;
+            const weightVal = profile ? parseFloat((profile.weight || '').replace(/[^0-9.]/g, '')) : 70;
+            const routine = buildDefaultRoutine(habits, {
+              gender: profile ? profile.gender : 'Male',
+              dateOfBirth: profile ? profile.dateOfBirth : '1995-01-01',
+              height: heightVal || 175,
+              weight: weightVal || 70,
+            });
+            await BiogearsAPI.saveRoutine(twinUserId, routine);
+            await BiogearsAPI.setDefaultRoutine(twinUserId, routine.id);
+            setSavedRoutines([routine]);
+            console.log('[BiogearsTwin] ✅ Auto-generated default routine from onboarding habits');
+            return;
+          }
+        }
+      } catch (e) {
+        console.log('[BiogearsTwin] Could not auto-generate default routine:', e);
+      }
+    }
+
     setSavedRoutines(r);
   };
 
@@ -510,7 +543,7 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
 
   // ── Saved Routines ────────────────────────────────────────────────────────
 
-  const saveCurrentRoutine = useCallback(async (name: string, tags?: string[], overwriteId?: string) => {
+  const saveCurrentRoutine = useCallback(async (name: string, tags?: string[], overwriteId?: string, autoDefault?: boolean) => {
     if (!twinUserId || todayEvents.length === 0) return;
     const routine: SavedRoutine = {
       id: overwriteId || `routine_${Date.now()}`,
@@ -520,16 +553,25 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
       createdAt: new Date().toISOString(),
       tags,
     };
-    // Preserve isDefault if overwriting
+    // Preserve isDefault if overwriting an existing default routine
     if (overwriteId) {
       const existing = savedRoutines.find(r => r.id === overwriteId);
       if (existing?.isDefault) routine.isDefault = true;
     }
+    // Auto-mark as default when caller requests it (e.g. first routine ever saved)
+    if (autoDefault) {
+      routine.isDefault = true;
+    }
     await BiogearsAPI.saveRoutine(twinUserId, routine);
-    
+    // If we just set a new default, clear isDefault on all others in storage
+    if (routine.isDefault) {
+      await BiogearsAPI.setDefaultRoutine(twinUserId, routine.id);
+    }
     setSavedRoutines(prev => {
       const filtered = prev.filter(r => r.id !== routine.id);
-      return [routine, ...filtered];
+      // If new routine is default, unmark all others
+      const base = routine.isDefault ? filtered.map(r => ({ ...r, isDefault: false })) : filtered;
+      return [routine, ...base];
     });
     setEditingRoutineId(null);
   }, [twinUserId, todayEvents, savedRoutines]);
@@ -670,6 +712,85 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
     }
   }, [twinUserId, twinStatus, todayEvents, simulationName]);
 
+  const runMultiDayCatchup = useCallback(async (days: number) => {
+    if (!twinUserId) return;
+    if (simulationStatus === 'running' || simulationStatus === 'queued') {
+      console.warn('Simulation already in progress');
+      return;
+    }
+    const defaultRoutine = savedRoutines.find(r => r.isDefault) || savedRoutines[0];
+    if (!defaultRoutine) {
+      throw new Error('No default routine available for catch-up');
+    }
+
+    setSimulationStatus('queued');
+    setSimulationError(null);
+    setSimulationProgress(`Queuing catch-up for ${days} days...`);
+
+    try {
+      const catchUpEvents: BiogearsHealthEvent[] = [];
+      const now = new Date();
+
+      // Generate events for each missed day chronologically
+      for (let i = days; i >= 1; i--) {
+        const targetDate = new Date();
+        targetDate.setDate(now.getDate() - i);
+
+        for (const e of defaultRoutine.events) {
+          const [hh, mm] = (e.wallTime || '08:00').split(':').map(Number);
+          const eventDate = new Date(targetDate);
+          eventDate.setHours(hh || 0, mm || 0, 0, 0);
+          const timestamp = Math.floor(eventDate.getTime() / 1000);
+
+          catchUpEvents.push({
+            event_type: e.event_type,
+            value: e.value,
+            timestamp,
+            substance_name: e.substance_name,
+            meal_type: e.meal_type,
+            carb_g: e.carb_g,
+            fat_g: e.fat_g,
+            protein_g: e.protein_g,
+            duration_seconds: e.duration_seconds,
+            environment_name: e.environment_name,
+            notes: `Catch-up day -${i}: ${e.notes || ''}`,
+          });
+        }
+      }
+
+      // Sort chronological
+      catchUpEvents.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+
+      setSimulationProgress(`Running multi-day catch-up (${days} days)...`);
+      setSimulationStatus('running');
+      const { job_id } = await BiogearsAPI.simulateAsync(twinUserId, catchUpEvents);
+      await AsyncStorage.setItem('biogears_active_job', job_id);
+
+      simStartRef.current = Date.now();
+      progressTickRef.current = setInterval(() => {
+        const elapsed = Math.round((Date.now() - (simStartRef.current ?? Date.now())) / 1000);
+        const mins = Math.floor(elapsed / 60);
+        const secs = elapsed % 60;
+        const timeStr = mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
+        setSimulationProgress(`BioGears simulating gaps... (${timeStr} elapsed)`);
+      }, 5000);
+
+      const result = await BiogearsAPI.pollUntilDone(job_id, 3000, 43_200_000);
+      await finishSimulationSuccess(result);
+
+    } catch (err: any) {
+      if (progressTickRef.current) {
+        clearInterval(progressTickRef.current);
+        progressTickRef.current = null;
+      }
+      simStartRef.current = null;
+      setSimulationStatus('failed');
+      setSimulationError(err.message || 'Catch-up simulation failed');
+      setSimulationProgress('');
+      throw err;
+    }
+  }, [twinUserId, savedRoutines, simulationStatus]);
+
   // ─── Undo Last Simulation ─────────────────────────────────────────────────────
   const undoLastSimulation = useCallback(async () => {
     if (!twinUserId) throw new Error('No twin registered.');
@@ -769,6 +890,7 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
     setSimulationName,
     registerTwin,
     runSimulation,
+    runMultiDayCatchup,
     recheckTwinStatus,
 
     undoLastSimulation,

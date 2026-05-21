@@ -1,5 +1,9 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useLocalSearchParams, useRouter } from "expo-router";
+import { auth, db } from "../../services/firebase";
+import { doc, updateDoc } from "firebase/firestore";
+import * as BiogearsAPI from "../../services/biogears";
+import { buildDefaultRoutine } from "../../services/onboardingRoutineBuilder";
 import { useEffect, useRef, useState } from "react";
 import {
   Animated,
@@ -27,6 +31,11 @@ export default function Review() {
   const [signupName,  setSignupName]  = useState("");
   const [signupEmail, setSignupEmail] = useState("");
   const [saving,      setSaving]      = useState(false);
+  const [generatedRoutine, setGeneratedRoutine] = useState<any>(null);
+  
+  const [habits, setHabits] = useState<any>(null);
+  const [customActivity, setCustomActivity] = useState<string>("Moderate");
+  const [customDiet, setCustomDiet] = useState<string>("Vegetarian");
 
   // Load name & email from AsyncStorage on mount
   useEffect(() => {
@@ -35,9 +44,45 @@ export default function Review() {
       const e = await AsyncStorage.getItem("signupEmail");
       if (n) setSignupName(n);
       if (e) setSignupEmail(e);
+
+      // Load onboarding habits to generate preview routine
+      const user = auth.currentUser;
+      if (user) {
+        const raw = await AsyncStorage.getItem(`@onboarding_habits_${user.uid}`);
+        if (raw) {
+          const parsedHabits = JSON.parse(raw);
+          setHabits(parsedHabits);
+          if (parsedHabits.activity) setCustomActivity(parsedHabits.activity);
+          if (parsedHabits.foodHabits?.dietType) setCustomDiet(parsedHabits.foodHabits.dietType);
+        }
+      }
       console.log("📋 Review loaded — name:", n, "email:", e);
     })();
-  }, []);
+  }, [params]);
+
+  // Recalculate default routine when user adjusts custom controls
+  useEffect(() => {
+    if (!habits) return;
+    const heightVal = parseFloat((params.height as string || '').replace(/[^0-9.]/g, '')) || 175;
+    const weightVal = parseFloat((params.weight as string || '').replace(/[^0-9.]/g, '')) || 70;
+    const updatedHabits = {
+      ...habits,
+      activity: customActivity,
+      foodHabits: {
+        ...habits.foodHabits,
+        dietType: customDiet,
+      }
+    };
+    const allergies = params.allergies ? (params.allergies as string).split(',').map(a => a.trim()).filter(Boolean) : [];
+    const routine = buildDefaultRoutine(updatedHabits, {
+      gender: params.gender as string,
+      dateOfBirth: params.dateOfBirth as string,
+      height: heightVal,
+      weight: weightVal,
+      allergies,
+    });
+    setGeneratedRoutine(routine);
+  }, [customActivity, customDiet, habits, params]);
 
   const orb1Y = useRef(new Animated.Value(0)).current;
   const orb2Y = useRef(new Animated.Value(0)).current;
@@ -86,22 +131,58 @@ export default function Review() {
           : [],
       };
 
-      // ✅ SAVE TO FIREBASE (MAIN FIX)
+      // Save profile to Firebase
       await saveProfile({
         ...profileData,
-        emergencyContact: {
-          name: "",
-          phone: "",
-          relation: "",
-        },
+        emergencyContact: { name: "", phone: "", relation: "" },
       });
 
-      // ✅ ALSO SAVE LOCALLY (optional but good)
+      // Save locally
       await AsyncStorage.setItem("userProfile", JSON.stringify(profileData));
 
-      console.log("✅ Profile saved to Firebase:", profileData);
+      // ── Build & save default routine from onboarding habits ──────────────
+      const user = auth.currentUser;
+      if (user) {
+        try {
+          const raw = await AsyncStorage.getItem(`@onboarding_habits_${user.uid}`);
+          if (raw) {
+            const habitsObj = JSON.parse(raw);
+            const updatedHabits = {
+              ...habitsObj,
+              activity: customActivity,
+              foodHabits: {
+                ...habitsObj.foodHabits,
+                dietType: customDiet,
+              }
+            };
+            
+            // Save updated habits to AsyncStorage and Firestore
+            await AsyncStorage.setItem(`@onboarding_habits_${user.uid}`, JSON.stringify(updatedHabits));
+            await updateDoc(doc(db, "users", user.uid), {
+              habits: updatedHabits,
+            });
 
-      // Navigate
+            const heightVal = parseFloat((profileData.height || '').replace(/[^0-9.]/g, '')) || 175;
+            const weightVal = parseFloat((profileData.weight || '').replace(/[^0-9.]/g, '')) || 70;
+            const routine = buildDefaultRoutine(updatedHabits, {
+              gender: profileData.gender,
+              dateOfBirth: profileData.dateOfBirth,
+              height: heightVal,
+              weight: weightVal,
+              allergies: profileData.allergies,
+            });
+            // Save the routine then mark it as default
+            await BiogearsAPI.saveRoutine(user.uid, routine);
+            await BiogearsAPI.setDefaultRoutine(user.uid, routine.id);
+            console.log('✅ Custom default routine "My Typical Day" created from onboarding habits');
+          }
+        } catch (routineErr) {
+          // Non-fatal — user can always set a default manually
+          console.log('⚠️ Could not build default routine:', routineErr);
+        }
+      }
+
+      console.log("✅ Profile saved to Firebase:", profileData);
       router.replace("/");
 
     } catch (error) {
@@ -225,6 +306,92 @@ export default function Review() {
             <Row label="Sleep"     icon="🌙" value={params.sleep     as string} />
             <Row label="Water"     icon="💧" value={params.water ? `${params.water} glasses/day` : ""} />
             <Row label="Activity"  icon="⚡" value={params.activity  as string} />
+          </View>
+        )}
+
+        {/* Digital Twin Routine Preview */}
+        {generatedRoutine && (
+          <View style={[styles.sectionCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionIcon}>⭐</Text>
+              <Text style={[styles.sectionTitle, { color: colors.subText }]}>Digital Twin Routine Baseline</Text>
+            </View>
+            <Text style={{ fontSize: 13, color: colors.text, fontWeight: '700', marginBottom: 12 }}>
+              "My Typical Day" Catch-up Routine
+            </Text>
+
+            {/* Interactive Tuner Selection */}
+            <View style={{ marginBottom: 14 }}>
+              <Text style={{ fontSize: 10, color: colors.subText, textTransform: 'uppercase', fontWeight: 'bold', marginBottom: 6 }}>Tweak Activity Target</Text>
+              <View style={{ flexDirection: 'row', gap: 6, marginBottom: 10 }}>
+                {['Sedentary', 'Moderate', 'Active'].map((lvl) => (
+                  <TouchableOpacity
+                    key={lvl}
+                    onPress={() => setCustomActivity(lvl)}
+                    style={{
+                      flex: 1,
+                      paddingVertical: 8,
+                      borderRadius: 8,
+                      alignItems: 'center',
+                      backgroundColor: customActivity === lvl ? colors.accent : colors.background,
+                      borderWidth: 1,
+                      borderColor: customActivity === lvl ? colors.accent : colors.border
+                    }}
+                  >
+                    <Text style={{ fontSize: 11, fontWeight: 'bold', color: customActivity === lvl ? '#fff' : colors.text }}>{lvl}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              <Text style={{ fontSize: 10, color: colors.subText, textTransform: 'uppercase', fontWeight: 'bold', marginBottom: 6 }}>Tweak Diet Selection</Text>
+              <View style={{ flexDirection: 'row', gap: 6 }}>
+                {['Vegetarian', 'High Protein', 'Ketogenic'].map((dt) => (
+                  <TouchableOpacity
+                    key={dt}
+                    onPress={() => setCustomDiet(dt)}
+                    style={{
+                      flex: 1,
+                      paddingVertical: 8,
+                      borderRadius: 8,
+                      alignItems: 'center',
+                      backgroundColor: customDiet === dt ? colors.accent : colors.background,
+                      borderWidth: 1,
+                      borderColor: customDiet === dt ? colors.accent : colors.border
+                    }}
+                  >
+                    <Text style={{ fontSize: 11, fontWeight: 'bold', color: customDiet === dt ? '#fff' : colors.text }}>{dt}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+            
+            {/* Target energy metrics */}
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', backgroundColor: colors.background, padding: 12, borderRadius: 10, marginBottom: 14 }}>
+              <View>
+                <Text style={{ fontSize: 10, color: colors.subText, textTransform: 'uppercase', fontWeight: 'bold' }}>Daily Calories</Text>
+                <Text style={{ fontSize: 16, fontWeight: '800', color: colors.text }}>{generatedRoutine.events.reduce((acc: number, e: any) => e.event_type === 'meal' ? acc + e.value : acc, 0)} kcal</Text>
+              </View>
+              <View style={{ alignItems: 'flex-end' }}>
+                <Text style={{ fontSize: 10, color: colors.subText, textTransform: 'uppercase', fontWeight: 'bold' }}>Water Intake</Text>
+                <Text style={{ fontSize: 16, fontWeight: '800', color: colors.text }}>{generatedRoutine.events.reduce((acc: number, e: any) => e.event_type === 'water' ? acc + e.value : acc, 0)} ml</Text>
+              </View>
+            </View>
+
+            {/* List of events */}
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginHorizontal: -16, paddingHorizontal: 16, marginBottom: 4 }}>
+              {generatedRoutine.events.map((evt: any, idx: number) => (
+                <View key={evt.id || idx} style={{ width: 115, padding: 10, borderRadius: 12, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.background, marginRight: 8, alignItems: 'center' }}>
+                  <Text style={{ fontSize: 24, marginBottom: 4 }}>{evt.displayIcon}</Text>
+                  <Text style={{ fontSize: 10, fontWeight: 'bold', color: colors.subText }}>{evt.wallTime}</Text>
+                  <Text style={{ fontSize: 11, fontWeight: '700', color: colors.text, textAlign: 'center', marginTop: 4 }} numberOfLines={1}>
+                    {evt.event_type === 'meal' ? `${evt.value} kcal` : evt.event_type === 'water' ? `${evt.value} ml` : evt.event_type === 'sleep' ? 'Sleep' : 'Exercise'}
+                  </Text>
+                  <Text style={{ fontSize: 9, color: colors.subText, textAlign: 'center', marginTop: 2 }}>
+                    {evt.event_type === 'meal' && evt.meal_type ? evt.meal_type.replace('_', ' ') : evt.event_type}
+                  </Text>
+                </View>
+              ))}
+            </ScrollView>
           </View>
         )}
 

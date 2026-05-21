@@ -283,25 +283,13 @@ function InAppViewer({
                       await FileSystem.copyAsync({ from: doc.localUri, to: cacheUri });
                     }
 
-                    if (Platform.OS === "android") {
-                      const IntentLauncher = require("expo-intent-launcher");
-                      const contentUri = await FileSystem.getContentUriAsync(cacheUri);
-                      await IntentLauncher.startActivityAsync(
-                        "android.intent.action.VIEW",
-                        {
-                          data: contentUri,
-                          flags: 1, // FLAG_GRANT_READ_URI_PERMISSION
-                          type: "application/pdf",
-                        }
-                      );
-                    } else {
-                      // iOS — share sheet opens PDF in-place
-                      await Sharing.shareAsync(cacheUri, {
-                        mimeType: "application/pdf",
-                        dialogTitle: doc.title,
-                        UTI: "com.adobe.pdf",
-                      });
-                    }
+                    // Use expo-sharing to open PDF in the user's preferred viewer
+                    // (works on both Android and iOS without a native rebuild)
+                    await Sharing.shareAsync(cacheUri, {
+                      mimeType: "application/pdf",
+                      dialogTitle: doc.title,
+                      UTI: "com.adobe.pdf",
+                    });
                   } catch (e: any) {
                     Alert.alert(
                       "Cannot open PDF",

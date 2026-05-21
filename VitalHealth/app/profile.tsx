@@ -39,7 +39,7 @@ import Slider from "@react-native-community/slider";
 
 import { syncMedicinesFromFirebase } from "@/services/medicineSync";
 import { signOut } from "firebase/auth";
-import { doc, getDoc } from "firebase/firestore";
+import { doc, getDoc, setDoc } from "firebase/firestore";
 import { useBiogearsTwin } from "../context/BiogearsTwinContext";
 import { useProfile } from "../context/ProfileContext";
 import { useTheme } from "../context/ThemeContext";
@@ -54,6 +54,8 @@ import { findUserByHealthId } from "../services/firebaseService";
 import { BiogearsRegistrationPayload } from "../services/biogears";
 import { UserProfile } from "../services/profileService";
 import { FamilyMember } from "../types/FamilyMember";
+import { buildDefaultRoutine } from "../services/onboardingRoutineBuilder";
+import * as BiogearsAPI from "../services/biogears";
 import Header from "./components/Header";
 
 const { width } = Dimensions.get("window");
@@ -552,6 +554,27 @@ export default function ProfileScreen() {
       });
       setLocalProfile(newProfile);
       await reloadProfile();
+
+      // Recalculate default routine if height/weight/gender/DOB changes
+      const user = auth.currentUser;
+      if (user) {
+        const raw = await AsyncStorage.getItem(`@onboarding_habits_${user.uid}`);
+        if (raw) {
+          const habits = JSON.parse(raw);
+          const heightVal = parseFloat((newProfile.height || '').replace(/[^0-9.]/g, '')) || 175;
+          const weightVal = parseFloat((newProfile.weight || '').replace(/[^0-9.]/g, '')) || 70;
+          const routine = buildDefaultRoutine(habits, {
+            gender: newProfile.gender,
+            dateOfBirth: newProfile.dateOfBirth,
+            height: heightVal,
+            weight: weightVal,
+          });
+          const twinId = getTwinId(newProfile);
+          await BiogearsAPI.saveRoutine(twinId, routine);
+          await BiogearsAPI.setDefaultRoutine(twinId, routine.id);
+          console.log('[Profile] ✅ Recalculated and updated default routine for twin:', twinId);
+        }
+      }
     } catch (e) {
       console.log("❌ saveProfileData error:", e);
     }
@@ -592,16 +615,102 @@ export default function ProfileScreen() {
     }
   };
 
-  const addFamilyMember = async () => {
-    if (!newMemberName.trim() || !newMemberHealthId.trim()) {
-      Alert.alert("Missing Info", "Please enter name and health ID.");
+  // Create a dependent profile (child / family member without a phone)
+  const createDependentProfile = async () => {
+    if (!newMemberName.trim()) {
+      Alert.alert("Missing Name", "Please enter the member's name.");
       return;
     }
     setSearchLoading(true);
     setSearchError("");
     try {
+      const user = auth.currentUser;
+      if (!user) { setSearchError("You must be logged in."); return; }
+
+      const rawSub = `${user.uid}-dep-${Date.now()}`;
+      const hash   = rawSub.replace(/[^a-zA-Z0-9]/g, "").substring(0, 20);
+      const depUid = `dep_${hash}`;
+
+      const part1 = hash.substring(0, 4).toUpperCase();
+      const part2 = hash.substring(hash.length - 4).toUpperCase();
+      const depCode = `VT-${part1}-${part2}`;
+
+      const firstName = newMemberName.trim().split(" ")[0];
+      const lastName  = newMemberName.trim().split(" ").slice(1).join(" ");
+
+      await setDoc(doc(db, "users", depUid), {
+        firstName,
+        lastName,
+        inviteCode: depCode,
+        isDependentOf: user.uid,
+        createdAt: new Date().toISOString(),
+      });
+
+      const depLink = {
+        uid: depUid,
+        firstName,
+        lastName,
+        relation: newMemberRelation || "Child",
+        inviteCode: depCode,
+        status: "active" as const,
+      };
+      const parentLink = {
+        uid: user.uid,
+        firstName: safeProfile.firstName || "",
+        lastName: safeProfile.lastName || "",
+        relation: newMemberRelation || "Parent",
+        inviteCode: myInviteCode,
+        status: "active" as const,
+      };
+
+      await setDoc(doc(db, "users", user.uid), { linkedMembers: { [depUid]: depLink } }, { merge: true });
+      await setDoc(doc(db, "users", depUid), { linkedMembers: { [user.uid]: parentLink } }, { merge: true });
+
+      await addMember({
+        id: depUid, uid: depUid, userId: depUid,
+        firstName, lastName,
+        relation: newMemberRelation || "Child",
+        inviteCode: depCode, status: "active",
+      });
+
+      await loadLinkedMembers();
+      setAddMemberModal(false);
+      setNewMemberName(""); setNewMemberHealthId(""); setNewMemberRelation(""); setSearchError("");
+      Alert.alert(
+        "Profile Created!",
+        `A new profile was created for ${firstName}.\n\nHealth ID: ${depCode}\n\nTap their card on this page to manage their health data.`,
+        [{ text: "Got it" }]
+      );
+    } catch (e) {
+      console.log("createDependentProfile error:", e);
+      setSearchError("Something went wrong. Please try again.");
+    } finally { setSearchLoading(false); }
+  };
+
+  const addFamilyMember = async () => {
+    if (!newMemberName.trim()) {
+      Alert.alert("Missing Name", "Please enter the member's name.");
+      return;
+    }
+
+    // If Health ID blank — offer to create a new dependent profile
+    if (!newMemberHealthId.trim()) {
+      Alert.alert(
+        "No Health ID Entered",
+        `${newMemberName.trim()} doesn't have a Health ID yet.\n\nCreate a new profile for them? (Ideal for children or family members without a phone.)`,
+        [
+          { text: "Cancel", style: "cancel" },
+          { text: "Create New Profile", onPress: createDependentProfile },
+        ]
+      );
+      return;
+    }
+
+    setSearchLoading(true);
+    setSearchError("");
+    try {
       const found = await findUserByHealthId(newMemberHealthId.trim());
-      if (!found) { setSearchError("No user found with this Health ID."); return; }
+      if (!found) { setSearchError("No user found with this Health ID. Double-check the code."); return; }
       if (members.some((m) => m.id === found.uid)) { Alert.alert("Already Added", "This member is already linked."); return; }
       await addMember({
         id: found.uid, uid: found.uid, userId: found.uid,
@@ -612,9 +721,9 @@ export default function ProfileScreen() {
       await loadLinkedMembers();
       setAddMemberModal(false);
       setNewMemberName(""); setNewMemberHealthId(""); setNewMemberRelation(""); setSearchError("");
-      Alert.alert("Success", "Family member added successfully!");
+      Alert.alert("Member Linked!", `${found.firstName} has been added to your Family Health network.`);
     } catch (e) {
-      console.log("❌ Error:", e);
+      console.log("addFamilyMember error:", e);
       setSearchError("Something went wrong.");
     } finally { setSearchLoading(false); }
   };
@@ -1412,22 +1521,21 @@ export default function ProfileScreen() {
                 </View>
                 <Text style={[styles.modalTitle, { color: colors.text, marginBottom: 0 }]}>Add Family Member</Text>
               </View>
-              <Text style={[styles.addMemberSubtitle, { color: colors.subText }]}>Enter their name and VitalHealth Health ID to link your health data.</Text>
+              <Text style={[styles.addMemberSubtitle, { color: colors.subText }]}>Enter their name and Health ID to link — or leave Health ID blank to create a new profile (perfect for children without a phone).</Text>
 
               <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: 16 }}>
-                <TextInput placeholder="Their Name (e.g., Rahul)" placeholderTextColor={colors.subText} style={[styles.input, { backgroundColor: colors.bg, color: colors.text }]} value={newMemberName} onChangeText={setNewMemberName} />
-                <TextInput placeholder="Their Health ID (e.g., VT-AB12-CD34)" placeholderTextColor={colors.subText} style={[styles.input, { backgroundColor: colors.bg, color: colors.text }]} value={newMemberHealthId} onChangeText={(t) => { setNewMemberHealthId(t.toUpperCase().replace(/\s/g, "-")); setSearchError(""); }} autoCapitalize="characters" />
-                <TextInput placeholder="Relation (optional — e.g., Father, Friend)" placeholderTextColor={colors.subText} style={[styles.input, { backgroundColor: colors.bg, color: colors.text }]} value={newMemberRelation} onChangeText={setNewMemberRelation} />
+                <TextInput placeholder="Member Name (e.g., Rahul)" placeholderTextColor={colors.subText} style={[styles.input, { backgroundColor: colors.bg, color: colors.text }]} value={newMemberName} onChangeText={setNewMemberName} />
+                <TextInput placeholder="Health ID — leave blank to create new profile" placeholderTextColor={colors.subText} style={[styles.input, { backgroundColor: colors.bg, color: colors.text }]} value={newMemberHealthId} onChangeText={(t) => { setNewMemberHealthId(t.toUpperCase().replace(/\s/g, "-")); setSearchError(""); }} autoCapitalize="characters" />
+                <TextInput placeholder="Relation (e.g., Son, Daughter, Father)" placeholderTextColor={colors.subText} style={[styles.input, { backgroundColor: colors.bg, color: colors.text }]} value={newMemberRelation} onChangeText={setNewMemberRelation} />
 
                 {searchError ? <Text style={[styles.searchError, { color: colors.danger }]}>⚠️ {searchError}</Text> : null}
 
                 <View style={[styles.howItWorks, { backgroundColor: colors.familyBg, borderColor: colors.familyBorder }]}>
-                  <Text style={[styles.howItWorksTitle, { color: colors.text }]}>How it works</Text>
+                  <Text style={[styles.howItWorksTitle, { color: colors.text }]}>Two ways to add</Text>
                   {[
-                    "1. Ask your family member to open VitalHealth",
-                    "2. Go to Profile → Family Health → copy their Health ID",
-                    "3. Enter their Health ID here",
-                    "4. Both of you can now view each other's health data ✓",
+                    "📱 They have VitalHealth: Enter their Health ID above.",
+                    "👶 Child / no phone: Leave Health ID blank — we'll create a profile you can manage.",
+                    "✅ Tap their card any time to view & manage their health data.",
                   ].map((step, i) => <Text key={i} style={[styles.howItWorksStep, { color: colors.subText }]}>{step}</Text>)}
                 </View>
               </ScrollView>

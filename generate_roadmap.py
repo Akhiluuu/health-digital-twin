@@ -85,24 +85,24 @@ rows = [
     ("Mobile App","Bold AI response rendering","Improves readability of AI-generated insights for users","🟢 Medium",2,[1,0,0,0,0,0],"✅ Done"),
     ("Mobile App","Background job persistence on restart","Keeps simulation tasks running even if the user closes the app","🟠 High",4,[1,1,0,0,0,0],"🔄 In Progress"),
 
-    # ── PHASE 2: Simulation Accuracy (Jun) ──────────────────────────────────
-    ("PHASE 2: Simulation Accuracy","","","","","","","","","","","",""),
-    ("BioGears Engine","Multi-substance concurrent dosing support","Allows realistic scenarios where a patient takes multiple medications","🔴 Critical",10,[0,1,0,0,0,0],"📋 Planned"),
-    ("BioGears Engine","Full substance registry (50+ drugs)","Expands the medical accuracy and utility of the digital twin","🟠 High",8,[0,1,0,0,0,0],"📋 Planned"),
-    ("BioGears Engine","Pharmacokinetic unit validation","Ensures drug absorption and clearance match real-world medical data","🔴 Critical",6,[0,1,0,0,0,0],"📋 Planned"),
-    ("BioGears Engine","Real-time vitals streaming (SSE)","Provides instant, continuous physiological feedback to the user","🟠 High",7,[0,1,1,0,0,0],"📋 Planned"),
-    ("BioGears Engine","Blood glucose & insulin model","Crucial for diabetic users to predict sugar levels based on diet","🟠 High",10,[0,1,1,0,0,0],"📋 Planned"),
-    ("AI / Analytics","Physiology anomaly detection (ML)","Identifies abnormal health patterns before they become critical","🟠 High",12,[0,1,1,0,0,0],"📋 Planned"),
+    # ── PHASE 2: Wearable & Data Integration (Jun) ──────────────────────────
+    ("PHASE 2: Wearable & Data Integration","","","","","","","","","","","",""),
+    ("Wearables","Apple Health / Google Fit full sync","Automatically populates the twin with steps, heart rate, and sleep","🔴 Critical",14,[0,1,0,0,0,0],"📋 Planned"),
+    ("Wearables","Garmin & Fitbit API integration","Expands compatibility for users with dedicated fitness trackers","🟠 High",10,[0,1,0,0,0,0],"📋 Planned"),
+    ("Wearables","Continuous glucose monitor (CGM) feed","Automates blood glucose tracking for accurate metabolic simulation","🟠 High",8,[0,1,1,0,0,0],"📋 Planned"),
+    ("Wearables","Wearable → BioGears real-time input","Uses live patient data to continuously recalibrate the twin's state","🔴 Critical",12,[0,1,1,0,0,0],"📋 Planned"),
+    ("Clinical Data","HL7 FHIR record import","Pulls in verified clinical history from the user's healthcare provider","🟠 High",10,[0,1,0,0,0,0],"📋 Planned"),
+    ("Clinical Data","PDF lab report OCR + parsing","Allows manual import of blood work and lab results from photos","🟢 Medium",8,[0,1,0,0,0,0],"📋 Planned"),
+    ("Mobile App","Offline mode with local SQLite cache","Ensures app remains functional in areas with poor internet connection","🟠 High",7,[0,1,0,0,0,0],"📋 Planned"),
 
-    # ── PHASE 3: Wearable & Data Integration (Jul) ──────────────────────────
-    ("PHASE 3: Wearable & Data Integration","","","","","","","","","","","",""),
-    ("Wearables","Apple Health / Google Fit full sync","Automatically populates the twin with steps, heart rate, and sleep","🔴 Critical",14,[0,0,1,0,0,0],"📋 Planned"),
-    ("Wearables","Garmin & Fitbit API integration","Expands compatibility for users with dedicated fitness trackers","🟠 High",10,[0,0,1,0,0,0],"📋 Planned"),
-    ("Wearables","Continuous glucose monitor (CGM) feed","Automates blood glucose tracking for accurate metabolic simulation","🟠 High",8,[0,0,1,1,0,0],"📋 Planned"),
-    ("Wearables","Wearable → BioGears real-time input","Uses live patient data to continuously recalibrate the twin's state","🔴 Critical",12,[0,0,1,1,0,0],"📋 Planned"),
-    ("Clinical Data","HL7 FHIR record import","Pulls in verified clinical history from the user's healthcare provider","🟠 High",10,[0,0,1,0,0,0],"📋 Planned"),
-    ("Clinical Data","PDF lab report OCR + parsing","Allows manual import of blood work and lab results from photos","🟢 Medium",8,[0,0,1,0,0,0],"📋 Planned"),
-    ("Mobile App","Offline mode with local SQLite cache","Ensures app remains functional in areas with poor internet connection","🟠 High",7,[0,0,1,0,0,0],"📋 Planned"),
+    # ── PHASE 3: Simulation Accuracy (Jul) ──────────────────────────────────
+    ("PHASE 3: Simulation Accuracy","","","","","","","","","","","",""),
+    ("BioGears Engine","Multi-substance concurrent dosing support","Allows realistic scenarios where a patient takes multiple medications","🔴 Critical",10,[0,0,1,0,0,0],"📋 Planned"),
+    ("BioGears Engine","Full substance registry (50+ drugs)","Expands the medical accuracy and utility of the digital twin","🟠 High",8,[0,0,1,0,0,0],"📋 Planned"),
+    ("BioGears Engine","Pharmacokinetic unit validation","Ensures drug absorption and clearance match real-world medical data","🔴 Critical",6,[0,0,1,0,0,0],"📋 Planned"),
+    ("BioGears Engine","Real-time vitals streaming (SSE)","Provides instant, continuous physiological feedback to the user","🟠 High",7,[0,0,1,1,0,0],"📋 Planned"),
+    ("BioGears Engine","Blood glucose & insulin model","Crucial for diabetic users to predict sugar levels based on diet","🟠 High",10,[0,0,1,1,0,0],"📋 Planned"),
+    ("AI / Analytics","Physiology anomaly detection (ML)","Identifies abnormal health patterns before they become critical","🟠 High",12,[0,0,1,1,0,0],"📋 Planned"),
 
     # ── PHASE 4: AI & Personalisation (Aug) ─────────────────────────────────
     ("PHASE 4: AI & Personalisation","","","","","","","","","","","",""),
@@ -114,8 +114,8 @@ rows = [
     ("Mobile App","Smart notification triggers (anomaly alert)","Actively alerts the user when their digital twin enters a dangerous state","🟢 Medium",6,[0,0,0,1,0,0],"📋 Planned"),
     ("Mobile App","Multilingual support (5 languages)","Broadens user base to non-English speaking demographics","🟢 Medium",10,[0,0,0,1,0,0],"📋 Planned"),
 
-    # ── PHASE 5: Family & Social Features (Sep) ─────────────────────────────
-    ("PHASE 5: Family & Social Features","","","","","","","","","","","",""),
+    # ── PHASE 5: Family & Social Features & Research (Sep) ──────────────────
+    ("PHASE 5: Family & Social Features & Research","","","","","","","","","","","",""),
     ("Family Health","Family dashboard (shared vitals view)","Allows monitoring the health of aging parents or dependents","🟠 High",10,[0,0,0,0,1,0],"📋 Planned"),
     ("Family Health","Guardian alerts for elderly/child members","Notifies a family member instantly if a loved one's vitals drop","🟠 High",8,[0,0,0,0,1,0],"📋 Planned"),
     ("Family Health","Role-based access control (RBAC)","Ensures privacy by controlling what data family or doctors can see","🟠 High",7,[0,0,0,0,1,0],"📋 Planned"),
@@ -123,6 +123,7 @@ rows = [
     ("Clinical","Telemedicine / doctor share report flow","Easily sends the digital twin's data directly to a physician","🟢 Medium",10,[0,0,0,0,1,0],"📋 Planned"),
     ("Clinical","Emergency SOS with location + vitals","Saves lives by dispatching paramedics with the user's live health data","🔴 Critical",8,[0,0,0,0,1,0],"📋 Planned"),
     ("Security","End-to-end encryption (HIPAA prep)","Critical requirement for safely storing and transmitting medical data","🔴 Critical",12,[0,0,0,0,1,0],"📋 Planned"),
+    ("Research","Draft & submit academic paper","Publish digital twin architecture and clinical accuracy results in a peer-reviewed journal","🔴 Critical",15,[0,0,0,0,1,1],"📋 Planned"),
 
     # ── PHASE 6: Scale, Launch & Monetisation (Oct) ─────────────────────────
     ("PHASE 6: Scale, Launch & Monetisation","","","","","","","","","","","",""),
@@ -204,22 +205,22 @@ sprints = [
      "Fix pathing bugs, silent crash detection, XML validation, concurrency guard","Backend",18,"🔄"),
     ("S-02","May 25–Jun 7","Mobile Hardening",
      "Background job persistence, push notification on job complete, BioGears streaming","Full-Stack",16,"📋"),
-    ("S-03","Jun 8–21","Substance & PK",
-     "50+ drug registry, multi-substance dosing, PK unit validation, glucose model","Backend",20,"📋"),
-    ("S-04","Jun 22–Jul 5","Real-Time Vitals",
-     "SSE vitals stream, SSE mobile client, anomaly ML model v1","Full-Stack",18,"📋"),
-    ("S-05","Jul 6–19","Wearables I",
+    ("S-03","Jun 8–21","Wearables I",
      "Apple Health sync, Google Fit sync, Garmin API, wearable → BioGears input","Mobile",20,"📋"),
-    ("S-06","Jul 20–Aug 2","Clinical Data",
+    ("S-04","Jun 22–Jul 5","Clinical Data",
      "HL7 FHIR import, PDF OCR lab reports, offline SQLite cache","Full-Stack",16,"📋"),
+    ("S-05","Jul 6–19","Substance & PK",
+     "50+ drug registry, multi-substance dosing, PK unit validation, glucose model","Backend",20,"📋"),
+    ("S-06","Jul 20–Aug 2","Real-Time Vitals",
+     "SSE vitals stream, SSE mobile client, anomaly ML model v1","Full-Stack",18,"📋"),
     ("S-07","Aug 3–16","AI Engine",
      "Personalised risk score, symptom RAG diagnosis, medication interaction checker","AI/ML",22,"📋"),
     ("S-08","Aug 17–30","Predictive Health",
      "Trend forecasting model, weekly PDF report gen, smart anomaly alerts","AI/ML",20,"📋"),
     ("S-09","Sep 1–14","Family Features",
      "Family dashboard, guardian alerts, RBAC, shared medication schedule","Full-Stack",18,"📋"),
-    ("S-10","Sep 15–28","Compliance & SOS",
-     "SOS with vitals, E2E encryption, HIPAA controls, telemedicine share flow","Security",20,"📋"),
+    ("S-10","Sep 15–28","Compliance, SOS & Research",
+     "SOS with vitals, E2E encryption, telemedicine share flow, draft academic paper","Security/Research",20,"📋"),
     ("S-11","Oct 1–14","Scale & Infra",
      "Kubernetes autoscaling, CI/CD pipeline, Grafana monitoring, Sentry","DevOps",18,"📋"),
     ("S-12","Oct 15–31","Launch & Monetise",
@@ -276,6 +277,7 @@ matrix_rows = [
     ("CI/CD pipeline","Infra",7,4,None,"🚀 Quick Win"),
     ("PDF OCR lab report parsing","Clinical",7,5,None,"🚀 Quick Win"),
     ("Offline SQLite cache","Mobile",7,5,None,"🚀 Quick Win"),
+    ("Draft & submit academic paper","Research",10,8,None,"💎 Strategic"),
 ]
 
 quad_bg = {

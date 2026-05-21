@@ -261,11 +261,13 @@ export default function TwinScreen() {
     sessions, refreshSessions,
     simulationName, setSimulationName,
     runSimulation,
+    runMultiDayCatchup,
     organScores, cvdRisk, recoveryReadiness, healthScore,
     substances, refreshSubstances,
     undoLastSimulation,
     refreshAnalytics,
     todayMacros,
+    twinUserId,
   } = useBiogearsTwin();
 
   // ── Mode ──────────────────────────────────────────────────────────────────
@@ -300,24 +302,31 @@ export default function TwinScreen() {
     const lastSimTime = new Date(sessions[0].timestamp).getTime();
     const hoursSinceLastSim = (Date.now() - lastSimTime) / (1000 * 60 * 60);
     
-    if (hoursSinceLastSim > 24) {
-      const defaultRoutine = savedRoutines.find(r => r.isDefault);
-      if (defaultRoutine) {
-        Alert.alert(
-          'Missed a Day?', 
-          `We noticed you haven't simulated in over 24 hours. Your default catch-up routine "${defaultRoutine.name}" can be loaded instantly to bridge the gap.`,
-          [
-            { text: 'Skip', style: 'cancel' },
-            { text: 'Load Default Routine', onPress: () => {
-                loadRoutine(defaultRoutine.id);
-                switchMode('routine');
-            }}
-          ]
-        );
+    if (hoursSinceLastSim > 28) {
+      const daysMissed = Math.floor(hoursSinceLastSim / 24);
+      if (daysMissed >= 1) {
+        const defaultRoutine = savedRoutines.find(r => r.isDefault) || savedRoutines[0];
+        if (defaultRoutine) {
+          Alert.alert(
+            'Sync Digital Twin',
+            `Your digital twin is behind by ${daysMissed} day(s). We can run a background catch-up simulation using your default routine "${defaultRoutine.name}" to keep the twin's physiological parameters continuously active.`,
+            [
+              { text: 'Skip', style: 'cancel' },
+              { text: `Simulate ${daysMissed} Days`, onPress: async () => {
+                  try {
+                    await runMultiDayCatchup(daysMissed);
+                    Alert.alert('Success', 'Digital Twin caught up successfully!');
+                  } catch (e: any) {
+                    Alert.alert('Catch-up Failed', e.message);
+                  }
+              }}
+            ]
+          );
+        }
       }
     }
     setHasCheckedCatchup(true);
-  }, [hasCheckedCatchup, sessions, savedRoutines, todayEvents.length, simulationStatus, loadRoutine]);
+  }, [hasCheckedCatchup, sessions, savedRoutines, todayEvents.length, simulationStatus, runMultiDayCatchup]);
 
   const fmtElapsed = (s: number) => {
     const m = Math.floor(s / 60); const sec = s % 60;
@@ -637,10 +646,14 @@ export default function TwinScreen() {
       }
     }
 
-    await saveCurrentRoutine(finalName, undefined, editingRoutineId || undefined);
+    const isFirstRoutine = savedRoutines.length === 0;
+    const noDefaultExists = !savedRoutines.some(r => r.isDefault);
+    const shouldAutoDefault = isFirstRoutine || (editingRoutineId == null && noDefaultExists);
+
+    await saveCurrentRoutine(finalName, undefined, editingRoutineId || undefined, shouldAutoDefault);
     setRoutineName('');
     setSaveRoutineModal(false);
-    Alert.alert('Routine Saved', `"${finalName}" saved with ${todayEvents.length} events.`);
+    Alert.alert('Routine Saved', `"${finalName}" saved with ${todayEvents.length} events.${isFirstRoutine ? '\n\n⭐ Set as your default catch-up routine.' : ''}`);
   };
 
   const handleUndo = () => {
@@ -1365,11 +1378,14 @@ export default function TwinScreen() {
             {savedRoutines.map(r => (
               <TouchableOpacity key={r.id} style={[ss.routineCard, { backgroundColor: c.card }]}
                 onPress={() => handleLoadRoutine(r.id, r.name)}
-                onLongPress={() => Alert.alert('Options', `"${r.name}"`, [
-                  { text: 'Cancel', style: 'cancel' },
-                  { text: 'Edit Events', onPress: () => handleEditRoutine(r.id, r.name) },
+                onLongPress={() => Alert.alert('Routine Options', `"${r.name}"`, [
                   { text: r.isDefault ? 'Remove Default' : 'Set as Default', onPress: () => setDefaultRoutine(r.id) },
-                  { text: 'Delete', style: 'destructive', onPress: () => deleteRoutine(r.id) },
+                  { text: 'Edit Events', onPress: () => handleEditRoutine(r.id, r.name) },
+                  { text: 'Delete Routine', style: 'destructive', onPress: () => Alert.alert('Delete Routine', `Delete "${r.name}"? This cannot be undone.`, [
+                    { text: 'Cancel', style: 'cancel' },
+                    { text: 'Delete', style: 'destructive', onPress: () => deleteRoutine(r.id) },
+                  ])},
+                  { text: 'Cancel', style: 'cancel' },
                 ])}>
                 <View style={ss.routineIcon}><Text style={{ fontSize: 20 }}>{r.isDefault ? '⭐' : '📋'}</Text></View>
                 <View style={{ flex: 1 }}>

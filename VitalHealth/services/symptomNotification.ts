@@ -3,7 +3,7 @@
 
 import {
   cancelSymptomNotification as notifeeCancel,
-  scheduleSymptomCheck,
+  scheduleSymptomHourly,
 } from "./notifeeService";
 
 ///////////////////////////////////////////////////////////
@@ -26,7 +26,7 @@ export const scheduleSymptomNotification = async (
   console.log("🩺 Scheduling symptom:", name);
 
   // ✅ FIX: Only pass symptom name
-  const notifId = await scheduleSymptomCheck(name);
+  const notifId = await scheduleSymptomHourly(name);
 
   return notifId;
 };

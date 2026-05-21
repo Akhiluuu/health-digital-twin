@@ -1,3 +1,4 @@
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { doc, updateDoc } from "firebase/firestore";
 import React, { memo, useRef, useState } from "react";
@@ -627,13 +628,20 @@ export default function Habits() {
     const user = auth.currentUser;
     if (!user) { alert("User not logged in"); return; }
     try {
+      const habitsPayload = {
+        wakeUp, breakfast, lunch, dinner, sleep, water, activity,
+        foodHabits: answers,
+      };
       await updateDoc(doc(db, "users", user.uid), {
-        habits: {
-          wakeUp, breakfast, lunch, dinner, sleep, water, activity,
-          foodHabits: answers,
-        },
+        habits: habitsPayload,
         updatedAt: new Date().toISOString(),
       });
+      // Cache locally so review.tsx can build the default routine without
+      // an extra Firestore round-trip
+      await AsyncStorage.setItem(
+        `@onboarding_habits_${user.uid}`,
+        JSON.stringify(habitsPayload)
+      );
       router.push({
         pathname: "/onboarding/history",
         params: { ...params, wakeUp, breakfast, lunch, dinner, sleep, water, activity },
