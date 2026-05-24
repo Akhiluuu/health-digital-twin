@@ -143,6 +143,9 @@ This is not a heuristic or a statistical model — it is a **mechanistic, organ-
 |---|---|
 | **Digital Twin Dashboard** | Live vitals panel showing HR, glucose, BP, SpO₂, respiration rate, core temperature, cardiac output, stroke volume, and tidal volume — all simulation-derived |
 | **Routine Logger** | 7-tab daily logger: Nutrition, Hydration, Activity, Substances, Sleep, Stress, and Fasting. Events are timestamped and sent to BioGears for simulation |
+| **Saved Routines** | Create, edit, and access custom routines directly from the Clinical Twin overview page for fast logging |
+| **Catch-Up Simulation** | Auto-detects missed days and seamlessly runs default multi-day gap catch-up routines |
+| **Interactive Baseline Tuning** | Scientific onboarding routine builder for highly accurate initial physiology calibration |
 | **Physiological Insights** | Organ health scores (Heart, Lungs, Gut, Brain), session history, trend charts, anomaly detection |
 | **Step Intelligence** | Real-time pedometer with foreground Notifee service, automatic step-to-exercise sync with BioGears |
 | **Calorie Intelligence** | Macro tracking with per-meal BioGears simulation for glucose/energy forecasting |
