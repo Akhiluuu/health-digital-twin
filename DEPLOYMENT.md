@@ -1,6 +1,11 @@
 # VitalHealth — Deployment & Developer Guide
 
-> **For all future batches**: Read this before touching anything. This document explains how the entire project is structured, how to run it locally, and how to deploy it to production on E2E Cloud.
+> **For all future batches / juniors**: Read this before touching anything. This document explains how the entire project is structured, how to run it locally, and how to deploy it to production on E2E Cloud.
+
+---
+
+## 📚 Core Developer Textbook
+For an in-depth dive into physiological modeling (BioGears ODE circuits), clinical calibrations (diabetes, anemia, COPD), database schema definitions, and RAG keyword routing, refer to the **[VitalHealth Developer Reference Textbook](vital_health_developer_textbook.md)** located in the root folder.
 
 ---
 
@@ -33,12 +38,15 @@ health-digital-twin/
 │       ├── engine_runner.py      ← Runs bg-cli binary
 │       └── result_parser.py      ← Parses CSV output
 │
-├── biogears_runtime/             ← BioGears binary (NOT in git — transfer manually)
+├── healthbot/                    # RAG Chatbot Service (Dr. Aria)
+│   ├── api/
+│   │   └── server.py             # FastAPI server for LLM & search
+│   └── model/                    # Stores Qwen2.5-14B GGUF model shards
+│
+├── biogears_runtime/             ← BioGears binary (NOT in git — downloaded automatically)
 │   ├── bg-cli                    ← Main executable
 │   ├── xsd/                      ← Required XML schemas
-│   ├── patients/
-│   ├── substances/
-│   └── environments/
+│   └── share/                    ← Default engine assets (patients, environments)
 │
 ├── clinical_data/                ← Patient data (NOT in git on production)
 │   ├── states/                   ← BioGears patient state XMLs
@@ -96,73 +104,83 @@ npx expo start
 
 ### Quick Reference
 
-| What | Value |
+| Component | Value |
 |---|---|
-| Cloud Provider | E2E Networks (E2E Cloud) |
-| Plan | 8 vCPU / 16 GB RAM / ~₹4,500/mo |
-| OS | Ubuntu 22.04 LTS |
-| API Port | 8000 (localhost only — Nginx proxies it) |
-| Public Port | 443 (HTTPS) via Nginx |
-| Service Manager | systemd (`digitaltwin.service`) |
-| Process | Uvicorn + 4 workers |
+| **Cloud Provider** | E2E Networks (E2E Cloud) |
+| **Plan** | 8 vCPU / 16 GB RAM / ~₹4,500/mo (Required for LLM and BioGears workloads) |
+| **OS** | Ubuntu 22.04 LTS |
+| **Nginx Routing** | `/` -> BioGears API (`localhost:8000`) <br> `/ai/` -> Healthbot Chatbot (`localhost:8001`) |
+| **Service Manager** | systemd (`digitaltwin.service` & `healthbot.service`) |
+| **LLM Model** | Qwen2.5-14B GGUF (~9.8 GB total, downloaded automatically in 3 shards) |
 
 ### One-time Setup (Using Automated Script)
 
-To make deployment foolproof, we have created an automated script that handles installing dependencies, creating the Python environment, downloading the BioGears engine, configuring Nginx, and setting up the systemd service.
+To make deployment foolproof, we have created an automated script that handles installing dependencies, creating virtual environments (`venv` and `healthbot_venv`), downloading the BioGears engine, downloading/verifying the 3 shards of the Qwen2.5-14B model, configuring Nginx, and setting up systemd services.
 
 ```bash
 # 1. SSH into your E2E Cloud VM
 ssh ubuntu@YOUR_VM_IP
 
 # 2. Clone the repo
-git clone https://github.com/YOUR_ORG/health-digital-twin.git
+git clone https://github.com/Akhiluuu/health-digital-twin.git
 cd health-digital-twin
 
 # 3. Run the automated setup script
 chmod +x deployment/setup.sh
 ./deployment/setup.sh
-
-# The script will output your DIGITAL_TWIN_API_KEY at the end. SAVE IT!
-
-# 4. (Optional) SSL — if you have a domain pointing to the VM
-sudo certbot --nginx -d yourdomain.com
 ```
 
+> [!NOTE]  
+> If the repository is set to private or requires authentication, the setup script will dynamically prompt you to enter your **GitHub Personal Access Token** securely.
+
+At the end of setup, the script will output your generated `DIGITAL_TWIN_API_KEY`. **Make sure to save it!**
+
+---
+
 ### Update Deployed Code
+
+To sync new updates onto the production server:
 
 ```bash
 ssh ubuntu@YOUR_VM_IP
 cd /home/ubuntu/health-digital-twin
+
+# Pull the latest main
 git pull origin main
-source venv/bin/activate
-pip install -r requirements.txt   # only if requirements changed
+
+# Restart services to apply updates
 sudo systemctl restart digitaltwin
-sudo systemctl status digitaltwin  # verify it's running
+sudo systemctl restart healthbot
+sudo systemctl restart nginx
+
+# Verify status of all services
+sudo systemctl status digitaltwin healthbot nginx
 ```
 
 ---
 
 ## Mobile App → Cloud Connection
 
-After deploying to E2E Cloud, users need to configure two things in the app:
+After deploying to E2E Cloud, users need to configure the app:
 
-**Settings → ☁️ Backup & Restore** — Google Drive backup  
-**Settings → Server Configuration** — enter:
-1. Cloud URL: `https://yourdomain.com` (or `http://103.x.x.x`)
-2. API Key: the `DIGITAL_TWIN_API_KEY` value from `.env`
-
-The app stores both values persistently (URL in AsyncStorage, key in SecureStore).
+*   **Settings → ☁️ Backup & Restore** — Google Drive backup  
+*   **Settings → Server Configuration** — enter:
+    1.  **Cloud URL**: `http://YOUR_VM_IP` (or `https://yourdomain.com`)
+    2.  **API Key**: the `DIGITAL_TWIN_API_KEY` outputted by the setup script.
 
 ---
 
 ## Useful Commands
 
 ```bash
-# View live server logs
+# View live simulation logs
 journalctl -u digitaltwin -f
 
+# View live AI chatbot logs
+journalctl -u healthbot -f
+
 # Check service status
-sudo systemctl status digitaltwin
+sudo systemctl status digitaltwin healthbot nginx
 
 # Check disk usage (CSVs accumulate)
 du -sh /home/ubuntu/health-digital-twin/clinical_data/
@@ -170,21 +188,17 @@ du -sh /home/ubuntu/health-digital-twin/clinical_data/
 # Clean old simulation CSVs (>30 days)
 find clinical_data/history -name "*.csv" -mtime +30 -delete
 
-# Manual backup
-/home/ubuntu/backup_twins.sh
-
 # Restart everything
-sudo systemctl restart digitaltwin nginx
+sudo systemctl restart digitaltwin healthbot nginx
 ```
 
 ---
 
-## Important Notes for Future Batches
+## Important Notes for Future Developers
 
-1. **`biogears_runtime/` is NOT in git** — it's ~500 MB. The `setup.sh` script automatically downloads the correct Linux binary from the official GitHub releases. Do not try to run a Windows `.exe` on the Ubuntu cloud server!
-2. **`.env` is NOT in git** — contains the API key. The `setup.sh` script generates this for you automatically.
-3. **`clinical_data/` is patient data** — back it up regularly. The cron job does this at 3 AM daily.
-4. **`vital_health.db`** — the mobile app's single SQLite database. All tables live here. Back up via the app's Google Drive backup screen.
-5. **API key** — every mobile app request must include `X-API-Key` header. Set it once in app Settings.
-6. **BioGears simulations take 10–25 minutes** — this is normal. The async endpoint (`/simulate/async`) + polling (`/jobs/{job_id}`) is the correct pattern. Do NOT set short timeouts.
-7. **`config.py` auto-detects OS** — Windows dev → `biogears_service/engine/`, Linux prod → `biogears_runtime/`. No changes needed when switching environments.
+1.  **Multiple Virtual Environments**: BioGears and Healthbot use separate virtual environments (`venv` and `healthbot_venv`) to prevent dependency conflicts (different Pydantic/FastAPI requirements). Keep them isolated.
+2.  **`biogears_runtime/` is NOT in git** — The `setup.sh` script automatically downloads the correct Linux binary from official GitHub releases. Do not commit it.
+3.  **LLM Model Shards**: The Qwen2.5-14B model is split into 3 GGUF shards. The `setup.sh` script downloads them and verifies all 3 are fully downloaded before launching the service.
+4.  **`.env` is NOT in git** — Contains the API key. The `setup.sh` script generates this for you automatically.
+5.  **`clinical_data/`** — Stores active twin states (`.xml`) and CSV timeseries history. Back these up regularly.
+6.  **BioGears simulations take 10–20 seconds** — This is normal. The async endpoint (`/simulate/async`) + polling (`/jobs/{job_id}`) is the correct communication pattern. Do NOT set short request timeouts.

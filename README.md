@@ -392,10 +392,24 @@ health-digital-twin/
 
 ## 🖥️ Backend Setup
 
+### 🚀 Quick Automated Setup (Ubuntu 22.04 LTS / Cloud Deployment)
+If you are deploying to an Ubuntu cloud server or VM, you can use our automated deployment script to set up virtual environments, system services, model assets, Nginx, and system dependencies:
+```bash
+git clone https://github.com/Akhiluuu/health-digital-twin.git
+cd health-digital-twin
+chmod +x deployment/setup.sh
+./deployment/setup.sh
+```
+For full details on this automated pipeline, check the **[Deployment Guide (DEPLOYMENT.md)](DEPLOYMENT.md)**.
+
+---
+
+### Manual Backend Setup
+
 ### Step 1 — Clone the repository
 
 ```bash
-git clone https://github.com/<your-username>/health-digital-twin.git
+git clone https://github.com/Akhiluuu/health-digital-twin.git
 cd health-digital-twin
 ```
 
