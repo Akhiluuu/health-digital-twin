@@ -69,15 +69,66 @@ CLONE_DIR="$HOME/health-digital-twin"
 if [[ "$PROJECT_DIR" != "$CLONE_DIR" ]] && [[ ! -d "$PROJECT_DIR/.git" ]]; then
     info "Running standalone. Ensuring repository is cloned to $CLONE_DIR..."
     if [[ ! -d "$CLONE_DIR" ]]; then
-        git clone "$REPO_URL" "$CLONE_DIR"
+        if ! git clone "$REPO_URL" "$CLONE_DIR" 2>/dev/null; then
+            warn "Standard clone failed. Authentication might be required."
+            read -r -s -p "  Enter your GitHub Personal Access Token (or press Enter to skip): " USER_TOKEN
+            echo ""
+            if [[ -n "$USER_TOKEN" ]]; then
+                AUTH_REPO_URL="https://${USER_TOKEN}@github.com/Akhiluuu/health-digital-twin.git"
+                git clone "$AUTH_REPO_URL" "$CLONE_DIR"
+            else
+                fail "Failed to clone repository. Please check credentials or run manually."
+            fi
+        fi
     else
         info "Repository already exists at $CLONE_DIR. Pulling latest..."
-        (cd "$CLONE_DIR" && git pull)
+        if ! (cd "$CLONE_DIR" && git pull) 2>/dev/null; then
+            warn "Standard pull failed. Authentication might be required."
+            read -r -s -p "  Enter your GitHub Personal Access Token (or press Enter to skip): " USER_TOKEN
+            echo ""
+            if [[ -n "$USER_TOKEN" ]]; then
+                AUTH_REPO_URL="https://${USER_TOKEN}@github.com/Akhiluuu/health-digital-twin.git"
+                (cd "$CLONE_DIR" && git remote set-url origin "$AUTH_REPO_URL" && git pull)
+            else
+                fail "Failed to pull latest changes. Please check credentials."
+            fi
+        fi
     fi
     PROJECT_DIR="$CLONE_DIR"
     DEPLOY_DIR="$CLONE_DIR/deployment"
 else
     info "Running inside existing repository at $PROJECT_DIR"
+    info "Pulling latest changes from git..."
+    
+    # Check if we have uncommitted changes
+    HAS_CHANGES=0
+    if ! git diff-index --quiet HEAD -- 2>/dev/null; then
+        warn "Local uncommitted changes found. Stashing before pulling..."
+        git stash
+        HAS_CHANGES=1
+    fi
+
+    # Try standard pull first
+    if ! git pull origin main 2>/dev/null; then
+        warn "Standard pull failed. Authentication might be required."
+        read -r -s -p "  Enter your GitHub Personal Access Token (or press Enter to skip): " USER_TOKEN
+        echo ""
+        if [[ -n "$USER_TOKEN" ]]; then
+            AUTH_REPO_URL="https://${USER_TOKEN}@github.com/Akhiluuu/health-digital-twin.git"
+            git remote set-url origin "$AUTH_REPO_URL"
+            git pull origin main
+        else
+            # Re-apply stash before failing
+            if [[ $HAS_CHANGES -eq 1 ]]; then
+                git stash pop || true
+            fi
+            fail "Failed to pull latest changes. Please check credentials."
+        fi
+    fi
+
+    if [[ $HAS_CHANGES -eq 1 ]]; then
+        git stash pop || warn "Could not pop stash automatically. Check git status."
+    fi
 fi
 
 BIOGEARS_VENV="$PROJECT_DIR/venv"
@@ -232,12 +283,14 @@ section "Step 7/11 — LLM model download (Qwen2.5-14B GGUF)"
 # wget -c = resumable: safe to re-run if download was interrupted.
 MODEL_DIR="$PROJECT_DIR/healthbot/model"
 MODEL_SHARD1="$MODEL_DIR/qwen2.5-14b-instruct-q5_k_m-00001-of-00003.gguf"
+MODEL_SHARD2="$MODEL_DIR/qwen2.5-14b-instruct-q5_k_m-00002-of-00003.gguf"
+MODEL_SHARD3="$MODEL_DIR/qwen2.5-14b-instruct-q5_k_m-00003-of-00003.gguf"
 HF_BASE="https://huggingface.co/Qwen/Qwen2.5-14B-Instruct-GGUF/resolve/main"
 
 mkdir -p "$MODEL_DIR"
 
-if [[ -f "$MODEL_SHARD1" ]]; then
-    ok "LLM model shards already present in $MODEL_DIR — skipping download."
+if [[ -f "$MODEL_SHARD1" ]] && [[ -f "$MODEL_SHARD2" ]] && [[ -f "$MODEL_SHARD3" ]]; then
+    ok "All LLM model shards already present in $MODEL_DIR — skipping download."
 else
     warn "Downloading Qwen2.5-14B model (~9.8 GB total). This will take a while..."
     echo "  Downloads are resumable — safe to Ctrl+C and re-run setup.sh."
@@ -245,24 +298,30 @@ else
 
     cd "$MODEL_DIR"
 
-    info "Downloading shard 1/3..."
-    wget -c --show-progress \
-        "${HF_BASE}/qwen2.5-14b-instruct-q5_k_m-00001-of-00003.gguf"
+    if [[ ! -f "$MODEL_SHARD1" ]]; then
+        info "Downloading shard 1/3..."
+        wget -c --show-progress \
+            "${HF_BASE}/qwen2.5-14b-instruct-q5_k_m-00001-of-00003.gguf"
+    fi
 
-    info "Downloading shard 2/3..."
-    wget -c --show-progress \
-        "${HF_BASE}/qwen2.5-14b-instruct-q5_k_m-00002-of-00003.gguf"
+    if [[ ! -f "$MODEL_SHARD2" ]]; then
+        info "Downloading shard 2/3..."
+        wget -c --show-progress \
+            "${HF_BASE}/qwen2.5-14b-instruct-q5_k_m-00002-of-00003.gguf"
+    fi
 
-    info "Downloading shard 3/3..."
-    wget -c --show-progress \
-        "${HF_BASE}/qwen2.5-14b-instruct-q5_k_m-00003-of-00003.gguf"
+    if [[ ! -f "$MODEL_SHARD3" ]]; then
+        info "Downloading shard 3/3..."
+        wget -c --show-progress \
+            "${HF_BASE}/qwen2.5-14b-instruct-q5_k_m-00003-of-00003.gguf"
+    fi
 
     cd "$PROJECT_DIR"
 
-    if [[ -f "$MODEL_SHARD1" ]]; then
+    if [[ -f "$MODEL_SHARD1" ]] && [[ -f "$MODEL_SHARD2" ]] && [[ -f "$MODEL_SHARD3" ]]; then
         ok "All 3 model shards downloaded successfully."
     else
-        warn "Model download may have failed. Check $MODEL_DIR and re-run if needed."
+        warn "Model download may have failed or is incomplete. Check $MODEL_DIR and re-run if needed."
     fi
 fi
 
@@ -300,7 +359,7 @@ else
 fi
 
 # ── Healthbot service ─────────────────────────────────────────────────────────
-if [[ -f "$MODEL_SHARD1" ]]; then
+if [[ -f "$MODEL_SHARD1" ]] && [[ -f "$MODEL_SHARD2" ]] && [[ -f "$MODEL_SHARD3" ]]; then
     info "Starting healthbot.service (Health AI)..."
     sudo systemctl enable healthbot
     sudo systemctl restart healthbot
@@ -313,8 +372,8 @@ if [[ -f "$MODEL_SHARD1" ]]; then
         echo "  Logs: journalctl -u healthbot -n 50"
     fi
 else
-    warn "Skipping healthbot.service start — model files not present."
-    warn "After copying model files, run: sudo systemctl start healthbot"
+    warn "Skipping healthbot.service start — model files not present or incomplete."
+    warn "After copying/downloading model files, run: sudo systemctl start healthbot"
 fi
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -357,7 +416,7 @@ run_check() {
 run_check "BioGears /health"    "http://localhost:8000/health"     "healthy"
 run_check "Nginx → BioGears"   "http://localhost/health"          "healthy"
 
-if [[ -f "$MODEL_SHARD1" ]]; then
+if [[ -f "$MODEL_SHARD1" ]] && [[ -f "$MODEL_SHARD2" ]] && [[ -f "$MODEL_SHARD3" ]]; then
     run_check "HealthAI /health"    "http://localhost:8001/health"    "ok"
     run_check "Nginx → HealthAI"   "http://localhost/ai/health"      "ok"
 fi
