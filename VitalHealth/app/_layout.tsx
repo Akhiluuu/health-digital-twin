@@ -192,37 +192,55 @@ export default function RootLayout() {
             <HydrationProvider>
               <BiogearsTwinProvider>
                 <NutritionProvider>
-                  <Stack screenOptions={{ headerShown: false }}>
+                  <Stack
+                    screenOptions={{
+                      headerShown: false,
+                      // Modern Android Material 3 slide-from-right transition
+                      animation: 'slide_from_right',
+                      gestureEnabled: true,
+                      gestureDirection: 'horizontal',
+                      // Predictive back gesture support (Android 14+)
+                      fullScreenGestureEnabled: true,
+                    }}
+                  >
                     {/* Authentication & Startup */}
-                    <Stack.Screen name="startup" />
-                    <Stack.Screen name="welcome" />
-                    <Stack.Screen name="signin" />
-                    <Stack.Screen name="signup" />
+                    <Stack.Screen name="startup" options={{ animation: 'fade' }} />
+                    <Stack.Screen name="welcome" options={{ animation: 'fade' }} />
+                    <Stack.Screen name="signin"  options={{ animation: 'slide_from_bottom', gestureDirection: 'vertical' }} />
+                    <Stack.Screen name="signup"  options={{ animation: 'slide_from_bottom', gestureDirection: 'vertical' }} />
 
-                    {/* Onboarding */}
-                    <Stack.Screen name="onboarding/personal" />
-                    <Stack.Screen name="onboarding/medical" />
-                    <Stack.Screen name="onboarding/habits" />
-                    <Stack.Screen name="onboarding/history" />
-                    <Stack.Screen name="onboarding/review" />
+                    {/* Onboarding — linear forward flow */}
+                    <Stack.Screen name="onboarding/personal" options={{ animation: 'slide_from_right', gestureEnabled: false }} />
+                    <Stack.Screen name="onboarding/medical"  options={{ animation: 'slide_from_right', gestureEnabled: false }} />
+                    <Stack.Screen name="onboarding/habits"   options={{ animation: 'slide_from_right', gestureEnabled: false }} />
+                    <Stack.Screen name="onboarding/history"  options={{ animation: 'slide_from_right', gestureEnabled: false }} />
+                    <Stack.Screen name="onboarding/review"   options={{ animation: 'slide_from_right', gestureEnabled: false }} />
 
-                    {/* Main App Tabs */}
-                    <Stack.Screen name="(tabs)" />
+                    {/* Main App Tabs — no animation (instant switch) */}
+                    <Stack.Screen name="(tabs)" options={{ animation: 'none' }} />
 
                     {/* Family Health Screens */}
-                    <Stack.Screen name="family/index" />
-                    <Stack.Screen name="family/member-details" />
+                    <Stack.Screen name="family/index"          options={{ animation: 'slide_from_right' }} />
+                    <Stack.Screen name="family/member-details" options={{ animation: 'slide_from_right' }} />
 
-                    {/* Additional Screens */}
-                    <Stack.Screen name="MedicationVault" />
-                    <Stack.Screen name="member-health" />
-                    <Stack.Screen name="symptom-log" />
-                    <Stack.Screen name="symptom-flow" />
-                    <Stack.Screen name="symptom-followup" />
-                    <Stack.Screen name="symptom-chat" />
-                    <Stack.Screen name="backup-restore" />
-                    <Stack.Screen name="settings-server" />
-                    <Stack.Screen name="settings-ai" />
+                    {/* Sub-screens — slide from right */}
+                    <Stack.Screen name="MedicationVault"   options={{ animation: 'slide_from_right' }} />
+                    <Stack.Screen name="member-health"     options={{ animation: 'slide_from_right' }} />
+                    <Stack.Screen name="backup-restore"    options={{ animation: 'slide_from_right' }} />
+                    <Stack.Screen name="settings-server"   options={{ animation: 'slide_from_right' }} />
+                    <Stack.Screen name="settings-ai"       options={{ animation: 'slide_from_right' }} />
+                    <Stack.Screen name="activity"          options={{ animation: 'slide_from_right' }} />
+                    <Stack.Screen name="hydration"         options={{ animation: 'slide_from_right' }} />
+                    <Stack.Screen name="nutrition"         options={{ animation: 'slide_from_right' }} />
+                    <Stack.Screen name="rest"              options={{ animation: 'slide_from_right' }} />
+                    <Stack.Screen name="profile"           options={{ animation: 'slide_from_right' }} />
+                    <Stack.Screen name="calorie-intelligence" options={{ animation: 'slide_from_right' }} />
+
+                    {/* Symptom flow — bottom sheet style */}
+                    <Stack.Screen name="symptom-log"      options={{ animation: 'slide_from_bottom', gestureDirection: 'vertical' }} />
+                    <Stack.Screen name="symptom-flow"     options={{ animation: 'slide_from_right' }} />
+                    <Stack.Screen name="symptom-followup" options={{ animation: 'slide_from_right' }} />
+                    <Stack.Screen name="symptom-chat"     options={{ animation: 'slide_from_right' }} />
                   </Stack>
                 </NutritionProvider>
               </BiogearsTwinProvider>

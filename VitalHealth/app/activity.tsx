@@ -23,6 +23,7 @@ import { ActivityEntry, useNutrition } from "../context/NutritionContext";
 import { useProfile } from "../context/ProfileContext";
 import { useTheme } from "../context/ThemeContext";
 import { useBiogearsTwin } from "../context/BiogearsTwinContext";
+import TimePicker from "../components/twin/TimePicker";
 
 // ─── MET table ───────────────────────────────────────────────────────────────
 // MET (Metabolic Equivalent of Task) values per activity per intensity level
@@ -170,6 +171,13 @@ export default function ActivityLab() {
   const [intensity, setIntensity] = useState("Moderate");
   const [showLog,   setShowLog]   = useState(false);
 
+  // Start time — defaults to current time, editable by user
+  const nowTime = () => {
+    const d = new Date();
+    return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  };
+  const [startTime, setStartTime] = useState(nowTime);
+
   // Selected activity icon
   const selectedIcon = useMemo(() => {
     for (const list of Object.values(activities)) {
@@ -220,8 +228,7 @@ export default function ActivityLab() {
     //   intensity = (MET - 1) / (MET_MAX - 1), clamped to [0.05, 1.0]
     // MET reference: 1.0 = rest, ~14 = max sprint.  BioGears: 0.0 = rest, 1.0 = max.
     try {
-      const now = new Date();
-      const wallTime = now.toTimeString().slice(0, 5); // HH:MM format
+      const wallTime = startTime; // Use user-selected start time
       const rawMet = MET_TABLE[selected]?.[intensity] ?? 4.0;
       const MET_MAX = 14.0;   // upper bound of our MET table (sprint / HIIT max)
       const biogears_intensity = Math.max(0.05, Math.min(1.0, (rawMet - 1.0) / (MET_MAX - 1.0)));
@@ -242,7 +249,7 @@ export default function ActivityLab() {
       "✅ Activity Logged!",
       `${selectedIcon} ${selected} — ${previewBurn} kcal burned in ${duration} min`,
       [
-        { text: "View Log", onPress: () => setShowLog(true) },
+        { text: "View Log", onPress: () => router.replace({ pathname: "/(tabs)/history", params: { tab: "exercise" } } as any) },
         { text: "Done", onPress: () => router.back() },
       ]
     );
@@ -445,6 +452,17 @@ export default function ActivityLab() {
               {selectedIntensity.description}
             </Text>
           )}
+
+          {/* Start Time */}
+          <Text style={[styles.deckTitle, { color: colors.subText, marginTop: 16 }]}>START TIME</Text>
+          <View style={[styles.timeRow, { backgroundColor: colors.bg, borderColor: colors.border }]}>
+            <Ionicons name="time-outline" size={18} color={colors.accent} />
+            <Text style={[styles.timeLabel, { color: colors.subText }]}>Exercise started at</Text>
+            <TimePicker value={startTime} onChange={setStartTime} accent={colors.accent} />
+          </View>
+          <Text style={[styles.timeHint, { color: colors.subText }]}>
+            Used for BioGears physiological timing
+          </Text>
         </View>
 
         {/* ── LIVE CALORIE PREVIEW CARD ────────────────────────────────────── */}
@@ -621,6 +639,11 @@ const styles = StyleSheet.create({
   intensityRow: { flexDirection: "row", justifyContent: "space-between", marginTop: 6, gap: 6 },
   intensityBtn: { flex: 1, paddingVertical: 10, borderRadius: 20, alignItems: "center" },
   intensityDesc:{ fontSize: 11, marginTop: 8, textAlign: "center", fontStyle: "italic" },
+
+  // Start time picker
+  timeRow:  { flexDirection: "row", alignItems: "center", gap: 10, borderRadius: 14, borderWidth: 1, paddingHorizontal: 14, paddingVertical: 10, marginTop: 8 },
+  timeLabel:{ flex: 1, fontSize: 13, fontWeight: "500" },
+  timeHint: { fontSize: 10, marginTop: 6, marginBottom: 4, fontStyle: "italic" },
 
   previewCard: {
     borderRadius: 28,

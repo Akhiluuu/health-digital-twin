@@ -924,7 +924,10 @@ export default function ProfileScreen() {
       };
       
       registerTwin(payload).then(() => {
-        Alert.alert("Calibration Successful", "Your Digital Twin has been computed and saved.");
+        // Persist calibration flag so status survives app restart
+        const calibratedProfile = { ...localProfile, biogears_registered: true };
+        saveProfileData(calibratedProfile).catch(console.error);
+        Alert.alert("✅ Calibration Successful", "Your Digital Twin has been calibrated and saved.");
       }).catch((err: any) => {
         Alert.alert("Calibration Failed", err.message || "Could not reach BioGears server.");
       });
@@ -986,22 +989,25 @@ export default function ProfileScreen() {
           ))}
         </View>
       </View>
-      <View style={[styles.twinStatusBox, { borderColor: safeProfile.biogears_registered ? colors.success : colors.danger, backgroundColor: safeProfile.biogears_registered ? colors.success + "10" : colors.danger + "10" }]}>
+      <View style={[styles.twinStatusBox, { borderColor: twinStatus === 'ready' ? colors.success : twinStatus === 'registering' ? colors.warning : colors.danger, backgroundColor: twinStatus === 'ready' ? colors.success + "10" : twinStatus === 'registering' ? colors.warning + "10" : colors.danger + "10" }]}>
         <View style={styles.twinStatusHeader}>
-          <Ionicons name={safeProfile.biogears_registered ? "checkmark-circle" : "warning"} size={20} color={safeProfile.biogears_registered ? colors.success : colors.danger} />
-          <Text style={[styles.twinStatusText, { color: safeProfile.biogears_registered ? colors.success : colors.danger }]}>
-            {twinStatus === "registering" ? "Calibrating Twin Engine..." : safeProfile.biogears_registered ? "Clinical Engine Calibrated" : "Twin Profile Uncalibrated"}
+          <Ionicons name={twinStatus === 'ready' ? "checkmark-circle" : twinStatus === 'registering' ? "hourglass" : "warning"} size={20} color={twinStatus === 'ready' ? colors.success : twinStatus === 'registering' ? colors.warning : colors.danger} />
+          <Text style={[styles.twinStatusText, { color: twinStatus === 'ready' ? colors.success : twinStatus === 'registering' ? colors.warning : colors.danger }]}>
+            {twinStatus === "registering" ? "Calibrating Twin Engine..." : twinStatus === "ready" ? "✅ Clinical Engine Calibrated" : "⚠️ Twin Profile Uncalibrated"}
           </Text>
         </View>
+        {twinStatusError ? (
+          <Text style={{ color: colors.danger, fontSize: 11, marginBottom: 8, paddingHorizontal: 4 }}>{twinStatusError}</Text>
+        ) : null}
         <TouchableOpacity
-          style={[styles.twinActionBtn, { backgroundColor: safeProfile.biogears_registered ? colors.card : colors.danger, borderColor: safeProfile.biogears_registered ? colors.success : "transparent", borderWidth: safeProfile.biogears_registered ? 1 : 0 }]}
+          style={[styles.twinActionBtn, { backgroundColor: twinStatus === 'ready' ? colors.card : colors.danger, borderColor: twinStatus === 'ready' ? colors.success : "transparent", borderWidth: twinStatus === 'ready' ? 1 : 0 }]}
           onPress={handleRegisterTwin} disabled={twinStatus === "registering"}
         >
           {twinStatus === "registering" ? (
             <Text style={{ color: "#fff", fontSize: 13, fontWeight: "bold" }}>Please Wait... {simulationProgress}</Text>
           ) : (
-            <Text style={[styles.twinActionBtnText, { color: safeProfile.biogears_registered ? colors.success : "#fff" }]}>
-              {safeProfile.biogears_registered ? "Recalibrate Engine" : "Calibrate Twin System"}
+            <Text style={[styles.twinActionBtnText, { color: twinStatus === 'ready' ? colors.success : "#fff" }]}>
+              {twinStatus === 'ready' ? "Recalibrate Engine" : "Calibrate Twin System"}
             </Text>
           )}
         </TouchableOpacity>

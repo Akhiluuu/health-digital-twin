@@ -312,10 +312,10 @@ export default function HomeScreen() {
           <>
             <Text style={[styles.sectionTitle, { color: c.text }]}>DATA ENTRY</Text>
             <View style={styles.grid}>
-              <DataCard label="HYDRATION" emoji="💧" color="#4f83ff" onPress={() => router.push("/hydration")} />
-              <DataCard label="ACTIVITY"  emoji="💪" color="#7c5cff" onPress={() => router.push("/activity")} />
-              <DataCard label="NUTRITION" emoji="🍎" color="#ff5e3a" onPress={() => router.push({ pathname: "/twin", params: { mode: "routine", tab: "meal" } })} />
-              <DataCard label="REST"      emoji="🌙" color="#1f2937" onPress={() => router.push("/rest")} />
+              <DataCard label="HYDRATION" emoji="💧" color="#0ea5e9" onPress={() => router.push({ pathname: "/twin", params: { mode: "routine", tab: "water" } })} />
+              <DataCard label="ACTIVITY"  emoji="💪" color="#10b981" onPress={() => router.push("/activity")} />
+              <DataCard label="NUTRITION" emoji="🍎" color="#f59e0b" onPress={() => router.push({ pathname: "/twin", params: { mode: "routine", tab: "meal" } })} />
+              <DataCard label="SLEEP"     emoji="🌙" color="#6366f1" onPress={() => router.push({ pathname: "/twin", params: { mode: "routine", tab: "sleep" } })} />
             </View>
           </>
         )}

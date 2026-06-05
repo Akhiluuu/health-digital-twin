@@ -939,7 +939,26 @@ export default function TwinScreen() {
 
   const renderExerciseTab = () => (
     <View>
-      <SectionLabel text="Exercise Intensity" c={c} />
+      {/* ── Activity Lab shortcut ── */}
+      <TouchableOpacity
+        style={[ss.actLabCard, { backgroundColor: '#10b98118', borderColor: '#10b98140' }]}
+        onPress={() => router.push('/activity')}
+        activeOpacity={0.85}
+      >
+        <View style={ss.actLabLeft}>
+          <Text style={ss.actLabIcon}>💪</Text>
+          <View>
+            <Text style={[ss.actLabTitle, { color: c.text }]}>Activity Lab</Text>
+            <Text style={[ss.actLabSub, { color: c.sub }]}>40+ activities · MET calorie burn · full detail</Text>
+          </View>
+        </View>
+        <View style={[ss.actLabBtn, { backgroundColor: '#10b981' }]}>
+          <Text style={{ color: '#fff', fontWeight: '700', fontSize: 12 }}>Open →</Text>
+        </View>
+      </TouchableOpacity>
+
+      {/* ── BioGears quick add ── */}
+      <SectionLabel text="Or quick-log for BioGears simulation" c={c} />
       <View style={ss.rowCentered}>
         {EXERCISE_PRESETS.map(p => (
           <TouchableOpacity
@@ -985,7 +1004,7 @@ export default function TwinScreen() {
         <TimePicker value={exerciseTime} onChange={setExerciseTime} accent="#10b981" />
       </View>
 
-      <AddButton label="Add Exercise" accent="#10b981" onPress={addExercise} />
+      <AddButton label="Add Exercise to BioGears" accent="#10b981" onPress={addExercise} />
     </View>
   );
 
@@ -2122,4 +2141,12 @@ const ss = StyleSheet.create({
   foodCal:      { fontSize: 14, fontWeight: '900', marginBottom: 4 },
   foodMacroRow: { flexDirection: 'row', gap: 4, flexWrap: 'wrap' },
   foodMacro:    { fontSize: 10, fontWeight: '700' },
+
+  // Activity Lab card
+  actLabCard:  { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderRadius: 18, borderWidth: 1.5, padding: 16, marginBottom: 14 },
+  actLabLeft:  { flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 },
+  actLabIcon:  { fontSize: 28 },
+  actLabTitle: { fontWeight: '800', fontSize: 15, marginBottom: 2 },
+  actLabSub:   { fontSize: 11 },
+  actLabBtn:   { borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8 },
 });

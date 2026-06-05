@@ -1,404 +1,836 @@
-// app/(tabs)/history.tsx
-// COMBINED HEALTH HISTORY — Original app logs + BioGears simulation sessions
-// Shows: BioGears sims (if registered) + symptoms + medicines + hydration + steps
-
+// app/(tabs)/history.tsx — Log Routine: reminders + all context data
 import React, { useCallback, useEffect, useState } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  RefreshControl,
-  Platform,
-} from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Switch, RefreshControl, Platform, Alert, TextInput } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useBiogearsTwin } from '../../context/BiogearsTwinContext';
 import { useHydration } from '../../context/HydrationContext';
-import { useMedicine } from '../../context/MedicineContext';
-import { useSteps } from '../../context/StepContext';
+import { useNutrition } from '../../context/NutritionContext';
 import { useSymptoms } from '../../context/SymptomContext';
 import { useTheme } from '../../context/ThemeContext';
-import { colors } from '../../theme/colors';
+import { colors as themeColors } from '../../theme/colors';
 import Header from '../components/Header';
+import TimePicker from '../../components/twin/TimePicker';
+import { auth } from '../../services/firebase';
+import { scheduleRoutineReminder, cancelRoutineReminder } from '../../services/notifeeService';
 
-// ─── Types ────────────────────────────────────────────────────────────────────
+type LogTab = 'nutrition' | 'exercise' | 'sleep' | 'hydration' | 'symptoms';
+const TABS: { id: LogTab; label: string; icon: string; accent: string }[] = [
+  { id: 'nutrition', label: 'Nutrition', icon: '🍽️', accent: '#f59e0b' },
+  { id: 'exercise',  label: 'Exercise',  icon: '💪', accent: '#10b981' },
+  { id: 'sleep',     label: 'Sleep',     icon: '😴', accent: '#6366f1' },
+  { id: 'hydration', label: 'Hydration', icon: '💧', accent: '#0ea5e9' },
+  { id: 'symptoms',  label: 'Symptoms',  icon: '🩺', accent: '#ef4444' },
+];
 
-type HistorySection = 'all' | 'biogears' | 'health' | 'symptoms';
+const REMINDER_KEY = (tab: LogTab) => `@log_reminder_${tab}`;
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-function timeAgo(ts: number): string {
-  const diff = Date.now() - ts;
-  const mins = Math.floor(diff / 60000);
-  const hrs  = Math.floor(diff / 3600000);
-  const days = Math.floor(diff / 86400000);
-  if (days > 0)  return `${days}d ago`;
-  if (hrs > 0)   return `${hrs}h ago`;
-  if (mins > 0)  return `${mins}m ago`;
-  return 'Just now';
+function fmt(ts: number) {
+  return new Date(ts).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
+}
+function ago(ts: number) {
+  const m = Math.floor((Date.now() - ts) / 60000);
+  if (m < 1) return 'Just now'; if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60); if (h < 24) return `${h}h ago`;
+  return `${Math.floor(h / 24)}d ago`;
 }
 
-function formatDate(ts: number): string {
-  return new Date(ts).toLocaleDateString('en-IN', {
-    day: 'numeric', month: 'short', year: 'numeric',
-  });
+// ── Routine Reminder Types & Helpers ──────────────────────────────────────────
+export type RoutineReminder = {
+  id: string;
+  label: string;
+  time: string;
+  enabled: boolean;
+};
+
+const PRESETS: Record<LogTab, string[]> = {
+  nutrition: ['🍳 Breakfast', '🥗 Lunch', '🍲 Dinner', '🍎 Snack'],
+  exercise: ['🏃 Workout', '🚶 Walk', '🧘 Yoga', '🚲 Cycling'],
+  sleep: ['🌅 Wake Up', '😴 Bedtime', '💤 Nap'],
+  hydration: ['💧 Drink Water', '💧 Morning Water', '💧 Evening Water'],
+  symptoms: ['🩺 Symptom Check', '💊 Medicine Check'],
+};
+
+function getPrepopulatedReminders(tab: LogTab, habits: any): RoutineReminder[] {
+  const wakeUp = habits?.wakeUp || '07:00';
+  const breakfast = habits?.breakfast || '08:00';
+  const lunch = habits?.lunch || '13:00';
+  const dinner = habits?.dinner || '20:00';
+  const sleep = habits?.sleep || '23:00';
+
+  const formatHM = (timeStr?: string) => {
+    if (!timeStr) return '08:00';
+    let clean = timeStr.trim().toLowerCase();
+    const isPM = clean.includes('pm');
+    const isAM = clean.includes('am');
+    clean = clean.replace(/(am|pm)/g, '').trim();
+    const parts = clean.split(':');
+    let h = parseInt(parts[0], 10) || 0;
+    const m = parseInt(parts[1], 10) || 0;
+    if (isPM && h < 12) h += 12;
+    if (isAM && h === 12) h = 0;
+    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+  };
+
+  switch (tab) {
+    case 'nutrition':
+      return [
+        { id: `nut_bf_${Date.now()}_1`, label: '🍳 Breakfast', time: formatHM(breakfast), enabled: true },
+        { id: `nut_lh_${Date.now()}_2`, label: '🥗 Lunch', time: formatHM(lunch), enabled: true },
+        { id: `nut_dn_${Date.now()}_3`, label: '🍲 Dinner', time: formatHM(dinner), enabled: true },
+      ];
+    case 'sleep':
+      return [
+        { id: `sl_wu_${Date.now()}_1`, label: '🌅 Wake Up', time: formatHM(wakeUp), enabled: true },
+        { id: `sl_bt_${Date.now()}_2`, label: '😴 Bedtime', time: formatHM(sleep), enabled: true },
+      ];
+    case 'exercise': {
+      const wakeH = parseInt(formatHM(wakeUp).split(':')[0], 10);
+      const exHour = (wakeH + 10) % 24;
+      return [
+        { id: `ex_wo_${Date.now()}_1`, label: '🏃 Workout', time: `${String(exHour).padStart(2, '0')}:00`, enabled: true },
+      ];
+    }
+    case 'hydration': {
+      const wH = parseInt(formatHM(wakeUp).split(':')[0], 10);
+      const sH = parseInt(formatHM(sleep).split(':')[0], 10);
+      const bedHour = sH < wH ? sH + 24 : sH;
+      const step = Math.max(2, Math.floor((bedHour - wH) / 4));
+      return [
+        { id: `hyd_w_${Date.now()}_1`, label: '💧 Drink Water', time: `${String((wH + step) % 24).padStart(2, '0')}:00`, enabled: true },
+        { id: `hyd_w_${Date.now()}_2`, label: '💧 Drink Water', time: `${String((wH + step * 2) % 24).padStart(2, '0')}:00`, enabled: true },
+        { id: `hyd_w_${Date.now()}_3`, label: '💧 Drink Water', time: `${String((wH + step * 3) % 24).padStart(2, '0')}:00`, enabled: true },
+      ];
+    }
+    case 'symptoms':
+      return [
+        { id: `sym_am_${Date.now()}_1`, label: '🩺 Symptom Check', time: '10:00', enabled: true },
+        { id: `sym_pm_${Date.now()}_2`, label: '🩺 Symptom Check', time: '19:00', enabled: true },
+      ];
+  }
 }
 
-// ─── Sub-components ───────────────────────────────────────────────────────────
+const syncNotificationsForReminders = async (tab: LogTab, list: RoutineReminder[]) => {
+  try {
+    for (const r of list) {
+      const notifId = `notif_routine_${tab}_${r.id}`;
+      await cancelRoutineReminder(notifId);
 
-function SectionTab({ label, active, onPress, c }: any) {
-  return (
-    <TouchableOpacity
-      style={[styles.filterTab, active && { backgroundColor: c.active }]}
-      onPress={onPress}
-    >
-      <Text style={[styles.filterTabText, { color: active ? '#fff' : c.sub }]}>
-        {label}
-      </Text>
-    </TouchableOpacity>
-  );
-}
+      if (r.enabled) {
+        const [h, m] = r.time.split(':').map(Number);
+        const cleanLabel = r.label.replace(/[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|[\u2011-\u26FF]|\uD83E[\uDC00-\uDFFF]/g, '').trim();
+        const tabEmoji = tab === 'nutrition' ? '🍽️' : tab === 'exercise' ? '💪' : tab === 'sleep' ? '😴' : tab === 'hydration' ? '💧' : '🩺';
+        const title = `${tabEmoji} Habit Reminder`;
+        const body = `It's time for your routine: ${cleanLabel || r.label}`;
+        await scheduleRoutineReminder(notifId, title, body, h, m, tab);
+      }
+    }
+  } catch (error) {
+    console.error("Error syncing notifications:", error);
+  }
+};
 
-// BioGears simulation session card
-function SimCard({ session, onPress, c }: any) {
-  const hasAnomaly = session.has_anomaly;
-  return (
-    <TouchableOpacity
-      style={[styles.simCard, { backgroundColor: c.card }]}
-      onPress={onPress}
-      activeOpacity={0.8}
-    >
-      <LinearGradient
-        colors={hasAnomaly ? ['#ef444410', '#ef444405'] : ['#10b98110', '#10b98105']}
-        style={styles.simCardGradient}
-      >
-        <View style={[styles.simIcon, { backgroundColor: hasAnomaly ? '#ef444420' : '#10b98120' }]}>
-          <Ionicons
-            name={hasAnomaly ? 'warning' : 'checkmark-circle'}
-            size={22}
-            color={hasAnomaly ? '#ef4444' : '#10b981'}
-          />
-        </View>
-        <View style={{ flex: 1 }}>
-          <Text style={[styles.simName, { color: c.text }]}>
-            {session.name || 'Simulation Run'}
-          </Text>
-          <Text style={[styles.simMeta, { color: c.sub }]}>
-            {session.timestamp ? formatDate(session.timestamp) : 'Recent'} · {session.event_count ?? 0} events
-          </Text>
-          {session.ai_insights?.[0] && (
-            <Text style={[styles.simInsight, { color: c.sub }]} numberOfLines={1}>
-              💡 {session.ai_insights[0]}
-            </Text>
-          )}
-        </View>
-        <Ionicons name="chevron-forward" size={16} color={c.sub} />
-      </LinearGradient>
-    </TouchableOpacity>
-  );
-}
+const REMINDERS_LIST_KEY = (tab: LogTab) => `@log_reminders_list_v2_${tab}`;
+const OLD_REMINDER_KEY = (tab: LogTab) => `@log_reminder_${tab}`;
 
-// Generic health log entry card
-function LogCard({ icon, title, subtitle, time, color, onPress, c }: any) {
-  return (
-    <TouchableOpacity
-      style={[styles.logCard, { backgroundColor: c.card }]}
-      onPress={onPress}
-      activeOpacity={0.7}
-      disabled={!onPress}
-    >
-      <View style={[styles.logIcon, { backgroundColor: color + '20' }]}>
-        <Text style={{ fontSize: 18 }}>{icon}</Text>
-      </View>
-      <View style={{ flex: 1 }}>
-        <Text style={[styles.logTitle, { color: c.text }]}>{title}</Text>
-        {subtitle ? <Text style={[styles.logSub, { color: c.sub }]}>{subtitle}</Text> : null}
-      </View>
-      <Text style={[styles.logTime, { color: c.sub }]}>{time}</Text>
-    </TouchableOpacity>
-  );
-}
+// ── Reminder Card ─────────────────────────────────────────────────────────────
+function ReminderCard({ tab, accent, c }: { tab: LogTab; accent: string; c: any }) {
+  const [reminders, setReminders] = useState<RoutineReminder[]>([]);
+  const [loaded, setLoaded] = useState(false);
+  const [isExpanded, setIsExpanded] = useState(false);
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [newLabel, setNewLabel] = useState('');
+  const [newTime, setNewTime] = useState('08:00');
 
-// ─── Main Screen ───────────────────────────────────────────────────────────────
-
-export default function HistoryScreen() {
-  const router = useRouter();
-  const { theme } = useTheme();
-  const c = colors[theme];
-
-  const insets = useSafeAreaInsets();
-  const statusBarH = Math.max(insets.top, Platform.OS === 'android' ? 24 : 20);
-  const headerH = statusBarH + 52;
-
-  const { sessions, refreshSessions, twinStatus } = useBiogearsTwin();
-  const { activeSymptoms, historySymptoms, refreshSymptoms } = useSymptoms();
-  const { medicines } = useMedicine();
-  const { water } = useHydration();
-  const { steps, calories } = useSteps();
-
-  const [section, setSection] = useState<HistorySection>('all');
-  const [refreshing, setRefreshing] = useState(false);
-
-  const onRefresh = useCallback(async () => {
-    setRefreshing(true);
-    await Promise.all([
-      refreshSessions(),
-      refreshSymptoms(),
-    ]);
-    setRefreshing(false);
-  }, [refreshSessions, refreshSymptoms]);
+  const user = auth.currentUser;
+  const userId = user?.uid || 'guest';
 
   useEffect(() => {
-    refreshSymptoms();
-    if (twinStatus === 'ready') refreshSessions();
-  }, [twinStatus]);
+    const loadReminders = async () => {
+      try {
+        const raw = await AsyncStorage.getItem(REMINDERS_LIST_KEY(tab));
+        if (raw) {
+          setReminders(JSON.parse(raw));
+        } else {
+          // Check for legacy single reminder migration
+          const oldRaw = await AsyncStorage.getItem(OLD_REMINDER_KEY(tab));
+          if (oldRaw) {
+            const oldData = JSON.parse(oldRaw);
+            const migrated: RoutineReminder[] = [
+              {
+                id: `legacy_${Date.now()}`,
+                label: '⏰ Daily Reminder',
+                time: oldData.time || '08:00',
+                enabled: oldData.enabled ?? false,
+              }
+            ];
+            setReminders(migrated);
+            await AsyncStorage.setItem(REMINDERS_LIST_KEY(tab), JSON.stringify(migrated));
+            await syncNotificationsForReminders(tab, migrated);
+          } else {
+            // Load onboarding habits for pre-population
+            let habits = null;
+            if (user) {
+              const habitsRaw = await AsyncStorage.getItem(`@onboarding_habits_${user.uid}`);
+              if (habitsRaw) habits = JSON.parse(habitsRaw);
+            }
+            const prepopulated = getPrepopulatedReminders(tab, habits);
+            setReminders(prepopulated);
+            await AsyncStorage.setItem(REMINDERS_LIST_KEY(tab), JSON.stringify(prepopulated));
+            await syncNotificationsForReminders(tab, prepopulated);
+          }
+        }
+      } catch (e) {
+        console.error("Error loading reminders list:", e);
+      } finally {
+        setLoaded(true);
+      }
+    };
 
-  // ── Severity color ────────────────────────────────────────────────────────
-  const severityColor = (s: string) => {
-    switch (s) {
-      case 'emergency': return '#ef4444';
-      case 'severe':    return '#f97316';
-      case 'moderate':  return '#f59e0b';
-      default:          return '#10b981';
+    loadReminders();
+  }, [tab, userId]);
+
+  const updateReminder = async (id: string, updates: Partial<RoutineReminder>) => {
+    const updated = reminders.map(r => r.id === id ? { ...r, ...updates } : r);
+    setReminders(updated);
+    await AsyncStorage.setItem(REMINDERS_LIST_KEY(tab), JSON.stringify(updated));
+
+    // Sync notification for this specific reminder
+    const item = updated.find(r => r.id === id);
+    if (item) {
+      const notifId = `notif_routine_${tab}_${id}`;
+      await cancelRoutineReminder(notifId);
+      if (item.enabled) {
+        const [h, m] = item.time.split(':').map(Number);
+        const cleanLabel = item.label.replace(/[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|[\u2011-\u26FF]|\uD83E[\uDC00-\uDFFF]/g, '').trim();
+        const tabEmoji = tab === 'nutrition' ? '🍽️' : tab === 'exercise' ? '💪' : tab === 'sleep' ? '😴' : tab === 'hydration' ? '💧' : '🩺';
+        const title = `${tabEmoji} Habit Reminder`;
+        const body = `It's time for your routine: ${cleanLabel || item.label}`;
+        await scheduleRoutineReminder(notifId, title, body, h, m, tab);
+      }
     }
   };
 
-  // ── Render ────────────────────────────────────────────────────────────────
+  const deleteReminder = async (id: string) => {
+    const updated = reminders.filter(r => r.id !== id);
+    setReminders(updated);
+    await AsyncStorage.setItem(REMINDERS_LIST_KEY(tab), JSON.stringify(updated));
+    const notifId = `notif_routine_${tab}_${id}`;
+    await cancelRoutineReminder(notifId);
+  };
 
-  const showBio     = section === 'all' || section === 'biogears';
-  const showHealth  = section === 'all' || section === 'health';
-  const showSymptom = section === 'all' || section === 'symptoms';
+  const addReminder = async () => {
+    if (!newLabel.trim()) {
+      Alert.alert('Label Required', 'Please enter or select a label for this reminder.');
+      return;
+    }
+    const newReminder: RoutineReminder = {
+      id: `${tab}_${Date.now()}`,
+      label: newLabel.trim(),
+      time: newTime,
+      enabled: true,
+    };
+    const updated = [...reminders, newReminder];
+    setReminders(updated);
+    await AsyncStorage.setItem(REMINDERS_LIST_KEY(tab), JSON.stringify(updated));
+
+    const notifId = `notif_routine_${tab}_${newReminder.id}`;
+    const [h, m] = newTime.split(':').map(Number);
+    const cleanLabel = newReminder.label.replace(/[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|[\u2011-\u26FF]|\uD83E[\uDC00-\uDFFF]/g, '').trim();
+    const tabEmoji = tab === 'nutrition' ? '🍽️' : tab === 'exercise' ? '💪' : tab === 'sleep' ? '😴' : tab === 'hydration' ? '💧' : '🩺';
+    const title = `${tabEmoji} Habit Reminder`;
+    const body = `It's time for your routine: ${cleanLabel || newReminder.label}`;
+    await scheduleRoutineReminder(notifId, title, body, h, m, tab);
+
+    setNewLabel('');
+    setNewTime('08:00');
+    setShowAddForm(false);
+  };
+
+  const resetToOnboarding = async () => {
+    Alert.alert(
+      'Reset Reminders',
+      'Are you sure you want to reset reminders to match your onboarding routine timings?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Reset',
+          style: 'destructive',
+          onPress: async () => {
+            for (const r of reminders) {
+              const notifId = `notif_routine_${tab}_${r.id}`;
+              await cancelRoutineReminder(notifId);
+            }
+            let habits = null;
+            if (user) {
+              const habitsRaw = await AsyncStorage.getItem(`@onboarding_habits_${user.uid}`);
+              if (habitsRaw) habits = JSON.parse(habitsRaw);
+            }
+            const prepopulated = getPrepopulatedReminders(tab, habits);
+            setReminders(prepopulated);
+            await AsyncStorage.setItem(REMINDERS_LIST_KEY(tab), JSON.stringify(prepopulated));
+            await syncNotificationsForReminders(tab, prepopulated);
+            Alert.alert('Success', 'Reminders reset to onboarding timings.');
+          }
+        }
+      ]
+    );
+  };
+
+  if (!loaded) return null;
+
+  const activeCount = reminders.filter(r => r.enabled).length;
 
   return (
-    <View style={[styles.container, { backgroundColor: c.bg }]}>
-      <Header title="Health History" showBack={false} />
-
-      <ScrollView
-        style={styles.scroll}
-        contentContainerStyle={[styles.content, { paddingTop: headerH + 12 }]}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            tintColor={c.active}
-            progressViewOffset={headerH}
-          />
-        }
+    <View style={[rc.card, { backgroundColor: c.card, borderColor: isExpanded ? accent + '70' : c.border }]}>
+      <TouchableOpacity
+        style={rc.headerRow}
+        onPress={() => setIsExpanded(!isExpanded)}
+        activeOpacity={0.8}
       >
-        {/* ── Filter Tabs ── */}
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          style={styles.filterRow}
-          contentContainerStyle={{ paddingHorizontal: 4 }}
-        >
-          {([
-            ['all',      'All'],
-            ['biogears', '🫀 Simulations'],
-            ['health',   '📊 Health Log'],
-            ['symptoms', '🩺 Symptoms'],
-          ] as [HistorySection, string][]).map(([key, label]) => (
-            <SectionTab key={key} label={label} active={section === key} onPress={() => setSection(key)} c={c} />
-          ))}
-        </ScrollView>
+        <View style={[rc.iconBox, { backgroundColor: accent + '20' }]}>
+          <Ionicons name="alarm-outline" size={18} color={accent} />
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={[rc.title, { color: c.text }]}>Daily Reminders</Text>
+          <Text style={[rc.sub, { color: c.sub }]}>
+            {activeCount === 0 ? 'No active reminders' : `${activeCount} active reminder${activeCount === 1 ? '' : 's'}`}
+          </Text>
+        </View>
+        <Ionicons name={isExpanded ? 'chevron-up' : 'chevron-down'} size={20} color={c.sub} />
+      </TouchableOpacity>
 
-        {/* ── BioGears Simulations ── */}
-        {showBio && (
-          <>
-            <View style={styles.sectionHeader}>
-              <Text style={[styles.sectionTitle, { color: c.text }]}>Simulation History</Text>
-              {sessions.length > 0 && (
-                <TouchableOpacity onPress={() => router.push('/twin')}>
-                  <Text style={[styles.sectionAction, { color: c.active }]}>+ New</Text>
-                </TouchableOpacity>
-              )}
-            </View>
-
-            {twinStatus === 'unregistered' ? (
-              <TouchableOpacity
-                style={[styles.emptyCard, { backgroundColor: c.card }]}
-                onPress={() => router.push('/profile')}
-              >
-                <Text style={{ fontSize: 32 }}>🔬</Text>
-                <Text style={[styles.emptyTitle, { color: c.text }]}>Twin Not Set Up</Text>
-                <Text style={[styles.emptySub, { color: c.sub }]}>
-                  Go to Profile → calibrate your BioGears digital twin to see simulations here.
-                </Text>
-                <View style={[styles.emptyBtn, { backgroundColor: c.active }]}>
-                  <Text style={{ color: '#fff', fontWeight: '700', fontSize: 13 }}>Go to Profile</Text>
+      {isExpanded && (
+        <View style={[rc.body, { borderTopColor: c.border }]}>
+          {reminders.length === 0 ? (
+            <Text style={[rc.emptyText, { color: c.sub }]}>No reminders set. Add one below!</Text>
+          ) : (
+            reminders.map(r => (
+              <View key={r.id} style={[rc.reminderRow, { borderBottomColor: c.border }]}>
+                <View style={{ flex: 1, marginRight: 8 }}>
+                  <Text style={[rc.reminderLabel, { color: c.text }]}>{r.label}</Text>
+                  <Text style={[rc.reminderSub, { color: c.sub }]}>{r.enabled ? 'Active' : 'Muted'}</Text>
                 </View>
-              </TouchableOpacity>
-            ) : sessions.length === 0 ? (
-              <View style={[styles.emptyCard, { backgroundColor: c.card }]}>
-                <Text style={{ fontSize: 32 }}>📭</Text>
-                <Text style={[styles.emptyTitle, { color: c.text }]}>No Simulations Yet</Text>
-                <Text style={[styles.emptySub, { color: c.sub }]}>
-                  Log your daily routine in the Twin tab and run your first simulation.
-                </Text>
-              </View>
-            ) : (
-              sessions.map(s => (
-                <SimCard
-                  key={s.session_id}
-                  session={s}
-                  c={c}
-                  onPress={() => router.push(`/session/${s.session_id}`)}
-                />
-              ))
-            )}
-          </>
-        )}
-
-        {/* ── Health Log ── */}
-        {showHealth && (
-          <>
-            <Text style={[styles.sectionTitle, { color: c.text, marginTop: showBio ? 24 : 0 }]}>
-              Today's Health Log
-            </Text>
-
-            {/* Steps & Calories */}
-            <LogCard
-              icon="🚶"
-              title={`${steps.toLocaleString('en-IN')} steps`}
-              subtitle={`${calories} kcal burned`}
-              time="Today"
-              color="#f97316"
-              c={c}
-              onPress={() => router.push('/step-intelligence')}
-            />
-
-            {/* Hydration */}
-            <LogCard
-              icon="💧"
-              title={`${water} mL hydration`}
-              subtitle={water >= 2000 ? '✅ Goal reached' : `${2000 - water} mL until goal`}
-              time="Today"
-              color="#38bdf8"
-              c={c}
-              onPress={() => router.push('/hydration')}
-            />
-
-            {/* Medicines */}
-            {medicines.length === 0 ? (
-              <LogCard
-                icon="💊"
-                title="No medicines scheduled"
-                subtitle="Tap to add medication reminders"
-                time=""
-                color="#8b5cf6"
-                c={c}
-                onPress={() => router.push('/MedicationVault')}
-              />
-            ) : (
-              medicines.slice(0, 3).map((m: any) => (
-                <LogCard
-                  key={m.id}
-                  icon="💊"
-                  title={m.name}
-                  subtitle={`${m.dose} · ${m.time}`}
-                  time={m.time || '—'}
-                  color="#8b5cf6"
-                  c={c}
-                  onPress={() => router.push('/MedicationVault')}
-                />
-              ))
-            )}
-
-            {medicines.length > 3 && (
-              <TouchableOpacity onPress={() => router.push('/MedicationVault')}>
-                <Text style={[styles.viewMore, { color: c.active }]}>
-                  +{medicines.length - 3} more medicines →
-                </Text>
-              </TouchableOpacity>
-            )}
-
-            {/* Quick actions row */}
-            <View style={styles.quickRow}>
-              {[
-                { icon: '🍎', label: 'Nutrition',  route: '/nutrition' },
-                { icon: '💪', label: 'Activity',   route: '/activity' },
-                { icon: '😴', label: 'Sleep',      route: '/rest' },
-                { icon: '🧠', label: 'AI Health',  route: '/ai-health' },
-              ].map(item => (
-                <TouchableOpacity
-                  key={item.route}
-                  style={[styles.quickCard, { backgroundColor: c.card }]}
-                  onPress={() => router.push(item.route as any)}
-                >
-                  <Text style={{ fontSize: 24 }}>{item.icon}</Text>
-                  <Text style={[styles.quickLabel, { color: c.text }]}>{item.label}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          </>
-        )}
-
-        {/* ── Symptoms ── */}
-        {showSymptom && (
-          <>
-            <View style={[styles.sectionHeader, { marginTop: (showBio || showHealth) ? 24 : 0 }]}>
-              <Text style={[styles.sectionTitle, { color: c.text }]}>Symptom History</Text>
-              <TouchableOpacity onPress={() => router.push('/symptom-log')}>
-                <Text style={[styles.sectionAction, { color: c.active }]}>+ Log</Text>
-              </TouchableOpacity>
-            </View>
-
-            {activeSymptoms.length === 0 && (!historySymptoms || historySymptoms.length === 0) ? (
-              <View style={[styles.emptyCard, { backgroundColor: c.card }]}>
-                <Text style={{ fontSize: 32 }}>🩺</Text>
-                <Text style={[styles.emptyTitle, { color: c.text }]}>No Symptoms Logged</Text>
-                <Text style={[styles.emptySub, { color: c.sub }]}>
-                  Log symptoms anytime to track patterns over time.
-                </Text>
-              </View>
-            ) : (
-              <>
-                {activeSymptoms.map((s: any) => (
+                <View style={rc.reminderControls}>
+                  <TimePicker
+                    value={r.time}
+                    onChange={(t) => updateReminder(r.id, { time: t })}
+                    accent={accent}
+                  />
+                  <Switch
+                    value={r.enabled}
+                    onValueChange={(val) => updateReminder(r.id, { enabled: val })}
+                    trackColor={{ false: c.border, true: accent }}
+                    thumbColor={Platform.OS === 'android' ? c.card : undefined}
+                  />
                   <TouchableOpacity
-                    key={s.id}
-                    style={[styles.symptomCard, { backgroundColor: c.card }]}
-                    onPress={() => router.push({
-                      pathname: '/symptom-followup',
-                      params: { id: s.id.toString(), name: s.name },
-                    })}
+                    style={rc.deleteBtn}
+                    onPress={() => deleteReminder(r.id)}
+                    activeOpacity={0.7}
                   >
-                    <View style={[styles.symptomBadge, { backgroundColor: severityColor(s.severity) + '20' }]}>
-                      <Ionicons name="medical" size={20} color={severityColor(s.severity)} />
+                    <Ionicons name="trash-outline" size={18} color="#ef4444" />
+                  </TouchableOpacity>
+                </View>
+              </View>
+            ))
+          )}
+
+          {showAddForm ? (
+            <View style={[rc.addForm, { backgroundColor: c.bg, borderColor: c.border }]}>
+              <Text style={[rc.formTitle, { color: c.text }]}>Add New Reminder</Text>
+              
+              {/* Presets Row */}
+              <View style={rc.presetContainer}>
+                <Text style={[rc.presetTitle, { color: c.sub }]}>Quick Presets:</Text>
+                <View style={rc.presetsWrap}>
+                  {PRESETS[tab]?.map(preset => (
+                    <TouchableOpacity
+                      key={preset}
+                      style={[rc.presetChip, { backgroundColor: c.card, borderColor: c.border }]}
+                      onPress={() => setNewLabel(preset)}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={[rc.presetChipText, { color: c.text }]}>{preset}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+
+              {/* Form Input fields */}
+              <TextInput
+                style={[rc.input, { color: c.text, backgroundColor: c.card, borderColor: c.border }]}
+                placeholder="Reminder label (e.g. Snack, Yoga)"
+                placeholderTextColor={c.sub}
+                value={newLabel}
+                onChangeText={setNewLabel}
+              />
+
+              <View style={rc.formRow}>
+                <Text style={[rc.formLabel, { color: c.text }]}>Time:</Text>
+                <TimePicker value={newTime} onChange={setNewTime} accent={accent} />
+              </View>
+
+              <View style={rc.formActions}>
+                <TouchableOpacity
+                  style={[rc.cancelBtn, { borderColor: c.border }]}
+                  onPress={() => setShowAddForm(false)}
+                >
+                  <Text style={[rc.cancelBtnText, { color: c.sub }]}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[rc.saveBtn, { backgroundColor: accent }]}
+                  onPress={addReminder}
+                >
+                  <Text style={rc.saveBtnText}>Save</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          ) : (
+            <View style={rc.actionsRow}>
+              <TouchableOpacity
+                style={[rc.addButton, { borderColor: accent }]}
+                onPress={() => setShowAddForm(true)}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="add" size={16} color={accent} />
+                <Text style={[rc.addButtonText, { color: accent }]}>Add Reminder Time</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={rc.resetLink}
+                onPress={resetToOnboarding}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="refresh-outline" size={12} color={c.sub} />
+                <Text style={[rc.resetLinkText, { color: c.sub }]}>Reset to Profile Timings</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+        </View>
+      )}
+    </View>
+  );
+}
+
+const rc = StyleSheet.create({
+  card: { borderRadius: 16, borderWidth: 1, padding: 14, marginBottom: 14 },
+  headerRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  iconBox: { width: 36, height: 36, borderRadius: 9, justifyContent: 'center', alignItems: 'center' },
+  title: { fontSize: 14, fontWeight: '700' },
+  sub: { fontSize: 11, marginTop: 2 },
+  
+  body: { marginTop: 12, paddingTop: 12, borderTopWidth: 1 },
+  emptyText: { fontSize: 12, textAlign: 'center', paddingVertical: 12, fontStyle: 'italic' },
+  
+  reminderRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 10, borderBottomWidth: 1 },
+  reminderLabel: { fontSize: 13, fontWeight: '600' },
+  reminderSub: { fontSize: 10, marginTop: 2 },
+  reminderControls: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  deleteBtn: { padding: 4, marginLeft: 4 },
+  
+  actionsRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 12, flexWrap: 'wrap', gap: 8 },
+  addButton: { flexDirection: 'row', alignItems: 'center', gap: 4, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 12 },
+  addButtonText: { fontSize: 12, fontWeight: '600' },
+  resetLink: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingVertical: 8 },
+  resetLinkText: { fontSize: 11, textDecorationLine: 'underline' },
+  
+  addForm: { borderRadius: 12, borderWidth: 1, padding: 12, marginTop: 12 },
+  formTitle: { fontSize: 13, fontWeight: '700', marginBottom: 8 },
+  presetContainer: { marginBottom: 10 },
+  presetTitle: { fontSize: 10, fontWeight: '600', marginBottom: 4 },
+  presetsWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  presetChip: { borderWidth: 1, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 },
+  presetChipText: { fontSize: 11 },
+  input: { borderWidth: 1, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6, fontSize: 12, marginBottom: 10 },
+  formRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
+  formLabel: { fontSize: 12, fontWeight: '600' },
+  formActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 8 },
+  cancelBtn: { borderWidth: 1, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8 },
+  cancelBtnText: { fontSize: 12, fontWeight: '600' },
+  saveBtn: { paddingHorizontal: 16, paddingVertical: 6, borderRadius: 8 },
+  saveBtnText: { color: '#fff', fontSize: 12, fontWeight: '700' },
+});
+
+// ── Entry Card ────────────────────────────────────────────────────────────────
+function EntryCard({ icon, title, sub, time, accent, c }: any) {
+  return (
+    <View style={[ec.card, { backgroundColor: c.card }]}>
+      <View style={[ec.box, { backgroundColor: accent + '20' }]}><Text style={{ fontSize: 16 }}>{icon}</Text></View>
+      <View style={{ flex: 1 }}>
+        <Text style={[ec.title, { color: c.text }]} numberOfLines={1}>{title}</Text>
+        {sub ? <Text style={[ec.sub, { color: c.sub }]} numberOfLines={1}>{sub}</Text> : null}
+      </View>
+      <Text style={[ec.time, { color: c.sub }]}>{time}</Text>
+    </View>
+  );
+}
+const ec = StyleSheet.create({
+  card:  { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 11, borderRadius: 13, marginBottom: 7 },
+  box:   { width: 36, height: 36, borderRadius: 9, justifyContent: 'center', alignItems: 'center' },
+  title: { fontSize: 13, fontWeight: '600' },
+  sub:   { fontSize: 11, marginTop: 1 },
+  time:  { fontSize: 10, minWidth: 44, textAlign: 'right' },
+});
+
+// ── Empty State ───────────────────────────────────────────────────────────────
+function Empty({ icon, text, btn, onPress, accent, c }: any) {
+  return (
+    <View style={[em.wrap, { backgroundColor: c.card }]}>
+      <Text style={{ fontSize: 32 }}>{icon}</Text>
+      <Text style={[em.text, { color: c.sub }]}>{text}</Text>
+      <TouchableOpacity style={[em.btn, { backgroundColor: accent }]} onPress={onPress}>
+        <Text style={em.btnT}>{btn}</Text>
+      </TouchableOpacity>
+    </View>
+  );
+}
+const em = StyleSheet.create({
+  wrap: { borderRadius: 18, padding: 24, alignItems: 'center', marginBottom: 10, gap: 8 },
+  text: { fontSize: 13, textAlign: 'center', lineHeight: 20 },
+  btn:  { marginTop: 4, paddingHorizontal: 22, paddingVertical: 9, borderRadius: 18 },
+  btnT: { color: '#fff', fontWeight: '700', fontSize: 13 },
+});
+
+// ── Summary Pills Row ─────────────────────────────────────────────────────────
+function Pills({ items }: { items: { label: string; value: string; accent: string }[] }) {
+  return (
+    <View style={{ flexDirection: 'row', gap: 7, marginBottom: 12 }}>
+      {items.map(i => (
+        <View key={i.label} style={[pi.pill, { backgroundColor: i.accent + '18' }]}>
+          <Text style={[pi.val, { color: i.accent }]}>{i.value}</Text>
+          <Text style={[pi.lbl, { color: i.accent + 'bb' }]}>{i.label}</Text>
+        </View>
+      ))}
+    </View>
+  );
+}
+const pi = StyleSheet.create({
+  pill: { flex: 1, alignItems: 'center', padding: 9, borderRadius: 11 },
+  val:  { fontSize: 14, fontWeight: '900' },
+  lbl:  { fontSize: 9, marginTop: 2, fontWeight: '600' },
+});
+
+function SectionTitle({ text, c }: any) {
+  return <Text style={[s.sec, { color: c.sub }]}>{text}</Text>;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+export default function LogRoutineScreen() {
+  const router = useRouter();
+  const { theme } = useTheme();
+  const c = themeColors[theme];
+  const insets = useSafeAreaInsets();
+  const headerH = Math.max(insets.top, Platform.OS === 'android' ? 24 : 20) + 52;
+
+  const { todayEvents, refreshSessions } = useBiogearsTwin();
+  const { water, history: hydHist } = useHydration();
+  const { totals, foodEntries, activityEntries, totalActivityCalories, mealReminders } = useNutrition();
+  const { activeSymptoms, historySymptoms, refreshSymptoms } = useSymptoms();
+
+  const [tab, setTab]           = useState<LogTab>('nutrition');
+  const [refreshing, setRefresh] = useState(false);
+
+  const onRefresh = useCallback(async () => {
+    setRefresh(true);
+    await Promise.all([refreshSessions(), refreshSymptoms()]).catch(() => {});
+    setRefresh(false);
+  }, [refreshSessions, refreshSymptoms]);
+
+  useEffect(() => { refreshSymptoms(); }, []);
+
+  const accent = TABS.find(t => t.id === tab)?.accent ?? '#38bdf8';
+
+  // Filter BioGears events by type
+  const bgMeals = todayEvents.filter(e => e.event_type === 'meal');
+  const bgWater = todayEvents.filter(e => e.event_type === 'water');
+  const bgSleep = todayEvents.filter(e => e.event_type === 'sleep');
+  const bgEx    = todayEvents.filter(e => e.event_type === 'exercise');
+
+  const goMeal  = () => router.push({ pathname: '/twin', params: { mode: 'routine', tab: 'meal'  } } as any);
+  const goWater = () => router.push({ pathname: '/twin', params: { mode: 'routine', tab: 'water' } } as any);
+  const goSleep = () => router.push({ pathname: '/twin', params: { mode: 'routine', tab: 'sleep' } } as any);
+  const goEx    = () => router.push('/activity' as any);
+  const goSym   = () => router.push('/symptom-log' as any);
+
+  // ── NUTRITION ───────────────────────────────────────────────────────────────
+  const renderNutrition = () => {
+    const allEmpty = foodEntries.length === 0 && bgMeals.length === 0;
+    return (
+      <>
+        <ReminderCard tab="nutrition" accent={accent} c={c} />
+        {totals.calories > 0 && (
+          <Pills items={[
+            { label: 'Calories', value: `${Math.round(totals.calories)} kcal`, accent },
+            { label: 'Carbs',    value: `${Math.round(totals.carbs)}g`,         accent: '#f97316' },
+            { label: 'Protein',  value: `${Math.round(totals.protein)}g`,       accent: '#10b981' },
+            { label: 'Fat',      value: `${Math.round(totals.fat)}g`,           accent: '#ef4444' },
+          ]} />
+        )}
+        {/* Meal reminders from nutrition context */}
+        {mealReminders.filter(r => r.enabled).length > 0 && (
+          <>
+            <SectionTitle text="MEAL ALARMS" c={c} />
+            {mealReminders.filter(r => r.enabled).map(r => (
+              <View key={r.id} style={[ec.card, { backgroundColor: c.card }]}>
+                <View style={[ec.box, { backgroundColor: accent + '20' }]}>
+                  <Ionicons name="alarm" size={16} color={accent} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[ec.title, { color: c.text }]}>{r.mealName}</Text>
+                  <Text style={[ec.sub, { color: c.sub }]}>Daily at {r.time}</Text>
+                </View>
+                <View style={[s.pill, { backgroundColor: accent + '20' }]}>
+                  <Text style={{ color: accent, fontSize: 10, fontWeight: '700' }}>ON</Text>
+                </View>
+              </View>
+            ))}
+          </>
+        )}
+        {/* Food entries from nutrition page */}
+        {foodEntries.length > 0 && (
+          <>
+            <SectionTitle text="FOOD LOGGED TODAY" c={c} />
+            {foodEntries.map(f => (
+              <EntryCard key={f.id} icon="🍽️" title={f.foodName}
+                sub={`${Math.round(f.calories)} kcal · P:${Math.round(f.protein)}g C:${Math.round(f.carbs)}g F:${Math.round(f.fat)}g`}
+                time={f.timestamp ? new Date(f.timestamp).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true }) : ''}
+                accent={accent} c={c} />
+            ))}
+          </>
+        )}
+        {/* BioGears meal events */}
+        {bgMeals.length > 0 && (
+          <>
+            <SectionTitle text="BIOGEARS MEAL EVENTS" c={c} />
+            {bgMeals.map(e => (
+              <EntryCard key={e.id} icon={e.displayIcon || '🍽️'} title={e.displayLabel || 'Meal'}
+                sub={`${Math.round(e.value)} kcal · synced to twin`}
+                time={e.wallTime} accent={accent} c={c} />
+            ))}
+          </>
+        )}
+        {allEmpty && <Empty icon="🍽️" text={'No food logged today.\nTap to add meals to your twin log.'} btn="Log Meal" onPress={goMeal} accent={accent} c={c} />}
+      </>
+    );
+  };
+
+  // ── EXERCISE ────────────────────────────────────────────────────────────────
+  const renderExercise = () => {
+    const allEmpty = activityEntries.length === 0 && bgEx.length === 0;
+    return (
+      <>
+        <ReminderCard tab="exercise" accent={accent} c={c} />
+        {totalActivityCalories > 0 && (
+          <Pills items={[
+            { label: 'Burned',    value: `${totalActivityCalories} kcal`, accent },
+            { label: 'Sessions',  value: `${activityEntries.length}`,      accent: '#38bdf8' },
+          ]} />
+        )}
+        {/* Activity Lab entries */}
+        {activityEntries.length > 0 && (
+          <>
+            <SectionTitle text="ACTIVITY LAB" c={c} />
+            {activityEntries.map((a: any) => (
+              <EntryCard key={a.id} icon={a.activityIcon} title={a.activityName}
+                sub={`${a.intensity} · ${a.durationMins} min · −${a.caloriesBurned} kcal`}
+                time="Today" accent={accent} c={c} />
+            ))}
+          </>
+        )}
+        {/* BioGears exercise events */}
+        {bgEx.length > 0 && (
+          <>
+            <SectionTitle text="BIOGEARS SESSIONS" c={c} />
+            {bgEx.map(e => (
+              <EntryCard key={e.id} icon="🏃" title={e.displayLabel || 'Exercise'}
+                sub={`${Math.round(e.value * 100)}% intensity · ${Math.round((e.duration_seconds || 0) / 60)} min`}
+                time={e.wallTime} accent={accent} c={c} />
+            ))}
+          </>
+        )}
+        {allEmpty && <Empty icon="💪" text={'No exercise logged today.\nUse Activity Lab or BioGears Log Routine.'} btn="Log Activity" onPress={goEx} accent={accent} c={c} />}
+      </>
+    );
+  };
+
+  // ── SLEEP ───────────────────────────────────────────────────────────────────
+  const renderSleep = () => (
+    <>
+      <ReminderCard tab="sleep" accent={accent} c={c} />
+      {bgSleep.length > 0 ? (
+        <>
+          <Pills items={[{
+            label: 'Total Sleep',
+            value: `${bgSleep.reduce((s, e) => s + (e.value || 0), 0).toFixed(1)}h`,
+            accent,
+          }]} />
+          <SectionTitle text="SLEEP SESSIONS" c={c} />
+          {bgSleep.map(e => (
+            <EntryCard key={e.id} icon="😴" title={`${e.value}h sleep`}
+              sub={e.displayLabel || 'Logged to BioGears twin'}
+              time={e.wallTime} accent={accent} c={c} />
+          ))}
+        </>
+      ) : (
+        <Empty icon="🌙" text={"No sleep logged today.\nLog last night's sleep for circadian analysis."} btn="Log Sleep" onPress={goSleep} accent={accent} c={c} />
+      )}
+    </>
+  );
+
+  // ── HYDRATION ───────────────────────────────────────────────────────────────
+  const renderHydration = () => {
+    const allHydEmpty = (hydHist as any[]).length === 0 && bgWater.length === 0;
+    return (
+      <>
+        <ReminderCard tab="hydration" accent={accent} c={c} />
+        <Pills items={[
+          { label: 'Today',     value: `${water} mL`,                      accent },
+          { label: 'Goal',      value: '2000 mL',                           accent: '#64748b' },
+          { label: 'Remaining', value: `${Math.max(0, 2000 - water)} mL`,  accent: water >= 2000 ? '#10b981' : '#f59e0b' },
+        ]} />
+        {/* Raw hydration history */}
+        {(hydHist as any[]).length > 0 && (
+          <>
+            <SectionTitle text="INTAKE LOG" c={c} />
+            {(hydHist as any[]).slice(0, 12).map((e: any, i: number) => (
+              <EntryCard key={e.id ?? i}
+                icon={e.source === 'notification' ? '🔔' : '💧'}
+                title={`+${e.amount} mL`}
+                sub={e.source === 'notification' ? 'From reminder' : 'Manual entry · running total: ' + e.total + ' mL'}
+                time={fmt(e.timestamp)} accent={accent} c={c} />
+            ))}
+          </>
+        )}
+        {/* BioGears water events */}
+        {bgWater.length > 0 && (
+          <>
+            <SectionTitle text="BIOGEARS WATER EVENTS" c={c} />
+            {bgWater.map(e => (
+              <EntryCard key={e.id} icon="💧" title={`${Math.round(e.value)} mL`}
+                sub="Synced to twin simulation" time={e.wallTime} accent={accent} c={c} />
+            ))}
+          </>
+        )}
+        {allHydEmpty && <Empty icon="💧" text={'No hydration logged today.\nStay hydrated — aim for 2000 mL.'} btn="Log Water" onPress={goWater} accent={accent} c={c} />}
+      </>
+    );
+  };
+
+  // ── SYMPTOMS ────────────────────────────────────────────────────────────────
+  const renderSymptoms = () => {
+    const sev = (v: string) => v === 'emergency' ? '#ef4444' : v === 'severe' ? '#f97316' : v === 'moderate' ? '#f59e0b' : '#10b981';
+    return (
+      <>
+        <ReminderCard tab="symptoms" accent={accent} c={c} />
+        {activeSymptoms.length === 0 && historySymptoms.length === 0 ? (
+          <Empty icon="🩺" text={'No symptoms logged.\nTrack how you feel over time.'} btn="Log Symptom" onPress={goSym} accent={accent} c={c} />
+        ) : (
+          <>
+            {activeSymptoms.length > 0 && (
+              <>
+                <SectionTitle text="ACTIVE" c={c} />
+                {activeSymptoms.map((sym: any) => (
+                  <TouchableOpacity key={sym.id}
+                    style={[ec.card, { backgroundColor: c.card }]}
+                    onPress={() => router.push({ pathname: '/symptom-followup', params: { id: sym.id.toString(), name: sym.name } } as any)}>
+                    <View style={[ec.box, { backgroundColor: sev(sym.severity) + '20' }]}>
+                      <Ionicons name="medical" size={16} color={sev(sym.severity)} />
                     </View>
                     <View style={{ flex: 1 }}>
-                      <Text style={[styles.symptomName, { color: c.text }]}>{s.name}</Text>
-                      <View style={{ flexDirection: 'row', gap: 8, marginTop: 3 }}>
-                        <View style={[styles.severityPill, { backgroundColor: severityColor(s.severity) }]}>
-                          <Text style={styles.severityTxt}>{s.severity}</Text>
-                        </View>
-                        <Text style={[styles.logSub, { color: c.sub }]}>Active · {timeAgo(s.startedAt)}</Text>
-                      </View>
+                      <Text style={[ec.title, { color: c.text }]}>{sym.name}</Text>
+                      <Text style={[ec.sub, { color: sev(sym.severity) }]}>{sym.severity} · {ago(sym.startedAt)}</Text>
                     </View>
-                    <Ionicons name="chevron-forward" size={16} color={c.sub} />
+                    <Ionicons name="chevron-forward" size={14} color={c.sub} />
                   </TouchableOpacity>
                 ))}
-
-                {historySymptoms?.slice(0, 5).map((s: any) => (
-                  <LogCard
-                    key={s.id}
-                    icon="🩹"
-                    title={s.name}
-                    subtitle={`Resolved · ${s.severity}`}
-                    time={s.startedAt ? timeAgo(s.startedAt) : ''}
-                    color="#94a3b8"
-                    c={c}
-                    onPress={() => router.push('/symptom-history')}
-                  />
+              </>
+            )}
+            {historySymptoms.length > 0 && (
+              <>
+                <SectionTitle text="RESOLVED" c={c} />
+                {historySymptoms.slice(0, 5).map((sym: any) => (
+                  <EntryCard key={sym.id} icon="🩹" title={sym.name}
+                    sub={`Resolved · ${sym.severity}`}
+                    time={sym.startedAt ? ago(sym.startedAt) : ''} accent="#64748b" c={c} />
                 ))}
               </>
             )}
           </>
         )}
+      </>
+    );
+  };
+
+  const tabContent = () => {
+    switch (tab) {
+      case 'nutrition': return renderNutrition();
+      case 'exercise':  return renderExercise();
+      case 'sleep':     return renderSleep();
+      case 'hydration': return renderHydration();
+      case 'symptoms':  return renderSymptoms();
+    }
+  };
+
+  const logAction = () => {
+    switch (tab) {
+      case 'nutrition': return goMeal;
+      case 'exercise':  return goEx;
+      case 'sleep':     return goSleep;
+      case 'hydration': return goWater;
+      default:          return goSym;
+    }
+  };
+
+  return (
+    <View style={[s.root, { backgroundColor: c.bg }]}>
+      <Header title="Log Routine" showBack={false} />
+
+      {/* Tab bar */}
+      <ScrollView horizontal showsHorizontalScrollIndicator={false}
+        style={{ marginTop: headerH, maxHeight: 56 }}
+        contentContainerStyle={s.tabRow}>
+        {TABS.map(t => {
+          const active = t.id === tab;
+          return (
+            <TouchableOpacity key={t.id}
+              style={[s.tabBtn, { borderColor: active ? t.accent : c.border }, active && { backgroundColor: t.accent }]}
+              onPress={() => setTab(t.id)}>
+              <Text style={{ fontSize: 13 }}>{t.icon}</Text>
+              <Text style={[s.tabLabel, { color: active ? '#fff' : c.sub }]}>{t.label}</Text>
+            </TouchableOpacity>
+          );
+        })}
+      </ScrollView>
+
+      <ScrollView contentContainerStyle={s.scroll}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={accent} />}
+        showsVerticalScrollIndicator={false}>
+
+        {/* Section header */}
+        <View style={s.secHeader}>
+          <Text style={[s.secTitle, { color: c.text }]}>
+            {TABS.find(t => t.id === tab)?.icon} Today's {TABS.find(t => t.id === tab)?.label}
+          </Text>
+          <TouchableOpacity style={[s.addBtn, { backgroundColor: accent }]} onPress={logAction()}>
+            <Ionicons name="add" size={15} color="#fff" />
+            <Text style={s.addBtnT}>Log</Text>
+          </TouchableOpacity>
+        </View>
+
+        {tabContent()}
+
+        {/* Twin shortcut */}
+        <TouchableOpacity style={[s.twin, { backgroundColor: c.card }]} onPress={() => router.push('/twin' as any)}>
+          <Text style={{ fontSize: 20 }}>🫀</Text>
+          <View style={{ flex: 1 }}>
+            <Text style={[s.twinT, { color: c.text }]}>View in Digital Twin</Text>
+            <Text style={[s.twinS, { color: c.sub }]}>Full simulation dashboard & BioGears history</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={16} color={c.sub} />
+        </TouchableOpacity>
 
         <View style={{ height: 100 }} />
       </ScrollView>
@@ -406,53 +838,19 @@ export default function HistoryScreen() {
   );
 }
 
-// ─── Styles ───────────────────────────────────────────────────────────────────
-
-const styles = StyleSheet.create({
-  container:        { flex: 1 },
-  scroll:           { flex: 1 },
-  content:          { paddingHorizontal: 16, paddingBottom: 20 },
-
-  filterRow:        { marginBottom: 12, marginHorizontal: -4 },
-  filterTab:        { paddingHorizontal: 14, paddingVertical: 7, borderRadius: 20, marginRight: 8, backgroundColor: 'transparent', borderWidth: 1, borderColor: '#334155' },
-  filterTabText:    { fontSize: 12, fontWeight: '600' },
-
-  sectionHeader:    { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
-  sectionTitle:     { fontSize: 17, fontWeight: '700' },
-  sectionAction:    { fontSize: 14, fontWeight: '600' },
-
-  // Sim cards
-  simCard:          { borderRadius: 16, marginBottom: 10, overflow: 'hidden' },
-  simCardGradient:  { flexDirection: 'row', alignItems: 'center', padding: 14, gap: 12 },
-  simIcon:          { width: 44, height: 44, borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
-  simName:          { fontSize: 15, fontWeight: '600', marginBottom: 3 },
-  simMeta:          { fontSize: 12 },
-  simInsight:       { fontSize: 11, marginTop: 4, fontStyle: 'italic' },
-
-  // Log cards
-  logCard:          { flexDirection: 'row', alignItems: 'center', padding: 14, borderRadius: 14, marginBottom: 8, gap: 12 },
-  logIcon:          { width: 40, height: 40, borderRadius: 10, justifyContent: 'center', alignItems: 'center' },
-  logTitle:         { fontSize: 14, fontWeight: '600' },
-  logSub:           { fontSize: 12, marginTop: 2 },
-  logTime:          { fontSize: 11 },
-
-  // Symptom cards
-  symptomCard:      { flexDirection: 'row', alignItems: 'center', padding: 14, borderRadius: 14, marginBottom: 8, gap: 12 },
-  symptomBadge:     { width: 42, height: 42, borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
-  symptomName:      { fontSize: 15, fontWeight: '600' },
-  severityPill:     { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 8 },
-  severityTxt:      { color: '#fff', fontSize: 10, fontWeight: '700', textTransform: 'uppercase' },
-
-  // Quick actions
-  quickRow:         { flexDirection: 'row', justifyContent: 'space-between', marginTop: 12, marginBottom: 4 },
-  quickCard:        { width: '23%', paddingVertical: 16, borderRadius: 16, alignItems: 'center', gap: 4 },
-  quickLabel:       { fontSize: 11, fontWeight: '600', textAlign: 'center' },
-
-  viewMore:         { fontSize: 13, fontWeight: '600', textAlign: 'right', marginVertical: 6 },
-
-  // Empty state
-  emptyCard:        { borderRadius: 20, padding: 28, alignItems: 'center', marginBottom: 10 },
-  emptyTitle:       { fontSize: 17, fontWeight: '700', marginTop: 12, marginBottom: 6 },
-  emptySub:         { fontSize: 13, textAlign: 'center', lineHeight: 20 },
-  emptyBtn:         { marginTop: 14, paddingHorizontal: 24, paddingVertical: 10, borderRadius: 20 },
+const s = StyleSheet.create({
+  root:     { flex: 1 },
+  scroll:   { paddingHorizontal: 16, paddingTop: 8 },
+  tabRow:   { paddingHorizontal: 12, paddingVertical: 8, gap: 8, flexDirection: 'row', alignItems: 'center' },
+  tabBtn:   { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 13, paddingVertical: 6, borderRadius: 18, borderWidth: 1 },
+  tabLabel: { fontSize: 12, fontWeight: '600' },
+  secHeader:{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
+  secTitle: { fontSize: 16, fontWeight: '700' },
+  addBtn:   { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 13, paddingVertical: 7, borderRadius: 15 },
+  addBtnT:  { color: '#fff', fontSize: 13, fontWeight: '700' },
+  sec:      { fontSize: 10, fontWeight: '700', letterSpacing: 1.2, marginTop: 12, marginBottom: 6, textTransform: 'uppercase' },
+  pill:     { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8 },
+  twin:     { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14, borderRadius: 16, marginTop: 16 },
+  twinT:    { fontSize: 14, fontWeight: '700' },
+  twinS:    { fontSize: 12, marginTop: 2 },
 });

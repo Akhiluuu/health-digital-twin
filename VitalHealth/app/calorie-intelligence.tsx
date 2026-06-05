@@ -430,7 +430,7 @@ export default function CalorieIntelligenceScreen() {
           <Text style={[s.syncText, { color: colors.sub }]}>
             Synced with Nutrition · {selectedProfile.icon} {selectedProfile.label} profile
           </Text>
-          <TouchableOpacity onPress={() => router.push("/nutrition")}>
+          <TouchableOpacity onPress={() => router.push({ pathname: "/twin", params: { mode: "routine", tab: "meal" } } as any)}>
             <Text style={[s.syncLink, { color: colors.sub }]}>Log food ›</Text>
           </TouchableOpacity>
         </View>

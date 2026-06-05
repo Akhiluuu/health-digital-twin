@@ -444,6 +444,71 @@ export const cancelMedicineNotification = async (id: string) => {
 };
 
 ///////////////////////////////////////////////////////////
+// 🗓️ ROUTINE / HABIT REMINDER NOTIFICATIONS
+///////////////////////////////////////////////////////////
+
+export const scheduleRoutineReminder = async (
+  id: string,
+  title: string,
+  body: string,
+  hour: number,
+  minute: number,
+  tab: string
+): Promise<string> => {
+  if (!notifee) return id;
+  try {
+    const now     = new Date();
+    const trigger = new Date();
+    trigger.setHours(hour, minute, 0, 0);
+
+    if (trigger.getTime() <= now.getTime()) {
+      trigger.setDate(trigger.getDate() + 1);
+    }
+
+    console.log(`📅 Daily routine trigger [${tab}] scheduled at:`, trigger.toISOString());
+
+    await notifee.createTriggerNotification(
+      {
+        id,
+        title,
+        body,
+        data: {
+          type: "routine_reminder",
+          tab,
+          reminderId: id,
+        },
+        android: {
+          channelId: CHANNEL_ID,
+          pressAction: { id: "default" },
+        },
+      },
+      {
+        type: TriggerType.TIMESTAMP,
+        timestamp: trigger.getTime(),
+        repeatFrequency: RepeatFrequency.DAILY,
+        alarmManager: {
+          allowWhileIdle: true,
+          type: AlarmType.SET_EXACT_AND_ALLOW_WHILE_IDLE,
+        },
+      }
+    );
+  } catch (e) {
+    console.log("❌ scheduleRoutineReminder error:", e);
+  }
+  return id;
+};
+
+export const cancelRoutineReminder = async (id: string) => {
+  if (!notifee) return;
+  try {
+    await notifee.cancelNotification(id);
+    console.log("🔕 Cancelled routine reminder:", id);
+  } catch (error) {
+    console.log("❌ Cancel routine reminder error:", error);
+  }
+};
+
+///////////////////////////////////////////////////////////
 // FOREGROUND HANDLER
 ///////////////////////////////////////////////////////////
 

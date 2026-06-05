@@ -241,12 +241,18 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
       if (err.statusCode === 404) {
         setTwinStatus('unregistered');
       } else {
-        // Server unreachable — don't mark as unregistered, just unknown
-        setTwinStatusError(err.message || 'Cannot reach BioGears server');
-        setTwinStatus('error');
+        // Server unreachable — use persisted flag as offline fallback
+        // so previously-calibrated users still see "Calibrated" status
+        if (profile?.biogears_registered) {
+          setTwinStatus('ready');
+          setTwinStatusError(null);
+        } else {
+          setTwinStatusError(err.message || 'Cannot reach BioGears server');
+          setTwinStatus('error');
+        }
       }
     }
-  }, [twinUserId]);
+  }, [twinUserId, profile?.biogears_registered]);
 
   // ── Load persisted data on mount ─────────────────────────────────────────
 
