@@ -6,13 +6,13 @@ import { getFirestore } from "firebase/firestore";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const firebaseConfig = {
-  apiKey: "AIzaSyDaEevmPis-M0PYDw4ZkPiPUSpwEQcw1tw",
-  authDomain: "vitaltwin-78004.firebaseapp.com",
-  projectId: "vitaltwin-78004",
-  storageBucket: "vitaltwin-78004.firebasestorage.app",
-  messagingSenderId: "1049910788509",
-  appId: "1:1049910788509:web:df337f5c7b21f45878af74",
-  measurementId: "G-Q6TRCEJ2ZL"
+  apiKey: "AIzaSyB09o2UiP6WHOONCHX15MVwYr0FP4--l9jI",
+  authDomain: "vital-health-2026-1e1ee.firebaseapp.com",
+  projectId: "vital-health-2026-1e1ee",
+  storageBucket: "vital-health-2026-1e1ee.firebasestorage.app",
+  messagingSenderId: "531709406873",
+  appId: "1:531709406873:web:81199b6c6fb8c0cefa9208",
+  measurementId: "G-E5HQKHME00"
 };
 
 const app = initializeApp(firebaseConfig);
