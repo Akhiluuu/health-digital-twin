@@ -71,19 +71,17 @@ class LLMEngine:
 
         if not LLM_MODEL_PATH.exists():
             raise ModelNotFoundError(
-                f"Model shard 1 not found: {LLM_MODEL_PATH}\n"
-                "Need all 3 shards in model/:\n"
-                "  qwen2.5-14b-instruct-q5_k_m-00001-of-00003.gguf\n"
-                "  qwen2.5-14b-instruct-q5_k_m-00002-of-00003.gguf\n"
-                "  qwen2.5-14b-instruct-q5_k_m-00003-of-00003.gguf\n"
-                "Download: https://huggingface.co/Qwen/Qwen2.5-14B-Instruct-GGUF"
+                f"Model file not found: {LLM_MODEL_PATH}\n"
+                "Please ensure the GGUF model file is placed in the model/ directory."
             )
 
-        model_dir = LLM_MODEL_PATH.parent
-        for shard in ["00002-of-00003", "00003-of-00003"]:
-            p = model_dir / f"qwen2.5-14b-instruct-q5_k_m-{shard}.gguf"
-            if not p.exists():
-                raise ModelNotFoundError(f"Missing shard: {p.name}")
+        model_name = LLM_MODEL_PATH.name
+        if "00001-of-00003" in model_name:
+            model_dir = LLM_MODEL_PATH.parent
+            for shard in ["00002-of-00003", "00003-of-00003"]:
+                p = model_dir / model_name.replace("00001-of-00003", shard)
+                if not p.exists():
+                    raise ModelNotFoundError(f"Missing model shard: {p.name}")
 
         log.info(f"Loading LLM: {LLM_MODEL_PATH.name} …")
         log.info(f"n_ctx={LLM_CONTEXT_LENGTH} n_threads={LLM_N_THREADS} "
