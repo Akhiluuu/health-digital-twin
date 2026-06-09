@@ -10,6 +10,7 @@
 
 import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import Clipboard from "@react-native-clipboard/clipboard";
 import { BlurView } from "expo-blur";
 import * as ImagePicker from "expo-image-picker";
 import { LinearGradient } from "expo-linear-gradient";
@@ -38,7 +39,8 @@ import {
 import Slider from "@react-native-community/slider";
 
 import { syncMedicinesFromFirebase } from "@/services/medicineSync";
-import { signOut } from "firebase/auth";
+import { signOut, deleteUser, EmailAuthProvider, reauthenticateWithCredential } from "firebase/auth";
+import { deleteUserFirestoreData } from "../services/userService";
 import { doc, getDoc, setDoc } from "firebase/firestore";
 import { useBiogearsTwin } from "../context/BiogearsTwinContext";
 import { useProfile } from "../context/ProfileContext";
@@ -431,6 +433,7 @@ export default function ProfileScreen() {
   const [myInviteCode,    setMyInviteCode]    = useState<string>("");
   const [activeMemberId,  setActiveMemberId]  = useState<string>("self");
   const [addMemberModal,  setAddMemberModal]  = useState(false);
+  const [qrModalVisible,  setQrModalVisible]  = useState(false);
   const [switchAnim]                          = useState(new Animated.Value(1));
 
   const [newMemberName,     setNewMemberName]     = useState("");
@@ -452,6 +455,12 @@ export default function ProfileScreen() {
   const [editMedicalModal, setEditMedicalModal] = useState(false);
   const [emergencyModal,   setEmergencyModal]   = useState(false);
   const fadeAnim = useRef(new Animated.Value(0)).current;
+
+  // ── Delete Account State ───────────────────────────────────────────────────
+  const [deletePasswordModal, setDeletePasswordModal] = useState(false);
+  const [deletePassword,      setDeletePassword]      = useState("");
+  const [deleteLoading,       setDeleteLoading]       = useState(false);
+  const [deleteError,         setDeleteError]         = useState("");
 
   useEffect(() => {
     loadSettings();
@@ -577,6 +586,53 @@ export default function ProfileScreen() {
       }
     } catch (e) {
       console.log("❌ saveProfileData error:", e);
+    }
+  };
+
+  const handleDeleteAccount = async (passwordForReauth?: string) => {
+    const user = auth.currentUser;
+    if (!user) return;
+
+    setDeleteLoading(true);
+    setDeleteError("");
+
+    try {
+      // 1. Re-authenticate user if password is provided (required for recent login validation)
+      if (passwordForReauth) {
+        const credential = EmailAuthProvider.credential(user.email || "", passwordForReauth);
+        await reauthenticateWithCredential(user, credential);
+      }
+
+      const uid = user.uid;
+
+      // 2. Delete Firestore Data
+      await deleteUserFirestoreData(uid);
+
+      // 3. Delete Firebase Auth User
+      await deleteUser(user);
+
+      // 4. Success! Clear everything local and redirect
+      setDeleteLoading(false);
+      setDeletePasswordModal(false);
+      setDeletePassword("");
+      await AsyncStorage.clear();
+      await resetProfile();
+      Alert.alert("Account Deleted", "Your account and all associated health data have been permanently deleted.");
+      router.replace("/welcome");
+    } catch (e: any) {
+      setDeleteLoading(false);
+      console.log("❌ Delete Account Error:", e);
+      if (e.code === "auth/requires-recent-login") {
+        // Show password re-authentication modal
+        setDeletePassword("");
+        setDeletePasswordModal(true);
+      } else {
+        const msg = e.message || "An error occurred during account deletion.";
+        setDeleteError(msg);
+        if (!deletePasswordModal) {
+          Alert.alert("Error Deleting Account", msg);
+        }
+      }
     }
   };
 
@@ -1038,7 +1094,7 @@ export default function ProfileScreen() {
           <Ionicons name="people" size={20} color={colors.purple} />
           <Text style={[styles.sectionTitle, { color: colors.text }]}>Family Health</Text>
         </View>
-        <TouchableOpacity style={[styles.addMemberBtn, { backgroundColor: colors.purple + "20" }]} onPress={() => setAddMemberModal(true)}>
+        <TouchableOpacity style={[styles.addMemberBtn, { backgroundColor: colors.purple + "20" }]} onPress={() => router.push("/family/add-member")}>
           <Ionicons name="person-add" size={16} color={colors.purple} />
           <Text style={[styles.addMemberBtnText, { color: colors.purple }]}>Add</Text>
         </TouchableOpacity>
@@ -1066,7 +1122,7 @@ export default function ProfileScreen() {
             </View>
           </TouchableOpacity>
         ))}
-        <TouchableOpacity style={[styles.memberCardAdd, { borderColor: colors.border, backgroundColor: colors.familyBg }]} onPress={() => setAddMemberModal(true)}>
+        <TouchableOpacity style={[styles.memberCardAdd, { borderColor: colors.border, backgroundColor: colors.familyBg }]} onPress={() => router.push("/family/add-member")}>
           <View style={[styles.memberAvatarAdd, { backgroundColor: colors.border }]}>
             <Ionicons name="add" size={24} color={colors.subText} />
           </View>
@@ -1077,16 +1133,16 @@ export default function ProfileScreen() {
 
       {/* ✅ Health ID from Firebase */}
       <View style={[styles.myCodeBox, { backgroundColor: colors.familyBg, borderColor: colors.familyBorder }]}>
-        <View style={styles.myCodeLeft}>
+        <TouchableOpacity style={styles.myCodeLeft} onPress={() => setQrModalVisible(true)}>
           <View style={[styles.myCodeIconBox, { backgroundColor: colors.purple + "20" }]}>
             <Ionicons name="qr-code" size={20} color={colors.purple} />
           </View>
           <View>
             <Text style={[styles.myCodeLabel, { color: colors.subText }]}>My Unique Health ID</Text>
             <Text style={[styles.myCodeValue, { color: colors.purple }]}>{myInviteCode || "Loading..."}</Text>
-            <Text style={[styles.myCodeSub, { color: colors.subText }]}>Share with family to link health data</Text>
+            <Text style={[styles.myCodeSub, { color: colors.subText }]}>Tap to show QR Code</Text>
           </View>
-        </View>
+        </TouchableOpacity>
         <View style={styles.myCodeActions}>
           <TouchableOpacity style={[styles.codeActionBtn, { backgroundColor: colors.accent + "20" }]} onPress={() => Alert.alert("Copied!", `Your code: ${myInviteCode}`)}>
             <Ionicons name="copy-outline" size={16} color={colors.accent} />
@@ -1131,6 +1187,85 @@ export default function ProfileScreen() {
     </TouchableOpacity>
   );
 
+  const renderDeleteAccount = () => (
+    <TouchableOpacity
+      style={[styles.logoutButton, { backgroundColor: colors.card, marginTop: 0, borderColor: colors.danger, borderWidth: 1 }]}
+      onPress={() => Alert.alert(
+        "⚠️ Delete Account",
+        "Are you absolutely sure you want to delete your account? This will permanently wipe all your medical history, synced data, and credentials. This action CANNOT be undone.",
+        [
+          { text: "Cancel", style: "cancel" },
+          { text: "Delete Permanently", style: "destructive", onPress: () => handleDeleteAccount() },
+        ]
+      )}
+    >
+      <Ionicons name="trash-outline" size={22} color={colors.danger} />
+      <Text style={[styles.logoutText, { color: colors.danger }]}>Delete Account</Text>
+    </TouchableOpacity>
+  );
+
+  const renderDeletePasswordModal = () => (
+    <Modal transparent visible={deletePasswordModal} animationType="slide">
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 20}
+      >
+        <View style={[styles.modalOverlay, { justifyContent: "flex-end" }]}>
+          <Animated.View style={[styles.modalCard, styles.bottomSheet, { backgroundColor: colors.card, maxHeight: 320 }]}>
+            <View style={styles.sheetHandle} />
+            <Text style={[styles.modalTitle, { color: colors.text }]}>Confirm Identity</Text>
+
+            <Text style={[styles.fieldLabel, { color: colors.subText, marginBottom: 8 }]}>
+              Please enter your password to confirm account deletion.
+            </Text>
+            <TextInput
+              placeholder="Enter password"
+              placeholderTextColor={colors.subText}
+              style={[styles.input, { backgroundColor: colors.bg, color: colors.text }]}
+              value={deletePassword}
+              onChangeText={setDeletePassword}
+              secureTextEntry
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+
+            {deleteError ? (
+              <Text style={{ color: colors.danger, fontSize: 13, marginBottom: 8, marginLeft: 2 }}>
+                {deleteError}
+              </Text>
+            ) : null}
+
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={[styles.modalButton, { backgroundColor: colors.border }]}
+                onPress={() => {
+                  setDeletePasswordModal(false);
+                  setDeletePassword("");
+                  setDeleteError("");
+                }}
+                disabled={deleteLoading}
+              >
+                <Text style={[styles.modalButtonText, { color: colors.text }]}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalButton, { backgroundColor: colors.danger }]}
+                onPress={() => handleDeleteAccount(deletePassword)}
+                disabled={deleteLoading}
+              >
+                {deleteLoading ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <Text style={styles.modalButtonText}>Confirm Delete</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </Animated.View>
+        </View>
+      </KeyboardAvoidingView>
+    </Modal>
+  );
+
   // ──────────────────────────────────────────────────────────────────────────
   // MAIN RENDER
   // ──────────────────────────────────────────────────────────────────────────
@@ -1147,8 +1282,11 @@ export default function ProfileScreen() {
         {renderFamilyMembers()}
         {renderAppSettings()}
         {renderLogout()}
+        {renderDeleteAccount()}
         <View style={{ height: 20 }} />
       </ScrollView>
+
+      {renderDeletePasswordModal()}
 
       {/* ── Pickers (rendered outside modals so they layer on top) ─────── */}
       <DropdownPicker
@@ -1513,6 +1651,37 @@ export default function ProfileScreen() {
             </Animated.View>
           </View>
         </KeyboardAvoidingView>
+      </Modal>
+
+      {/* ── My Health ID QR Code Modal ─────────────────────────────────── */}
+      <Modal transparent visible={qrModalVisible} animationType="fade" onRequestClose={() => setQrModalVisible(false)}>
+        <TouchableOpacity style={[styles.modalOverlay, { justifyContent: "center", alignItems: "center" }]} activeOpacity={1} onPress={() => setQrModalVisible(false)}>
+          <View style={[styles.modalCard, { backgroundColor: colors.card, alignItems: "center", padding: 24, borderRadius: 24, width: "85%", maxWidth: 340 }]}>
+            <Text style={[styles.modalTitle, { color: colors.text }]}>My Health QR Code</Text>
+            <Text style={{ color: colors.subText, fontSize: 13, textAlign: "center", marginBottom: 20 }}>
+              Let your family member scan this to link their health tracker.
+            </Text>
+            {myInviteCode ? (
+              <View style={{ backgroundColor: "#fff", padding: 12, borderRadius: 16, marginBottom: 20 }}>
+                <Image
+                  source={{ uri: `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${myInviteCode}` }}
+                  style={{ width: 200, height: 200 }}
+                />
+              </View>
+            ) : (
+              <ActivityIndicator size="large" color={colors.accent} style={{ marginVertical: 30 }} />
+            )}
+            <View style={{ backgroundColor: colors.bg, width: "100%", padding: 14, borderRadius: 12, alignItems: "center", flexDirection: "row", justifyContent: "space-between" }}>
+              <Text style={{ color: colors.text, fontWeight: "600", fontSize: 15 }}>{myInviteCode}</Text>
+              <TouchableOpacity onPress={() => { Clipboard.setString(myInviteCode); Alert.alert("Copied!", "Health ID copied!"); }}>
+                <Ionicons name="copy-outline" size={18} color={colors.accent} />
+              </TouchableOpacity>
+            </View>
+            <TouchableOpacity style={{ backgroundColor: colors.accent, marginTop: 24, width: "100%", padding: 14, borderRadius: 12, alignItems: "center" }} onPress={() => setQrModalVisible(false)}>
+              <Text style={{ color: "#fff", fontSize: 14, fontWeight: "600" }}>Close</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
       </Modal>
 
       {/* ── Add Family Member Modal ─────────────────────────────────────── */}

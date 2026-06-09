@@ -12,6 +12,7 @@ import { AppState } from "react-native";
 import {
   addMedicine as dbAddMedicine,
   deleteMedicine,
+  deleteAllMedicines,
   getMedicines,
   markMedicineTakenByNotificationId,
   updateMedicineNotificationId,
@@ -29,6 +30,7 @@ import { syncMedicineFile } from "../services/medicineFileSync";
 import {
   syncAddMedicine,
   syncDeleteMedicine,
+  syncDeleteAllMedicines,
   syncMarkMedicineTaken,
   syncUpdateMedicineNotificationId,
   fetchMedicinesFromFirebase,
@@ -76,6 +78,7 @@ type ContextType = {
     reminder: number
   ) => Promise<void>;
   removeMedicine: (id: number) => Promise<void>;
+  clearAllMedicines: () => Promise<void>;
   reloadMedicines: () => Promise<void>;
   markMedicineAsTaken: (notificationId?: string) => Promise<void>;
   isLoadingMemberMedicines: boolean;
@@ -314,6 +317,22 @@ export const MedicineProvider = ({
     }
   };
 
+  const clearAllMedicines = async () => {
+    try {
+      for (const med of medicines) {
+        if (med.notificationId) {
+          await cancelMedicineNotification(med.notificationId);
+        }
+      }
+      deleteAllMedicines();
+      await syncDeleteAllMedicines();
+      await loadMedicines();
+      if (!isSwitched) await syncMedicineFile();
+    } catch (err) {
+      console.log("💊 Clear all medicines error:", err);
+    }
+  };
+
   const reloadMedicines = async () => { await loadMedicines(); };
 
   ///////////////////////////////////////////////////////////
@@ -324,6 +343,7 @@ export const MedicineProvider = ({
         medicines,
         addMedicine,
         removeMedicine,
+        clearAllMedicines,
         reloadMedicines,
         markMedicineAsTaken,
         isLoadingMemberMedicines,

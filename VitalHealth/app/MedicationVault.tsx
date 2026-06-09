@@ -44,7 +44,7 @@ export default function MedicationVault() {
   const { theme } = useTheme();
   const c = colors[theme];
 
-  const { medicines, reloadMedicines } = useMedicine();
+  const { medicines, reloadMedicines, clearAllMedicines } = useMedicine();
   const [filter, setFilter] = useState<"all" | "regular" | "once">("all");
 
   /////////////////////////////////////////////////////////
@@ -102,6 +102,29 @@ export default function MedicationVault() {
               if (err instanceof Error) {
                 console.log(err.message);
               }
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const handleDeleteAll = () => {
+    if (medicines.length === 0) return;
+    Alert.alert(
+      "Delete All Medications",
+      "Are you sure you want to delete all medications? This will cancel all scheduled reminders and sync with the cloud.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete All",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              await clearAllMedicines();
+              Alert.alert("Success", "All medications have been deleted.");
+            } catch (err) {
+              console.log("❌ Error deleting all medicines:", err);
             }
           },
         },
@@ -228,6 +251,15 @@ export default function MedicationVault() {
           </Text>
 
           <View style={styles.headerButtons}>
+            {medicines.length > 0 && (
+              <TouchableOpacity
+                style={[styles.historyButton, { backgroundColor: c.card }]}
+                onPress={handleDeleteAll}
+              >
+                <Ionicons name="trash-outline" size={24} color="#ef4444" />
+              </TouchableOpacity>
+            )}
+
             <TouchableOpacity
               style={[styles.historyButton, { backgroundColor: c.card }]}
               onPress={() => router.push("/MedicineHistory" as any)}

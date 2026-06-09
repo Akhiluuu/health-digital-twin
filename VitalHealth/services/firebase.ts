@@ -6,7 +6,7 @@ import { getFirestore } from "firebase/firestore";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const firebaseConfig = {
-  apiKey: "AIzaSyB09o2UiP6WHOONCHX15MVwYr0FP4--l9jI",
+  apiKey: "AIzaSyBO9o2UiP6WH0NCHX15WvwYR8FP4--l9jI",
   authDomain: "vital-health-2026-1e1ee.firebaseapp.com",
   projectId: "vital-health-2026-1e1ee",
   storageBucket: "vital-health-2026-1e1ee.firebasestorage.app",

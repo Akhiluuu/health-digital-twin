@@ -8,10 +8,11 @@ import "../tasks/stepTrackingTask";
 
 ///////////////////////////////////////////////////////////
 
-import { Stack } from "expo-router";
+import { Stack, router } from "expo-router";
 import React, { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, View } from "react-native";
 import * as SplashScreen from "expo-splash-screen";
+import notifee from "@notifee/react-native";
 
 ///////////////////////////////////////////////////////////
 // CONTEXT PROVIDERS
@@ -145,7 +146,7 @@ export default function RootLayout() {
   }, []);
 
   ///////////////////////////////////////////////////////////
-  // FOREGROUND NOTIFICATION HANDLER
+  // FOREGROUND & COLD START NOTIFICATION HANDLER
   ///////////////////////////////////////////////////////////
   useEffect(() => {
     const unsubscribe = registerNotifeeForegroundHandler();
@@ -153,6 +154,45 @@ export default function RootLayout() {
       if (unsubscribe) unsubscribe();
     };
   }, []);
+
+  useEffect(() => {
+    if (!isReady) return;
+
+    // Handle cold start launches from notifications
+    notifee.getInitialNotification().then((initialNotification) => {
+      if (initialNotification) {
+        const { notification } = initialNotification;
+        const data = notification?.data ?? {};
+        console.log("🔔 Cold start from notification:", data);
+        
+        // Short delay to ensure the React Navigation / Expo Router is fully mounted
+        setTimeout(() => {
+          if (data.type === "routine_reminder" && data.tab) {
+            router.push({
+              pathname: "/(tabs)/history",
+              params: { tab: data.tab }
+            } as any);
+          } else if (data.type === "twin_reminder") {
+            router.push("/(tabs)/twin" as any);
+          } else if (data.type === "medicine") {
+            router.push("/MedicationVault" as any);
+          } else if (data.type === "hydration") {
+            router.push({
+              pathname: "/(tabs)/history",
+              params: { tab: "hydration" }
+            } as any);
+          } else if (data.type === "symptom") {
+            router.push({
+              pathname: "/(tabs)/history",
+              params: { tab: "symptoms" }
+            } as any);
+          }
+        }, 1000);
+      }
+    }).catch((err) => {
+      console.log("⚠️ Error checking initial notification:", err);
+    });
+  }, [isReady]);
 
   ///////////////////////////////////////////////////////////
   // LOADING SCREEN

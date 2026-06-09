@@ -105,6 +105,10 @@ export function deleteMedicine(id: number) {
   db.runSync("DELETE FROM medicines WHERE id = ?", [id]);
 }
 
+export function deleteAllMedicines() {
+  db.runSync("DELETE FROM medicines");
+}
+
 ///////////////////////////////////////////////////////////
 // UPDATE NOTIFICATION ID
 ///////////////////////////////////////////////////////////

@@ -13,7 +13,9 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useProfile } from './ProfileContext';
 import { buildDefaultRoutine } from '../services/onboardingRoutineBuilder';
 import * as BiogearsAPI from '../services/biogears';
+import { auth } from '../services/firebase';
 import { getTwinId } from '../utils/twinUtils';
+import { scheduleDailyLogReminder } from '../services/notifeeService';
 import { useMedicine } from './MedicineContext';
 import type {
   BiogearsHealthEvent,
@@ -262,9 +264,15 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
     if (!twinUserId) return;
     recheckTwinStatus();
     loadTodayFromStorage();
-    loadRoutinesFromStorage();
-    refreshSessions();
-    refreshAnalytics();
+    
+    // Sync custom routines & session metadata from Firestore in the background
+    (async () => {
+      await BiogearsAPI.syncDigitalTwinDataFromFirestore(twinUserId);
+      await loadRoutinesFromStorage();
+      await refreshSessions();
+      await refreshAnalytics();
+    })();
+
     // ── Load cached vitals from SQLite so Dashboard works offline ─────────
     getLastSimulation(twinUserId).then((record) => {
       if (record && !lastVitals) {
@@ -280,7 +288,7 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
     }).catch(() => {});
 
     resumeActiveJob();
-  }, [twinUserId]);
+  }, [twinUserId, profile]);
 
   const resumeActiveJob = async () => {
     try {
@@ -304,6 +312,10 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
   };
 
   const finishSimulationSuccess = async (result: any) => {
+    const todayStr = new Date().toDateString();
+    await AsyncStorage.setItem('@last_simulated_date', todayStr);
+    await scheduleDailyLogReminder();
+
     setLastVitals(result.vitals);
     setLastAnomalies(result.anomalies || []);
     setLastInteractionWarnings(result.interaction_warnings || []);
@@ -424,26 +436,39 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
     // but no saved routines yet (covers new signups + existing users)
     if (r.length === 0) {
       try {
-        const allKeys = await AsyncStorage.getAllKeys();
-        const habitsKey = allKeys.find(k => k.startsWith('@onboarding_habits_'));
-        if (habitsKey) {
-          const raw = await AsyncStorage.getItem(habitsKey);
-          if (raw) {
-            const habits = JSON.parse(raw);
-            const heightVal = profile ? parseFloat((profile.height || '').replace(/[^0-9.]/g, '')) : 175;
-            const weightVal = profile ? parseFloat((profile.weight || '').replace(/[^0-9.]/g, '')) : 70;
-            const routine = buildDefaultRoutine(habits, {
-              gender: profile ? profile.gender : 'Male',
-              dateOfBirth: profile ? profile.dateOfBirth : '1995-01-01',
-              height: heightVal || 175,
-              weight: weightVal || 70,
-            });
-            await BiogearsAPI.saveRoutine(twinUserId, routine);
-            await BiogearsAPI.setDefaultRoutine(twinUserId, routine.id);
-            setSavedRoutines([routine]);
-            console.log('[BiogearsTwin] ✅ Auto-generated default routine from onboarding habits');
-            return;
+        let habits: any = null;
+
+        // 1. Check if habits are stored in the synced Firestore profile
+        if (profile && (profile as any).habits) {
+          habits = (profile as any).habits;
+          console.log('[BiogearsTwin] Found habits on profile from Firestore');
+        } else {
+          // 2. Fallback to AsyncStorage for offline / new onboarding completions
+          const user = auth.currentUser;
+          const habitsKey = user ? `@onboarding_habits_${user.uid}` : null;
+          if (habitsKey) {
+            const raw = await AsyncStorage.getItem(habitsKey);
+            if (raw) {
+              habits = JSON.parse(raw);
+              console.log('[BiogearsTwin] Found habits in local AsyncStorage');
+            }
           }
+        }
+
+        if (habits) {
+          const heightVal = profile ? parseFloat((profile.height || '').replace(/[^0-9.]/g, '')) : 175;
+          const weightVal = profile ? parseFloat((profile.weight || '').replace(/[^0-9.]/g, '')) : 70;
+          const routine = buildDefaultRoutine(habits, {
+            gender: profile ? profile.gender : 'Male',
+            dateOfBirth: profile ? profile.dateOfBirth : '1995-01-01',
+            height: heightVal || 175,
+            weight: weightVal || 70,
+          });
+          await BiogearsAPI.saveRoutine(twinUserId, routine);
+          await BiogearsAPI.setDefaultRoutine(twinUserId, routine.id);
+          setSavedRoutines([routine]);
+          console.log('[BiogearsTwin] ✅ Auto-generated default routine "My Typical Day" from habits');
+          return;
         }
       } catch (e) {
         console.log('[BiogearsTwin] Could not auto-generate default routine:', e);
@@ -743,7 +768,7 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
         targetDate.setDate(now.getDate() - i);
 
         for (const e of defaultRoutine.events) {
-          const [hh, mm] = (e.wallTime || '08:00').split(':').map(Number);
+          const [hh, mm] = ((e as any).wallTime || '08:00').split(':').map(Number);
           const eventDate = new Date(targetDate);
           eventDate.setHours(hh || 0, mm || 0, 0, 0);
           const timestamp = Math.floor(eventDate.getTime() / 1000);

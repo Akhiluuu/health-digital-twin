@@ -4,7 +4,6 @@ import {
   ActivityIndicator,
   Animated,
   Easing,
-  findNodeHandle,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -14,7 +13,6 @@ import {
   TextInput,
   TouchableOpacity,
   View,
-  UIManager,
 } from "react-native";
 import Svg, { Path, Line } from "react-native-svg";
 
@@ -98,19 +96,14 @@ export default function SignIn() {
   const passInputRef  = useRef<TextInput>(null);
 
   // ✅ FIX: measureLayout called on TextInput ref → native component ✓
-  const scrollToField = (fieldRef: React.RefObject<TextInput>) => {
+  const scrollToField = (fieldRef: React.RefObject<TextInput | null>) => {
     if (!fieldRef.current || !scrollRef.current) return;
-    const scrollNode = findNodeHandle(scrollRef.current);
-    const fieldNode = findNodeHandle(fieldRef.current);
-    if (!scrollNode || !fieldNode) return;
-
-    UIManager.measureLayout(
-      fieldNode,
-      scrollNode,
-      () => {},
+    fieldRef.current.measureLayout(
+      scrollRef.current as any,
       (_x, y) => {
         scrollRef.current?.scrollTo({ y: y - 24, animated: true });
-      }
+      },
+      () => {}
     );
   };
 
@@ -167,7 +160,7 @@ export default function SignIn() {
     }
 
     setLoading(false);
-    router.replace("/(tabs)");
+    router.replace("/startup");
   };
 
   const handleForgotPassword = async () => {

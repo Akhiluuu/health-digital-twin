@@ -5,10 +5,8 @@ import {
   Alert,
   Animated,
   Easing,
-  findNodeHandle,
   KeyboardAvoidingView,
   Platform,
-  SafeAreaView,
   ScrollView,
   StyleSheet,
   Text,
@@ -16,6 +14,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import Svg, { Path, Rect, Line } from "react-native-svg";
 
 import { createUserWithEmailAndPassword, updateProfile as updateAuthProfile } from "firebase/auth";
@@ -131,12 +130,10 @@ export default function SignUp() {
   const confirmRef = useRef<View>(null);
 
   // Scrolls the given field wrapper into view above the keyboard
-  const scrollToField = (fieldRef: React.RefObject<View>) => {
+  const scrollToField = (fieldRef: React.RefObject<View | null>) => {
     if (!fieldRef.current || !scrollRef.current) return;
-    const scrollNode = findNodeHandle(scrollRef.current);
-    if (!scrollNode) return;
     fieldRef.current.measureLayout(
-      scrollNode,
+      scrollRef.current as any,
       (_x, y) => {
         scrollRef.current?.scrollTo({ y: y - 24, animated: true });
       },

@@ -9,6 +9,7 @@ import notifee, {
 } from "@notifee/react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { EventEmitter } from "eventemitter3";
+import { router } from "expo-router";
 
 import {
   markMedicineTakenByNotificationId,
@@ -80,6 +81,9 @@ export async function setupNotifee() {
   } catch (e) {
     console.log("⚠️ Power manager settings unavailable:", e);
   }
+
+  // Schedule daily digital twin sync check-in reminder
+  await scheduleDailyLogReminder();
 
   console.log("✅ Notifee initialized");
 }
@@ -509,16 +513,119 @@ export const cancelRoutineReminder = async (id: string) => {
 };
 
 ///////////////////////////////////////////////////////////
+// 🔄 DAILY LOG / SYNC DIGITAL TWIN REMINDER
+///////////////////////////////////////////////////////////
+
+export const scheduleDailyLogReminder = async () => {
+  try {
+    const id = "daily_log_reminder";
+
+    const enabledRaw = await AsyncStorage.getItem("@twin_reminder_enabled");
+    const enabled = enabledRaw === null ? true : enabledRaw === "true";
+
+    if (!enabled) {
+      await notifee.cancelNotification(id).catch(() => {});
+      console.log("🔕 Daily Twin Sync Reminder is disabled");
+      return;
+    }
+
+    const timeRaw = await AsyncStorage.getItem("@twin_reminder_time");
+    const time = timeRaw || "22:00"; // 10:00 PM default
+    const [h, m] = time.split(":").map(Number);
+
+    const lastSimDate = await AsyncStorage.getItem("@last_simulated_date");
+    const todayStr = new Date().toDateString();
+
+    const trigger = new Date();
+    trigger.setHours(h, m, 0, 0);
+
+    const now = new Date();
+
+    if (lastSimDate === todayStr) {
+      // Already simulated today, schedule for tomorrow
+      trigger.setDate(trigger.getDate() + 1);
+    } else {
+      // Hasn't simulated today. If the scheduled time has already passed today, schedule for tomorrow
+      if (trigger.getTime() <= now.getTime()) {
+        trigger.setDate(trigger.getDate() + 1);
+      }
+    }
+
+    // Cancel any existing daily log reminder trigger first
+    await notifee.cancelNotification(id).catch(() => {});
+
+    await notifee.createTriggerNotification(
+      {
+        id,
+        title: "🔄 Sync Digital Twin",
+        body: "Keep your physiological twin synchronized! Tap to log today's routine events.",
+        data: {
+          type: "twin_reminder",
+        },
+        android: {
+          channelId: CHANNEL_ID,
+          pressAction: { id: "default" },
+        },
+      },
+      {
+        type: TriggerType.TIMESTAMP,
+        timestamp: trigger.getTime(),
+        repeatFrequency: RepeatFrequency.DAILY,
+        alarmManager: {
+          allowWhileIdle: true,
+          type: AlarmType.SET_EXACT_AND_ALLOW_WHILE_IDLE,
+        },
+      }
+    );
+    console.log("📅 Daily Twin Sync Reminder scheduled for:", trigger.toISOString());
+  } catch (error) {
+    console.log("❌ Error scheduling daily log reminder:", error);
+  }
+};
+
+///////////////////////////////////////////////////////////
 // FOREGROUND HANDLER
 ///////////////////////////////////////////////////////////
 
 export function registerNotifeeForegroundHandler() {
   return notifee.onForegroundEvent(async ({ type, detail }) => {
+    const notifId   = detail.notification?.id ?? "";
+    const data      = detail.notification?.data ?? {};
+
+    // ── Handle Normal Notification Press ──────────────────────────
+    if (type === EventType.PRESS) {
+      console.log("🔔 Foreground Notification Tap (Press):", data);
+
+      if (data.type === "routine_reminder" && data.tab) {
+        router.push({
+          pathname: "/(tabs)/history",
+          params: { tab: data.tab }
+        } as any);
+      } else if (data.type === "twin_reminder") {
+        router.push("/(tabs)/twin" as any);
+      } else if (data.type === "medicine") {
+        router.push("/MedicationVault" as any);
+      } else if (data.type === "hydration") {
+        router.push({
+          pathname: "/(tabs)/history",
+          params: { tab: "hydration" }
+        } as any);
+      } else if (data.type === "symptom") {
+        router.push({
+          pathname: "/(tabs)/history",
+          params: { tab: "symptoms" }
+        } as any);
+      }
+
+      if (notifId) {
+        await notifee.cancelDisplayedNotification(notifId).catch(() => {});
+      }
+      return;
+    }
+
     if (type !== EventType.ACTION_PRESS) return;
 
     const action    = detail.pressAction?.id;
-    const notifId   = detail.notification?.id ?? "";
-    const data      = detail.notification?.data ?? {};
     const medicineId = String(data.medicineId ?? "");
 
     console.log("⚡ Foreground Action:", action, "notifId:", notifId, "medicineId:", medicineId);

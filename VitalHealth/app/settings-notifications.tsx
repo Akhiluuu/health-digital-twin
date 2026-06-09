@@ -1,13 +1,17 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
   StyleSheet,
   Switch,
+  ActivityIndicator,
 } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import Header from "./components/Header";
 import { useTheme } from "../context/ThemeContext";
+import TimePicker from "../components/twin/TimePicker";
+import { scheduleDailyLogReminder } from "../services/notifeeService";
 
 export default function Notifications() {
   const { theme } = useTheme();
@@ -19,27 +23,89 @@ export default function Notifications() {
           card: "#ffffff",
           text: "#020617",
           border: "#e2e8f0",
+          sub: "#64748b",
         }
       : {
           bg: "#020617",
           card: "#0f172a",
           text: "#e2e8f0",
           border: "#1e293b",
+          sub: "#94a3b8",
         };
 
+  const [loading, setLoading] = useState(true);
   const [settings, setSettings] = useState({
     meds: true,
     alerts: true,
     steps: true,
     hydration: true,
     reports: true,
+    twinReminder: true,
   });
+  const [twinReminderTime, setTwinReminderTime] = useState("22:00");
 
-  const toggle = (key: keyof typeof settings) => {
+  useEffect(() => {
+    async function loadSettings() {
+      try {
+        const medsRaw = await AsyncStorage.getItem("@meds_reminder_enabled");
+        const alertsRaw = await AsyncStorage.getItem("@alerts_reminder_enabled");
+        const stepsRaw = await AsyncStorage.getItem("@steps_reminder_enabled");
+        const hydrationRaw = await AsyncStorage.getItem("@hydration_reminder_enabled");
+        const reportsRaw = await AsyncStorage.getItem("@reports_reminder_enabled");
+        const twinRaw = await AsyncStorage.getItem("@twin_reminder_enabled");
+        const twinTimeRaw = await AsyncStorage.getItem("@twin_reminder_time");
+
+        setSettings({
+          meds: medsRaw === null ? true : medsRaw === "true",
+          alerts: alertsRaw === null ? true : alertsRaw === "true",
+          steps: stepsRaw === null ? true : stepsRaw === "true",
+          hydration: hydrationRaw === null ? true : hydrationRaw === "true",
+          reports: reportsRaw === null ? true : reportsRaw === "true",
+          twinReminder: twinRaw === null ? true : twinRaw === "true",
+        });
+
+        if (twinTimeRaw) {
+          setTwinReminderTime(twinTimeRaw);
+        }
+      } catch (err) {
+        console.warn("Failed to load notification settings:", err);
+      } finally {
+        setLoading(false);
+      }
+    }
+    loadSettings();
+  }, []);
+
+  const toggle = async (key: keyof typeof settings) => {
+    const nextVal = !settings[key];
     setSettings(prev => ({
       ...prev,
-      [key]: !prev[key],
+      [key]: nextVal,
     }));
+
+    try {
+      if (key === "meds") await AsyncStorage.setItem("@meds_reminder_enabled", String(nextVal));
+      if (key === "alerts") await AsyncStorage.setItem("@alerts_reminder_enabled", String(nextVal));
+      if (key === "steps") await AsyncStorage.setItem("@steps_reminder_enabled", String(nextVal));
+      if (key === "hydration") await AsyncStorage.setItem("@hydration_reminder_enabled", String(nextVal));
+      if (key === "reports") await AsyncStorage.setItem("@reports_reminder_enabled", String(nextVal));
+      if (key === "twinReminder") {
+        await AsyncStorage.setItem("@twin_reminder_enabled", String(nextVal));
+        await scheduleDailyLogReminder();
+      }
+    } catch (err) {
+      console.warn("Failed to save notification settings:", err);
+    }
+  };
+
+  const handleTimeChange = async (newTime: string) => {
+    setTwinReminderTime(newTime);
+    try {
+      await AsyncStorage.setItem("@twin_reminder_time", newTime);
+      await scheduleDailyLogReminder();
+    } catch (err) {
+      console.warn("Failed to save reminder time:", err);
+    }
   };
 
   const Row = ({
@@ -68,6 +134,14 @@ export default function Notifications() {
       <Switch value={value} onValueChange={onToggle} />
     </View>
   );
+
+  if (loading) {
+    return (
+      <View style={[styles.container, { backgroundColor: colors.bg, justifyContent: "center", alignItems: "center" }]}>
+        <ActivityIndicator size="large" color="#0ea5e9" />
+      </View>
+    );
+  }
 
   return (
     <View
@@ -108,6 +182,19 @@ export default function Notifications() {
           value={settings.reports}
           onToggle={() => toggle("reports")}
         />
+
+        <Row
+          label="Daily Twin Sync Reminder"
+          value={settings.twinReminder}
+          onToggle={() => toggle("twinReminder")}
+        />
+
+        {settings.twinReminder && (
+          <View style={[styles.timeRowContainer, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <Text style={[styles.timeLabel, { color: colors.text }]}>Reminder Time</Text>
+            <TimePicker value={twinReminderTime} onChange={handleTimeChange} accent="#0ea5e9" />
+          </View>
+        )}
       </View>
     </View>
   );
@@ -126,10 +213,27 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: "row",
     justifyContent: "space-between",
+    alignItems: "center",
     padding: 16,
     borderRadius: 12,
     marginBottom: 12,
     borderWidth: 1,
+  },
+
+  timeRowContainer: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 12,
+    marginBottom: 12,
+    borderWidth: 1,
+  },
+
+  timeLabel: {
+    fontSize: 15,
+    fontWeight: "500",
   },
 
   text: {

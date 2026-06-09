@@ -3,6 +3,8 @@
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as SecureStore from 'expo-secure-store';
+import { doc, setDoc, deleteDoc, writeBatch, collection, getDocs } from "firebase/firestore";
+import { db, auth } from "./firebase";
 
 // ─── Configuration ────────────────────────────────────────────────────────────
 // LOCAL DEV:  your laptop's Wi-Fi IP (e.g. 'http://10.172.0.79:8000')
@@ -486,6 +488,16 @@ export async function saveSessionMeta(userId: string, meta: LocalSessionMeta): P
   const existing = await loadSessionsMeta(userId);
   const updated = [meta, ...existing.filter(s => s.session_id !== meta.session_id)];
   await AsyncStorage.setItem(key, JSON.stringify(updated));
+
+  try {
+    const user = auth.currentUser;
+    if (user) {
+      await setDoc(doc(db, "users", user.uid, "session_meta", meta.session_id), meta);
+      console.log(`☁️ Session meta synced to Firestore: ${meta.session_id}`);
+    }
+  } catch (err) {
+    console.warn("⚠️ Failed to sync session meta to Firestore:", err);
+  }
 }
 
 export async function loadSessionsMeta(userId: string): Promise<LocalSessionMeta[]> {
@@ -503,6 +515,16 @@ export async function deleteSessionMeta(userId: string, sessionId: string): Prom
   const existing = await loadSessionsMeta(userId);
   const updated = existing.filter(s => s.session_id !== sessionId);
   await AsyncStorage.setItem(key, JSON.stringify(updated));
+
+  try {
+    const user = auth.currentUser;
+    if (user) {
+      await deleteDoc(doc(db, "users", user.uid, "session_meta", sessionId));
+      console.log(`☁️ Session meta deleted from Firestore: ${sessionId}`);
+    }
+  } catch (err) {
+    console.warn("⚠️ Failed to delete session meta from Firestore:", err);
+  }
 }
 
 // ─── Saved Routines (local AsyncStorage) ────────────────────────────────────
@@ -533,12 +555,32 @@ export async function saveRoutine(userId: string, routine: SavedRoutine): Promis
   const existing = await loadSavedRoutines(userId);
   const updated = [routine, ...existing.filter(r => r.id !== routine.id)];
   await AsyncStorage.setItem(ROUTINES_KEY(userId), JSON.stringify(updated));
+
+  try {
+    const user = auth.currentUser;
+    if (user) {
+      await setDoc(doc(db, "users", user.uid, "routines", routine.id), routine);
+      console.log(`☁️ Routine synced to Firestore: ${routine.id}`);
+    }
+  } catch (err) {
+    console.warn("⚠️ Failed to sync routine to Firestore:", err);
+  }
 }
 
 export async function deleteRoutine(userId: string, routineId: string): Promise<void> {
   const existing = await loadSavedRoutines(userId);
   const updated = existing.filter(r => r.id !== routineId);
   await AsyncStorage.setItem(ROUTINES_KEY(userId), JSON.stringify(updated));
+
+  try {
+    const user = auth.currentUser;
+    if (user) {
+      await deleteDoc(doc(db, "users", user.uid, "routines", routineId));
+      console.log(`☁️ Routine deleted from Firestore: ${routineId}`);
+    }
+  } catch (err) {
+    console.warn("⚠️ Failed to delete routine from Firestore:", err);
+  }
 }
 
 export async function markRoutineUsed(userId: string, routineId: string): Promise<void> {
@@ -547,6 +589,17 @@ export async function markRoutineUsed(userId: string, routineId: string): Promis
     r.id === routineId ? { ...r, lastUsed: new Date().toISOString() } : r
   );
   await AsyncStorage.setItem(ROUTINES_KEY(userId), JSON.stringify(updated));
+
+  try {
+    const user = auth.currentUser;
+    const routine = updated.find(r => r.id === routineId);
+    if (user && routine) {
+      await setDoc(doc(db, "users", user.uid, "routines", routineId), routine);
+      console.log(`☁️ Routine lastUsed synced to Firestore: ${routineId}`);
+    }
+  } catch (err) {
+    console.warn("⚠️ Failed to sync lastUsed for routine:", err);
+  }
 }
 
 export async function setDefaultRoutine(userId: string, routineId: string): Promise<void> {
@@ -556,4 +609,73 @@ export async function setDefaultRoutine(userId: string, routineId: string): Prom
     isDefault: r.id === routineId ? !r.isDefault : false // toggle if clicked again, unset others
   }));
   await AsyncStorage.setItem(ROUTINES_KEY(userId), JSON.stringify(updated));
+
+  try {
+    const user = auth.currentUser;
+    if (user) {
+      const batch = writeBatch(db);
+      for (const r of updated) {
+        const ref = doc(db, "users", user.uid, "routines", r.id);
+        batch.set(ref, r);
+      }
+      await batch.commit();
+      console.log(`☁️ Routine defaults synced to Firestore`);
+    }
+  } catch (err) {
+    console.warn("⚠️ Failed to sync default routine status to Firestore:", err);
+  }
+}
+
+// ─── Sync digital twin custom metadata from Firestore ─────────────────────────
+
+export async function syncDigitalTwinDataFromFirestore(userId: string): Promise<void> {
+  const user = auth.currentUser;
+  if (!user) return;
+
+  console.log(`☁️ Starting Firestore sync for user: ${user.uid} (HealthID: ${userId})`);
+
+  try {
+    // 1. Sync Routines
+    const routinesRef = collection(db, "users", user.uid, "routines");
+    const routinesSnap = await getDocs(routinesRef);
+    if (!routinesSnap.empty) {
+      const firestoreRoutines: SavedRoutine[] = [];
+      routinesSnap.forEach((docSnap) => {
+        firestoreRoutines.push(docSnap.data() as SavedRoutine);
+      });
+
+      const localRoutines = await loadSavedRoutines(userId);
+      const routineMap = new Map<string, SavedRoutine>();
+      localRoutines.forEach(r => routineMap.set(r.id, r));
+      firestoreRoutines.forEach(r => routineMap.set(r.id, r));
+
+      const mergedRoutines = Array.from(routineMap.values());
+      await AsyncStorage.setItem(ROUTINES_KEY(userId), JSON.stringify(mergedRoutines));
+      console.log(`☁️ Routines synced: loaded ${firestoreRoutines.length} from Firestore`);
+    }
+
+    // 2. Sync Session Metadata
+    const sessionsRef = collection(db, "users", user.uid, "session_meta");
+    const sessionsSnap = await getDocs(sessionsRef);
+    if (!sessionsSnap.empty) {
+      const firestoreSessions: LocalSessionMeta[] = [];
+      sessionsSnap.forEach((docSnap) => {
+        firestoreSessions.push(docSnap.data() as LocalSessionMeta);
+      });
+
+      const localSessions = await loadSessionsMeta(userId);
+      const sessionMap = new Map<string, LocalSessionMeta>();
+      localSessions.forEach(s => sessionMap.set(s.session_id, s));
+      firestoreSessions.forEach(s => sessionMap.set(s.session_id, s));
+
+      const mergedSessions = Array.from(sessionMap.values()).sort(
+        (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+      );
+      await AsyncStorage.setItem(SESSION_META_KEY(userId), JSON.stringify(mergedSessions));
+      console.log(`☁️ Session meta synced: loaded ${firestoreSessions.length} from Firestore`);
+    }
+
+  } catch (err) {
+    console.warn("⚠️ Failed to sync Digital Twin data from Firestore:", err);
+  }
 }

@@ -17,6 +17,12 @@ import {
   EMPTY_PROFILE,
   fetchProfile,     // ← reuse exact same safe fetch as ProfileContext
 } from "../services/profileService";
+import {
+  fetchLinkedMembers,
+  fetchMemberHealthData,
+  linkFamilyMember,
+  unlinkFamilyMember,
+} from "../services/familySync";
 
 /* ──────────────────────────────────────────────────────────────
    Types
@@ -138,16 +144,40 @@ export const FamilyProvider = ({
       setIsLoaded(false);
       const uid = await getUserId();
       if (uid) {
-        const snap = await getDoc(doc(db, "users", uid));
-        if (snap.exists()) {
-          const fm = snap.data()?.familyMembers || [];
-          if (Array.isArray(fm)) {
-            setMembers(fm);
-            await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(fm));
-            return;
-          }
+        // 1. Fetch bidirectional linked members
+        const linked = await fetchLinkedMembers();
+        const linkedMembersList: FamilyMember[] = [];
+        for (const link of linked) {
+          const health = await fetchMemberHealthData(link.uid);
+          linkedMembersList.push({
+            id: link.uid,
+            uid: link.uid,
+            userId: link.uid,
+            firstName: link.firstName,
+            lastName: link.lastName || "",
+            name: `${link.firstName} ${link.lastName || ""}`.trim(),
+            relation: link.relation,
+            relationship: link.relation,
+            inviteCode: link.inviteCode,
+            status: link.status,
+            ...health,
+          } as FamilyMember);
         }
+
+        // 2. Fetch local/dependent members from familyMembers array
+        const userSnap = await getDoc(doc(db, "users", uid));
+        let dependents: FamilyMember[] = [];
+        if (userSnap.exists()) {
+          dependents = userSnap.data()?.familyMembers || [];
+        }
+
+        // Combine both
+        const combined = [...linkedMembersList, ...dependents];
+        setMembers(combined);
+        await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(combined));
+        return;
       }
+
       const stored = await AsyncStorage.getItem(STORAGE_KEY);
       if (stored) {
         const parsed = JSON.parse(stored);
@@ -218,13 +248,27 @@ export const FamilyProvider = ({
   const removeMember = async (id: string) => {
     try {
       const nid = normalizeId(id);
-      const updated = members.filter(
-        (m) =>
-          normalizeId(m.id)     !== nid &&
-          normalizeId(m.uid)    !== nid &&
-          normalizeId(m.userId) !== nid
-      );
-      await saveMembers(updated);
+      
+      // 1. Unlink if linked member
+      await unlinkFamilyMember(id);
+
+      // 2. Remove from dependent members array if present
+      const uid = await getUserId();
+      if (uid) {
+        const userSnap = await getDoc(doc(db, "users", uid));
+        if (userSnap.exists()) {
+          const fm: FamilyMember[] = userSnap.data()?.familyMembers || [];
+          const updatedDependents = fm.filter(
+            (m) =>
+              normalizeId(m.id)     !== nid &&
+              normalizeId(m.uid)    !== nid &&
+              normalizeId(m.userId) !== nid
+          );
+          await setDoc(doc(db, "users", uid), { familyMembers: updatedDependents }, { merge: true });
+        }
+      }
+
+      await loadMembers();
       if (activeMemberId === nid) await switchToSelf();
     } catch (e) {
       console.error("❌ FamilyContext removeMember error:", e);

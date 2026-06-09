@@ -5,7 +5,6 @@ import React, { memo, useRef, useState } from "react";
 import {
   FlatList,
   Modal,
-  SafeAreaView,
   ScrollView,
   StyleSheet,
   Text,
@@ -13,6 +12,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { auth, db } from "../../services/firebase";
 import { useTheme } from "../../context/ThemeContext";

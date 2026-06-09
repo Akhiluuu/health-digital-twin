@@ -4,6 +4,7 @@ import { auth, db } from "../../services/firebase";
 import { doc, updateDoc } from "firebase/firestore";
 import * as BiogearsAPI from "../../services/biogears";
 import { buildDefaultRoutine } from "../../services/onboardingRoutineBuilder";
+import { getTwinId } from "../../utils/twinUtils";
 import { useEffect, useRef, useState } from "react";
 import {
   Animated,
@@ -171,10 +172,11 @@ export default function Review() {
               weight: weightVal,
               allergies: profileData.allergies,
             });
-            // Save the routine then mark it as default
-            await BiogearsAPI.saveRoutine(user.uid, routine);
-            await BiogearsAPI.setDefaultRoutine(user.uid, routine.id);
-            console.log('✅ Custom default routine "My Typical Day" created from onboarding habits');
+             // Save the routine then mark it as default using proper twinId slug
+             const twinId = getTwinId(profileData);
+             await BiogearsAPI.saveRoutine(twinId, routine);
+             await BiogearsAPI.setDefaultRoutine(twinId, routine.id);
+             console.log('✅ Custom default routine "My Typical Day" created from onboarding habits');
           }
         } catch (routineErr) {
           // Non-fatal — user can always set a default manually

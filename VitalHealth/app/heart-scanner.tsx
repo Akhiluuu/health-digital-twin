@@ -21,8 +21,18 @@
 import React, { useEffect, useRef, useState } from "react";
 import {
   View, Text, StyleSheet, TouchableOpacity,
-  SafeAreaView, Vibration, Animated, Easing, ScrollView,
+  Vibration, Animated, Easing, ScrollView,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
+// Lazy-load react-native-view-shot to avoid crash when the native module is not registered in the binary
+let captureRef: any;
+try {
+  captureRef = require("react-native-view-shot").captureRef;
+} catch (e) {
+  captureRef = async () => {
+    throw new Error("RNViewShot native module could not be found. Please rebuild the native binary with npx expo run:android or run:ios.");
+  };
+}
 import { CameraView, useCameraPermissions } from "expo-camera";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";

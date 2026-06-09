@@ -3,7 +3,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Switch, RefreshControl, Platform, Alert, TextInput } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useBiogearsTwin } from '../../context/BiogearsTwinContext';
@@ -520,6 +520,7 @@ function SectionTitle({ text, c }: any) {
 // ═══════════════════════════════════════════════════════════════════════════════
 export default function LogRoutineScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams();
   const { theme } = useTheme();
   const c = themeColors[theme];
   const insets = useSafeAreaInsets();
@@ -531,6 +532,13 @@ export default function LogRoutineScreen() {
   const { activeSymptoms, historySymptoms, refreshSymptoms } = useSymptoms();
 
   const [tab, setTab]           = useState<LogTab>('nutrition');
+
+  useEffect(() => {
+    if (params.tab && ['nutrition', 'exercise', 'sleep', 'hydration', 'symptoms'].includes(params.tab as string)) {
+      setTab(params.tab as LogTab);
+    }
+  }, [params.tab]);
+
   const [refreshing, setRefresh] = useState(false);
 
   const onRefresh = useCallback(async () => {

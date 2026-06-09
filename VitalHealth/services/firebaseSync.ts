@@ -10,10 +10,11 @@ import {
   collection,
   deleteDoc,
   doc,
-  getDoc,   // ✅ ADDED
+  getDoc,
   getDocs,
   serverTimestamp,
-  setDoc
+  setDoc,
+  writeBatch
 } from "firebase/firestore";
 import { auth, db } from "./firebase";
 
@@ -129,6 +130,28 @@ export async function syncDeleteMedicine(id: number): Promise<void> {
     console.log("✅ Medicine deleted from Firebase:", id);
   } catch (e) {
     console.log("⚠️ syncDeleteMedicine failed (non-critical):", e);
+  }
+}
+
+/**
+ * Delete all medicines from Firebase.
+ */
+export async function syncDeleteAllMedicines(): Promise<void> {
+  try {
+    const uid = await getUserId();
+    if (!uid) return;
+
+    const querySnap = await getDocs(medicinesCol(uid));
+    if (querySnap.empty) return;
+
+    const batch = writeBatch(db);
+    querySnap.forEach((docSnap) => {
+      batch.delete(docSnap.ref);
+    });
+    await batch.commit();
+    console.log("✅ All medicines deleted from Firebase");
+  } catch (e) {
+    console.log("⚠️ syncDeleteAllMedicines failed (non-critical):", e);
   }
 }
 
