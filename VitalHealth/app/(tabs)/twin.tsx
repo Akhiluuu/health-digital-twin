@@ -420,7 +420,61 @@ export default function TwinScreen() {
   // ── Substance state ───────────────────────────────────────────────────────
   // Substances grouped by route — fetched from backend
   // We expose ORAL ones prominently + allow any
-  const COMMON_SUBS = ['Caffeine', 'Ethanol', 'Aspirin', 'Acetaminophen', 'Morphine', 'Nicotine'];
+  const COMMON_SUBS = [
+    'Acetaminophen',
+    'Acetoacetate',
+    'Albumin',
+    'Albuterol',
+    'Aspirin',
+    'Bicarbonate',
+    'Blood_ABNegative',
+    'Blood_ABPositive',
+    'Blood_ANegative',
+    'Blood_APositive',
+    'Blood_BNegative',
+    'Blood_BPositive',
+    'Blood_ONegative',
+    'Blood_OPositive',
+    'Caffeine',
+    'Calcium',
+    'Chloride',
+    'Desflurane',
+    'Epinephrine',
+    'Ertapenem',
+    'Ethanol',
+    'Fentanyl',
+    'Furosemide',
+    'Globulin',
+    'Glucagon',
+    'Glucose',
+    'Insulin',
+    'Ketamine',
+    'Lactate',
+    'Magnesium',
+    'Midazolam',
+    'Morphine',
+    'Moxifloxacin',
+    'Naloxone',
+    'Nicotine',
+    'Norepinephrine',
+    'Piperacillin',
+    'PiperacillinTazobactam',
+    'PlasmaLyteA',
+    'Potassium',
+    'Pralidoxime',
+    'Prednisone',
+    'RingersLactate',
+    'Rocuronium',
+    'Saline',
+    'SalineSlowDrip',
+    'Sarin',
+    'Sodium',
+    'Succinylcholine',
+    'Tazobactam',
+    'TranexamicAcid',
+    'Urea',
+    'Vasopressin'
+  ];
   const [subName,   setSubName]   = useState('Caffeine');
   const [subSearch, setSubSearch] = useState('');
   const [subDose,   setSubDose]   = useState('200');
@@ -1764,7 +1818,7 @@ export default function TwinScreen() {
             value={subSearch}
             onChangeText={setSubSearch}
           />
-          <ScrollView showsVerticalScrollIndicator={false}>
+          <ScrollView showsVerticalScrollIndicator={false} style={{ flexShrink: 1 }}>
             {filteredSubs.map(s => (
               <TouchableOpacity key={s}
                 style={[ss.subPickerRow, { borderBottomColor: c.border }, s === subName && { backgroundColor: '#8b5cf615' }]}

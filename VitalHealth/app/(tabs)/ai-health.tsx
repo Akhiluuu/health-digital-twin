@@ -407,20 +407,78 @@ function VoiceIndicator({ visible, partialText }: { visible: boolean; partialTex
 // ─── Rich Text Renderer ───────────────────────────────────────────────────────
 
 function RichText({ text, style }: { text: string; style?: any }) {
-  const parts: React.ReactNode[] = [];
-  const regex = /\*\*(.+?)\*\*|\*(.+?)\*/gs;
-  let lastIndex = 0; let match: RegExpExecArray | null;
-  while ((match = regex.exec(text)) !== null) {
-    if (match.index > lastIndex)
-      parts.push(<Text key={`p-${lastIndex}`} style={style}>{text.slice(lastIndex, match.index)}</Text>);
-    if (match[1] !== undefined)
-      parts.push(<Text key={`b-${match.index}`} style={[style, { fontWeight: "900" }]}>{match[1]}</Text>);
-    else if (match[2] !== undefined)
-      parts.push(<Text key={`i-${match.index}`} style={[style, { fontStyle: "italic" }]}>{match[2]}</Text>);
+  // 1. First parse standard markdown bold **text** and italic *text*
+  const parts: { text: string; bold?: boolean; italic?: boolean }[] = [];
+  const mdRegex = /\*\*(.+?)\*\*|\*(.+?)\*/gs;
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = mdRegex.exec(text)) !== null) {
+    if (match.index > lastIndex) {
+      parts.push({ text: text.slice(lastIndex, match.index) });
+    }
+    if (match[1] !== undefined) {
+      parts.push({ text: match[1], bold: true });
+    } else if (match[2] !== undefined) {
+      parts.push({ text: match[2], italic: true });
+    }
     lastIndex = match.index + match[0].length;
   }
-  if (lastIndex < text.length) parts.push(<Text key="pe" style={style}>{text.slice(lastIndex)}</Text>);
-  return <Text style={style}>{parts}</Text>;
+  if (lastIndex < text.length) {
+    parts.push({ text: text.slice(lastIndex) });
+  }
+
+  // 2. Second pass: for plain text parts, automatically bold numbers and alert words
+  const autoBoldRegex = /\b(?:Warning|Danger|High Risk|Alert|Normal|Elevated|Critical|Low|High|Optimal|Caution|Anomalies|Anomaly|Safe|Unsafe|Risk)\b|\b\d+(?:\.\d+)?(?:[/-]\d+(?:\.\d+)?)?(?:\s*(?:%|bpm|mg\/dL|kg|cm|mmHg|breaths\/min|seconds|hours|minutes|mmol\/L|mL|g|h|min|s|bpm))?\b/gi;
+
+  const finalElements: React.ReactNode[] = [];
+  parts.forEach((part, partIdx) => {
+    if (part.bold) {
+      finalElements.push(
+        <Text key={`b-${partIdx}`} style={[style, { fontWeight: "900" }]}>
+          {part.text}
+        </Text>
+      );
+    } else if (part.italic) {
+      finalElements.push(
+        <Text key={`i-${partIdx}`} style={[style, { fontStyle: "italic" }]}>
+          {part.text}
+        </Text>
+      );
+    } else {
+      let plainText = part.text;
+      let lastPlainIndex = 0;
+      let plainMatch: RegExpExecArray | null;
+      let subIdx = 0;
+
+      autoBoldRegex.lastIndex = 0;
+
+      while ((plainMatch = autoBoldRegex.exec(plainText)) !== null) {
+        if (plainMatch.index > lastPlainIndex) {
+          finalElements.push(
+            <Text key={`p-${partIdx}-${subIdx++}`} style={style}>
+              {plainText.slice(lastPlainIndex, plainMatch.index)}
+            </Text>
+          );
+        }
+        finalElements.push(
+          <Text key={`ab-${partIdx}-${subIdx++}`} style={[style, { fontWeight: "900" }]}>
+            {plainMatch[0]}
+          </Text>
+        );
+        lastPlainIndex = plainMatch.index + plainMatch[0].length;
+      }
+      if (lastPlainIndex < plainText.length) {
+        finalElements.push(
+          <Text key={`p-${partIdx}-${subIdx++}`} style={style}>
+            {plainText.slice(lastPlainIndex)}
+          </Text>
+        );
+      }
+    }
+  });
+
+  return <Text style={style}>{finalElements}</Text>;
 }
 
 // ─── Main Component ───────────────────────────────────────────────────────────

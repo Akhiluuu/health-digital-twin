@@ -63,13 +63,25 @@ def _engine_thread(job_id: str, scenario_path: str, user_id: str,
         # Without it, the shell searches $PATH and fails to find bg-cli.
         command = f'"./{BIOGEARS_EXECUTABLE.name}" Scenario "{rel_scenario}"'
 
-        # Inject LD_LIBRARY_PATH so bg-cli finds libbiogears.so and libboost_filesystem.so
+        # Inject correct library path based on OS so bg-cli can find dynamic libraries
         env = os.environ.copy()
-        lib_path = f"{BIOGEARS_BIN_DIR}/lib:{BIOGEARS_BIN_DIR}/bin"
-        if "LD_LIBRARY_PATH" in env:
-            env["LD_LIBRARY_PATH"] = f"{lib_path}:{env['LD_LIBRARY_PATH']}"
+        from biogears_service.simulation.config import IS_WINDOWS
+        if IS_WINDOWS:
+            lib_path = str(BIOGEARS_BIN_DIR)
+            if "PATH" in env:
+                env["PATH"] = f"{lib_path};{env['PATH']}"
+            else:
+                env["PATH"] = lib_path
         else:
-            env["LD_LIBRARY_PATH"] = lib_path
+            lib_path = f"{BIOGEARS_BIN_DIR}/lib:{BIOGEARS_BIN_DIR}/bin"
+            if "LD_LIBRARY_PATH" in env:
+                env["LD_LIBRARY_PATH"] = f"{lib_path}:{env['LD_LIBRARY_PATH']}"
+            else:
+                env["LD_LIBRARY_PATH"] = lib_path
+            if "DYLD_LIBRARY_PATH" in env:
+                env["DYLD_LIBRARY_PATH"] = f"{lib_path}:{env['DYLD_LIBRARY_PATH']}"
+            else:
+                env["DYLD_LIBRARY_PATH"] = lib_path
 
         proc = subprocess.Popen(
             command,
@@ -147,8 +159,19 @@ def _engine_thread(job_id: str, scenario_path: str, user_id: str,
         if state_candidates:
             try:
                 os.replace(str(state_candidates[0]), str(state_file))
-            except Exception:
-                pass
+                logger.info(f"🔄 [{user_id}] State synchronized safely (streaming).")
+                # Auto-backup
+                bak_dir = USER_STATES_DIR / "backups" / user_id
+                bak_dir.mkdir(parents=True, exist_ok=True)
+                ts_bak = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+                shutil.copy2(str(state_file), str(bak_dir / f"{user_id}_{ts_bak}.xml"))
+                # Prune old backups to keep last 7
+                for old in sorted(bak_dir.glob(f"{user_id}_*.xml"),
+                                  key=os.path.getmtime, reverse=True)[7:]:
+                    try: old.unlink()
+                    except: pass
+            except Exception as e:
+                logger.warning(f"⚠️ State sync/backup skipped in streaming: {e}")
 
         # --- Generate report ---
         report_url = visualizer.generate_health_report(user_id, custom_path=dest_csv)
@@ -182,6 +205,12 @@ def _engine_thread(job_id: str, scenario_path: str, user_id: str,
     except Exception as e:
         job["status"] = "failed"
         job["error"]  = str(e)
+    finally:
+        try:
+            from biogears_service.simulation.engine_runner import get_user_lock
+            get_user_lock(user_id).release()
+        except Exception:
+            pass
 
 
 # ---------------------------------------------------------------------------
@@ -195,6 +224,12 @@ def start_stream(user_id: str, events: list) -> Dict[str, Any]:
     state_file = USER_STATES_DIR / f"{user_id}.xml"
     if not state_file.exists():
         raise FileNotFoundError(f"Twin '{user_id}' not found.")
+
+    # ── Concurrency Guard: Acquire User Lock ───────────────────────────────────
+    from biogears_service.simulation.engine_runner import get_user_lock
+    user_lock = get_user_lock(user_id)
+    if not user_lock.acquire(blocking=False):
+        raise ValueError("A simulation job is already running for this user. Please wait for it to complete.")
 
     # Normalise events to dicts and assign timestamps
     now_ts = time.time()
@@ -213,6 +248,12 @@ def start_stream(user_id: str, events: list) -> Dict[str, Any]:
     scenario_path, run_id, csv_prefix = scenario_builder.build_batch_reconstruction(
         user_id, str(state_file), sorted_events
     )
+
+    # ── XML Schema Validation ──────────────────────────────────────────────────
+    from biogears_service.simulation.validator import validate_xml_schema
+    schema_errors = validate_xml_schema(scenario_path)
+    if schema_errors:
+        raise ValueError("Generated scenario XML failed schema validation:\n" + "\n".join(schema_errors))
 
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     dest_csv = USER_HISTORY_DIR / user_id / f"vitals_{timestamp}.csv"

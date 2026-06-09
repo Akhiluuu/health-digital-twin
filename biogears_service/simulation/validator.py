@@ -301,3 +301,41 @@ def validate_interactions(events: List[Dict[str, Any]]) -> List[str]:
             )
 
     return warnings_list
+
+
+def validate_xml_schema(xml_path: str) -> List[str]:
+    """
+    Validates a generated scenario XML file against the BioGears XSD schema.
+    Returns a list of error strings. If empty, the XML is valid.
+    """
+    errors: List[str] = []
+    try:
+        from biogears_service.simulation.config import BIOGEARS_BIN_DIR
+        from pathlib import Path
+        xsd_path = BIOGEARS_BIN_DIR / "xsd" / "BioGearsDataModel.xsd"
+        if not xsd_path.exists():
+            # Try alternative relative and shared schema paths
+            alt_path = BIOGEARS_BIN_DIR / "share" / "biogears" / "7.3.2" / "xsd" / "BioGearsDataModel.xsd"
+            if alt_path.exists():
+                xsd_path = alt_path
+            else:
+                errors.append(
+                    f"BioGears XSD schema file not found (checked {xsd_path} and {alt_path}). "
+                    "Verification schema is missing, scenario cannot be safely run."
+                )
+                return errors
+
+        from lxml import etree
+        schema_doc = etree.parse(str(xsd_path))
+        schema = etree.XMLSchema(schema_doc)
+        
+        xml_doc = etree.parse(xml_path)
+        if not schema.validate(xml_doc):
+            for error in schema.error_log:
+                errors.append(f"XML Schema Error (line {error.line}): {error.message}")
+    except Exception as e:
+        logger.exception(f"Unexpected error during XML schema validation: {e}")
+        errors.append(f"XML Schema validation failed to run: {e}")
+        
+    return errors
+

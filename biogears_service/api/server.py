@@ -12,6 +12,7 @@ import uuid
 import logging
 import warnings
 import pandas as pd
+import asyncio
 
 # Suppress the expected ParserWarning when reading uneven BioGears CSVs with index_col=False
 warnings.filterwarnings("ignore", category=pd.errors.ParserWarning)
@@ -142,7 +143,23 @@ def _prune_old_jobs() -> None:
         _save_jobs(pruned)
 
 
+def _recover_interrupted_jobs() -> None:
+    """Finds any pending/running jobs on startup and marks them as failed so they don't hang the UI forever."""
+    with _jobs_lock:
+        jobs = _load_jobs()
+        modified = False
+        for jid, j in jobs.items():
+            if j.get("status") in ("pending", "running"):
+                j["status"] = "failed"
+                j["error"] = "Simulation interrupted due to server restart."
+                logger.info(f"⚠️ Marked interrupted job {jid} as failed on startup.")
+                modified = True
+        if modified:
+            _save_jobs(jobs)
+
+
 _prune_old_jobs()
+_recover_interrupted_jobs()
 
 # ---------------------------------------------------------------------------
 # PER-USER RATE LIMITING  (max 3 simulations per hour per user)
@@ -204,6 +221,7 @@ class HealthEvent(BaseModel):
     timestamp: Optional[float] = None        # Epoch Unix timestamp
     # Substance events
     substance_name: Optional[str]  = None
+    unit: Optional[str]            = None   # dosing units (mg, ug, mL, U, etc.)
     # Meal events
     meal_type: Optional[str]       = None   # balanced|high_carb|high_protein|fast_food|ketogenic|custom
     carb_g: Optional[float]        = None   # for custom meals
@@ -228,6 +246,7 @@ class SingleSyncRequest(BaseModel):
     time_offset: Optional[int]     = None
     timestamp: Optional[float]     = None
     substance_name: Optional[str]  = None
+    unit: Optional[str]            = None
     meal_type: Optional[str]       = None
     duration_seconds: Optional[int] = None
     environment_name: Optional[str] = None
@@ -304,6 +323,19 @@ def _build_vitals_from_df(df: pd.DataFrame) -> dict:
 
 
 def _run_batch_sync_blocking(user_id: str, events: list) -> dict:
+    """Wrapper that acquires user lock to prevent overlapping jobs."""
+    user_lock = engine_runner.get_user_lock(user_id)
+    if not user_lock.acquire(blocking=False):
+        raise HTTPException(
+            status_code=409,
+            detail="A simulation job is already running for this user. Please wait for it to complete."
+        )
+    try:
+        return _run_batch_sync_blocking_impl(user_id, events)
+    finally:
+        user_lock.release()
+
+def _run_batch_sync_blocking_impl(user_id: str, events: list) -> dict:
     """Runs the BioGears batch simulation. Returns a result dict or raises."""
     _t0 = time.time()
     def _elapsed(): return f"{round(time.time() - _t0, 1)}s"
@@ -344,6 +376,72 @@ def _run_batch_sync_blocking(user_id: str, events: list) -> dict:
     user_weight_kg = float(meta.get("weight", 70.0))
     gap_seconds = time.time() - os.path.getmtime(str(state_file))
 
+    # ── [2.5/6] Create pre-simulation backup ───────────────────────────────────
+    bak_dir = USER_STATES_DIR / "backups" / user_id
+    bak_dir.mkdir(parents=True, exist_ok=True)
+    pre_sim_backup_path = bak_dir / f"{user_id}_presim_{int(time.time())}.xml"
+    try:
+        shutil.copy2(str(state_file), str(pre_sim_backup_path))
+        logger.info(f"💾 [{user_id}] Pre-simulation backup created: {pre_sim_backup_path.name}")
+    except Exception as e:
+        logger.warning(f"⚠️ [{user_id}] Pre-simulation backup failed: {e}")
+        pre_sim_backup_path = None
+
+    try:
+        return _run_batch_sync_blocking_core(
+            user_id=user_id,
+            sorted_events=sorted_events,
+            state_file=state_file,
+            user_weight_kg=user_weight_kg,
+            gap_seconds=gap_seconds,
+            interaction_warnings=interaction_warnings,
+            _t0=_t0,
+            _elapsed=_elapsed
+        )
+    except Exception as e:
+        # ROLLBACK ON EXCEPTION
+        logger.error(f"❌ [{user_id}] Simulation failed or crashed: {e}. Rolling back state.")
+        if pre_sim_backup_path and pre_sim_backup_path.exists():
+            try:
+                shutil.copy2(str(pre_sim_backup_path), str(state_file))
+                logger.info(f"♻️ [{user_id}] State rolled back to pre-simulation state: {pre_sim_backup_path.name}")
+            except Exception as rb_err:
+                logger.warning(f"⚠️ [{user_id}] Rollback failed: {rb_err}")
+        else:
+            backups = sorted(bak_dir.glob(f"{user_id}_*.xml"), key=os.path.getmtime, reverse=True) if bak_dir.exists() else []
+            backups = [b for b in backups if "presim" not in b.name]
+            if backups:
+                try:
+                    shutil.copy2(str(backups[0]), str(state_file))
+                    logger.info(f"♻️ [{user_id}] State rolled back to last backup: {backups[0].name}")
+                except Exception as rb_err:
+                    logger.warning(f"⚠️ [{user_id}] Rollback failed: {rb_err}")
+
+        # Re-raise
+        if isinstance(e, HTTPException):
+            raise e
+        if isinstance(e, ValueError):
+            raise HTTPException(status_code=400, detail={"message": str(e)})
+        raise HTTPException(status_code=500, detail={"message": f"Simulation failed: {e}"})
+    finally:
+        # Clean up temp presim backup
+        if pre_sim_backup_path and pre_sim_backup_path.exists():
+            try:
+                os.unlink(str(pre_sim_backup_path))
+            except Exception:
+                pass
+
+
+def _run_batch_sync_blocking_core(
+    user_id: str,
+    sorted_events: list,
+    state_file: Path,
+    user_weight_kg: float,
+    gap_seconds: float,
+    interaction_warnings: list,
+    _t0: float,
+    _elapsed
+) -> dict:
     # ── [3/6] Build scenario XML ─────────────────────────────────────────────
     logger.info(f"[3/6] [{user_id}] Building scenario XML... ({_elapsed()})")
     path, run_id, csv_prefix = scenario_builder.build_batch_reconstruction(
@@ -454,25 +552,11 @@ def _run_batch_sync_blocking(user_id: str, events: list) -> dict:
 
     if nan_detected or zero_hr:
         failure_reason = "NaN values in critical vitals" if nan_detected else "all-zero HeartRate (engine divergence)"
-        logger.error(f"❌ [{user_id}] Engine produced {failure_reason}. Rolling back state.")
-        # Attempt to restore the most recent backup so the state file is usable
-        bak_dir  = USER_STATES_DIR / "backups" / user_id
-        backups  = sorted(bak_dir.glob(f"{user_id}_*.xml"), key=os.path.getmtime, reverse=True) if bak_dir.exists() else []
-        if backups:
-            try:
-                shutil.copy2(str(backups[0]), str(state_file))
-                logger.info(f"♻️ [{user_id}] State rolled back from backup: {backups[0].name}")
-            except Exception as rb_err:
-                logger.warning(f"⚠️ [{user_id}] Rollback failed: {rb_err}")
-        else:
-            logger.warning(f"⚠️ [{user_id}] No backup available for rollback — twin may be in invalid state.")
+        logger.error(f"❌ [{user_id}] Engine produced {failure_reason}. Raising exception.")
         raise HTTPException(
             status_code=500,
             detail={
-                "message": f"Simulation resulted in physiological failure ({failure_reason}). "
-                           + ("State has been rolled back to the previous backup."
-                              if backups else
-                              "No backup was available — please re-register the twin."),
+                "message": f"Simulation resulted in physiological failure ({failure_reason}).",
                 "log_snippet": engine_runner.get_latest_log(user_id) or ""
             }
         )
@@ -510,9 +594,9 @@ def _run_batch_sync_blocking(user_id: str, events: list) -> dict:
     if updated_state_path and Path(updated_state_path).exists():
         try:
             os.replace(str(updated_state_path), str(state_file))
-            logger.info("\U0001f504 State synchronized safely.")
+            logger.info("🔄 State synchronized safely.")
         except Exception as e:
-            logger.warning(f"\u26a0\ufe0f State sync skipped: {e}")
+            logger.warning(f"⚠️ State sync skipped: {e}")
 
     # ── Auto-backup state after every successful simulation ──────────────────
     try:
@@ -556,6 +640,7 @@ def _run_batch_sync_blocking(user_id: str, events: list) -> dict:
         "interaction_warnings": interaction_warnings,
         "has_drug_interaction": len(interaction_warnings) > 0,
     }
+
 
 
 # ---------------------------------------------------------------------------
@@ -750,11 +835,20 @@ def delete_profile(user_id: str):
 
 @app.post("/register", dependencies=[Depends(require_api_key)],
           summary="Register and calibrate a new Digital Twin")
-def register(data: RegistrationRequest):
-    """
-    Creates a BioGears patient scenario, runs engine calibration, and persists
-    the patient's demographic + clinical metadata to the database.
-    """
+async def register(data: RegistrationRequest):
+    """Wrapper that acquires user lock to prevent overlapping jobs."""
+    user_lock = engine_runner.get_user_lock(data.user_id)
+    if not user_lock.acquire(blocking=False):
+        raise HTTPException(
+            status_code=409,
+            detail="A simulation job is already running for this user. Please wait for it to complete."
+        )
+    try:
+        return await asyncio.to_thread(_register_impl, data)
+    finally:
+        user_lock.release()
+
+def _register_impl(data: RegistrationRequest):
     logger.info(f"🚀 Registering Twin: {data.user_id}")
 
     # ── 1. Validate registration fields before touching the engine ────────────
@@ -763,100 +857,183 @@ def register(data: RegistrationRequest):
         logger.warning(f"❌ Registration validation failed for {data.user_id}: {reg_errors}")
         raise HTTPException(status_code=422, detail={"validation_errors": reg_errors})
 
-    # ── 2. Overwrite existing twin if recalibrating ────────────
+    # ── 2. Overwrite existing twin if recalibrating (with backup/rollback) ──
     existing_state = USER_STATES_DIR / f"{data.user_id}.xml"
+    existing_meta = USER_STATES_DIR / f"{data.user_id}.meta.json"
+    history_folder = USER_HISTORY_DIR / data.user_id
+
+    bak_dir = USER_STATES_DIR / "backups" / data.user_id
+    bak_dir.mkdir(parents=True, exist_ok=True)
+    
+    xml_bak = bak_dir / f"{data.user_id}_calib_bak.xml"
+    meta_bak = bak_dir / f"{data.user_id}_calib_bak.meta.json"
+    hist_bak = USER_HISTORY_DIR / f"{data.user_id}_calib_bak"
+    
+    has_xml_bak = False
+    has_meta_bak = False
+    has_hist_bak = False
+
     if existing_state.exists():
-        logger.info(f"⚠️ Twin '{data.user_id}' already exists. Overwriting with new calibration.")
+        logger.info(f"⚠️ Twin '{data.user_id}' already exists. Backing up before recalibrating.")
+        try:
+            shutil.copy2(str(existing_state), str(xml_bak))
+            has_xml_bak = True
+        except Exception as e:
+            logger.warning(f"Failed to backup existing state: {e}")
+            
+        if existing_meta.exists():
+            try:
+                shutil.copy2(str(existing_meta), str(meta_bak))
+                has_meta_bak = True
+            except Exception as e:
+                logger.warning(f"Failed to backup existing meta: {e}")
+                
+        if history_folder.exists():
+            try:
+                if hist_bak.exists():
+                    shutil.rmtree(str(hist_bak))
+                shutil.copytree(str(history_folder), str(hist_bak))
+                has_hist_bak = True
+            except Exception as e:
+                logger.warning(f"Failed to backup history folder: {e}")
+
         try:
             os.remove(str(existing_state))
-            history_folder = USER_HISTORY_DIR / data.user_id
+            if existing_meta.exists():
+                os.remove(str(existing_meta))
             if history_folder.exists():
                 shutil.rmtree(str(history_folder))
         except Exception as e:
-            logger.warning(f"Failed to clean up old twin data for '{data.user_id}': {e}")
+            logger.warning(f"Failed to clean up old twin data: {e}")
 
-    path = scenario_builder.build_registration_scenario(
-        data.user_id, data.age, data.weight, data.height,
-        data.sex, data.body_fat, data.dict()
-    )
+    try:
+        path = scenario_builder.build_registration_scenario(
+            data.user_id, data.age, data.weight, data.height,
+            data.sex, data.body_fat, data.dict()
+        )
 
-    if engine_runner.run_biogears(path, user_id=data.user_id):
-        target_file = BIOGEARS_BIN_DIR / f"{data.user_id}.xml"
-        perm_state = USER_STATES_DIR / f"{data.user_id}.xml"
-        if target_file.exists():
-            shutil.copy2(str(target_file), str(perm_state))
-            os.remove(str(target_file))
+        if engine_runner.run_biogears(path, user_id=data.user_id):
+            target_file = BIOGEARS_BIN_DIR / f"{data.user_id}.xml"
+            perm_state = USER_STATES_DIR / f"{data.user_id}.xml"
+            if target_file.exists():
+                shutil.copy2(str(target_file), str(perm_state))
+                os.remove(str(target_file))
 
-            # ── Write .meta.json so scenario_builder has accurate engine_sim_time ──
-            # Without this, scenario_builder falls back to os.path.getmtime(), which
-            # drifts every day and causes multi-hour simulation gaps (the root cause of
-            # the 77,000-second AdvanceTime that made the engine run for 20+ minutes).
-            try:
-                import json as _json
-                _now_epoch = int(datetime.datetime.now().timestamp())
-                _meta_path = perm_state.with_suffix(".meta.json")
-                _meta_path.write_text(_json.dumps({
-                    "engine_sim_time": _now_epoch,
+                try:
+                    import json as _json
+                    _now_epoch = int(datetime.datetime.now().timestamp())
+                    _meta_path = perm_state.with_suffix(".meta.json")
+                    _meta_path.write_text(_json.dumps({
+                        "engine_sim_time": _now_epoch,
+                        "registered_at": datetime.datetime.now().isoformat(),
+                        "user_id": data.user_id,
+                    }))
+                    logger.info(f"[{data.user_id}] meta.json written: engine_sim_time={_now_epoch}")
+                except Exception as _me:
+                    logger.warning(f"[{data.user_id}] Failed to write meta.json: {_me}")
+
+                # Build conditions list for metadata
+                conditions = []
+                if data.is_smoker: conditions.append("Smoker / COPD")
+                if data.has_anemia: conditions.append("Chronic Anemia")
+                if data.has_type1_diabetes: conditions.append("Type 1 Diabetes")
+                if data.has_type2_diabetes: conditions.append("Type 2 Diabetes")
+
+                # Persist metadata
+                db.upsert_profile(data.user_id, {
+                    "age": data.age,
+                    "sex": data.sex,
+                    "weight": data.weight,
+                    "height": data.height,
+                    "body_fat": data.body_fat,
+                    "resting_hr": data.resting_hr,
+                    "systolic_bp": data.systolic_bp,
+                    "diastolic_bp": data.diastolic_bp,
+                    "conditions": conditions,
                     "registered_at": datetime.datetime.now().isoformat(),
-                    "user_id": data.user_id,
-                }))
-                logger.info(f"[{data.user_id}] meta.json written: engine_sim_time={_now_epoch}")
-            except Exception as _me:
-                logger.warning(f"[{data.user_id}] Failed to write meta.json: {_me}")
+                    "is_smoker": data.is_smoker,
+                    "has_anemia": data.has_anemia,
+                    "has_type1_diabetes": data.has_type1_diabetes,
+                    "has_type2_diabetes": data.has_type2_diabetes,
+                    "hba1c": data.hba1c,
+                    "ethnicity": data.ethnicity or "Other",
+                })
 
-            # Build conditions list for metadata
-            conditions = []
-            if data.is_smoker: conditions.append("Smoker / COPD")
-            if data.has_anemia: conditions.append("Chronic Anemia")
-            if data.has_type1_diabetes: conditions.append("Type 1 Diabetes")
-            if data.has_type2_diabetes: conditions.append("Type 2 Diabetes")
+                logger.info(f"✅ Twin {data.user_id} calibrated and metadata saved.")
+                
+                # Clean up backups on success
+                if has_xml_bak and xml_bak.exists():
+                    try: os.remove(str(xml_bak))
+                    except: pass
+                if has_meta_bak and meta_bak.exists():
+                    try: os.remove(str(meta_bak))
+                    except: pass
+                if has_hist_bak and hist_bak.exists():
+                    try: shutil.rmtree(str(hist_bak))
+                    except: pass
 
-            # Persist metadata
-            db.upsert_profile(data.user_id, {
-                "age": data.age,
-                "sex": data.sex,
-                "weight": data.weight,
-                "height": data.height,
-                "body_fat": data.body_fat,
-                "resting_hr": data.resting_hr,
-                "systolic_bp": data.systolic_bp,
-                "diastolic_bp": data.diastolic_bp,
-                "conditions": conditions,
-                "registered_at": datetime.datetime.now().isoformat(),
-                "is_smoker": data.is_smoker,
-                "has_anemia": data.has_anemia,
-                "has_type1_diabetes": data.has_type1_diabetes,
-                "has_type2_diabetes": data.has_type2_diabetes,
-                # Extended clinical fields
-                "hba1c": data.hba1c,
-                "ethnicity": data.ethnicity or "Other",
-            })
+                return {"status": "success", "message": f"Twin '{data.user_id}' calibrated."}
 
-            logger.info(f"✅ Twin {data.user_id} calibrated and metadata saved.")
-            return {"status": "success", "message": f"Twin '{data.user_id}' calibrated."}
+        raise HTTPException(status_code=500, detail="Engine convergence failure.")
 
-    raise HTTPException(status_code=500, detail="Engine convergence failure.")
+    except Exception as e:
+        logger.error(f"❌ Registration failed for {data.user_id}: {e}. Initiating rollback...")
+        if has_xml_bak and xml_bak.exists():
+            try:
+                shutil.copy2(str(xml_bak), str(existing_state))
+                logger.info(f"♻️ Rolled back state file to previous calibration.")
+            except Exception as rb_err:
+                logger.warning(f"Failed to restore state file: {rb_err}")
+        if has_meta_bak and meta_bak.exists():
+            try:
+                shutil.copy2(str(meta_bak), str(existing_meta))
+                logger.info(f"♻️ Rolled back meta file to previous calibration.")
+            except Exception as rb_err:
+                logger.warning(f"Failed to restore meta file: {rb_err}")
+        if has_hist_bak and hist_bak.exists():
+            try:
+                if history_folder.exists():
+                    shutil.rmtree(str(history_folder))
+                shutil.copytree(str(hist_bak), str(history_folder))
+                logger.info(f"♻️ Rolled back history folder to previous calibration.")
+            except Exception as rb_err:
+                logger.warning(f"Failed to restore history folder: {rb_err}")
+
+        # Cleanup backups
+        if has_xml_bak and xml_bak.exists():
+            try: os.remove(str(xml_bak))
+            except: pass
+        if has_meta_bak and meta_bak.exists():
+            try: os.remove(str(meta_bak))
+            except: pass
+        if has_hist_bak and hist_bak.exists():
+            try: shutil.rmtree(str(hist_bak))
+            except: pass
+
+        if isinstance(e, HTTPException):
+            raise e
+        raise HTTPException(status_code=500, detail={"message": f"Registration failed: {e}"})
 
 
 # ── 4. SYNC – BATCH ───────────────────────────────────────────────────────────
 
 @app.post("/sync/batch", dependencies=[Depends(require_api_key)],
           summary="Log a batch of health events and retrieve updated vitals")
-def sync_batch(data: BatchSyncRequest):
+async def sync_batch(data: BatchSyncRequest):
     """
     Runs a BioGears simulation replay for all provided events (exercise, sleep,
     meal, substance) and returns the resulting vital signs and a health report.
     """
     for e in data.events:
         logger.info(f"📅 Timeline Item: {e.event_type} at T+{e.time_offset}s")
-    return _run_batch_sync_blocking(data.user_id, data.events)
+    return await asyncio.to_thread(_run_batch_sync_blocking, data.user_id, data.events)
 
 
 # ── 5. SYNC – SINGLE (convenience wrapper) ───────────────────────────────────
 
 @app.post("/sync/single", dependencies=[Depends(require_api_key)],
           summary="Log a single health event — convenience endpoint")
-def sync_single(data: SingleSyncRequest):
+async def sync_single(data: SingleSyncRequest):
     """
     Wraps /sync/batch for one event. Ideal for quick one-off logs like
     'just had coffee' or 'started a 30-min run'.
@@ -866,10 +1043,11 @@ def sync_single(data: SingleSyncRequest):
         value=data.value,
         time_offset=data.time_offset,
         timestamp=data.timestamp or time.time(),
-        substance_name=data.substance_name
+        substance_name=data.substance_name,
+        unit=data.unit
     )
     logger.info(f"📅 Single event: {data.event_type} (value={data.value}) for {data.user_id}")
-    return _run_batch_sync_blocking(data.user_id, [event])
+    return await asyncio.to_thread(_run_batch_sync_blocking, data.user_id, [event])
 
 
 # ── 6. ASYNC SIMULATION ───────────────────────────────────────────────────────
@@ -1039,11 +1217,20 @@ def get_reports(user_id: str):
 
 @app.post("/predict/recovery", dependencies=[Depends(require_api_key)],
           summary="Run a physiological forecast for the next N hours")
-def predict_recovery(data: PredictRequest):
-    """
-    Simulates the patient's physiology forward in time (default: 4 hours)
-    without any interventions, and returns a forecast chart URL.
-    """
+async def predict_recovery(data: PredictRequest):
+    """Wrapper that acquires user lock to prevent overlapping jobs."""
+    user_lock = engine_runner.get_user_lock(data.user_id)
+    if not user_lock.acquire(blocking=False):
+        raise HTTPException(
+            status_code=409,
+            detail="A simulation job is already running for this user. Please wait for it to complete."
+        )
+    try:
+        return await asyncio.to_thread(_predict_recovery_impl, data)
+    finally:
+        user_lock.release()
+
+def _predict_recovery_impl(data: PredictRequest):
     state_file = USER_STATES_DIR / f"{data.user_id}.xml"
     if not state_file.exists():
         raise HTTPException(status_code=404, detail=f"Twin '{data.user_id}' not found.")
@@ -1235,6 +1422,8 @@ def stream_start(data: StreamSyncRequest):
         }
     except FileNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=409, detail=str(e))
     except Exception as e:
         logger.error(f"Stream start failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -1273,17 +1462,20 @@ async def stream_vitals(stream_id: str):
 
 @app.post("/predict/whatif", dependencies=[Depends(require_api_key)],
           summary="Run a what-if comparison: baseline vs one intervention event")
-def predict_whatif(data: WhatIfRequest):
-    """
-    Runs **two** BioGears simulations from the same engine state:
+async def predict_whatif(data: WhatIfRequest):
+    """Wrapper that acquires user lock to prevent overlapping jobs."""
+    user_lock = engine_runner.get_user_lock(data.user_id)
+    if not user_lock.acquire(blocking=False):
+        raise HTTPException(
+            status_code=409,
+            detail="A simulation job is already running for this user. Please wait for it to complete."
+        )
+    try:
+        return await asyncio.to_thread(_predict_whatif_impl, data)
+    finally:
+        user_lock.release()
 
-    1. **Baseline** — advances time with no interventions
-    2. **Intervention** — applies `event` (exercise / meal / substance / environment), then advances
-
-    Returns chart URLs for both runs plus a **side-by-side comparison chart**.
-
-    > Note: Runs two full simulations sequentially — takes roughly 2× normal time.
-    """
+def _predict_whatif_impl(data: WhatIfRequest):
     state_file = USER_STATES_DIR / f"{data.user_id}.xml"
     if not state_file.exists():
         raise HTTPException(status_code=404, detail=f"Twin '{data.user_id}' not found.")

@@ -115,7 +115,45 @@ def _water_xml(ml: float) -> str:
     )
 
 
-def _substance_xml(name: str, val: float, is_stacked: bool = False) -> str:
+def validate_and_convert_substance_unit(substance_name: str, val: float, passed_unit: str = None) -> float:
+    """
+    Validates that the passed dosing unit is compatible with the substance registry,
+    and performs safe scaling/conversions to prevent dosing scale/conversion errors.
+    """
+    info = SUBSTANCE_REGISTRY.get(substance_name)
+    if not info:
+        return val # No validation for unregistered substances
+    
+    expected_unit = info["unit"]
+    if not passed_unit:
+        return val # Assume default registered unit if not specified
+        
+    passed_unit_clean = passed_unit.strip().lower()
+    expected_unit_clean = expected_unit.strip().lower()
+    
+    if passed_unit_clean == expected_unit_clean:
+        return val
+        
+    # Supported conversions:
+    # 1. mg <-> ug
+    if expected_unit_clean == "ug" and passed_unit_clean == "mg":
+        return val * 1000.0  # Convert mg to ug
+    if expected_unit_clean == "mg" and passed_unit_clean == "ug":
+        return val / 1000.0  # Convert ug to mg
+        
+    # 2. g <-> mg (e.g. for Ethanol or normal substances)
+    if expected_unit_clean == "g" and passed_unit_clean == "mg":
+        return val / 1000.0  # Convert mg to g
+    if expected_unit_clean == "mg" and passed_unit_clean == "g":
+        return val * 1000.0  # Convert g to mg
+        
+    # If incompatible, raise ValueError.
+    raise ValueError(
+        f"Incompatible unit '{passed_unit}' for substance '{substance_name}'. Expected '{expected_unit}'."
+    )
+
+
+def _substance_xml(name: str, val: float, is_stacked: bool = False, unit: str = None) -> str:
     """
     Routes a substance to the correct BioGears administration action.
 
@@ -149,16 +187,19 @@ def _substance_xml(name: str, val: float, is_stacked: bool = False) -> str:
             f'        </Action>\n'
         )
 
+    # Perform PK unit validation and conversion
+    val = validate_and_convert_substance_unit(name, val, unit)
+
     effective_val = round(val * 1.15, 4) if is_stacked else round(val, 4)
     route = info["route"]
-    unit  = info["unit"]   # "mg", "ug", "mL/min", or "U" (insulin units)
+    unit_expected = info["unit"]   # "mg", "ug", "mL/min", or "U" (insulin units)
 
     if route == "IV_COMPOUND":
         return (
             f'        <Action xsi:type="SubstanceCompoundInfusionData">\n'
             f'            <SubstanceCompound>{name}</SubstanceCompound>\n'
             f'            <BagVolume value="500" unit="mL"/>\n'
-            f'            <Rate value="{effective_val}" unit="{unit}"/>\n'
+            f'            <Rate value="{effective_val}" unit="{unit_expected}"/>\n'
             f'        </Action>\n'
         )
 
@@ -184,12 +225,12 @@ def _substance_xml(name: str, val: float, is_stacked: bool = False) -> str:
         # BioGears CDM: Concentration × Volume = Dose
         # Use concentration 1 mg/mL → volume_mL = dose_mg (numerically equivalent)
         # For ug-dosed drugs (Fentanyl): 1000 ug/mL → volume_mL = dose_ug / 1000
-        if unit == "ug":
+        if unit_expected == "ug":
             # Fentanyl and other ug-dosed IV drugs
             conc_val  = 1000.0              # ug/mL
             conc_unit = "ug/mL"
             dose_vol  = round(effective_val / 1000.0, 6)  # ug ÷ (ug/mL) = mL
-        elif unit == "U":
+        elif unit_expected == "U":
             # Insulin — Units dosed at 100 U/mL concentration
             conc_val  = 100.0
             conc_unit = "U/mL"
@@ -861,7 +902,8 @@ def build_batch_reconstruction(user_id, state_path, events: list, user_weight_kg
         elif etype == "substance":
             is_stacked  = (ev_ts - (last_substance_time or 0)) < 14400
             sub_name    = event.get("substance_name", "Caffeine")
-            actions_xml += _substance_xml(sub_name, float(val or 0), is_stacked)
+            passed_unit = event.get("unit")
+            actions_xml += _substance_xml(sub_name, float(val or 0), is_stacked, unit=passed_unit)
             last_substance_time = ev_ts
 
         elif etype == "environment":

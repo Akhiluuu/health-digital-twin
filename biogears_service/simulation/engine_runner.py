@@ -103,6 +103,21 @@ def run_biogears(scenario_path: str, user_id: str = "unknown") -> EngineResult:
     """
     ts           = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     log_path     = LOGS_DIR / f"engine_{user_id}_{ts}.log"
+
+    # ── XML Schema Validation ──────────────────────────────────────────────────
+    from biogears_service.simulation.validator import validate_xml_schema
+    schema_errors = validate_xml_schema(scenario_path)
+    if schema_errors:
+        logger.error(f"❌  [{user_id}] XML schema validation failed for scenario XML:")
+        for err in schema_errors:
+            logger.error(f"    - {err}")
+        try:
+            log_path.parent.mkdir(parents=True, exist_ok=True)
+            log_path.write_text("[XML SCHEMA VALIDATION FAILED]\n" + "\n".join(schema_errors), encoding="utf-8")
+        except Exception:
+            pass
+        return EngineResult(success=False, log_path=str(log_path), return_code=-3)
+
     rel_scenario = os.path.relpath(scenario_path, BIOGEARS_BIN_DIR)
     # Use "./" prefix so the shell resolves the binary relative to BIOGEARS_BIN_DIR
     # (bg-cli is not on $PATH, only present in that directory).
@@ -117,13 +132,25 @@ def run_biogears(scenario_path: str, user_id: str = "unknown") -> EngineResult:
 
     start_time = time.time()
 
-    # Inject LD_LIBRARY_PATH so bg-cli can find libbiogears.so.7.3 and libboost_filesystem.so
+    # Inject correct library path based on OS so bg-cli can find dynamic libraries
     env = os.environ.copy()
-    lib_path = f"{BIOGEARS_BIN_DIR}/lib:{BIOGEARS_BIN_DIR}/bin"
-    if "LD_LIBRARY_PATH" in env:
-        env["LD_LIBRARY_PATH"] = f"{lib_path}:{env['LD_LIBRARY_PATH']}"
+    from biogears_service.simulation.config import IS_WINDOWS
+    if IS_WINDOWS:
+        lib_path = str(BIOGEARS_BIN_DIR)
+        if "PATH" in env:
+            env["PATH"] = f"{lib_path};{env['PATH']}"
+        else:
+            env["PATH"] = lib_path
     else:
-        env["LD_LIBRARY_PATH"] = lib_path
+        lib_path = f"{BIOGEARS_BIN_DIR}/lib:{BIOGEARS_BIN_DIR}/bin"
+        if "LD_LIBRARY_PATH" in env:
+            env["LD_LIBRARY_PATH"] = f"{lib_path}:{env['LD_LIBRARY_PATH']}"
+        else:
+            env["LD_LIBRARY_PATH"] = lib_path
+        if "DYLD_LIBRARY_PATH" in env:
+            env["DYLD_LIBRARY_PATH"] = f"{lib_path}:{env['DYLD_LIBRARY_PATH']}"
+        else:
+            env["DYLD_LIBRARY_PATH"] = lib_path
 
     try:
         proc = subprocess.Popen(
@@ -256,3 +283,87 @@ def get_latest_log(user_id: str) -> str | None:
         return logs[0].read_text(encoding="utf-8")
     except Exception:
         return None
+
+
+# ── User Simulation Locks ────────────────────────────────────────────────────
+from biogears_service.simulation.config import USER_STATES_DIR
+
+class CrossProcessUserLock:
+    """
+    A cross-process lock that uses file-system locks (fcntl on Unix, msvcrt on Windows).
+    This ensures that multiple FastAPI/Uvicorn worker processes cannot run simulations
+    for the same user simultaneously.
+    """
+    def __init__(self, user_id: str, lock_dir: Path):
+        self.lock_path = lock_dir / f"{user_id}.lock"
+        self.file_handle = None
+        self._thread_lock = threading.Lock()
+
+    def acquire(self, blocking: bool = False) -> bool:
+        if not self._thread_lock.acquire(blocking=blocking):
+            return False
+        
+        try:
+            self.lock_path.parent.mkdir(parents=True, exist_ok=True)
+            self.file_handle = open(self.lock_path, "w")
+            
+            try:
+                import fcntl
+                flags = fcntl.LOCK_EX
+                if not blocking:
+                    flags |= fcntl.LOCK_NB
+                fcntl.flock(self.file_handle, flags)
+                return True
+            except ImportError:
+                try:
+                    import msvcrt
+                    self.file_handle.seek(0)
+                    mode = msvcrt.LK_LOCK if blocking else msvcrt.LK_NBLCK
+                    msvcrt.locking(self.file_handle.fileno(), mode, 1)
+                    return True
+                except (ImportError, OSError):
+                    return True
+        except Exception as e:
+            logger.warning(f"Failed to acquire cross-process lock for {self.lock_path}: {e}")
+            if self.file_handle:
+                try:
+                    self.file_handle.close()
+                except Exception:
+                    pass
+                self.file_handle = None
+            self._thread_lock.release()
+            return False
+
+    def release(self) -> None:
+        try:
+            if self.file_handle:
+                try:
+                    import fcntl
+                    fcntl.flock(self.file_handle, fcntl.LOCK_UN)
+                except ImportError:
+                    try:
+                        import msvcrt
+                        self.file_handle.seek(0)
+                        msvcrt.locking(self.file_handle.fileno(), msvcrt.LK_UNLCK, 1)
+                    except Exception:
+                        pass
+                try:
+                    self.file_handle.close()
+                except Exception:
+                    pass
+                self.file_handle = None
+        finally:
+            try:
+                self._thread_lock.release()
+            except RuntimeError:
+                pass
+
+_user_locks = {}
+_user_locks_lock = threading.Lock()
+
+def get_user_lock(user_id: str) -> CrossProcessUserLock:
+    """Returns a unique CrossProcessUserLock object for the given user_id."""
+    with _user_locks_lock:
+        if user_id not in _user_locks:
+            _user_locks[user_id] = CrossProcessUserLock(user_id, USER_STATES_DIR)
+        return _user_locks[user_id]
