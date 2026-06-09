@@ -73,6 +73,14 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
       if (user) {
         const firebaseProfile = await fetchProfile();
         if (firebaseProfile && firebaseProfile.firstName) {
+          // Sync onboarding habits to AsyncStorage if present in Firestore profile
+          if ((firebaseProfile as any).habits) {
+            await AsyncStorage.setItem(
+              `@onboarding_habits_${user.uid}`,
+              JSON.stringify((firebaseProfile as any).habits)
+            );
+            console.log("✅ Onboarding habits synced from Firebase for user:", user.uid);
+          }
           setProfile(firebaseProfile);
           // Update local cache
           await AsyncStorage.setItem("userProfile", JSON.stringify(firebaseProfile));
@@ -85,6 +93,13 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
           if (u) {
             const firebaseProfile = await fetchProfile();
             if (firebaseProfile && firebaseProfile.firstName) {
+              if ((firebaseProfile as any).habits) {
+                await AsyncStorage.setItem(
+                  `@onboarding_habits_${u.uid}`,
+                  JSON.stringify((firebaseProfile as any).habits)
+                );
+                console.log("✅ Onboarding habits synced from Firebase after auth for user:", u.uid);
+              }
               setProfile(firebaseProfile);
               await AsyncStorage.setItem("userProfile", JSON.stringify(firebaseProfile));
               console.log("✅ Profile synced from Firebase after auth:", firebaseProfile.firstName);

@@ -24,6 +24,7 @@ import {
   setApiKey,
   getApiKey,
   clearApiKey,
+  FALLBACK_API_KEY,
 } from "../services/biogears";
 
 type TestStatus = "idle" | "testing" | "ok" | "fail";
@@ -80,7 +81,11 @@ export default function ServerConfigScreen() {
     setSaving(true);
     try {
       await setBiogearsBaseUrl(finalUrl);
-      if (apiKey.trim()) await setApiKey(apiKey.trim());
+      if (apiKey.trim()) {
+        await setApiKey(apiKey.trim());
+      } else {
+        await clearApiKey();
+      }
       Alert.alert("✅ Saved", "Server settings updated.");
     } catch {
       Alert.alert("Error", "Failed to save settings.");
@@ -249,9 +254,14 @@ export default function ServerConfigScreen() {
               secureTextEntry
             />
           </View>
-          <TouchableOpacity onPress={handleClearKey} style={{ alignSelf: "flex-end", marginTop: 6 }}>
-            <Text style={{ color: c.danger, fontSize: 13 }}>Clear saved key</Text>
-          </TouchableOpacity>
+          <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 6 }}>
+            <Text style={{ color: apiKey === FALLBACK_API_KEY ? "#10b981" : apiKey.trim() === "" ? c.sub : c.accent, fontSize: 12, fontWeight: "500" }}>
+              {apiKey === FALLBACK_API_KEY ? "Using default/fallback API key" : apiKey.trim() === "" ? "No key (Open access)" : "Using custom API key"}
+            </Text>
+            <TouchableOpacity onPress={handleClearKey}>
+              <Text style={{ color: c.danger, fontSize: 12 }}>Clear saved key</Text>
+            </TouchableOpacity>
+          </View>
 
           {/* ── Test Result Banner ─────────────────────────────────────── */}
           {testStatus !== "idle" && (

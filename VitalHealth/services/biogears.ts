@@ -58,7 +58,7 @@ const API_KEY_STORE = 'biogears_api_key';
 // Fallback key used when no key has been set in SecureStore.
 // This must match DIGITAL_TWIN_API_KEY in the server's .env file.
 // In production this should only be changed via the Settings screen.
-const _FALLBACK_API_KEY = '505747c55d1dd92d8e7ef48534023ca4d9de516d624c7aaa0cda9452d2570f87';
+export const FALLBACK_API_KEY = '505747c55d1dd92d8e7ef48534023ca4d9de516d624c7aaa0cda9452d2570f87';
 
 export async function setApiKey(key: string): Promise<void> {
   await SecureStore.setItemAsync(API_KEY_STORE, key);
@@ -66,9 +66,9 @@ export async function setApiKey(key: string): Promise<void> {
 export async function getApiKey(): Promise<string> {
   try {
     const stored = await SecureStore.getItemAsync(API_KEY_STORE);
-    return stored && stored.trim().length > 0 ? stored.trim() : _FALLBACK_API_KEY;
+    return stored && stored.trim().length > 0 ? stored.trim() : FALLBACK_API_KEY;
   } catch {
-    return _FALLBACK_API_KEY;
+    return FALLBACK_API_KEY;
   }
 }
 
@@ -228,7 +228,8 @@ async function apiFetch<T>(path: string, options?: RequestInit, timeoutMs = 3000
   const timer = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
-    console.log(`[BioGears] API REQUEST: ${options?.method || 'GET'} ${url}`);
+    const isFallback = apiKey === FALLBACK_API_KEY;
+    console.log(`[BioGears] API REQUEST: ${options?.method || 'GET'} ${url} | Key: ${isFallback ? 'Default Fallback' : 'Custom Key (' + apiKey.slice(0, 4) + '...' + apiKey.slice(-4) + ')'}`);
     const res = await fetch(url, {
       headers: {
         'Content-Type': 'application/json',

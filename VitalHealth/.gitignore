@@ -42,3 +42,9 @@ app-example
 /ios
 /android
 .env
+
+# debug and test scripts
+bundle.js
+find_none.js
+test_parse.js
+

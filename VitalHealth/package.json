@@ -87,8 +87,12 @@
   },
   "devDependencies": {
     "@babel/core": "^7.29.0",
+    "@babel/plugin-transform-class-properties": "^7.29.7",
+    "@babel/plugin-transform-private-methods": "^7.29.7",
+    "@babel/plugin-transform-private-property-in-object": "^7.29.7",
     "@babel/types": "^7.29.0",
     "@types/react": "~19.1.10",
+    "babel-preset-expo": "~54.0.11",
     "eslint": "^9.25.0",
     "eslint-config-expo": "~10.0.0",
     "react-test-renderer": "19.1.0",
