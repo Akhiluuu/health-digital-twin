@@ -8,7 +8,7 @@ import * as SecureStore from 'expo-secure-store';
 // LOCAL DEV:  your laptop's Wi-Fi IP (e.g. 'http://10.172.0.79:8000')
 // PRODUCTION: change to your E2E Cloud URL (e.g. 'https://yourdomain.com')
 
-const DEFAULT_BASE_URL = 'http://151.185.42.123';
+const DEFAULT_BASE_URL = 'http://151.185.41.234';
 const BASE_URL_KEY = '@biogears_base_url';
 
 /** Strip redundant/wrong ports from a BioGears URL.
@@ -58,7 +58,7 @@ const API_KEY_STORE = 'biogears_api_key';
 // Fallback key used when no key has been set in SecureStore.
 // This must match DIGITAL_TWIN_API_KEY in the server's .env file.
 // In production this should only be changed via the Settings screen.
-const _FALLBACK_API_KEY = '70d04318406695d0221ca63b51cd390bddf272bf30059ea5cdbec08bafc7c67c';
+const _FALLBACK_API_KEY = '505747c55d1dd92d8e7ef48534023ca4d9de516d624c7aaa0cda9452d2570f87';
 
 export async function setApiKey(key: string): Promise<void> {
   await SecureStore.setItemAsync(API_KEY_STORE, key);

@@ -63,7 +63,7 @@ const KEY_SERVER_IP    = "@hai_server_ip";
 const KEY_SERVER_PORT  = "@hai_server_port";
 const KEY_CHAT_HISTORY = "@hai_chat_history";
 const DEFAULT_PORT     = "8000";
-const DEFAULT_AI_URL   = "http://151.185.42.123/ai";
+const DEFAULT_AI_URL   = "http://151.185.41.234/ai";
 const TOP_K            = 5;
 const MAX_SAVED_SESSIONS = 30;
 
