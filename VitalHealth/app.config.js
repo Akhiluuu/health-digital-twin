@@ -95,6 +95,7 @@ export default {
     /////////////////////////////////////////////////////////
     plugins: [
       "expo-router",
+      "expo-font",
       "@react-native-voice/voice",  // Included in native build (EAS)
       "./plugins/withExcludeOldSupportLib",
 
