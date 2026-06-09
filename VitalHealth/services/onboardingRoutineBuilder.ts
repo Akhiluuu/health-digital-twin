@@ -386,7 +386,7 @@ export function buildDefaultRoutine(habits: OnboardingHabits, profile?: UserMedi
   });
 
   return {
-    id: `routine_onboarding_${Date.now()}`,
+    id: 'routine_onboarding_typical_day',
     name: 'My Typical Day',
     events: sorted as any,
     eventCount: sorted.length,

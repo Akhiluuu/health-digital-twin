@@ -60,15 +60,38 @@ export default function AddMemberScreen() {
     }
   };
 
-  const handleScan = ({ data }: { data: string }) => {
+  const handleScan = async ({ data }: { data: string }) => {
     if (scanned) return;
     setScanned(true);
 
     const code = data.trim().toUpperCase();
-    setTargetHealthId(code);
-    setScanned(false);
-    setActiveTab("manual");
-    Alert.alert("Success", `Scanned Health ID: ${code}.\n\nSelect relationship type below to finish linking.`);
+    setLoading(true);
+
+    try {
+      const targetUser = await findUserByHealthId(code);
+      if (targetUser) {
+        setTargetHealthId(code);
+        setActiveTab("manual");
+        Alert.alert(
+          "QR Code Verified",
+          `Registered user found: ${targetUser.firstName} ${targetUser.lastName || ""}\n\nPlease select relationship type to link accounts.`
+        );
+      } else {
+        Alert.alert(
+          "Invalid QR Code",
+          "This QR code is not registered to any VitalHealth account. Please check the code and try again."
+        );
+      }
+    } catch (e) {
+      console.log("❌ Scan verification error:", e);
+      Alert.alert("Error", "Could not verify code. Please check your network connection.");
+    } finally {
+      setLoading(false);
+      // Brief delay to prevent scan triggers loop
+      setTimeout(() => {
+        setScanned(false);
+      }, 2000);
+    }
   };
 
   const handleLinkMember = async () => {

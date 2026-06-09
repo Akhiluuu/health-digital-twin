@@ -183,18 +183,21 @@ export default function Notifications() {
           onToggle={() => toggle("reports")}
         />
 
-        <Row
-          label="Daily Twin Sync Reminder"
-          value={settings.twinReminder}
-          onToggle={() => toggle("twinReminder")}
-        />
-
-        {settings.twinReminder && (
-          <View style={[styles.timeRowContainer, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <Text style={[styles.timeLabel, { color: colors.text }]}>Reminder Time</Text>
-            <TimePicker value={twinReminderTime} onChange={handleTimeChange} accent="#0ea5e9" />
+        <View style={[styles.mergedCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <View style={styles.mergedHeader}>
+            <Text style={[styles.text, { color: colors.text }]}>Daily Twin Sync Reminder</Text>
+            <Switch value={settings.twinReminder} onValueChange={() => toggle("twinReminder")} />
           </View>
-        )}
+          {settings.twinReminder && (
+            <>
+              <View style={[styles.mergedDivider, { backgroundColor: colors.border }]} />
+              <View style={styles.mergedBody}>
+                <Text style={[styles.timeLabel, { color: colors.text }]}>Reminder Time</Text>
+                <TimePicker value={twinReminderTime} onChange={handleTimeChange} accent="#0ea5e9" />
+              </View>
+            </>
+          )}
+        </View>
       </View>
     </View>
   );
@@ -220,17 +223,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
 
-  timeRowContainer: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderRadius: 12,
-    marginBottom: 12,
-    borderWidth: 1,
-  },
-
   timeLabel: {
     fontSize: 15,
     fontWeight: "500",
@@ -239,5 +231,32 @@ const styles = StyleSheet.create({
   text: {
     fontSize: 15,
     fontWeight: "500",
+  },
+
+  mergedCard: {
+    borderRadius: 12,
+    borderWidth: 1,
+    marginBottom: 12,
+    overflow: "hidden",
+  },
+
+  mergedHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    padding: 16,
+  },
+
+  mergedDivider: {
+    height: 1,
+    width: "100%",
+  },
+
+  mergedBody: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingHorizontal: 16,
+    paddingVertical: 14,
   },
 });

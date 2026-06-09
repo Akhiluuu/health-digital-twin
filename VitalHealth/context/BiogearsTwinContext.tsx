@@ -475,6 +475,35 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
       }
     }
 
+    // Deduplicate existing routines by name (cleans up any older duplicates)
+    const uniqueMap = new Map<string, typeof r[0]>();
+    const duplicatesToRemove: typeof r = [];
+
+    r.forEach(routine => {
+      const existing = uniqueMap.get(routine.name);
+      if (!existing) {
+        uniqueMap.set(routine.name, routine);
+      } else {
+        // Prioritize keeping the default catch-up one
+        if (routine.isDefault && !existing.isDefault) {
+          duplicatesToRemove.push(existing);
+          uniqueMap.set(routine.name, routine);
+        } else {
+          duplicatesToRemove.push(routine);
+        }
+      }
+    });
+
+    if (duplicatesToRemove.length > 0) {
+      console.log(`[BiogearsTwin] Cleaned up ${duplicatesToRemove.length} duplicate routine(s).`);
+      for (const dup of duplicatesToRemove) {
+        await BiogearsAPI.deleteRoutine(twinUserId, dup.id);
+      }
+      const cleaned = await BiogearsAPI.loadSavedRoutines(twinUserId);
+      setSavedRoutines(cleaned);
+      return;
+    }
+
     setSavedRoutines(r);
   };
 

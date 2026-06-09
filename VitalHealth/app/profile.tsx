@@ -1148,7 +1148,7 @@ export default function ProfileScreen() {
             <Ionicons name="copy-outline" size={16} color={colors.accent} />
           </TouchableOpacity>
           <TouchableOpacity style={[styles.codeActionBtn, { backgroundColor: colors.purple }]}
-            onPress={() => Share.share({ message: `Join me on VitalHealth! Use my invite code: ${myInviteCode} to link our health data.`, title: "VitalHealth Invite Code" })}>
+            onPress={() => Share.share({ message: `Join me on VitalHealth! Use my invite code: ${myInviteCode} or scan my QR Code here: https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${myInviteCode} to link our health data.`, title: "VitalHealth Invite Code" })}>
             <Ionicons name="share-social" size={16} color="#fff" />
           </TouchableOpacity>
         </View>
