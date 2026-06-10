@@ -172,10 +172,33 @@ export const FamilyProvider = ({
           dependents = userSnap.data()?.familyMembers || [];
         }
 
-        // Combine both
-        const combined = [...linkedMembersList, ...dependents];
+        // Combine both, deduplicating by uid/id so a member that appears in
+        // both the linked-members list AND the local familyMembers array is
+        // only included once (avoids the duplicate-key React warning).
+        const seen = new Set<string>();
+        const combined = [...linkedMembersList, ...dependents].filter((m) => {
+          const key = normalizeId(m.id) || normalizeId(m.uid) || normalizeId(m.userId);
+          if (!key || seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        });
         setMembers(combined);
         await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(combined));
+
+        // ── Self-heal: remove any entries from the familyMembers Firestore array
+        // that are already covered by linkedMembers. This ensures future loads
+        // don't re-introduce duplicates from the old local array.
+        const linkedUids = new Set(linkedMembersList.map(m => normalizeId(m.id) || normalizeId(m.uid) || normalizeId(m.userId)).filter(Boolean) as string[]);
+        const cleanedDependents = dependents.filter(d => {
+          const dKey = normalizeId(d.id) || normalizeId(d.uid) || normalizeId(d.userId);
+          return !dKey || !linkedUids.has(dKey);
+        });
+        if (cleanedDependents.length !== dependents.length) {
+          // Some dependents were already in linkedMembers — update Firestore to clean up
+          await setDoc(doc(db, "users", uid), { familyMembers: cleanedDependents }, { merge: true });
+          console.log(`[FamilyContext] Cleaned up ${dependents.length - cleanedDependents.length} duplicate(s) from familyMembers array`);
+        }
+
         return;
       }
 

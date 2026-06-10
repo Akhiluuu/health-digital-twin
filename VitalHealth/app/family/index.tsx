@@ -1,121 +1,252 @@
-import React from "react";
+// app/family/index.tsx
+// Production-level Family Health overview screen
+// – Theme-aware, live member data, proper keys, pull-to-refresh
+
+import React, { useCallback, useState } from "react";
 import {
   View,
   Text,
   FlatList,
   TouchableOpacity,
   StyleSheet,
+  Image,
+  RefreshControl,
+  StatusBar,
 } from "react-native";
-import { router } from "expo-router";
+import { router, useFocusEffect } from "expo-router";
 import { useFamily } from "../../context/FamilyContext";
+import { useTheme } from "../../context/ThemeContext";
+import { colors as globalColors } from "../../theme/colors";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
+import { FamilyMember } from "../../types/FamilyMember";
 
-export default function FamilyHealthScreen() {
-  const { members } = useFamily();
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
-  const renderItem = ({ item }: any) => (
-    <TouchableOpacity
-      style={styles.card}
-      activeOpacity={0.85}
-      onPress={() =>
-  router.push({
-    pathname: "/family/member-details",
-    params: { id: item.id.toString() },
-  })
+function getAge(dob?: string): string {
+  if (!dob) return "--";
+  try {
+    // Support DD/MM/YYYY and YYYY-MM-DD
+    let date: Date;
+    if (dob.includes("/")) {
+      const [d, m, y] = dob.split("/").map(Number);
+      const year = y < 100 ? 2000 + y : y;
+      date = new Date(year, m - 1, d);
+    } else {
+      date = new Date(dob);
+    }
+    const age = Math.floor((Date.now() - date.getTime()) / (365.25 * 24 * 3600 * 1000));
+    return age > 0 && age < 130 ? `${age}` : "--";
+  } catch {
+    return "--";
+  }
 }
-    >
-      <Ionicons name="person-circle" size={50} color="#0ea5e9" />
 
+function getInitials(member: FamilyMember): string {
+  const first = (member.firstName ?? "").charAt(0).toUpperCase();
+  const last  = (member.lastName  ?? "").charAt(0).toUpperCase();
+  return first + last || "?";
+}
+
+// ─── Member Card ──────────────────────────────────────────────────────────────
+
+function MemberCard({
+  item,
+  c,
+  onPress,
+}: {
+  item: FamilyMember;
+  c: any;  // theme colors object from globalColors[theme]
+  onPress: () => void;
+}) {
+  const fullName = `${item.firstName ?? ""} ${item.lastName ?? ""}`.trim() || item.name || "Family Member";
+  const relation = item.relation ?? item.relationship ?? "Family";
+  const age      = getAge(item.dateOfBirth ?? item.dob);
+  const medCount = item.medicines?.length ?? 0;
+  const symCount = item.symptoms?.length ?? 0;
+
+  return (
+    <TouchableOpacity
+      style={[styles.card, { backgroundColor: c.card, borderColor: c.border }]}
+      activeOpacity={0.85}
+      onPress={onPress}
+    >
+      {/* Avatar */}
+      {item.profileImage ? (
+        <Image source={{ uri: item.profileImage }} style={styles.avatar} />
+      ) : (
+        <LinearGradient
+          colors={[c.accent + "cc", c.accent]}
+          style={styles.avatarPlaceholder}
+        >
+          <Text style={styles.avatarText}>{getInitials(item)}</Text>
+        </LinearGradient>
+      )}
+
+      {/* Info */}
       <View style={styles.cardContent}>
-        <Text style={styles.name}>{item.name}</Text>
-        <Text style={styles.details}>
-          {item.relationship} • {item.age} yrs
+        <Text style={[styles.memberName, { color: c.text }]} numberOfLines={1}>
+          {fullName}
+        </Text>
+        <Text style={[styles.memberMeta, { color: c.sub }]}>
+          {relation}{age !== "--" ? ` · ${age} yrs` : ""}
         </Text>
 
-        {/* Health Summary */}
+        {/* Health badges */}
         <View style={styles.healthRow}>
-          <View style={styles.healthItem}>
-            <MaterialCommunityIcons
-              name="water"
-              size={16}
-              color="#3b82f6"
-            />
-            <Text style={styles.healthText}>
-              {item.hydration ?? 0} ml
+          {/* Medicines */}
+          <View style={[styles.badge, { backgroundColor: "#f59e0b18" }]}>
+            <MaterialCommunityIcons name="pill" size={13} color="#f59e0b" />
+            <Text style={[styles.badgeText, { color: "#f59e0b" }]}>
+              {medCount} med{medCount !== 1 ? "s" : ""}
             </Text>
           </View>
 
-          <View style={styles.healthItem}>
-            <MaterialCommunityIcons
-              name="pill"
-              size={16}
-              color="#f59e0b"
-            />
-            <Text style={styles.healthText}>
-              {item.medicines?.length ?? 0}
+          {/* Symptoms */}
+          <View style={[styles.badge, { backgroundColor: "#ef444418" }]}>
+            <MaterialCommunityIcons name="stethoscope" size={13} color="#ef4444" />
+            <Text style={[styles.badgeText, { color: "#ef4444" }]}>
+              {symCount} symptom{symCount !== 1 ? "s" : ""}
             </Text>
           </View>
 
-          <View style={styles.healthItem}>
-            <MaterialCommunityIcons
-              name="stethoscope"
-              size={16}
-              color="#ef4444"
-            />
-            <Text style={styles.healthText}>
-              {item.symptoms?.length ?? 0}
-            </Text>
-          </View>
+          {/* Heart Rate */}
+          {item.heartRate ? (
+            <View style={[styles.badge, { backgroundColor: "#ec489918" }]}>
+              <MaterialCommunityIcons name="heart-pulse" size={13} color="#ec4899" />
+              <Text style={[styles.badgeText, { color: "#ec4899" }]}>
+                {item.heartRate} bpm
+              </Text>
+            </View>
+          ) : null}
         </View>
       </View>
 
-      <Ionicons name="chevron-forward" size={20} color="#94a3b8" />
+      <Ionicons name="chevron-forward" size={18} color={c.sub} />
     </TouchableOpacity>
+  );
+}
+
+// ─── Main Screen ──────────────────────────────────────────────────────────────
+
+export default function FamilyHealthScreen() {
+  const { theme } = useTheme();
+  const c = globalColors[theme];
+  const { members, isLoaded, refreshMembers } = useFamily();
+
+  const [refreshing, setRefreshing] = useState(false);
+
+  // Refresh when screen gains focus
+  useFocusEffect(
+    useCallback(() => {
+      refreshMembers();
+    }, [])
+  );
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await refreshMembers();
+    setRefreshing(false);
+  }, []);
+
+  const renderItem = useCallback(
+    ({ item }: { item: FamilyMember }) => {
+      // Build a unique, stable key — prefer uid (Firebase UID), fallback to id, then name
+      const itemKey = item.uid ?? item.id ?? item.name ?? String(Math.random());
+      return (
+        <MemberCard
+          key={itemKey}
+          item={item}
+          c={c}
+          onPress={() =>
+            router.push({
+              pathname: "/family/member-details",
+              params: { id: (item.uid ?? item.id ?? "").toString() },
+            })
+          }
+        />
+      );
+    },
+    [c]
   );
 
   return (
-    <View style={styles.container}>
-      {/* Gradient Header */}
+    <View style={[styles.container, { backgroundColor: c.bg }]}>
+      <StatusBar barStyle={theme === "dark" ? "light-content" : "dark-content"} />
+
+      {/* Header */}
       <LinearGradient
-        colors={["#0ea5e9", "#0284c7"]}
+        colors={
+          theme === "dark"
+            ? ["#1e3a5f", "#0c1929"]
+            : ["#2563eb", "#7c3aed"]
+        }
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
         style={styles.header}
       >
-        <Text style={styles.headerTitle}>Family Health</Text>
-        <Text style={styles.headerSubtitle}>
-          Monitor your loved ones' health
-        </Text>
+        <TouchableOpacity
+          style={styles.backBtn}
+          onPress={() => router.back()}
+        >
+          <Ionicons name="arrow-back" size={22} color="#fff" />
+        </TouchableOpacity>
+
+        <View>
+          <Text style={styles.headerTitle}>Family Health</Text>
+          <Text style={styles.headerSub}>
+            {members.length} linked member{members.length !== 1 ? "s" : ""}
+          </Text>
+        </View>
+
+        <TouchableOpacity
+          style={[styles.addBtn, { backgroundColor: "rgba(255,255,255,0.2)" }]}
+          onPress={() => router.push("/family/add-member")}
+        >
+          <Ionicons name="person-add" size={18} color="#fff" />
+        </TouchableOpacity>
       </LinearGradient>
 
-      {/* Add Member Button */}
-      <TouchableOpacity
-        style={styles.addButton}
-        onPress={() => router.push("./family/add-member")}
-      >
-        <Ionicons name="add" size={20} color="#fff" />
-        <Text style={styles.addButtonText}>Add Family Member</Text>
-      </TouchableOpacity>
-
-      {/* Members List */}
-      <FlatList
+      {/* List */}
+      <FlatList<FamilyMember>
         data={members}
-        keyExtractor={(item) => item.id}
+        keyExtractor={(item) => item.uid ?? item.id ?? item.name ?? String(Math.random())}
         renderItem={renderItem}
-        contentContainerStyle={{ padding: 16 }}
+        contentContainerStyle={[
+          styles.listContent,
+          members.length === 0 && { flex: 1 },
+        ]}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={c.accent}
+            colors={[c.accent]}
+          />
+        }
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
-            <Ionicons
-              name="people-outline"
-              size={60}
-              color="#cbd5f5"
-            />
-            <Text style={styles.emptyText}>
-              No family members added
+            <LinearGradient
+              colors={["#2563eb22", "#7c3aed22"]}
+              style={styles.emptyIcon}
+            >
+              <Ionicons name="people-outline" size={52} color={c.accent} />
+            </LinearGradient>
+            <Text style={[styles.emptyTitle, { color: c.text }]}>
+              No Family Members Yet
             </Text>
-            <Text style={styles.emptySubText}>
-              Tap the button above to add one
+            <Text style={[styles.emptySub, { color: c.sub }]}>
+              Link a family member using their Health ID or QR code to monitor
+              their health together.
             </Text>
+            <TouchableOpacity
+              style={[styles.emptyBtn, { backgroundColor: c.accent }]}
+              onPress={() => router.push("/family/add-member")}
+            >
+              <Ionicons name="person-add-outline" size={16} color="#fff" />
+              <Text style={styles.emptyBtnText}>Add First Member</Text>
+            </TouchableOpacity>
           </View>
         }
       />
@@ -123,93 +254,148 @@ export default function FamilyHealthScreen() {
   );
 }
 
+// ─── Styles ───────────────────────────────────────────────────────────────────
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#F1F5F9",
   },
   header: {
-    padding: 24,
-    borderBottomLeftRadius: 20,
-    borderBottomRightRadius: 20,
-  },
-  headerTitle: {
-    fontSize: 24,
-    fontWeight: "bold",
-    color: "#fff",
-  },
-  headerSubtitle: {
-    fontSize: 14,
-    color: "#e0f2fe",
-    marginTop: 4,
-  },
-  addButton: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "#0ea5e9",
-    marginHorizontal: 16,
-    marginTop: -20,
-    paddingVertical: 12,
-    borderRadius: 12,
-    elevation: 4,
+    paddingTop: 52,
+    paddingBottom: 20,
+    paddingHorizontal: 20,
+    gap: 12,
   },
-  addButtonText: {
+  backBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: "rgba(255,255,255,0.15)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  headerTitle: {
+    fontSize: 22,
+    fontWeight: "700",
     color: "#fff",
-    fontWeight: "bold",
-    marginLeft: 8,
-    fontSize: 16,
+  },
+  headerSub: {
+    fontSize: 13,
+    color: "rgba(255,255,255,0.75)",
+    marginTop: 2,
+  },
+  addBtn: {
+    marginLeft: "auto",
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  listContent: {
+    padding: 16,
+    paddingBottom: 32,
   },
   card: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#fff",
-    padding: 16,
-    borderRadius: 14,
+    padding: 14,
+    borderRadius: 16,
     marginBottom: 12,
-    elevation: 3,
+    borderWidth: 1,
+    elevation: 2,
+    shadowColor: "#000",
+    shadowOpacity: 0.06,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
+  },
+  avatar: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+  },
+  avatarPlaceholder: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  avatarText: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: "#fff",
   },
   cardContent: {
     flex: 1,
     marginLeft: 12,
   },
-  name: {
-    fontSize: 18,
-    fontWeight: "bold",
-    color: "#0f172a",
+  memberName: {
+    fontSize: 16,
+    fontWeight: "700",
   },
-  details: {
+  memberMeta: {
     fontSize: 13,
-    color: "#64748b",
+    marginTop: 2,
     marginBottom: 6,
   },
   healthRow: {
     flexDirection: "row",
-    gap: 12,
+    flexWrap: "wrap",
+    gap: 6,
   },
-  healthItem: {
+  badge: {
     flexDirection: "row",
     alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 20,
   },
-  healthText: {
-    marginLeft: 4,
-    fontSize: 12,
-    color: "#334155",
+  badgeText: {
+    fontSize: 11,
     fontWeight: "600",
   },
   emptyContainer: {
+    flex: 1,
     alignItems: "center",
-    marginTop: 60,
+    justifyContent: "center",
+    paddingVertical: 60,
+    paddingHorizontal: 32,
   },
-  emptyText: {
-    fontSize: 18,
-    fontWeight: "600",
-    color: "#64748b",
-    marginTop: 10,
+  emptyIcon: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 20,
   },
-  emptySubText: {
+  emptyTitle: {
+    fontSize: 20,
+    fontWeight: "700",
+    textAlign: "center",
+    marginBottom: 8,
+  },
+  emptySub: {
     fontSize: 14,
-    color: "#94a3b8",
-    marginTop: 4,
+    textAlign: "center",
+    lineHeight: 20,
+    marginBottom: 28,
+  },
+  emptyBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 12,
+  },
+  emptyBtnText: {
+    color: "#fff",
+    fontSize: 15,
+    fontWeight: "700",
   },
 });

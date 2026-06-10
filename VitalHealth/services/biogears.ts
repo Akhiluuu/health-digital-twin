@@ -653,15 +653,25 @@ export async function setDefaultRoutine(userId: string, routineId: string): Prom
 
 // ─── Sync digital twin custom metadata from Firestore ─────────────────────────
 
-export async function syncDigitalTwinDataFromFirestore(userId: string): Promise<void> {
+/**
+ * Syncs routines and session metadata from Firestore into local AsyncStorage.
+ * @param userId     The twinId (HealthID slug) used as the AsyncStorage key.
+ * @param ownerUid   The Firebase UID whose Firestore subcollections to read.
+ *                   Defaults to auth.currentUser.uid (your own account).
+ *                   Pass the member's UID when syncing a switched profile.
+ */
+export async function syncDigitalTwinDataFromFirestore(userId: string, ownerUid?: string): Promise<void> {
   const user = auth.currentUser;
   if (!user) return;
 
-  console.log(`☁️ Starting Firestore sync for user: ${user.uid} (HealthID: ${userId})`);
+  // If no ownerUid provided, fall back to the logged-in user
+  const firestoreUid = ownerUid || user.uid;
+
+  console.log(`☁️ Starting Firestore sync for user: ${user.uid} (HealthID: ${userId}, Firestore owner: ${firestoreUid})`);
 
   try {
     // 1. Sync Routines
-    const routinesRef = collection(db, "users", user.uid, "routines");
+    const routinesRef = collection(db, "users", firestoreUid, "routines");
     const routinesSnap = await getDocs(routinesRef);
     if (!routinesSnap.empty) {
       const firestoreRoutines: SavedRoutine[] = [];
@@ -680,7 +690,7 @@ export async function syncDigitalTwinDataFromFirestore(userId: string): Promise<
     }
 
     // 2. Sync Session Metadata
-    const sessionsRef = collection(db, "users", user.uid, "session_meta");
+    const sessionsRef = collection(db, "users", firestoreUid, "session_meta");
     const sessionsSnap = await getDocs(sessionsRef);
     if (!sessionsSnap.empty) {
       const firestoreSessions: LocalSessionMeta[] = [];

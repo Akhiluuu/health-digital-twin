@@ -166,13 +166,17 @@ function wallTimeToTimestamp(wallTime: string): number {
 // ─── Provider ─────────────────────────────────────────────────────────────────
 
 export function BiogearsTwinProvider({ children }: { children: React.ReactNode }) {
-  const { activeProfile: profile } = useFamily();
+  const { activeProfile: profile, activeMemberId, isSwitched } = useFamily();
 
   // Derive userId from profile: use Firebase UID stored in profile, or firstName+lastName slug
   const { medicines } = useMedicine();
 
   // Derive userId from profile using shared utility
   const twinUserId = profile ? getTwinId(profile) : null;
+
+  // When switched, the member's Firebase UID is activeMemberId
+  // We use this to read the correct Firestore subcollections (routines, session_meta)
+  const firestoreOwnerUid = isSwitched ? activeMemberId : undefined;
 
   const [twinStatus, setTwinStatus] = useState<TwinStatus>('checking');
   const [twinStatusError, setTwinStatusError] = useState<string | null>(null);
@@ -211,6 +215,8 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
   const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const simStartRef = useRef<number | null>(null);   // epoch ms when simulation started
   const progressTickRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const prevTwinUserIdRef = useRef<string | null>(null); // tracks last loaded twinUserId
+  const initDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null); // debounce rapid profile updates
 
   // ── Substances Library ────────────────────────────────────────────────────
 
@@ -262,36 +268,72 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
   // ── Load persisted data on mount ─────────────────────────────────────────
 
   useEffect(() => {
-    // NOTE: substances are NOT fetched here — twin.tsx calls refreshSubstances()
-    // explicitly so this doesn't fire on every screen load.
-    if (!twinUserId) return;
-    recheckTwinStatus();
-    loadTodayFromStorage();
-    
-    // Sync custom routines & session metadata from Firestore in the background
-    (async () => {
-      await BiogearsAPI.syncDigitalTwinDataFromFirestore(twinUserId);
-      await loadRoutinesFromStorage();
-      await refreshSessions();
-      await refreshAnalytics();
-    })();
+    // Guard 1: skip if twinUserId is not yet resolved.
+    // Guard 2: skip 'temp_user' — that's the AsyncStorage placeholder before
+    //   the real Firebase profile loads. We'll fire again with the real ID.
+    if (!twinUserId || twinUserId === 'temp_user') return;
 
-    // ── Load cached vitals from SQLite so Dashboard works offline ─────────
-    getLastSimulation(twinUserId).then((record) => {
-      if (record && !lastVitals) {
-        setLastVitals(recordToVitals(record));
-        if (record.anomaly_labels) {
-          try {
-            const labels: string[] = JSON.parse(record.anomaly_labels);
-            setLastAnomalies(labels.map(l => ({ label: l, severity: 'warning', value: 0, normal_range: '' })));
-          } catch { /* ignore */ }
-        }
-        console.log('[BiogearsTwin] Loaded cached vitals from local DB (offline fallback)');
+    // Debounce: ProfileContext fires twice in quick succession —
+    // first from AsyncStorage (temp_user), then from Firebase (real id).
+    // The 200ms debounce collapses the second rapid update into one call.
+    if (initDebounceRef.current) clearTimeout(initDebounceRef.current);
+
+    initDebounceRef.current = setTimeout(() => {
+      const isNewUser = prevTwinUserIdRef.current !== null && prevTwinUserIdRef.current !== twinUserId;
+      prevTwinUserIdRef.current = twinUserId;
+
+      if (isNewUser) {
+        setLastVitals(null);
+        setLastAnomalies([]);
+        setLastInteractionWarnings([]);
+        setLastSessionId(null);
+        setLastAiInsights([]);
+        setLastAiInsightsText('');
+        setSavedRoutines([]);
+        setSessions([]);
+        setTodayEvents([]);
+        setOrganScores(null);
+        setVitalsTrends(null);
+        setCvdRisk(null);
+        setRecoveryReadiness(null);
+        setWeeklySummary(null);
+        setHealthScore(null);
+        setBodyMetrics(null);
+        setSimulationStatus('idle');
+        setSimulationError(null);
       }
-    }).catch(() => {});
 
-    resumeActiveJob();
-  }, [twinUserId, profile]);
+      recheckTwinStatus();
+      loadTodayFromStorage();
+
+      (async () => {
+        await BiogearsAPI.syncDigitalTwinDataFromFirestore(twinUserId, firestoreOwnerUid);
+        await loadRoutinesFromStorage();
+        await refreshSessions();
+        await refreshAnalytics();
+      })();
+
+      getLastSimulation(twinUserId).then((record) => {
+        if (record) {
+          setLastVitals(recordToVitals(record));
+          if (record.anomaly_labels) {
+            try {
+              const labels: string[] = JSON.parse(record.anomaly_labels);
+              setLastAnomalies(labels.map(l => ({ label: l, severity: 'warning', value: 0, normal_range: '' })));
+            } catch { /* ignore */ }
+          }
+          console.log('[BiogearsTwin] Loaded cached vitals from local DB (offline fallback)');
+        }
+      }).catch(() => {});
+
+      resumeActiveJob();
+    }, 200);
+
+    return () => {
+      if (initDebounceRef.current) clearTimeout(initDebounceRef.current);
+    };
+  }, [twinUserId]);
+
 
   const resumeActiveJob = async () => {
     try {

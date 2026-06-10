@@ -48,7 +48,6 @@ import { useTheme } from "../context/ThemeContext";
 import { colors as globalColors } from "../theme/colors";
 import { getTwinId } from "../utils/twinUtils";
 import {
-  fetchLinkedMembers,
   LinkedMember,
   unlinkFamilyMember,
 } from "../services/familySync";
@@ -364,7 +363,7 @@ export default function ProfileScreen() {
     familyBorder:   theme === "light" ? "#bae6fd" : "#1e3a5f",
   };
 
-  const { addMember, removeMember, members, activeMemberId, activeProfile, isSwitched, switchToMember, switchToSelf, updateActiveProfile } = useFamily();
+  const { addMember, removeMember, members, activeMemberId, activeProfile, isSwitched, switchToMember, switchToSelf, updateActiveProfile, isSwitchLoading, refreshMembers } = useFamily();
   const { profile, updateProfile, isLoaded, isProfileComplete, resetProfile, reloadProfile } = useProfile();
   const { twinStatus, twinStatusError, simulationProgress, registerTwin } = useBiogearsTwin();
 
@@ -411,18 +410,17 @@ export default function ProfileScreen() {
     language: "English",
   });
 
-  // ── Family State ───────────────────────────────────────────────────────────
   const [myInviteCode,    setMyInviteCode]    = useState<string>("");
   const [addMemberModal,  setAddMemberModal]  = useState(false);
   const [qrModalVisible,  setQrModalVisible]  = useState(false);
   const [switchAnim]                          = useState(new Animated.Value(1));
+  // members comes directly from FamilyContext — no local copy needed
 
   const [newMemberName,     setNewMemberName]     = useState("");
   const [newMemberRelation, setNewMemberRelation] = useState("");
   const [newMemberHealthId, setNewMemberHealthId] = useState("");
   const [searchLoading,     setSearchLoading]     = useState(false);
   const [searchError,       setSearchError]       = useState("");
-  const [linkedMembers,     setLinkedMembers]     = useState<LinkedMember[]>([]);
 
   // ── Picker State ───────────────────────────────────────────────────────────
   const [showGenderPicker,    setShowGenderPicker]    = useState(false);
@@ -445,7 +443,7 @@ export default function ProfileScreen() {
 
   useEffect(() => {
     loadSettings();
-    loadLinkedMembers();
+    refreshMembers();
     requestPermissions();
     loadMyInviteCodeFromFirebase();
   }, []);
@@ -502,35 +500,7 @@ export default function ProfileScreen() {
     }
   };
 
-  const loadLinkedMembers = async () => {
-    try {
-      const fetchedMembers = await fetchLinkedMembers();
-      setLinkedMembers(fetchedMembers);
-
-      for (const member of fetchedMembers) {
-        const id =
-          member.uid?.toString() ||
-          member.userId?.toString() ||
-          member.id?.toString();
-        if (!id) continue;
-        const exists = members.some((m) => m.id === id);
-        if (!exists) {
-          await addMember({
-            id,
-            uid: id,
-            userId: id,
-            firstName: member.firstName ?? "",
-            lastName:  member.lastName  ?? "",
-            relation:  member.relation  || "Family",
-            inviteCode: member.inviteCode || "",
-            status: member.status || "active",
-          });
-        }
-      }
-    } catch (e) {
-      console.log("❌ Error loading linked members:", e);
-    }
-  };
+  // loadLinkedMembers removed — FamilyContext `members` + `refreshMembers()` is the single source of truth.
 
   const saveProfileData = async (newProfile: UserProfile) => {
     try {
@@ -708,7 +678,7 @@ export default function ProfileScreen() {
         inviteCode: depCode, status: "active",
       });
 
-      await loadLinkedMembers();
+      await refreshMembers();
       setAddMemberModal(false);
       setNewMemberName(""); setNewMemberHealthId(""); setNewMemberRelation(""); setSearchError("");
       Alert.alert(
@@ -753,7 +723,7 @@ export default function ProfileScreen() {
         relation: newMemberRelation || "Family",
         inviteCode: found.inviteCode || "", status: "active",
       });
-      await loadLinkedMembers();
+      await refreshMembers();
       setAddMemberModal(false);
       setNewMemberName(""); setNewMemberHealthId(""); setNewMemberRelation(""); setSearchError("");
       Alert.alert("Member Linked!", `${found.firstName} has been added to your Family Health network.`);
@@ -771,7 +741,7 @@ export default function ProfileScreen() {
         onPress: async () => {
           await unlinkFamilyMember(id);
           await removeMember(id);
-          await loadLinkedMembers();
+          await refreshMembers();
           if (activeMemberId === id) {
             await switchToSelf();
           }
@@ -1117,12 +1087,12 @@ export default function ProfileScreen() {
           </TouchableOpacity>
         )}
 
-        {members.map((member) => {
+        {members.map((member, idx) => {
           const isCurrent = activeMemberId === member.id || activeMemberId === member.uid;
           const targetId = member.id || member.uid;
           return (
             <TouchableOpacity
-              key={member.id}
+              key={targetId ?? `member-${idx}`}
               style={[
                 styles.memberCard,
                 { backgroundColor: colors.familyBg, borderColor: isCurrent ? colors.accent : colors.familyBorder, borderWidth: 1 }
@@ -1344,6 +1314,19 @@ export default function ProfileScreen() {
         {!isSwitched && renderDeleteAccount()}
         <View style={{ height: 20 }} />
       </ScrollView>
+
+      {/* ── Profile-switch loading overlay ───────────────────────────── */}
+      {isSwitchLoading && (
+        <View style={styles.switchLoadingOverlay}>
+          <View style={[styles.switchLoadingCard, { backgroundColor: colors.card }]}>
+            <ActivityIndicator size="large" color={colors.accent} />
+            <Text style={[styles.switchLoadingText, { color: colors.text }]}>
+              Loading profile…
+            </Text>
+          </View>
+        </View>
+      )}
+
 
       {renderDeletePasswordModal()}
 
@@ -1816,6 +1799,31 @@ const SettingRow = ({ icon, label, value, onToggle, colors }: any) => (
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
+
+  // Profile-switch loading overlay
+  switchLoadingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(0,0,0,0.45)",
+    alignItems: "center",
+    justifyContent: "center",
+    zIndex: 999,
+  },
+  switchLoadingCard: {
+    borderRadius: 20,
+    padding: 28,
+    alignItems: "center",
+    gap: 14,
+    minWidth: 160,
+    elevation: 10,
+    shadowColor: "#000",
+    shadowOpacity: 0.2,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 6 },
+  },
+  switchLoadingText: {
+    fontSize: 15,
+    fontWeight: "600",
+  },
 
   // Profile header
   profileHeader: { paddingTop: 100, paddingBottom: 30, paddingHorizontal: 20, alignItems: "center", borderBottomLeftRadius: 30, borderBottomRightRadius: 30 },
