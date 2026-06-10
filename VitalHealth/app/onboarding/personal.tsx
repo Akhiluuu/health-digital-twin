@@ -16,6 +16,7 @@ import {
 } from "react-native";
 import Svg, { Path, Rect, Circle, Line } from "react-native-svg";
 import { useTheme } from "../../context/ThemeContext";
+import { colors as globalColors } from "../../theme/colors";
 import { auth, db } from "../../services/firebase";
 
 // ─── Icons ──────────────────────────────────────────────────────────────────
@@ -342,46 +343,26 @@ export default function Personal() {
   const router = useRouter();
   const { theme } = useTheme();
 
-  const colors =
-    theme === "light"
-      ? {
-          bg:             "#f8fafc",
-          card:           "#ffffff",
-          border:         "#e2e8f0",
-          text:           "#020617",
-          subText:        "#64748b",
-          accent:         "#2563eb",
-          accentLight:    "#dbeafe",
-          inputBg:        "#f1f5f9",
-          inputBorder:    "#e2e8f0",
-          focusBorder:    "#2563eb",
-          placeholder:    "#94a3b8",
-          progressBg:     "#e2e8f0",
-          genderBg:       "#f1f5f9",
-          genderSelected: "#2563eb",
-          orb1:           "#3b82f6",
-          orb2:           "#8b5cf6",
-          orb3:           "#06b6d4",
-        }
-      : {
-          bg:             "#0f172a",
-          card:           "#1e293b",
-          border:         "#334155",
-          text:           "#f1f5f9",
-          subText:        "#94a3b8",
-          accent:         "#3b82f6",
-          accentLight:    "#1e3a8a",
-          inputBg:        "#1e293b",
-          inputBorder:    "#334155",
-          focusBorder:    "#3b82f6",
-          placeholder:    "#4a7fa8",
-          progressBg:     "#334155",
-          genderBg:       "#1e293b",
-          genderSelected: "#3b82f6",
-          orb1:           "#3b82f6",
-          orb2:           "#8b5cf6",
-          orb3:           "#06b6d4",
-        };
+  const c = globalColors[theme];
+  const colors = {
+    bg:             c.bg,
+    card:           c.card,
+    border:         c.border,
+    text:           c.text,
+    subText:        c.sub,
+    accent:         c.accent,
+    accentLight:    theme === "light" ? "#dbeafe" : "#1e3a8a",
+    inputBg:        theme === "light" ? "#f1f5f9" : c.inputBg,
+    inputBorder:    c.border,
+    focusBorder:    c.focusBorder,
+    placeholder:    c.placeholder,
+    progressBg:     c.border,
+    genderBg:       theme === "light" ? "#f1f5f9" : c.card,
+    genderSelected: c.accent,
+    orb1:           c.primary,
+    orb2:           "#8b5cf6",
+    orb3:           "#06b6d4",
+  };
 
   const { signupName, signupEmail } = useLocalSearchParams<{
     signupName: string;
@@ -409,7 +390,7 @@ export default function Personal() {
   const phoneRef     = useRef<TextInput>(null);
 
   // ✅ Fabric-safe scroll
-  const scrollToField = (ref: React.RefObject<TextInput>) => {
+  const scrollToField = (ref: React.RefObject<TextInput | null>) => {
     ref.current?.measure((_x, _y, _w, _h, _pageX, pageY) => {
       scrollRef.current?.scrollTo({ y: pageY - 140, animated: true });
     });

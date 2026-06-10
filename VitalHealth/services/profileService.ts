@@ -132,10 +132,11 @@ export async function fetchProfile(uid?: string): Promise<UserProfile | null> {
 ////////////////////////////////////////////////////////////
 
 // ✅ SAVE FULL PROFILE
-export async function saveProfile(profile: UserProfile): Promise<boolean> {
+export async function saveProfile(profile: UserProfile, targetUid?: string): Promise<boolean> {
   try {
     const user = auth.currentUser;
-    if (!user) return false;
+    const uid = targetUid || user?.uid;
+    if (!uid) return false;
 
     const fullProfile: UserProfile = {
       ...EMPTY_PROFILE,
@@ -146,19 +147,19 @@ export async function saveProfile(profile: UserProfile): Promise<boolean> {
       },
       inviteCode:
         profile.inviteCode ||
-        `VT-${user.uid.substring(0, 4).toUpperCase()}-${user.uid
+        `VT-${uid.substring(0, 4).toUpperCase()}-${uid
           .slice(-4)
           .toUpperCase()}`,
       healthId:
         profile.healthId ||
-        `VT-${user.uid.substring(0, 4).toUpperCase()}-${user.uid
+        `VT-${uid.substring(0, 4).toUpperCase()}-${uid
           .slice(-4)
           .toUpperCase()}`,
       linkedMembers: profile.linkedMembers || {},
     };
 
     await setDoc(
-      doc(db, "users", user.uid),
+      doc(db, "users", uid),
       {
         ...fullProfile,
         createdAt: new Date().toISOString(),
@@ -179,11 +180,13 @@ export async function saveProfile(profile: UserProfile): Promise<boolean> {
 
 // ✅ UPDATE PROFILE (SAFE MERGE UPDATE)
 export async function updateProfile(
-  partial: Partial<UserProfile>
+  partial: Partial<UserProfile>,
+  targetUid?: string
 ): Promise<boolean> {
   try {
     const user = auth.currentUser;
-    if (!user) return false;
+    const uid = targetUid || user?.uid;
+    if (!uid) return false;
 
     const safePartial: Partial<UserProfile> = {
       ...partial,
@@ -198,7 +201,7 @@ export async function updateProfile(
     }
 
     await setDoc(
-      doc(db, "users", user.uid),
+      doc(db, "users", uid),
       {
         ...safePartial,
         updatedAt: new Date().toISOString(),

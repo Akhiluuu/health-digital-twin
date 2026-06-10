@@ -39,7 +39,7 @@ export const snoozeMedicineReminder = async (
   title:   string,
   minutes: number = 10
 ): Promise<string> => {
-  return snoozeMedicine(title, minutes);
+  return snoozeMedicine(title, "", "daily", minutes);
 };
 
 export { cancelMedicineNotification };

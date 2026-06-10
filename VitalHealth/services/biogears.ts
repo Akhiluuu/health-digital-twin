@@ -54,6 +54,31 @@ export async function setBiogearsBaseUrl(url: string): Promise<void> {
   await AsyncStorage.setItem(BASE_URL_KEY, url.replace(/\/$/, ''));
 }
 
+const HEARTRATE_URL_KEY = '@heartrate_base_url';
+
+export async function getHeartRateBaseUrl(): Promise<string> {
+  try {
+    const stored = await AsyncStorage.getItem(HEARTRATE_URL_KEY);
+    if (stored) return stored;
+
+    // Derived fallback from BioGears URL
+    const biogearsUrl = await getBiogearsBaseUrl();
+    try {
+      const u = new URL(biogearsUrl);
+      return `${u.protocol}//${u.hostname}:5000`;
+    } catch {
+      return 'http://151.185.41.234:5000';
+    }
+  } catch {
+    return 'http://151.185.41.234:5000';
+  }
+}
+
+export async function setHeartRateBaseUrl(url: string): Promise<void> {
+  await AsyncStorage.setItem(HEARTRATE_URL_KEY, url.replace(/\/$/, ''));
+}
+
+
 // ─── API Key (stored securely, set once in Settings) ─────────────────────────
 
 const API_KEY_STORE = 'biogears_api_key';

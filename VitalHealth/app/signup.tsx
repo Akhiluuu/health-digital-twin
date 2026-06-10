@@ -19,6 +19,7 @@ import Svg, { Path, Rect, Line } from "react-native-svg";
 
 import { createUserWithEmailAndPassword, updateProfile as updateAuthProfile } from "firebase/auth";
 import { useTheme } from "../context/ThemeContext";
+import { colors as globalColors } from "../theme/colors";
 import { setLoggedIn } from "../services/authStorage";
 import { sendWelcomeEmail } from "../services/emailService";
 import { auth } from "../services/firebase";
@@ -87,26 +88,16 @@ export default function SignUp() {
   const router = useRouter();
   const { theme } = useTheme();
 
-  const colors =
-    theme === "light"
-      ? {
-          background: "#f8fafc",
-          card: "#ffffff",
-          text: "#020617",
-          subText: "#64748b",
-          border: "#e2e8f0",
-          headerGradient: ["#6366f1", "#4f46e5"],
-          danger: "#ef4444",
-        }
-      : {
-          background: "#0D0D0F",
-          card: "rgba(255,255,255,0.04)",
-          text: "#ffffff",
-          subText: "rgba(255,255,255,0.4)",
-          border: "rgba(255,255,255,0.08)",
-          headerGradient: ["#0f0c29", "#302b63"],
-          danger: "#ff6b6b",
-        };
+  const c = globalColors[theme];
+  const colors = {
+    background: c.bg,
+    card: c.card,
+    text: c.text,
+    subText: c.sub,
+    border: c.border,
+    headerGradient: c.headerGradient,
+    danger: c.danger,
+  };
 
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -203,7 +194,17 @@ export default function SignUp() {
       });
     } catch (firebaseError: any) {
       setLoading(false);
-      alert(firebaseError.message);
+      let errorMessage = "An error occurred during registration. Please try again.";
+      if (firebaseError.code === "auth/email-already-in-use" || firebaseError.message?.includes("email-already-in-use")) {
+        errorMessage = "This email address is already registered. Please sign in instead, or tap 'Forgot Password' on the login screen if you need to reset your password.";
+      } else if (firebaseError.code === "auth/invalid-email" || firebaseError.message?.includes("invalid-email")) {
+        errorMessage = "Please enter a valid email address.";
+      } else if (firebaseError.code === "auth/weak-password" || firebaseError.message?.includes("weak-password")) {
+        errorMessage = "Your password is too weak. Please use at least 6 characters.";
+      } else if (firebaseError.code === "auth/network-request-failed" || firebaseError.message?.includes("network-request-failed")) {
+        errorMessage = "Network connection failed. Please check your internet connection.";
+      }
+      Alert.alert("Registration Failed", errorMessage, [{ text: "OK" }]);
       return;
     }
 

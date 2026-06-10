@@ -386,8 +386,8 @@ export function buildDefaultRoutine(habits: OnboardingHabits, profile?: UserMedi
   });
 
   return {
-    id: 'routine_onboarding_typical_day',
-    name: 'My Typical Day',
+    id: 'routine_onboarding_saved_state',
+    name: 'My Saved State',
     events: sorted as any,
     eventCount: sorted.length,
     createdAt: new Date().toISOString(),

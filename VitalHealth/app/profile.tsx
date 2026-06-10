@@ -45,6 +45,7 @@ import { doc, getDoc, setDoc } from "firebase/firestore";
 import { useBiogearsTwin } from "../context/BiogearsTwinContext";
 import { useProfile } from "../context/ProfileContext";
 import { useTheme } from "../context/ThemeContext";
+import { colors as globalColors } from "../theme/colors";
 import { getTwinId } from "../utils/twinUtils";
 import {
   fetchLinkedMembers,
@@ -54,7 +55,7 @@ import {
 import { auth, db } from "../services/firebase";
 import { findUserByHealthId } from "../services/firebaseService";
 import { BiogearsRegistrationPayload } from "../services/biogears";
-import { UserProfile } from "../services/profileService";
+import { UserProfile, updateProfile as firebaseUpdateProfile } from "../services/profileService";
 import { FamilyMember } from "../types/FamilyMember";
 import { buildDefaultRoutine } from "../services/onboardingRoutineBuilder";
 import * as BiogearsAPI from "../services/biogears";
@@ -343,46 +344,27 @@ export default function ProfileScreen() {
   const router = useRouter();
   const { theme, toggleTheme } = useTheme();
 
-  const colors =
-    theme === "light"
-      ? {
-          bg: "#f8fafc",
-          card: "#ffffff",
-          border: "#e2e8f0",
-          text: "#020617",
-          subText: "#64748b",
-          accent: "#2563eb",
-          accentLight: "#dbeafe",
-          success: "#10b981",
-          warning: "#f59e0b",
-          danger: "#ef4444",
-          purple: "#8b5cf6",
-          modalOverlay: "rgba(0,0,0,0.3)",
-          gradientStart: "#2563eb",
-          gradientEnd: "#7c3aed",
-          familyBg: "#f0f9ff",
-          familyBorder: "#bae6fd",
-        }
-      : {
-          bg: "#020617",
-          card: "#1e293b",
-          border: "#334155",
-          text: "#f1f5f9",
-          subText: "#94a3b8",
-          accent: "#3b82f6",
-          accentLight: "#1e3a8a",
-          success: "#22c55e",
-          warning: "#f59e0b",
-          danger: "#ef4444",
-          purple: "#a78bfa",
-          modalOverlay: "rgba(0,0,0,0.6)",
-          gradientStart: "#3b82f6",
-          gradientEnd: "#8b5cf6",
-          familyBg: "#0c1929",
-          familyBorder: "#1e3a5f",
-        };
+  const c = globalColors[theme];
+  const colors = {
+    bg:             c.bg,
+    card:           c.card,
+    border:         c.border,
+    text:           c.text,
+    subText:        c.sub,
+    accent:         c.accent,
+    accentLight:    theme === "light" ? "#dbeafe" : "#1e3a8a",
+    success:        theme === "light" ? "#10b981" : "#22c55e",
+    warning:        "#f59e0b",
+    danger:         c.danger,
+    purple:         theme === "light" ? "#8b5cf6" : "#a78bfa",
+    modalOverlay:   theme === "light" ? "rgba(0,0,0,0.3)" : "rgba(0,0,0,0.6)",
+    gradientStart:  theme === "light" ? "#2563eb" : "#3b82f6",
+    gradientEnd:    theme === "light" ? "#7c3aed" : "#8b5cf6",
+    familyBg:       theme === "light" ? "#f0f9ff" : "#0c1929",
+    familyBorder:   theme === "light" ? "#bae6fd" : "#1e3a5f",
+  };
 
-  const { addMember, removeMember, members } = useFamily();
+  const { addMember, removeMember, members, activeMemberId, activeProfile, isSwitched, switchToMember, switchToSelf, updateActiveProfile } = useFamily();
   const { profile, updateProfile, isLoaded, isProfileComplete, resetProfile, reloadProfile } = useProfile();
   const { twinStatus, twinStatusError, simulationProgress, registerTwin } = useBiogearsTwin();
 
@@ -412,14 +394,14 @@ export default function ProfileScreen() {
 
   const [localProfile, setLocalProfile] = useState<UserProfile>({
     ...defaultProfile,
-    ...(profile || {}),
+    ...(isSwitched ? activeProfile : (profile || {})),
   });
 
   useEffect(() => {
-    setLocalProfile({ ...defaultProfile, ...(profile || {}) });
-  }, [profile]);
+    setLocalProfile({ ...defaultProfile, ...(isSwitched ? activeProfile : (profile || {})) });
+  }, [profile, activeProfile, isSwitched]);
 
-  const safeProfile = { ...defaultProfile, ...(profile || {}) };
+  const safeProfile = { ...defaultProfile, ...(isSwitched ? activeProfile : (profile || {})) };
 
   const [settings, setSettings] = useState<AppSettings>({
     notifications: true,
@@ -431,7 +413,6 @@ export default function ProfileScreen() {
 
   // ── Family State ───────────────────────────────────────────────────────────
   const [myInviteCode,    setMyInviteCode]    = useState<string>("");
-  const [activeMemberId,  setActiveMemberId]  = useState<string>("self");
   const [addMemberModal,  setAddMemberModal]  = useState(false);
   const [qrModalVisible,  setQrModalVisible]  = useState(false);
   const [switchAnim]                          = useState(new Animated.Value(1));
@@ -553,21 +534,33 @@ export default function ProfileScreen() {
 
   const saveProfileData = async (newProfile: UserProfile) => {
     try {
-      await updateProfile({
-        ...newProfile,
-        emergencyContact: {
-          name:     newProfile.emergencyContact?.name     || "",
-          phone:    newProfile.emergencyContact?.phone    || "",
-          relation: newProfile.emergencyContact?.relation || "",
-        },
-      });
+      if (isSwitched) {
+        await firebaseUpdateProfile({
+          ...newProfile,
+          emergencyContact: {
+            name:     newProfile.emergencyContact?.name     || "",
+            phone:    newProfile.emergencyContact?.phone    || "",
+            relation: newProfile.emergencyContact?.relation || "",
+          },
+        }, activeMemberId);
+        await updateActiveProfile(newProfile);
+      } else {
+        await updateProfile({
+          ...newProfile,
+          emergencyContact: {
+            name:     newProfile.emergencyContact?.name     || "",
+            phone:    newProfile.emergencyContact?.phone    || "",
+            relation: newProfile.emergencyContact?.relation || "",
+          },
+        });
+      }
       setLocalProfile(newProfile);
       await reloadProfile();
 
       // Recalculate default routine if height/weight/gender/DOB changes
-      const user = auth.currentUser;
-      if (user) {
-        const raw = await AsyncStorage.getItem(`@onboarding_habits_${user.uid}`);
+      const uid = isSwitched ? activeMemberId : auth.currentUser?.uid;
+      if (uid) {
+        const raw = await AsyncStorage.getItem(`@onboarding_habits_${uid}`);
         if (raw) {
           const habits = JSON.parse(raw);
           const heightVal = parseFloat((newProfile.height || '').replace(/[^0-9.]/g, '')) || 175;
@@ -644,20 +637,6 @@ export default function ProfileScreen() {
   };
 
   // ── Family Actions ─────────────────────────────────────────────────────────
-
-  const switchToMember = (memberId: string) => {
-    const member = members.find((m) => m.id === memberId);
-    if (!member) { Alert.alert("Error", "Member not found."); return; }
-    Animated.sequence([
-      Animated.timing(switchAnim, { toValue: 0, duration: 200, useNativeDriver: true }),
-      Animated.timing(switchAnim, { toValue: 1, duration: 300, useNativeDriver: true }),
-    ]).start();
-    setActiveMemberId(memberId);
-    AsyncStorage.setItem("activeMemberId", memberId);
-    if (memberId !== "self") {
-      Alert.alert(`Viewing ${member.firstName}'s Health`, `You are now viewing ${member.firstName} ${member.lastName}'s health data.`, [{ text: "Got it" }]);
-    }
-  };
 
   const openMemberProfile = (member: FamilyMember | LinkedMember) => {
     try {
@@ -794,8 +773,7 @@ export default function ProfileScreen() {
           await removeMember(id);
           await loadLinkedMembers();
           if (activeMemberId === id) {
-            setActiveMemberId("self");
-            await AsyncStorage.setItem("activeMemberId", "self");
+            await switchToSelf();
           }
         },
       },
@@ -832,9 +810,6 @@ export default function ProfileScreen() {
     if (key === "darkMode") toggleTheme();
   };
 
-  const activeMember = members.find((m) => m.id === activeMemberId);
-  const isViewingOther = activeMemberId !== "self";
-
   if (!isLoaded) {
     return (
       <View style={[styles.container, { flex: 1, justifyContent: "center", alignItems: "center" }]}>
@@ -852,13 +827,10 @@ export default function ProfileScreen() {
       start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
       style={styles.profileHeader}
     >
-      {isViewingOther && (
-        <TouchableOpacity style={styles.viewingBanner} onPress={() => switchToMember("self")}>
-          <Ionicons name="eye" size={14} color="#fff" />
-          <Text style={styles.viewingBannerText}>Viewing {activeMember?.firstName}'s health · Tap to return</Text>
-        </TouchableOpacity>
-      )}
-      <TouchableOpacity onPress={pickImage} style={styles.profileImageContainer}>
+      <TouchableOpacity
+        onPress={pickImage}
+        style={styles.profileImageContainer}
+      >
         {safeProfile.profileImage ? (
           <Image source={{ uri: safeProfile.profileImage }} style={styles.profileImage} />
         ) : (
@@ -1072,7 +1044,10 @@ export default function ProfileScreen() {
   );
 
   const renderEmergencyContact = () => (
-    <TouchableOpacity style={[styles.emergencyCard, { backgroundColor: colors.card }]} onPress={() => openModal(setEmergencyModal)}>
+    <TouchableOpacity
+      style={[styles.emergencyCard, { backgroundColor: colors.card }]}
+      onPress={() => openModal(setEmergencyModal)}
+    >
       <View style={styles.emergencyHeader}>
         <View style={[styles.emergencyIcon, { backgroundColor: colors.danger + "20" }]}>
           <Ionicons name="alert-circle" size={24} color={colors.danger} />
@@ -1094,66 +1069,150 @@ export default function ProfileScreen() {
           <Ionicons name="people" size={20} color={colors.purple} />
           <Text style={[styles.sectionTitle, { color: colors.text }]}>Family Health</Text>
         </View>
-        <TouchableOpacity style={[styles.addMemberBtn, { backgroundColor: colors.purple + "20" }]} onPress={() => router.push("/family/add-member")}>
-          <Ionicons name="person-add" size={16} color={colors.purple} />
-          <Text style={[styles.addMemberBtnText, { color: colors.purple }]}>Add</Text>
-        </TouchableOpacity>
+        {!isSwitched && (
+          <TouchableOpacity style={[styles.addMemberBtn, { backgroundColor: colors.purple + "20" }]} onPress={() => router.push("/family/add-member")}>
+            <Ionicons name="person-add" size={16} color={colors.purple} />
+            <Text style={[styles.addMemberBtnText, { color: colors.purple }]}>Add</Text>
+          </TouchableOpacity>
+        )}
       </View>
-      <Text style={[styles.familySubtitle, { color: colors.subText }]}>Enter a member's Health ID to view their medicines and symptoms</Text>
+      <Text style={[styles.familySubtitle, { color: colors.subText }]}>
+        {isSwitched
+          ? "Tap on your card to switch back to your profile view"
+          : "Tap on a member's card to switch to their profile view"}
+      </Text>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.memberScroll}>
-        {members.map((member) => (
+        {/* Prepend Self Card if switched to a family member */}
+        {isSwitched && (
           <TouchableOpacity
-            key={member.id}
-            style={[styles.memberCard, { backgroundColor: colors.familyBg, borderColor: colors.familyBorder, borderWidth: 1 }]}
-            onPress={() => openMemberProfile(member)}
-            onLongPress={() => Alert.alert("Remove Member", `Remove ${member.firstName} from your family health network?`, [
-              { text: "Cancel", style: "cancel" },
-              { text: "Remove", style: "destructive", onPress: () => removeFamilyMember(member.id) },
-            ])}
+            style={[styles.memberCard, { backgroundColor: colors.accent + "10", borderColor: colors.accent, borderWidth: 1 }]}
+            onPress={async () => {
+              Alert.alert(
+                "Switch Profile",
+                "Switch back to your main account profile?",
+                [
+                  { text: "Cancel", style: "cancel" },
+                  { text: "Switch", onPress: async () => { await switchToSelf(); } }
+                ]
+              );
+            }}
             activeOpacity={0.8}
           >
-            <View style={[styles.memberAvatar, { backgroundColor: colors.purple }]}>
-              <Text style={styles.memberAvatarText}>{member.firstName?.charAt(0) ?? ""}{member.lastName?.charAt(0) ?? ""}</Text>
-            </View>
-            <Text style={[styles.memberName, { color: colors.text }]} numberOfLines={1}>{member.firstName}</Text>
-            <Text style={[styles.memberRelation, { color: colors.subText }]}>{member.relation ?? "Family"}</Text>
-            <View style={[styles.memberStatusPill, { backgroundColor: colors.success + "20" }]}>
-              <Text style={[styles.memberStatusText, { color: colors.success }]}>Linked ✓</Text>
+            {profile?.profileImage ? (
+              <Image source={{ uri: profile.profileImage }} style={styles.memberAvatar} />
+            ) : (
+              <View style={[styles.memberAvatar, { backgroundColor: colors.accent }]}>
+                <Text style={styles.memberAvatarText}>
+                  {profile?.firstName?.charAt(0) ?? ""}{profile?.lastName?.charAt(0) ?? ""}
+                </Text>
+              </View>
+            )}
+            <Text style={[styles.memberName, { color: colors.text }]} numberOfLines={1}>
+              {profile?.firstName || "Me"} (You)
+            </Text>
+            <Text style={[styles.memberRelation, { color: colors.subText }]}>Main Account</Text>
+            <View style={[styles.memberStatusPill, { backgroundColor: colors.accent + "20" }]}>
+              <Text style={[styles.memberStatusText, { color: colors.accent }]}>Switch Back</Text>
             </View>
           </TouchableOpacity>
-        ))}
-        <TouchableOpacity style={[styles.memberCardAdd, { borderColor: colors.border, backgroundColor: colors.familyBg }]} onPress={() => router.push("/family/add-member")}>
-          <View style={[styles.memberAvatarAdd, { backgroundColor: colors.border }]}>
-            <Ionicons name="add" size={24} color={colors.subText} />
-          </View>
-          <Text style={[styles.memberName, { color: colors.subText }]}>Add</Text>
-          <Text style={[styles.memberRelation, { color: colors.subText }]}>Member</Text>
-        </TouchableOpacity>
+        )}
+
+        {members.map((member) => {
+          const isCurrent = activeMemberId === member.id || activeMemberId === member.uid;
+          const targetId = member.id || member.uid;
+          return (
+            <TouchableOpacity
+              key={member.id}
+              style={[
+                styles.memberCard,
+                { backgroundColor: colors.familyBg, borderColor: isCurrent ? colors.accent : colors.familyBorder, borderWidth: 1 }
+              ]}
+              onPress={async () => {
+                Alert.alert(
+                  "Switch Profile",
+                  isCurrent 
+                    ? "Switch back to your main account profile?"
+                    : `Switch to ${member.firstName || "Family Member"}'s profile view?`,
+                  [
+                    { text: "Cancel", style: "cancel" },
+                    { 
+                      text: "Switch", 
+                      onPress: async () => {
+                        if (isCurrent) {
+                          await switchToSelf();
+                        } else {
+                          await switchToMember(targetId);
+                        }
+                      } 
+                    }
+                  ]
+                );
+              }}
+              onLongPress={isSwitched ? undefined : () => Alert.alert("Remove Member", `Remove ${member.firstName} from your family health network?`, [
+                { text: "Cancel", style: "cancel" },
+                { text: "Remove", style: "destructive", onPress: () => removeFamilyMember(member.id) },
+              ])}
+              activeOpacity={0.8}
+            >
+              {member.profileImage ? (
+                <Image source={{ uri: member.profileImage }} style={styles.memberAvatar} />
+              ) : (
+                <View style={[styles.memberAvatar, { backgroundColor: colors.purple }]}>
+                  <Text style={styles.memberAvatarText}>
+                    {member.firstName?.charAt(0) ?? ""}{member.lastName?.charAt(0) ?? ""}
+                  </Text>
+                </View>
+              )}
+              <Text style={[styles.memberName, { color: colors.text }]} numberOfLines={1}>{member.firstName}</Text>
+              <Text style={[styles.memberRelation, { color: colors.subText }]}>{member.relation ?? "Family"}</Text>
+              <View style={[styles.memberStatusPill, { backgroundColor: isCurrent ? colors.accent + "20" : colors.success + "20" }]}>
+                <Text style={[styles.memberStatusText, { color: isCurrent ? colors.accent : colors.success }]}>
+                  {isCurrent ? "Active ✓" : "Linked ✓"}
+                </Text>
+              </View>
+            </TouchableOpacity>
+          );
+        })}
+
+        {!isSwitched && (
+          <TouchableOpacity style={[styles.memberCardAdd, { borderColor: colors.border, backgroundColor: colors.familyBg }]} onPress={() => router.push("/family/add-member")}>
+            <View style={[styles.memberAvatarAdd, { backgroundColor: colors.border }]}>
+              <Ionicons name="add" size={24} color={colors.subText} />
+            </View>
+            <Text style={[styles.memberName, { color: colors.subText }]}>Add</Text>
+            <Text style={[styles.memberRelation, { color: colors.subText }]}>Member</Text>
+          </TouchableOpacity>
+        )}
       </ScrollView>
 
-      {/* ✅ Health ID from Firebase */}
-      <View style={[styles.myCodeBox, { backgroundColor: colors.familyBg, borderColor: colors.familyBorder }]}>
-        <TouchableOpacity style={styles.myCodeLeft} onPress={() => setQrModalVisible(true)}>
-          <View style={[styles.myCodeIconBox, { backgroundColor: colors.purple + "20" }]}>
-            <Ionicons name="qr-code" size={20} color={colors.purple} />
-          </View>
-          <View>
-            <Text style={[styles.myCodeLabel, { color: colors.subText }]}>My Unique Health ID</Text>
-            <Text style={[styles.myCodeValue, { color: colors.purple }]}>{myInviteCode || "Loading..."}</Text>
-            <Text style={[styles.myCodeSub, { color: colors.subText }]}>Tap to show QR Code</Text>
-          </View>
-        </TouchableOpacity>
-        <View style={styles.myCodeActions}>
-          <TouchableOpacity style={[styles.codeActionBtn, { backgroundColor: colors.accent + "20" }]} onPress={() => Alert.alert("Copied!", `Your code: ${myInviteCode}`)}>
-            <Ionicons name="copy-outline" size={16} color={colors.accent} />
+      {/* ✅ Health ID from Firebase (only shown when on main profile) */}
+      {!isSwitched && (
+        <View style={[styles.myCodeBox, { backgroundColor: colors.familyBg, borderColor: colors.familyBorder }]}>
+          <TouchableOpacity style={styles.myCodeLeft} onPress={() => setQrModalVisible(true)}>
+            <View style={[styles.myCodeIconBox, { backgroundColor: colors.purple + "20" }]}>
+              <Ionicons name="qr-code" size={20} color={colors.purple} />
+            </View>
+            <View>
+              <Text style={[styles.myCodeLabel, { color: colors.subText }]}>My Unique Health ID</Text>
+              <Text style={[styles.myCodeValue, { color: colors.purple }]}>{myInviteCode || "Loading..."}</Text>
+              <Text style={[styles.myCodeSub, { color: colors.subText }]}>Tap to show QR Code</Text>
+            </View>
           </TouchableOpacity>
-          <TouchableOpacity style={[styles.codeActionBtn, { backgroundColor: colors.purple }]}
-            onPress={() => Share.share({ message: `Join me on VitalHealth! Use my invite code: ${myInviteCode} or scan my QR Code here: https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${myInviteCode} to link our health data.`, title: "VitalHealth Invite Code" })}>
-            <Ionicons name="share-social" size={16} color="#fff" />
-          </TouchableOpacity>
+          <View style={styles.myCodeActions}>
+            <TouchableOpacity style={[styles.codeActionBtn, { backgroundColor: colors.accent + "20" }]} onPress={() => Alert.alert("Copied!", `Your code: ${myInviteCode}`)}>
+              <Ionicons name="copy-outline" size={16} color={colors.accent} />
+            </TouchableOpacity>
+            <TouchableOpacity style={[styles.codeActionBtn, { backgroundColor: colors.purple }]}
+              onPress={() => Share.share({ message: `Join me on VitalHealth! Use my invite code: ${myInviteCode} or scan my QR Code here: https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${myInviteCode} to link our health data.`, title: "VitalHealth Invite Code" })}>
+              <Ionicons name="share-social" size={16} color="#fff" />
+            </TouchableOpacity>
+          </View>
         </View>
-      </View>
-      <Text style={[styles.familyHint, { color: colors.subText }]}>💡 Long press a member card to remove them</Text>
+      )}
+      
+      {!isSwitched && (
+        <Text style={[styles.familyHint, { color: colors.subText }]}>💡 Long press a member card to remove them</Text>
+      )}
     </View>
   );
 
@@ -1282,7 +1341,7 @@ export default function ProfileScreen() {
         {renderFamilyMembers()}
         {renderAppSettings()}
         {renderLogout()}
-        {renderDeleteAccount()}
+        {!isSwitched && renderDeleteAccount()}
         <View style={{ height: 20 }} />
       </ScrollView>
 

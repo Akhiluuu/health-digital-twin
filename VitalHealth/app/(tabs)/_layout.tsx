@@ -5,26 +5,19 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useTheme } from "../../context/ThemeContext";
+import { colors as themeColors } from "../../theme/colors";
 
 export default function TabLayout() {
   const { theme } = useTheme();
   const insets = useSafeAreaInsets();
 
-  const isLight = theme === "light";
-
-  const colors = isLight
-    ? {
-        bg: "#ffffff",
-        active: "#2563eb",
-        inactive: "#94a3b8",
-        border: "#e5e7eb",
-      }
-    : {
-        bg: "#0b1220",
-        active: "#38bdf8",
-        inactive: "#64748b",
-        border: "#020617",
-      };
+  const c = themeColors[theme as "light" | "dark"];
+  const colors = {
+    bg: c.card,
+    active: c.active,
+    inactive: c.sub,
+    border: c.border,
+  };
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>

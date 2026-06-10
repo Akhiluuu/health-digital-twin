@@ -6,6 +6,7 @@ import {
 } from "react-native";
 import Header from "./components/Header";
 import { useTheme } from "../context/ThemeContext";
+import { colors as globalColors } from "../theme/colors";
 
 // Firebase
 import { auth } from "../services/firebase";
@@ -30,9 +31,15 @@ export default function Security() {
   // ✅ NEW STATE for Sync Toggle
   const [syncEnabled, setSyncEnabled] = useState(false);
 
-  const colors = theme === "light"
-    ? { bg: "#f8fafc", card: "#ffffff", text: "#020617", border: "#e2e8f0", accent: "#64748b", input: "#f1f5f9" }
-    : { bg: "#020617", card: "#0f172a", text: "#e2e8f0", border: "#1e293b", accent: "#64748b", input: "#1e293b" };
+  const c = globalColors[theme];
+  const colors = {
+    bg: c.bg,
+    card: c.card,
+    text: c.text,
+    border: c.border,
+    accent: c.sub,
+    input: c.inputBg,
+  };
 
   const openModal = (type: "change" | "forgot") => {
     setModalType(type);

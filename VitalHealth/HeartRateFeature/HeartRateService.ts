@@ -14,10 +14,7 @@
 import { useCallback, useRef, useState } from 'react';
 import { Camera } from 'react-native-vision-camera';
 
-// ── Config ────────────────────────────────────────────────────────────────────
-const API_BASE_URL = __DEV__
-  ? 'http://192.168.1.100:5000'          // ← Replace with YOUR machine's LAN IP
-  : 'https://your-production-api.com';
+import { getHeartRateBaseUrl } from '../services/biogears';
 
 const FRAME_SEND_INTERVAL_MS = 150;      // ~6–7 fps to API (sufficient for rPPG)
 const AUTO_STOP_CONFIDENCE   = 0.82;     // must match Python engine threshold
@@ -49,7 +46,8 @@ export class HeartRateService {
   private lastFrameSent: number        = 0;
 
   async startSession(): Promise<string> {
-    const res = await fetch(`${API_BASE_URL}/start`, { method: 'POST' });
+    const baseUrl = await getHeartRateBaseUrl();
+    const res = await fetch(`${baseUrl}/start`, { method: 'POST' });
     if (!res.ok) throw new Error('Failed to start session');
     const data = await res.json();
     this.sessionId = data.session_id;
@@ -71,7 +69,8 @@ export class HeartRateService {
     }
     this.lastFrameSent = now;
 
-    const res = await fetch(`${API_BASE_URL}/frame`, {
+    const baseUrl = await getHeartRateBaseUrl();
+    const res = await fetch(`${baseUrl}/frame`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -91,7 +90,8 @@ export class HeartRateService {
 
   async stopSession(): Promise<HeartRateResult | null> {
     if (!this.sessionId) return null;
-    const res = await fetch(`${API_BASE_URL}/stop/${this.sessionId}`, {
+    const baseUrl = await getHeartRateBaseUrl();
+    const res = await fetch(`${baseUrl}/stop/${this.sessionId}`, {
       method: 'POST',
     });
     const data = await res.json();
@@ -101,14 +101,16 @@ export class HeartRateService {
 
   async getResult(): Promise<HeartRateResult | null> {
     if (!this.sessionId) return null;
-    const res  = await fetch(`${API_BASE_URL}/result/${this.sessionId}`);
+    const baseUrl = await getHeartRateBaseUrl();
+    const res  = await fetch(`${baseUrl}/result/${this.sessionId}`);
     const data = await res.json();
     return data.result ?? null;
   }
 
   async ping(): Promise<boolean> {
     try {
-      const res = await fetch(`${API_BASE_URL}/ping`, { method: 'GET' });
+      const baseUrl = await getHeartRateBaseUrl();
+      const res = await fetch(`${baseUrl}/ping`, { method: 'GET' });
       return res.ok;
     } catch {
       return false;

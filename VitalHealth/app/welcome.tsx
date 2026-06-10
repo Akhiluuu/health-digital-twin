@@ -11,6 +11,7 @@ import {
 } from "react-native";
 
 import { useTheme } from "../context/ThemeContext";
+import { colors as globalColors } from "../theme/colors";
 
 const { width, height } = Dimensions.get("window");
 
@@ -126,17 +127,18 @@ function PulseRing({ delay = 0, colors }: { delay?: number; colors: any }) {
 export default function Welcome() {
   const router = useRouter();
   const { theme } = useTheme();
+  const c = globalColors[theme];
   
   const colors = theme === "light"
     ? {
-        background: "#f0f9ff",
-        card: "#ffffff",
-        text: "#0f172a",
-        subText: "#475569",
-        border: "#e2e8f0",
-        primary: "#2563eb",
-        primaryLight: "#60a5fa",
-        primaryDark: "#1d4ed8",
+        background: c.bg,
+        card: c.card,
+        text: c.text,
+        subText: c.sub,
+        border: c.border,
+        primary: c.primary,
+        primaryLight: c.primaryLight,
+        primaryDark: c.primaryDark,
         pillBg: "#dbeafe",
         pillBorder: "#bfdbfe",
         pillText: "#1e40af",
@@ -144,25 +146,25 @@ export default function Welcome() {
         buttonSecondaryText: "#334155",
         iconBg: "#ffffff",
         iconBorder: "#bfdbfe",
-        titleUnderline: "#2563eb",
+        titleUnderline: c.primary,
       }
     : {
-        background: "#040a14",
-        card: "#0d1f38",
-        text: "#f0f8ff",
-        subText: "#93c5fd",
-        border: "#1e3a5f",
-        primary: "#2563eb",
-        primaryLight: "#60a5fa",
-        primaryDark: "#1d4ed8",
-        pillBg: "#0d1f38",
-        pillBorder: "#1e3a5f",
-        pillText: "#93c5fd",
-        buttonSecondaryBorder: "#1e3a5f",
-        buttonSecondaryText: "#93c5fd",
-        iconBg: "#0d1f38",
-        iconBorder: "#2563eb44",
-        titleUnderline: "#2563eb",
+        background: c.bg,
+        card: c.card,
+        text: c.text,
+        subText: c.sub,
+        border: c.border,
+        primary: c.primary,
+        primaryLight: c.primaryLight,
+        primaryDark: c.primaryDark,
+        pillBg: c.card,
+        pillBorder: c.border,
+        pillText: c.primaryLight,
+        buttonSecondaryBorder: c.border,
+        buttonSecondaryText: c.primaryLight,
+        iconBg: c.card,
+        iconBorder: c.primary + "44",
+        titleUnderline: c.primary,
       };
 
   const logoAnim = useRef(new Animated.Value(0)).current;

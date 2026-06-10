@@ -43,6 +43,7 @@ export type FamilyContextType = {
   activeMemberInfo: FamilyMember | null; // FamilyMember metadata for the active non-self member
   switchToMember:   (memberUid: string)  => Promise<void>;
   switchToSelf:     ()                   => Promise<void>;
+  updateActiveProfile: (newProfile: UserProfile) => Promise<void>;
 };
 
 const FamilyContext = createContext<FamilyContextType | null>(null);
@@ -125,7 +126,7 @@ export const FamilyProvider = ({
         setActiveProfile(selfProfileRef.current);
         AsyncStorage.setItem(ACTIVE_MEMBER_KEY, "self").catch(() => {});
       });
-  }, [isLoaded]); // intentionally runs once after members load
+  }, [isLoaded, activeMemberId]);
 
   /* ── Restore saved active session ─────────────────────────── */
   const restoreSession = async () => {
@@ -331,6 +332,44 @@ export const FamilyProvider = ({
     await AsyncStorage.setItem(ACTIVE_MEMBER_KEY, "self");
   }, []);
 
+  /* ── UPDATE ACTIVE PROFILE ────────────────────────────────── */
+  const updateActiveProfile = useCallback(async (newProfile: UserProfile) => {
+    setActiveProfile(newProfile);
+    setMembers((prev) =>
+      prev.map((m) => {
+        if (m.uid === activeMemberId || m.id === activeMemberId || m.userId === activeMemberId) {
+          return {
+            ...m,
+            firstName: newProfile.firstName,
+            lastName: newProfile.lastName || "",
+            name: `${newProfile.firstName} ${newProfile.lastName || ""}`.trim(),
+          };
+        }
+        return m;
+      })
+    );
+    try {
+      const stored = await AsyncStorage.getItem(STORAGE_KEY);
+      if (stored) {
+        const parsed = JSON.parse(stored) as FamilyMember[];
+        const updatedList = parsed.map((m) => {
+          if (m.uid === activeMemberId || m.id === activeMemberId || m.userId === activeMemberId) {
+            return {
+              ...m,
+              firstName: newProfile.firstName,
+              lastName: newProfile.lastName || "",
+              name: `${newProfile.firstName} ${newProfile.lastName || ""}`.trim(),
+            };
+          }
+          return m;
+        });
+        await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(updatedList));
+      }
+    } catch (err) {
+      console.error("❌ updateActiveProfile storage error:", err);
+    }
+  }, [activeMemberId]);
+
   // ── Derived ────────────────────────────────────────────────
   const isSwitched       = activeMemberId !== "self";
   const activeMemberInfo = isSwitched
@@ -342,7 +381,7 @@ export const FamilyProvider = ({
       members, isLoaded,
       addMember, removeMember, getMemberById, refreshMembers,
       activeMemberId, activeProfile, isSwitched, isSwitchLoading,
-      activeMemberInfo, switchToMember, switchToSelf,
+      activeMemberInfo, switchToMember, switchToSelf, updateActiveProfile,
     }}>
       {children}
     </FamilyContext.Provider>

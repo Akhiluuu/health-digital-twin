@@ -1,21 +1,19 @@
+// context/useThemeColors.ts
 import { useTheme } from "./ThemeContext";
+import { colors } from "../theme/colors";
 
 export function useThemeColors() {
   const { theme } = useTheme();
+  const c = colors[theme];
 
-  return theme === "light"
-    ? {
-        bg: "#f8fafc",
-        card: "#ffffff",
-        text: "#020617",
-        border: "#e2e8f0",
-        secondaryText: "#64748b",
-      }
-    : {
-        bg: "#020617",
-        card: "#0f172a",
-        text: "#e2e8f0",
-        border: "#1e293b",
-        secondaryText: "#64748b",
-      };
+  return {
+    bg: c.bg,
+    card: c.card,
+    text: c.text,
+    border: c.border,
+    secondaryText: c.sub,
+    accent: c.accent,
+    active: c.active,
+    danger: c.danger,
+  };
 }

@@ -108,3 +108,36 @@ cd ~/health-digital-twin
 git pull origin main
 sudo systemctl restart digitaltwin healthbot
 sudo systemctl status digitaltwin healthbot nginx
+
+
+
+
+
+
+
+
+
+If you're using an Expo project but want to generate an APK completely from the terminal without using Expo Go or cloud EAS builds, you can build it locally with Gradle.
+
+From your project root:
+
+npx expo prebuild
+
+This generates the native android/ folder if it doesn't already exist.
+
+Then:
+
+cd android
+./gradlew assembleRelease
+
+This creates a release APK locally on your machine.
+
+The APK will be located at:
+
+android/app/build/outputs/apk/release/app-release.apk
+
+To install it directly on a connected Android device:
+
+adb install app/build/outputs/apk/release/app-release.apk
+
+

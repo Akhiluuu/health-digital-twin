@@ -8,6 +8,7 @@ import {
 
 import Header from "./components/Header";
 import { useTheme } from "../context/ThemeContext";
+import { colors as globalColors } from "../theme/colors";
 
 const langs = [
   "English",
@@ -24,22 +25,7 @@ export default function Language() {
   const [selected, setSelected] =
     useState("English");
 
-  const colors =
-    theme === "light"
-      ? {
-          bg: "#f8fafc",
-          card: "#ffffff",
-          text: "#020617",
-          border: "#e2e8f0",
-          accent: "#38bdf8",
-        }
-      : {
-          bg: "#020617",
-          card: "#0f172a",
-          text: "#e2e8f0",
-          border: "#1e293b",
-          accent: "#38bdf8",
-        };
+  const colors = globalColors[theme];
 
   return (
     <View

@@ -18,6 +18,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { auth, db } from "../../services/firebase";
 import { useTheme } from "../../context/ThemeContext";
+import { colors as globalColors } from "../../theme/colors";
 import { Ionicons } from "@expo/vector-icons";
 
 const BLOOD_GROUPS = ["A+", "A−", "B+", "B−", "AB+", "AB−", "O+", "O−"];
@@ -83,74 +84,40 @@ export default function Medical() {
     gender:      string;
   }>();
 
-  const colors =
-    theme === "light"
-      ? {
-          background:            "#f8fafc",
-          card:                  "#ffffff",
-          text:                  "#020617",
-          subText:               "#475569",
-          border:                "#e2e8f0",
-          inputBg:               "#ffffff",
-          inputBorder:           "#cbd5e1",
-          inputFocusedBorder:    "#3b82f6",
-          inputText:             "#0f172a",
-          inputPlaceholder:      "#94a3b8",
-          labelText:             "#334155",
-          iconBadgeBg:           "#e2e8f0",
-          titleText:             "#0f172a",
-          subtitleText:          "#475569",
-          progressTrackBg:       "#cbd5e1",
-          progressFillBg:        "#2563eb",
-          progressLabelText:     "#64748b",
-          orb1:                  "#3b82f6",
-          orb2:                  "#60a5fa",
-          orb3:                  "#1d4ed8",
-          nextBtnBg:             "#2563eb",
-          nextBtnText:           "#ffffff",
-          chipBg:                "#ffffff",
-          chipBorder:            "#cbd5e1",
-          chipText:              "#334155",
-          chipActiveBg:          "#2563eb",
-          chipActiveBorder:      "#2563eb",
-          chipActiveText:        "#ffffff",
-          safeAreaBg:            "#f8fafc",
-          sectionHeaderBg:       "#f1f5f9",
-          sectionHeaderText:     "#64748b",
-        }
-      : {
-          background:            "#040a14",
-          card:                  "#0d1f38",
-          text:                  "#f0f8ff",
-          subText:               "#93c5fd",
-          border:                "#1e3a5f",
-          inputBg:               "#0d1f38",
-          inputBorder:           "#1e3a5f",
-          inputFocusedBorder:    "#3b82f6",
-          inputText:             "#f0f8ff",
-          inputPlaceholder:      "#4a7fa8",
-          labelText:             "#93c5fd",
-          iconBadgeBg:           "#0d1f38",
-          titleText:             "#f0f8ff",
-          subtitleText:          "#60a5fa",
-          progressTrackBg:       "#1e3a5f",
-          progressFillBg:        "#3b82f6",
-          progressLabelText:     "#4a7fa8",
-          orb1:                  "#3b82f6",
-          orb2:                  "#60a5fa",
-          orb3:                  "#1d4ed8",
-          nextBtnBg:             "#2563eb",
-          nextBtnText:           "#ffffff",
-          chipBg:                "#0d1f38",
-          chipBorder:            "#1e3a5f",
-          chipText:              "#f0f8ff",
-          chipActiveBg:          "#1e3a5f",
-          chipActiveBorder:      "#3b82f6",
-          chipActiveText:        "#f0f8ff",
-          safeAreaBg:            "#040a14",
-          sectionHeaderBg:       "#0d1f38",
-          sectionHeaderText:     "#4a7fa8",
-        };
+  const c = globalColors[theme];
+  const colors = {
+    background:            c.bg,
+    card:                  c.card,
+    text:                  c.text,
+    subText:               c.sub,
+    border:                c.border,
+    inputBg:               c.inputBg,
+    inputBorder:           c.border,
+    inputFocusedBorder:    c.focusBorder,
+    inputText:             c.text,
+    inputPlaceholder:      c.placeholder,
+    labelText:             c.text,
+    iconBadgeBg:           c.border,
+    titleText:             c.text,
+    subtitleText:          c.sub,
+    progressTrackBg:       c.border,
+    progressFillBg:        c.primary,
+    progressLabelText:     c.sub,
+    orb1:                  c.primary,
+    orb2:                  c.primaryLight,
+    orb3:                  c.primaryDark,
+    nextBtnBg:             c.accent,
+    nextBtnText:           "#ffffff",
+    chipBg:                c.card,
+    chipBorder:            c.border,
+    chipText:              c.text,
+    chipActiveBg:          c.accent,
+    chipActiveBorder:      c.accent,
+    chipActiveText:        "#ffffff",
+    safeAreaBg:            c.bg,
+    sectionHeaderBg:       theme === "light" ? "#f1f5f9" : c.card,
+    sectionHeaderText:     c.sub,
+  };
 
   const [height,      setHeight]      = useState("");
   const [weight,      setWeight]      = useState("");

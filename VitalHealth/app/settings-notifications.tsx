@@ -10,28 +10,14 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import Header from "./components/Header";
 import { useTheme } from "../context/ThemeContext";
+import { colors as globalColors } from "../theme/colors";
 import TimePicker from "../components/twin/TimePicker";
 import { scheduleDailyLogReminder } from "../services/notifeeService";
 
 export default function Notifications() {
   const { theme } = useTheme();
 
-  const colors =
-    theme === "light"
-      ? {
-          bg: "#f8fafc",
-          card: "#ffffff",
-          text: "#020617",
-          border: "#e2e8f0",
-          sub: "#64748b",
-        }
-      : {
-          bg: "#020617",
-          card: "#0f172a",
-          text: "#e2e8f0",
-          border: "#1e293b",
-          sub: "#94a3b8",
-        };
+  const colors = globalColors[theme];
 
   const [loading, setLoading] = useState(true);
   const [settings, setSettings] = useState({

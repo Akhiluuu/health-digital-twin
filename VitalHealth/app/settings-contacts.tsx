@@ -7,31 +7,14 @@ import {
   TextInput,
 } from "react-native";
 import Header from "./components/Header";
-
 import { useTheme } from "../context/ThemeContext";
+import { colors as globalColors } from "../theme/colors";
 
 export default function Contacts() {
   const [name, setName] = useState("");
   const { theme } = useTheme();
 
-  const colors =
-    theme === "light"
-      ? {
-          bg: "#f8fafc",
-          card: "#ffffff",
-          text: "#020617",
-          sub: "#64748b",
-          border: "#e2e8f0",
-          accent: "#0ea5e9",
-        }
-      : {
-          bg: "#020617",
-          card: "#1e293b",
-          text: "#ffffff",
-          sub: "#94a3b8",
-          border: "#1e293b",
-          accent: "#38bdf8",
-        };
+  const colors = globalColors[theme];
 
   return (
     <View

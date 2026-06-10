@@ -285,7 +285,7 @@ export function SymptomsProvider({ children }: { children: React.ReactNode }) {
   }, [historySymptoms, isLoaded, isSwitched]);
 
   //////////////////////////////////////////////////////////
-  // LOG SYMPTOM — always logs to OWN data
+  // LOG SYMPTOM — when switched: direct to Firestore; when self: local + notification + sync
   //////////////////////////////////////////////////////////
 
   const logSymptom = useCallback(
@@ -307,6 +307,11 @@ export function SymptomsProvider({ children }: { children: React.ReactNode }) {
 
       setActiveSymptoms((prev) => [...prev, newSymptom]);
 
+      if (isSwitched && activeMemberId && activeMemberId !== "self") {
+        syncWithRetry(() => syncAddSymptom({ ...newSymptom }, activeMemberId), "AddSymptom");
+        return;
+      }
+
       try {
         await scheduleSymptomHourly(name.trim());
       } catch (err) {
@@ -315,7 +320,7 @@ export function SymptomsProvider({ children }: { children: React.ReactNode }) {
 
       syncWithRetry(() => syncAddSymptom({ ...newSymptom }), "AddSymptom");
     },
-    []
+    [isSwitched, activeMemberId]
   );
 
   //////////////////////////////////////////////////////////
@@ -353,6 +358,11 @@ export function SymptomsProvider({ children }: { children: React.ReactNode }) {
         setActiveSymptoms([...updatedActive]);
         setHistorySymptoms((prev) => [resolved, ...prev]);
 
+        if (isSwitched && activeMemberId && activeMemberId !== "self") {
+          syncWithRetry(() => syncResolveSymptom(id, resolvedAt, duration, activeMemberId), "ResolveSymptom");
+          return;
+        }
+
         await AsyncStorage.setItem(ACTIVE_KEY, JSON.stringify(updatedActive));
         const existingHistory = await AsyncStorage.getItem(HISTORY_KEY);
         const parsedHistory   = existingHistory ? JSON.parse(existingHistory) : [];
@@ -364,7 +374,7 @@ export function SymptomsProvider({ children }: { children: React.ReactNode }) {
         console.log("❌ Resolve error:", err);
       }
     },
-    [activeSymptoms]
+    [activeSymptoms, isSwitched, activeMemberId]
   );
 
   //////////////////////////////////////////////////////////
@@ -373,9 +383,13 @@ export function SymptomsProvider({ children }: { children: React.ReactNode }) {
 
   const removeSymptom = useCallback(async (id: number) => {
     setActiveSymptoms((prev) => prev.filter((s) => s.id !== id));
+    if (isSwitched && activeMemberId && activeMemberId !== "self") {
+      syncWithRetry(() => syncDeleteSymptom(id, activeMemberId), "DeleteSymptom");
+      return;
+    }
     await cancelSymptomNotification();
     syncWithRetry(() => syncDeleteSymptom(id), "DeleteSymptom");
-  }, []);
+  }, [isSwitched, activeMemberId]);
 
   //////////////////////////////////////////////////////////
   // UPDATE SYMPTOM
@@ -386,6 +400,10 @@ export function SymptomsProvider({ children }: { children: React.ReactNode }) {
       setActiveSymptoms((prev) =>
         prev.map((s) => (s.id === id ? { ...s, ...updates } : s))
       );
+      if (isSwitched && activeMemberId && activeMemberId !== "self") {
+        syncWithRetry(() => syncUpdateSymptom(id, updates, activeMemberId), "UpdateSymptom");
+        return;
+      }
       if (updates.name) {
         await cancelSymptomNotification();
         await scheduleSymptomHourly(updates.name);

@@ -223,10 +223,10 @@ export const MedicineProvider = ({
   }, [isSwitched, activeMemberId]);
 
   ///////////////////////////////////////////////////////////
-  // ADD — always adds to OWN local DB + Firebase (never member's)
+  // ADD — when switched: directly to Firestore; when self: local SQLite + sync
   ///////////////////////////////////////////////////////////
 
-  const addMedicine = async (
+  const addMedicine = React.useCallback(async (
     name: string,
     dose: string,
     type: string,
@@ -241,6 +241,17 @@ export const MedicineProvider = ({
     try {
       const normalisedTimestamp =
         timestamp < 1_000_000_000_000 ? timestamp * 1000 : timestamp;
+
+      if (isSwitched && activeMemberId && activeMemberId !== "self") {
+        const medId = Date.now();
+        await syncAddMedicine({
+          id: medId, name, dose, type, time,
+          timestamp: normalisedTimestamp, meal, frequency,
+          startDate, endDate, reminder, notificationId: null,
+        }, activeMemberId);
+        await loadMedicines();
+        return;
+      }
 
       dbAddMedicine(name, dose, type, time, normalisedTimestamp, meal, frequency, startDate, endDate, reminder, null);
 
@@ -283,15 +294,23 @@ export const MedicineProvider = ({
     } catch (err) {
       console.log("💊 Add medicine error:", err);
     }
-  };
+  }, [isSwitched, activeMemberId]);
 
   ///////////////////////////////////////////////////////////
-  // MARK TAKEN — only for own medicines
+  // MARK TAKEN — when switched: directly in Firestore; when self: local SQLite + sync
   ///////////////////////////////////////////////////////////
 
-  const markMedicineAsTaken = async (notificationId?: string) => {
+  const markMedicineAsTaken = React.useCallback(async (notificationId?: string) => {
     try {
       if (!notificationId) return;
+
+      if (isSwitched && activeMemberId && activeMemberId !== "self") {
+        const medicine = medicines.find((m) => m.notificationId === notificationId);
+        if (medicine) await syncMarkMedicineTaken(medicine.id, activeMemberId);
+        await loadMedicines();
+        return;
+      }
+
       markMedicineTakenByNotificationId(notificationId);
       const medicine = (getMedicines() as Medicine[]).find((m) => m.notificationId === notificationId);
       if (medicine) syncMarkMedicineTaken(medicine.id);
@@ -299,14 +318,20 @@ export const MedicineProvider = ({
     } catch (err) {
       console.log("💊 Mark taken error:", err);
     }
-  };
+  }, [isSwitched, activeMemberId, medicines]);
 
   ///////////////////////////////////////////////////////////
-  // REMOVE — only for own medicines
+  // REMOVE — when switched: directly from Firestore; when self: local SQLite + cancel notification + sync
   ///////////////////////////////////////////////////////////
 
-  const removeMedicine = async (id: number) => {
+  const removeMedicine = React.useCallback(async (id: number) => {
     try {
+      if (isSwitched && activeMemberId && activeMemberId !== "self") {
+        await syncDeleteMedicine(id, activeMemberId);
+        await loadMedicines();
+        return;
+      }
+
       const item = medicines.find((m) => m.id === id);
       if (item?.notificationId) await cancelMedicineNotification(item.notificationId);
       deleteMedicine(id);
@@ -315,10 +340,16 @@ export const MedicineProvider = ({
     } catch (err) {
       console.log("💊 Delete medicine error:", err);
     }
-  };
+  }, [isSwitched, activeMemberId, medicines]);
 
-  const clearAllMedicines = async () => {
+  const clearAllMedicines = React.useCallback(async () => {
     try {
+      if (isSwitched && activeMemberId && activeMemberId !== "self") {
+        await syncDeleteAllMedicines(activeMemberId);
+        await loadMedicines();
+        return;
+      }
+
       for (const med of medicines) {
         if (med.notificationId) {
           await cancelMedicineNotification(med.notificationId);
@@ -331,7 +362,7 @@ export const MedicineProvider = ({
     } catch (err) {
       console.log("💊 Clear all medicines error:", err);
     }
-  };
+  }, [isSwitched, activeMemberId, medicines]);
 
   const reloadMedicines = async () => { await loadMedicines(); };
 

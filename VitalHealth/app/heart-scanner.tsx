@@ -39,9 +39,9 @@ import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { useTheme } from "../context/ThemeContext";
 import { colors } from "../theme/colors";
+import { getHeartRateBaseUrl } from "../services/biogears";
 
 // ─── CONFIG ───────────────────────────────────────────────────────────────────
-const API_BASE_URL         = "http://10.66.213.41:5000";  // ← your LAN IP
 const SAMPLE_INTERVAL_MS   = 100;   // 10 fps — no shutter, fast enough for rPPG
 const AUTO_STOP_CONFIDENCE = 0.82;
 const CAPTURE_WIDTH        = 80;    // tiny — colour only, no detail needed
@@ -99,6 +99,14 @@ export default function HeartScannerScreen() {
   const router = useRouter();
   const { theme } = useTheme();
   const c = colors[theme];
+
+  const apiBaseUrlRef = useRef("http://151.185.41.234:5000");
+
+  useEffect(() => {
+    getHeartRateBaseUrl().then((url) => {
+      apiBaseUrlRef.current = url;
+    });
+  }, []);
 
   const [permission, requestPermission] = useCameraPermissions();
 
@@ -191,7 +199,7 @@ export default function HeartScannerScreen() {
         if (!finger) {
           // Finger lifted — reset Python buffer to avoid stale signal mixing
           setProgress(0);
-          fetch(`${API_BASE_URL}/reset_buffer`, {
+          fetch(`${apiBaseUrlRef.current}/reset_buffer`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ session_id: sessionIdRef.current }),
@@ -203,7 +211,7 @@ export default function HeartScannerScreen() {
       if (!finger) return;        // skip network call — no finger
 
       // ── Send only 3 floats to Python (~200 bytes, not ~50 KB) ───────────
-      const res  = await fetch(`${API_BASE_URL}/channels`, {
+      const res  = await fetch(`${apiBaseUrlRef.current}/channels`, {
         method:  "POST",
         headers: { "Content-Type": "application/json" },
         body:    JSON.stringify({
@@ -230,7 +238,7 @@ export default function HeartScannerScreen() {
   const sendFullFrame = async (b64: string) => {
     if (!sessionIdRef.current) return;
     try {
-      const res  = await fetch(`${API_BASE_URL}/frame`, {
+      const res  = await fetch(`${apiBaseUrlRef.current}/frame`, {
         method:  "POST",
         headers: { "Content-Type": "application/json" },
         body:    JSON.stringify({ session_id: sessionIdRef.current, frame_data: b64 }),
@@ -258,7 +266,7 @@ export default function HeartScannerScreen() {
       isSendingRef.current = false;
       fingerRef.current    = false;
 
-      const res  = await fetch(`${API_BASE_URL}/start`, { method: "POST" });
+      const res  = await fetch(`${apiBaseUrlRef.current}/start`, { method: "POST" });
       if (!res.ok) throw new Error();
       const data = await res.json();
       sessionIdRef.current = data.session_id;
@@ -267,7 +275,7 @@ export default function HeartScannerScreen() {
       intervalRef.current = setInterval(sampleFrame, SAMPLE_INTERVAL_MS);
     } catch {
       setStatus("error");
-      setErrorMsg("Cannot reach server. Check IP and run: python app.py");
+      setErrorMsg(`Cannot reach server at ${apiBaseUrlRef.current}. Check IP and run: python app.py`);
     }
   };
 
@@ -277,7 +285,7 @@ export default function HeartScannerScreen() {
     const sid = sessionIdRef.current;
     if (!sid) return;
     try {
-      const res  = await fetch(`${API_BASE_URL}/stop/${sid}`, { method: "POST" });
+      const res  = await fetch(`${apiBaseUrlRef.current}/stop/${sid}`, { method: "POST" });
       const data = await res.json();
       setResult(data.final_result ?? null);
     } catch { setResult(liveResult); }

@@ -13,6 +13,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 
 import { useTheme } from "../context/ThemeContext";
+import { colors as globalColors } from "../theme/colors";
 
 export default function SettingsScreen() {
   const router = useRouter();
@@ -20,22 +21,7 @@ export default function SettingsScreen() {
 
   const isLight = theme === "light";
 
-  const colors =
-    theme === "light"
-      ? {
-          bg: "#f8fafc",
-          text: "#020617",
-          border: "#e2e8f0",
-          card: "#ffffff",
-          sub: "#64748b",
-        }
-      : {
-          bg: "#020617",
-          text: "#e2e8f0",
-          border: "#1e293b",
-          card: "#0f172a",
-          sub: "#94a3b8",
-        };
+  const colors = globalColors[theme];
 
   const Item = (label: string, route?: string) => (
     <TouchableOpacity

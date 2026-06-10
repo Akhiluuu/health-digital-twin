@@ -87,22 +87,25 @@ const symptomHistCol   = (uid: string) => collection(db, "users", uid, "symptomH
  * Save a new medicine to Firebase when user adds it.
  * Uses SQLite id as the Firestore document ID for easy lookup.
  */
-export async function syncAddMedicine(medicine: {
-  id:             number;
-  name:           string;
-  dose:           string;
-  type:           string;
-  time:           string;
-  timestamp:      number;
-  meal:           string;
-  frequency:      string;
-  startDate:      string;
-  endDate:        string;
-  reminder:       number;
-  notificationId: string | null;
-}): Promise<void> {
+export async function syncAddMedicine(
+  medicine: {
+    id:             number;
+    name:           string;
+    dose:           string;
+    type:           string;
+    time:           string;
+    timestamp:      number;
+    meal:           string;
+    frequency:      string;
+    startDate:      string;
+    endDate:        string;
+    reminder:       number;
+    notificationId: string | null;
+  },
+  targetUid?: string
+): Promise<void> {
   try {
-    const uid = await getUserId();
+    const uid = targetUid || await getUserId();
     if (!uid) { console.log("⚠️ No auth user for syncAddMedicine"); return; }
 
     await setDoc(doc(medicinesCol(uid), String(medicine.id)), {
@@ -121,9 +124,9 @@ export async function syncAddMedicine(medicine: {
 /**
  * Delete a medicine from Firebase when user removes it.
  */
-export async function syncDeleteMedicine(id: number): Promise<void> {
+export async function syncDeleteMedicine(id: number, targetUid?: string): Promise<void> {
   try {
-    const uid = await getUserId();
+    const uid = targetUid || await getUserId();
     if (!uid) return;
 
     await deleteDoc(doc(medicinesCol(uid), String(id)));
@@ -136,9 +139,9 @@ export async function syncDeleteMedicine(id: number): Promise<void> {
 /**
  * Delete all medicines from Firebase.
  */
-export async function syncDeleteAllMedicines(): Promise<void> {
+export async function syncDeleteAllMedicines(targetUid?: string): Promise<void> {
   try {
-    const uid = await getUserId();
+    const uid = targetUid || await getUserId();
     if (!uid) return;
 
     const querySnap = await getDocs(medicinesCol(uid));
@@ -158,9 +161,9 @@ export async function syncDeleteAllMedicines(): Promise<void> {
 /**
  * Mark medicine as taken in Firebase.
  */
-export async function syncMarkMedicineTaken(id: number): Promise<void> {
+export async function syncMarkMedicineTaken(id: number, targetUid?: string): Promise<void> {
   try {
-    const uid = await getUserId();
+    const uid = targetUid || await getUserId();
     if (!uid) return;
 
     await setDoc(doc(medicinesCol(uid), String(id)), {
@@ -180,10 +183,11 @@ export async function syncMarkMedicineTaken(id: number): Promise<void> {
  */
 export async function syncUpdateMedicineNotificationId(
   id: number,
-  notificationId: string
+  notificationId: string,
+  targetUid?: string
 ): Promise<void> {
   try {
-    const uid = await getUserId();
+    const uid = targetUid || await getUserId();
     if (!uid) return;
 
     await setDoc(doc(medicinesCol(uid), String(id)), {
@@ -254,23 +258,26 @@ export async function fetchMedicineHistoryFromFirebase(): Promise<any[]> {
  * Save a new symptom to Firebase when user logs it.
  * Uses symptom id (timestamp) as the Firestore document ID.
  */
-export async function syncAddSymptom(symptom: {
-  id:              number;
-  name:            string;
-  severity:        string;
-  startedAt:       number;
-  notes?:          string;
-  followUpMinutes?: number;
-  followUpAnswers?: string;
-}): Promise<void> {
-  console.log("🔄 syncAddSymptom called:", symptom.name, "id:", symptom.id);
+export async function syncAddSymptom(
+  symptom: {
+    id:              number;
+    name:            string;
+    severity:        string;
+    startedAt:       number;
+    notes?:          string;
+    followUpMinutes?: number;
+    followUpAnswers?: string;
+  },
+  targetUid?: string
+): Promise<void> {
+  console.log("🔄 syncAddSymptom called:", symptom.name, "id:", symptom.id, "target:", targetUid);
   try {
-    const uid = await getUserId();
+    const uid = targetUid || await getUserId();
     console.log("🔑 syncAddSymptom uid:", uid ?? "NULL");
 
     if (!uid) {
       console.log("⚠️ No auth — queuing symptom:", symptom.name);
-      pendingSyncs.push(() => syncAddSymptom(symptom));
+      pendingSyncs.push(() => syncAddSymptom(symptom, targetUid));
       return;
     }
 
@@ -287,7 +294,7 @@ export async function syncAddSymptom(symptom: {
     console.log("✅ Symptom synced to Firebase:", symptom.name);
   } catch (e: any) {
     console.log("❌ syncAddSymptom FAILED:", e?.code, e?.message ?? e);
-    pendingSyncs.push(() => syncAddSymptom(symptom));
+    pendingSyncs.push(() => syncAddSymptom(symptom, targetUid));
   }
 }
 
@@ -297,14 +304,15 @@ export async function syncAddSymptom(symptom: {
 export async function syncResolveSymptom(
   id: number,
   resolvedAt: number,
-  duration: number
+  duration: number,
+  targetUid?: string
 ): Promise<void> {
   try {
-    const uid = await getUserId();
+    const uid = targetUid || await getUserId();
 
     if (!uid) {
       // ✅ queue retry (IMPORTANT)
-      pendingSyncs.push(() => syncResolveSymptom(id, resolvedAt, duration));
+      pendingSyncs.push(() => syncResolveSymptom(id, resolvedAt, duration, targetUid));
       return;
     }
 
@@ -322,40 +330,40 @@ export async function syncResolveSymptom(
 
     // 🔹 Step 2: Add to HISTORY collection
     await setDoc(
-  doc(symptomHistCol(uid), String(id)),
-  {
-    ...existing,
-    active: false,
-    resolvedAt,
-    duration,
-    syncedAt: serverTimestamp(),
-  },
-  { merge: true } // ✅ safer
-);
+      doc(symptomHistCol(uid), String(id)),
+      {
+        ...existing,
+        active: false,
+        resolvedAt,
+        duration,
+        syncedAt: serverTimestamp(),
+      },
+      { merge: true } // ✅ safer
+    );
 
     // 🔹 Step 3: DELETE from ACTIVE collection
     try {
-  await deleteDoc(symptomRef);
-} catch (e) {
-  console.log("⚠️ Delete failed, retrying later:", e);
-  pendingSyncs.push(() => syncResolveSymptom(id, resolvedAt, duration));
-}
+      await deleteDoc(symptomRef);
+    } catch (e) {
+      console.log("⚠️ Delete failed, retrying later:", e);
+      pendingSyncs.push(() => syncResolveSymptom(id, resolvedAt, duration, targetUid));
+    }
 
     console.log("🔥 Removed from active + added to history:", id);
   } catch (e) {
     console.log("⚠️ syncResolveSymptom failed:", e);
 
     // ✅ retry later
-    pendingSyncs.push(() => syncResolveSymptom(id, resolvedAt, duration));
+    pendingSyncs.push(() => syncResolveSymptom(id, resolvedAt, duration, targetUid));
   }
 }
 
 /**
  * Delete a symptom from Firebase.
  */
-export async function syncDeleteSymptom(id: number): Promise<void> {
+export async function syncDeleteSymptom(id: number, targetUid?: string): Promise<void> {
   try {
-    const uid = await getUserId();
+    const uid = targetUid || await getUserId();
     if (!uid) return;
 
     await deleteDoc(doc(symptomsCol(uid), String(id)));
@@ -370,10 +378,11 @@ export async function syncDeleteSymptom(id: number): Promise<void> {
  */
 export async function syncUpdateSymptom(
   id:      number,
-  updates: Record<string, any>
+  updates: Record<string, any>,
+  targetUid?: string
 ): Promise<void> {
   try {
-    const uid = await getUserId();
+    const uid = targetUid || await getUserId();
     if (!uid) return;
 
     // ✅ Use setDoc with merge so it works even if document doesn't exist
@@ -395,18 +404,21 @@ export async function syncUpdateSymptom(
 /**
  * Save resolved symptom to symptom history in Firebase.
  */
-export async function syncAddSymptomHistory(symptom: {
-  id:              number;
-  name:            string;
-  severity:        string;
-  startedAt:       number;
-  resolvedAt:      number;
-  duration:        number;
-  notes?:          string;
-  followUpAnswers?: string;
-}): Promise<void> {
+export async function syncAddSymptomHistory(
+  symptom: {
+    id:              number;
+    name:            string;
+    severity:        string;
+    startedAt:       number;
+    resolvedAt:      number;
+    duration:        number;
+    notes?:          string;
+    followUpAnswers?: string;
+  },
+  targetUid?: string
+): Promise<void> {
   try {
-    const uid = await getUserId();
+    const uid = targetUid || await getUserId();
     if (!uid) return;
 
     await setDoc(doc(symptomHistCol(uid), String(symptom.id)), {

@@ -25,6 +25,8 @@ import {
   getApiKey,
   clearApiKey,
   FALLBACK_API_KEY,
+  getHeartRateBaseUrl,
+  setHeartRateBaseUrl,
 } from "../services/biogears";
 
 type TestStatus = "idle" | "testing" | "ok" | "fail";
@@ -39,6 +41,12 @@ export default function ServerConfigScreen() {
   const [testStatus, setTestStatus] = useState<TestStatus>("idle");
   const [testMsg, setTestMsg] = useState("");
   const [saving, setSaving] = useState(false);
+
+  // Heart Rate Server configuration
+  const [hrIp, setHrIp] = useState("");
+  const [hrPort, setHrPort] = useState("");
+  const [hrTestStatus, setHrTestStatus] = useState<TestStatus>("idle");
+  const [hrTestMsg, setHrTestMsg] = useState("");
 
   // ── Load stored values on mount ──────────────────────────────────────────
   useEffect(() => {
@@ -55,11 +63,27 @@ export default function ServerConfigScreen() {
         setPort("");
       }
     });
+
+    getHeartRateBaseUrl().then((savedUrl) => {
+      try {
+        const u = new URL(savedUrl);
+        const isDefaultPort =
+          (u.protocol === "http:" && (u.port === "80" || u.port === "")) ||
+          (u.protocol === "https:" && (u.port === "443" || u.port === ""));
+        setHrIp(u.protocol + "//" + u.hostname);
+        setHrPort(isDefaultPort ? "" : u.port);
+      } catch {
+        setHrIp(savedUrl);
+        setHrPort("");
+      }
+    });
+
     getApiKey().then((k) => setApiKeyInput(k));
   }, []);
 
   const buildUrl = () => {
     let cleanIp = ip.trim().replace(/\/$/, "");
+    if (!cleanIp) return "";
     if (!/^https?:\/\//i.test(cleanIp)) {
       cleanIp = `http://${cleanIp}`;
     }
@@ -71,16 +95,34 @@ export default function ServerConfigScreen() {
     return `${cleanIp}:${p}`;
   };
 
+  const buildHrUrl = () => {
+    let cleanIp = hrIp.trim().replace(/\/$/, "");
+    if (!cleanIp) return "";
+    if (!/^https?:\/\//i.test(cleanIp)) {
+      cleanIp = `http://${cleanIp}`;
+    }
+    const p = hrPort.trim();
+    if (!p) return cleanIp;
+    if (p === "80" || p === "443") return cleanIp;
+    const alreadyHasPort = /:\d+$/.test(cleanIp);
+    if (alreadyHasPort) return cleanIp;
+    return `${cleanIp}:${p}`;
+  };
+
   // ── Save ─────────────────────────────────────────────────────────────────
   const handleSave = async () => {
     const finalUrl = buildUrl();
     if (!finalUrl) {
-      Alert.alert("Missing Address", "Please enter the server address.");
+      Alert.alert("Missing Address", "Please enter the BioGears server address.");
       return;
     }
+    const finalHrUrl = buildHrUrl();
     setSaving(true);
     try {
       await setBiogearsBaseUrl(finalUrl);
+      if (finalHrUrl) {
+        await setHeartRateBaseUrl(finalHrUrl);
+      }
       if (apiKey.trim()) {
         await setApiKey(apiKey.trim());
       } else {
@@ -126,6 +168,35 @@ export default function ServerConfigScreen() {
     }
   };
 
+  // ── Test pulse connection ─────────────────────────────────────────────────
+  const handleHrTest = async () => {
+    const finalUrl = buildHrUrl();
+    if (!finalUrl) {
+      Alert.alert("Missing Address", "Enter a Heart Rate server address first.");
+      return;
+    }
+    setHrTestStatus("testing");
+    setHrTestMsg("");
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 8000);
+      const res = await fetch(`${finalUrl}/ping`, {
+        signal: controller.signal,
+      });
+      clearTimeout(timer);
+      if (!res.ok) throw new Error(`Server returned ${res.status}`);
+      setHrTestStatus("ok");
+      setHrTestMsg("Connected to Pulse API ✓");
+    } catch (err: any) {
+      setHrTestStatus("fail");
+      setHrTestMsg(
+        err.name === "AbortError"
+          ? "Request timed out — check the address and port."
+          : err.message || "Could not reach server."
+      );
+    }
+  };
+
   // ── Clear API key ─────────────────────────────────────────────────────────
   const handleClearKey = () => {
     Alert.alert("Clear API Key?", "You'll need to re-enter it to use the server.", [
@@ -163,6 +234,11 @@ export default function ServerConfigScreen() {
     testStatus === "fail" ? "#ef4444" :
     c.accent;
 
+  const hrTestColor =
+    hrTestStatus === "ok" ? "#10b981" :
+    hrTestStatus === "fail" ? "#ef4444" :
+    c.accent;
+
   return (
     <>
       <Stack.Screen
@@ -193,6 +269,14 @@ export default function ServerConfigScreen() {
               Point the app at your local server or the E2E Cloud deployment.
             </Text>
           </View>
+
+          {/* ─────────────── SECTION 1: BIOGEARS SERVER ─────────────── */}
+          <Text style={{ fontSize: 16, fontWeight: "700", color: c.text, marginTop: 10, marginBottom: 4 }}>
+            Simulation Engine Server
+          </Text>
+          <Text style={{ fontSize: 13, color: c.sub, marginBottom: 12 }}>
+            Configures the BioGears Digital Twin FastAPI endpoint.
+          </Text>
 
           {/* ── Quick Presets ────────────────────────────────────────────── */}
           <Text style={[s.label, { color: c.sub }]}>QUICK PRESETS</Text>
@@ -283,16 +367,87 @@ export default function ServerConfigScreen() {
             </View>
           )}
 
-          {/* ── Actions ───────────────────────────────────────────────── */}
+          {/* ── Test BioGears Action ──────────────────────────────────── */}
           <TouchableOpacity
-            style={[s.btnTest, { backgroundColor: c.card, borderColor: c.accent + "60" }]}
+            style={[s.btnTest, { backgroundColor: c.card, borderColor: c.accent + "60", marginBottom: 10 }]}
             onPress={handleTest}
             disabled={testStatus === "testing"}
           >
             <Ionicons name="flash-outline" size={18} color={c.accent} />
-            <Text style={[s.btnTestText, { color: c.accent }]}>Test Connection</Text>
+            <Text style={[s.btnTestText, { color: c.accent }]}>Test BioGears Connection</Text>
           </TouchableOpacity>
 
+          {/* ─────────────── SECTION 2: HEART RATE/PULSE SERVER ─────────────── */}
+          <View style={{ height: 1, backgroundColor: c.border, marginVertical: 24 }} />
+
+          <Text style={{ fontSize: 16, fontWeight: "700", color: c.text, marginBottom: 4 }}>
+            Pulse/rPPG Server (Flask)
+          </Text>
+          <Text style={{ fontSize: 13, color: c.sub, marginBottom: 12 }}>
+            Configures the camera-based heart rate scanner service (python app.py).
+          </Text>
+
+          {/* ── HR Address Input ───────────────────────────────────────────── */}
+          <Text style={[s.label, { color: c.sub }]}>PULSE SERVER ADDRESS</Text>
+          <View style={[s.inputWrap, { backgroundColor: c.card, borderColor: c.border }]}>
+            <Ionicons name="globe-outline" size={18} color={c.sub} style={s.inputIcon} />
+            <TextInput
+              style={[s.input, { color: c.text }]}
+              value={hrIp}
+              onChangeText={setHrIp}
+              placeholder="e.g. http://192.168.1.15"
+              placeholderTextColor={c.sub}
+              autoCapitalize="none"
+              autoCorrect={false}
+              keyboardType="default"
+            />
+          </View>
+
+          {/* ── HR Port Input ──────────────────────────────────────────────── */}
+          <Text style={[s.label, { color: c.sub }]}>PULSE SERVER PORT <Text style={{ fontSize: 10, fontWeight: "400" }}>(default 5000)</Text></Text>
+          <View style={[s.inputWrap, { backgroundColor: c.card, borderColor: c.border }]}>
+            <Ionicons name="git-branch-outline" size={18} color={c.sub} style={s.inputIcon} />
+            <TextInput
+              style={[s.input, { color: c.text }]}
+              value={hrPort}
+              onChangeText={setHrPort}
+              placeholder="e.g. 5000"
+              placeholderTextColor={c.sub}
+              keyboardType="numeric"
+            />
+          </View>
+
+          {/* ── HR Test Result Banner ──────────────────────────────────── */}
+          {hrTestStatus !== "idle" && (
+            <View style={[
+              s.testBanner,
+              { backgroundColor: hrTestColor + "14", borderColor: hrTestColor + "50" },
+            ]}>
+              {hrTestStatus === "testing"
+                ? <ActivityIndicator color={c.accent} size="small" />
+                : <Ionicons
+                    name={hrTestStatus === "ok" ? "checkmark-circle" : "close-circle"}
+                    size={18}
+                    color={hrTestColor}
+                  />
+              }
+              {hrTestStatus !== "testing" && (
+                <Text style={[s.testBannerText, { color: hrTestColor }]}>{hrTestMsg}</Text>
+              )}
+            </View>
+          )}
+
+          {/* ── Test HR Action ────────────────────────────────────────── */}
+          <TouchableOpacity
+            style={[s.btnTest, { backgroundColor: c.card, borderColor: c.accent + "60", marginBottom: 24 }]}
+            onPress={handleHrTest}
+            disabled={hrTestStatus === "testing"}
+          >
+            <Ionicons name="flash-outline" size={18} color={c.accent} />
+            <Text style={[s.btnTestText, { color: c.accent }]}>Test Pulse Connection</Text>
+          </TouchableOpacity>
+
+          {/* ─────────────── GLOBAL SAVE ACTION ─────────────────────────── */}
           <TouchableOpacity
             style={[s.btnSave, { backgroundColor: c.accent }]}
             onPress={handleSave}

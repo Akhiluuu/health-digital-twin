@@ -2,6 +2,7 @@ import { useRouter } from "expo-router";
 import { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   Animated,
   Easing,
   KeyboardAvoidingView,
@@ -22,6 +23,7 @@ import {
   signInWithEmailAndPassword,
 } from "firebase/auth";
 import { useTheme } from "../context/ThemeContext";
+import { colors as globalColors } from "../theme/colors";
 import { setLoggedIn } from "../services/authStorage";
 import { sendLoginEmail } from "../services/emailService";
 import { auth } from "../services/firebase";
@@ -54,24 +56,15 @@ export default function SignIn() {
   const router = useRouter();
   const { theme } = useTheme();
 
-  const colors =
-    theme === "light"
-      ? {
-          background: "#f8fafc",
-          card: "#ffffff",
-          text: "#020617",
-          subText: "#64748b",
-          border: "#e2e8f0",
-          headerGradient: ["#6366f1", "#4f46e5"],
-        }
-      : {
-          background: "#0D0D0F",
-          card: "rgba(255,255,255,0.04)",
-          text: "#ffffff",
-          subText: "rgba(255,255,255,0.4)",
-          border: "rgba(255,255,255,0.08)",
-          headerGradient: ["#0f0c29", "#302b63"],
-        };
+  const c = globalColors[theme];
+  const colors = {
+    background: c.bg,
+    card: c.card,
+    text: c.text,
+    subText: c.sub,
+    border: c.border,
+    headerGradient: c.headerGradient,
+  };
 
   const [email,    setEmail]    = useState("");
   const [password, setPassword] = useState("");
@@ -134,7 +127,7 @@ export default function SignIn() {
 
   const login = async () => {
     if (!email || !password) {
-      alert("Enter email and password");
+      Alert.alert("Input Required", "Please enter both email and password.");
       return;
     }
 
@@ -145,7 +138,20 @@ export default function SignIn() {
       userCredential = await signInWithEmailAndPassword(auth, email.trim(), password);
     } catch (firebaseError: any) {
       setLoading(false);
-      alert(firebaseError.message);
+      let errorMessage = "Incorrect email or password. Please try again.";
+      if (firebaseError.code === "auth/invalid-email" || firebaseError.message?.includes("invalid-email")) {
+        errorMessage = "Please enter a valid email address.";
+      } else if (
+        firebaseError.code === "auth/user-not-found" || 
+        firebaseError.code === "auth/wrong-password" || 
+        firebaseError.code === "auth/invalid-credential" ||
+        firebaseError.message?.includes("invalid-credential")
+      ) {
+        errorMessage = "Incorrect email or password. Please try again.";
+      } else if (firebaseError.code === "auth/network-request-failed" || firebaseError.message?.includes("network-request-failed")) {
+        errorMessage = "Network connection failed. Please check your internet connection.";
+      }
+      Alert.alert("Sign In Failed", errorMessage, [{ text: "OK" }]);
       return;
     }
 
@@ -165,21 +171,32 @@ export default function SignIn() {
 
   const handleForgotPassword = async () => {
     if (!forgotEmail.trim()) {
-      alert("Please enter your email address.");
+      Alert.alert("Input Required", "Please enter your email address.");
       return;
     }
     setForgotLoading(true);
     try {
-      const methods = await fetchSignInMethodsForEmail(auth, forgotEmail.trim());
-      if (methods.length === 0) {
-        alert("No account found with this email address.");
-        return;
+      try {
+        const methods = await fetchSignInMethodsForEmail(auth, forgotEmail.trim());
+        if (methods.length === 0) {
+          Alert.alert("Account Not Found", "No account found with this email address.");
+          setForgotLoading(false);
+          return;
+        }
+      } catch (e) {
+        console.log("Enumeration protection warning during fetchSignInMethods:", e);
       }
       await sendPasswordResetEmail(auth, forgotEmail.trim());
       setForgotModalVisible(false);
-      alert("Password reset link has been sent to your email.");
+      Alert.alert("Password Reset Sent", "A password reset link has been successfully sent to your email.");
     } catch (error: any) {
-      alert(error.message);
+      let errMsg = "Failed to send reset link.";
+      if (error.code === "auth/invalid-email" || error.message?.includes("invalid-email")) {
+        errMsg = "Please enter a valid email address.";
+      } else if (error.code === "auth/user-not-found" || error.message?.includes("user-not-found")) {
+        errMsg = "No account found with this email address.";
+      }
+      Alert.alert("Reset Failed", errMsg);
     } finally {
       setForgotLoading(false);
     }

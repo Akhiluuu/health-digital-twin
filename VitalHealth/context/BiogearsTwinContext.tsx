@@ -9,8 +9,10 @@ import React, {
   useRef,
   useState,
 } from 'react';
+import { Alert } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useProfile } from './ProfileContext';
+import { useFamily } from './FamilyContext';
 import { buildDefaultRoutine } from '../services/onboardingRoutineBuilder';
 import * as BiogearsAPI from '../services/biogears';
 import { auth } from '../services/firebase';
@@ -100,6 +102,7 @@ export interface BiogearsTwinContextValue {
   setDefaultRoutine: (routineId: string) => Promise<void>;
   editingRoutineId: string | null;
   setEditingRoutineId: (id: string | null) => void;
+  restoreDefaultRoutine: () => Promise<void>;
 
   // Substances Library
   substances: Record<string, string[]>;
@@ -163,7 +166,7 @@ function wallTimeToTimestamp(wallTime: string): number {
 // ─── Provider ─────────────────────────────────────────────────────────────────
 
 export function BiogearsTwinProvider({ children }: { children: React.ReactNode }) {
-  const { profile } = useProfile();
+  const { activeProfile: profile } = useFamily();
 
   // Derive userId from profile: use Firebase UID stored in profile, or firstName+lastName slug
   const { medicines } = useMedicine();
@@ -432,7 +435,7 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
     if (!twinUserId) return;
     const r = await BiogearsAPI.loadSavedRoutines(twinUserId);
 
-    // Auto-generate "My Typical Day" for users who have onboarding habits
+    // Auto-generate "My Saved State" for users who have onboarding habits
     // but no saved routines yet (covers new signups + existing users)
     if (r.length === 0) {
       try {
@@ -467,7 +470,7 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
           await BiogearsAPI.saveRoutine(twinUserId, routine);
           await BiogearsAPI.setDefaultRoutine(twinUserId, routine.id);
           setSavedRoutines([routine]);
-          console.log('[BiogearsTwin] ✅ Auto-generated default routine "My Typical Day" from habits');
+          console.log('[BiogearsTwin] ✅ Auto-generated default routine "My Saved State" from habits');
           return;
         }
       } catch (e) {
@@ -475,7 +478,54 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
       }
     }
 
-    // Deduplicate existing routines by name (cleans up any older duplicates)
+    // 1. Deduplicate and self-heal onboarding/default routines (removes duplicate 'My Typical Day' etc)
+    const onboardingRoutines = r.filter(routine => 
+      routine.id.startsWith('routine_onboarding_') || 
+      routine.tags?.includes('onboarding') ||
+      routine.name === 'My Typical Day' ||
+      routine.name === 'Saved State' ||
+      routine.name === 'My Saved State'
+    );
+
+    if (onboardingRoutines.length > 0) {
+      // Prioritize: isDefault, then latest createdAt
+      const sortedOnboarding = [...onboardingRoutines].sort((a, b) => {
+        if (a.isDefault && !b.isDefault) return -1;
+        if (!a.isDefault && b.isDefault) return 1;
+        return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+      });
+
+      const primary = sortedOnboarding[0];
+      const toDelete = sortedOnboarding.slice(1);
+
+      let needsRefresh = false;
+
+      // Rename to "My Saved State" and ensure isDefault is true
+      if (primary.name !== 'My Saved State' || !primary.isDefault) {
+        primary.name = 'My Saved State';
+        primary.isDefault = true;
+        await BiogearsAPI.saveRoutine(twinUserId, primary);
+        await BiogearsAPI.setDefaultRoutine(twinUserId, primary.id);
+        needsRefresh = true;
+      }
+
+      // Delete all other duplicate onboarding/default routines
+      if (toDelete.length > 0) {
+        console.log(`[BiogearsTwin] Cleaning up ${toDelete.length} duplicate onboarding routine(s).`);
+        for (const dup of toDelete) {
+          await BiogearsAPI.deleteRoutine(twinUserId, dup.id);
+        }
+        needsRefresh = true;
+      }
+
+      if (needsRefresh) {
+        const cleaned = await BiogearsAPI.loadSavedRoutines(twinUserId);
+        setSavedRoutines(cleaned);
+        return;
+      }
+    }
+
+    // 2. Deduplicate remaining/other routines by name (cleans up any other duplicate names)
     const uniqueMap = new Map<string, typeof r[0]>();
     const duplicatesToRemove: typeof r = [];
 
@@ -865,6 +915,57 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
     await refreshAnalytics();
   }, [twinUserId, refreshSessions, refreshAnalytics]);
 
+  const restoreDefaultRoutine = useCallback(async () => {
+    if (!twinUserId) return;
+    try {
+      let habits: any = null;
+
+      // 1. Check if habits are stored in the synced Firestore profile
+      if (profile && (profile as any).habits) {
+        habits = (profile as any).habits;
+      } else {
+        // 2. Fallback to AsyncStorage
+        const user = auth.currentUser;
+        const habitsKey = user ? `@onboarding_habits_${user.uid}` : null;
+        if (habitsKey) {
+          const raw = await AsyncStorage.getItem(habitsKey);
+          if (raw) habits = JSON.parse(raw);
+        }
+      }
+
+      if (!habits) {
+        throw new Error("No onboarding habits found. Please complete onboarding first.");
+      }
+
+      const heightVal = profile ? parseFloat((profile.height || '').replace(/[^0-9.]/g, '')) : 175;
+      const weightVal = profile ? parseFloat((profile.weight || '').replace(/[^0-9.]/g, '')) : 70;
+      const routine = buildDefaultRoutine(habits, {
+        gender: profile ? profile.gender : 'Male',
+        dateOfBirth: profile ? profile.dateOfBirth : '1995-01-01',
+        height: heightVal || 175,
+        weight: weightVal || 70,
+      });
+
+      // Ensure exact id and name of the default routine
+      routine.id = 'routine_onboarding_saved_state';
+      routine.name = 'My Saved State';
+      routine.isDefault = true;
+
+      await BiogearsAPI.saveRoutine(twinUserId, routine);
+      await BiogearsAPI.setDefaultRoutine(twinUserId, routine.id);
+
+      // Refresh saved routines list and clear isDefault on all other routines
+      setSavedRoutines(prev => {
+        const filtered = prev.filter(r => r.id !== routine.id).map(r => ({ ...r, isDefault: false }));
+        return [routine, ...filtered];
+      });
+
+      Alert.alert("Success", "Restored your initial 'My Saved State' default routine successfully.");
+    } catch (err: any) {
+      Alert.alert("Error", err.message || "Failed to restore default routine.");
+    }
+  }, [twinUserId, profile]);
+
   // ─────────────────────────────────────────────────────────────────────────────
 
   // ── AI Server URL helpers ──────────────────────────────────────────────────
@@ -941,6 +1042,7 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
     setDefaultRoutine,
     editingRoutineId,
     setEditingRoutineId,
+    restoreDefaultRoutine,
     substances,
     refreshSubstances,
     sessions,

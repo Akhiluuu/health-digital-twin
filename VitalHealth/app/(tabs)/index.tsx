@@ -19,7 +19,6 @@ import { useSymptoms } from "../../context/SymptomContext";
 import { useTheme } from "../../context/ThemeContext";
 import { colors } from "../../theme/colors";
 import Header from "../components/Header";
-import ActiveProfileBanner from "../../components/ActiveProfileBanner";
 import { doc, onSnapshot } from "firebase/firestore";
 import { db } from "../../services/firebase";
 import { getUserId } from "../../services/firebaseSync";
@@ -174,19 +173,6 @@ export default function HomeScreen() {
       <Header />
       <ScrollView contentContainerStyle={styles.container}>
 
-        {/* ✅ Switched profile notice with loading state */}
-        {isSwitched && (
-          <View style={[styles.switchedNotice, { backgroundColor: c.card }]}>
-            <Ionicons name="people" size={16} color="#7c3aed" />
-            <Text style={{ color: "#7c3aed", fontSize: 13, fontWeight: "600", flex: 1 }}>
-              {isLoading
-                ? `Loading ${activeProfile.firstName}'s health data...`
-                : `Viewing ${activeProfile.firstName}'s health data`}
-            </Text>
-            {isLoading && <ActivityIndicator size="small" color="#7c3aed" />}
-          </View>
-        )}
-
         <Text style={[styles.sectionTitle, { color: c.text }]}>BIO-TELEMETRY</Text>
         <View style={styles.grid}>
           <TelemetryCard
@@ -333,9 +319,6 @@ export default function HomeScreen() {
         </TouchableOpacity>
 
       </ScrollView>
-
-      {/* ✅ Active profile banner floats on top */}
-      <ActiveProfileBanner />
 
       <Modal visible={sensorOpen} animationType="slide">
         <View style={[styles.sensorScreen, { backgroundColor: c.bg }]}>

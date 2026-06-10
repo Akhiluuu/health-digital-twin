@@ -7,6 +7,7 @@ import {
   onSnapshot,
   query,
   setDoc,
+  updateDoc,
   where,
   orderBy,
   limit,
@@ -192,64 +193,76 @@ export function subscribeToMemberHealth(
   try {
     const userRef = doc(db, "users", uid);
 
-    // Listener for user document
-    const unsubscribeUser = onSnapshot(userRef, async (snapshot) => {
-      if (!snapshot.exists()) {
-        callback(null);
-        return;
+    // ─── Listener for user document ─────────────────────────────────────────
+    // onError: silently swallow permission-denied — the one-shot
+    // fetchMemberHealthData() already populated the UI with initial data.
+    const unsubscribeUser = onSnapshot(
+      userRef,
+      async (snapshot) => {
+        if (!snapshot.exists()) {
+          callback(null);
+          return;
+        }
+
+        const data = snapshot.data();
+        const health = data.healthData || data;
+
+        let medicines: any[] = [];
+        let symptoms: any[] = [];
+
+        try {
+          const medsSnap = await getDocs(
+            collection(db, "users", uid, "medicines")
+          );
+          medicines = medsSnap.docs.map((doc) => doc.data());
+        } catch {
+          medicines = health.medicines || [];
+        }
+
+        try {
+          const symSnap = await getDocs(
+            collection(db, "users", uid, "symptoms")
+          );
+          symptoms = symSnap.docs.map((doc) => doc.data());
+        } catch {
+          symptoms = health.symptoms || [];
+        }
+
+        const heartRate = await fetchLatestHeartRate(uid);
+
+        callback({
+          id: uid,
+          uid,
+          userId: uid,
+          firstName: data.firstName || "",
+          lastName: data.lastName || "",
+          dateOfBirth: data.dateOfBirth || data.dob,
+          dob: data.dob || data.dateOfBirth,
+          gender: health.gender,
+          bloodGroup: health.bloodGroup,
+          height: health.height,
+          weight: health.weight,
+          heartRate,
+          spo2: health.spo2,
+          hydration: health.hydration,
+          steps: health.steps,
+          calories: health.calories || 0,
+          medicines: normalizeMedicines(medicines),
+          symptoms: Array.isArray(symptoms) ? symptoms : [],
+          profileImage: data.profileImage,
+          updatedAt: data.updatedAt,
+        });
+      },
+      (err: any) => {
+        // Silently ignore permission-denied — Firestore rules only allow
+        // reading your own doc; the one-shot fetch already filled the UI.
+        if (err?.code !== "permission-denied") {
+          console.log("⚠️ subscribeToMemberHealth error:", err?.code);
+        }
       }
+    );
 
-      const data = snapshot.data();
-      const health = data.healthData || data;
-
-      let medicines: any[] = [];
-      let symptoms: any[] = [];
-
-      try {
-        const medsSnap = await getDocs(
-          collection(db, "users", uid, "medicines")
-        );
-        medicines = medsSnap.docs.map((doc) => doc.data());
-      } catch {
-        medicines = health.medicines || [];
-      }
-
-      try {
-        const symSnap = await getDocs(
-          collection(db, "users", uid, "symptoms")
-        );
-        symptoms = symSnap.docs.map((doc) => doc.data());
-      } catch {
-        symptoms = health.symptoms || [];
-      }
-
-      const heartRate = await fetchLatestHeartRate(uid);
-
-      callback({
-        id: uid,
-        uid,
-        userId: uid,
-        firstName: data.firstName || "",
-        lastName: data.lastName || "",
-        dateOfBirth: data.dateOfBirth || data.dob,
-        dob: data.dob || data.dateOfBirth,
-        gender: health.gender,
-        bloodGroup: health.bloodGroup,
-        height: health.height,
-        weight: health.weight,
-        heartRate,
-        spo2: health.spo2,
-        hydration: health.hydration,
-        steps: health.steps,
-        calories: health.calories || 0,
-        medicines: normalizeMedicines(medicines),
-        symptoms: Array.isArray(symptoms) ? symptoms : [],
-        profileImage: data.profileImage,
-        updatedAt: data.updatedAt,
-      });
-    });
-
-    // Listener for heart rate subcollection
+    // ─── Listener for heart rate subcollection ───────────────────────────────
     const hrRef = collection(db, "users", uid, "heartRate");
     const unsubscribeHR = onSnapshot(
       query(hrRef, orderBy("timestamp", "desc"), limit(1)),
@@ -259,6 +272,11 @@ export function subscribeToMemberHealth(
           callback({
             heartRate: hrData?.bpm || 0,
           });
+        }
+      },
+      (err: any) => {
+        if (err?.code !== "permission-denied") {
+          console.log("⚠️ subscribeToMemberHealth HR error:", err?.code);
         }
       }
     );
@@ -335,17 +353,20 @@ export async function linkFamilyMember(
       status: "active",
     };
 
-    await setDoc(
-      doc(db, "users", targetUid),
-      { linkedMembers: { [myUid]: linkToMe } },
-      { merge: true }
-    );
+    // ✅ Use dot-notation keys so updateDoc only touches the single entry,
+    //    leaving all other existing linkedMembers untouched.
+    await updateDoc(doc(db, "users", targetUid), {
+      [`linkedMembers.${myUid}`]: linkToMe,
+    }).catch(async () => {
+      // If the doc doesn't exist yet, fall back to setDoc with merge
+      await setDoc(doc(db, "users", targetUid), { linkedMembers: { [myUid]: linkToMe } }, { merge: true });
+    });
 
-    await setDoc(
-      doc(db, "users", myUid),
-      { linkedMembers: { [targetUid]: linkToTarget } },
-      { merge: true }
-    );
+    await updateDoc(doc(db, "users", myUid), {
+      [`linkedMembers.${targetUid}`]: linkToTarget,
+    }).catch(async () => {
+      await setDoc(doc(db, "users", myUid), { linkedMembers: { [targetUid]: linkToTarget } }, { merge: true });
+    });
 
     return true;
   } catch (e) {
@@ -364,17 +385,14 @@ export async function unlinkFamilyMember(
     const myUid = await getMyUid();
     if (!myUid) return;
 
-    await setDoc(
-      doc(db, "users", myUid),
-      { linkedMembers: { [targetUid]: deleteField() } },
-      { merge: true }
-    );
+    // ✅ Dot-notation deleteField only removes the single entry
+    await updateDoc(doc(db, "users", myUid), {
+      [`linkedMembers.${targetUid}`]: deleteField(),
+    }).catch(() => {});
 
-    await setDoc(
-      doc(db, "users", targetUid),
-      { linkedMembers: { [myUid]: deleteField() } },
-      { merge: true }
-    );
+    await updateDoc(doc(db, "users", targetUid), {
+      [`linkedMembers.${myUid}`]: deleteField(),
+    }).catch(() => {});
   } catch (e) {
     console.log("❌ unlinkFamilyMember error:", e);
   }

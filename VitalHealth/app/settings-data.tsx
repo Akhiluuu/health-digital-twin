@@ -7,8 +7,8 @@ import {
   ScrollView,
 } from "react-native";
 import Header from "./components/Header";
-
 import { useTheme } from "../context/ThemeContext";
+import { colors as globalColors } from "../theme/colors";
 
 export default function DataSharing() {
   const [vitals, setVitals] = useState(true);
@@ -17,22 +17,7 @@ export default function DataSharing() {
 
   const { theme } = useTheme();
 
-  const colors =
-    theme === "light"
-      ? {
-          bg: "#f8fafc",
-          card: "#ffffff",
-          text: "#020617",
-          sub: "#64748b",
-          border: "#e2e8f0",
-        }
-      : {
-          bg: "#020617",
-          card: "#0f172a",
-          text: "#e2e8f0",
-          sub: "#64748b",
-          border: "#1e293b",
-        };
+  const colors = globalColors[theme];
 
   const Row = (
     title: string,

@@ -8,10 +8,13 @@ import {
   Text,
   TouchableOpacity,
   View,
+  Image,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useTheme } from "../../context/ThemeContext";
+import { colors as globalColors } from "../../theme/colors";
+import { useFamily } from "../../context/FamilyContext";
 
 interface HeaderProps {
   title?: string;
@@ -31,22 +34,16 @@ export default function Header({
   const insets = useSafeAreaInsets();
   const { theme } = useTheme();
 
-  const colors =
-    theme === "light"
-      ? {
-          bg: "#ffffff",
-          border: "#e2e8f0",
-          text: "#020617",
-          accent: "#0ea5e9",
-        }
-      : {
-          bg: "#020617",
-          border: "#1e293b",
-          text: "#e2e8f0",
-          accent: "#38bdf8",
-        };
+  const { activeProfile } = useFamily();
 
-  // Prevent duplicate navigation to Profile
+  const c = globalColors[theme];
+  const colors = {
+    bg: c.card,
+    border: c.border,
+    text: c.text,
+    accent: c.accent,
+  };
+
   const handleProfilePress = () => {
     if (!pathname.includes("profile")) {
       router.push("/profile");
@@ -66,7 +63,7 @@ export default function Header({
       ]}
     >
       <View style={styles.contentRow}>
-        {/* LEFT: Back Button or Profile Icon */}
+        {/* LEFT: Back Button or Profile Switcher Trigger */}
         {showBack ? (
           <TouchableOpacity
             onPress={() => router.back()}
@@ -83,11 +80,19 @@ export default function Header({
             onPress={handleProfilePress}
             activeOpacity={0.7}
           >
-            <Ionicons
-              name="person-circle-outline"
-              size={34}
-              color={colors.accent}
-            />
+            {activeProfile?.profileImage ? (
+              <Image
+                source={{ uri: activeProfile.profileImage }}
+                style={styles.avatarImage}
+              />
+            ) : (
+              <View style={[styles.avatarInitials, { backgroundColor: colors.accent + "15", borderColor: colors.accent }]}>
+                <Text style={[styles.avatarInitialsText, { color: colors.accent }]}>
+                  {activeProfile?.firstName?.charAt(0)?.toUpperCase() || ""}
+                  {activeProfile?.lastName?.charAt(0)?.toUpperCase() || ""}
+                </Text>
+              </View>
+            )}
           </TouchableOpacity>
         ) : (
           <View style={styles.placeholder} />
@@ -165,5 +170,23 @@ const styles = StyleSheet.create({
 
   placeholder: {
     width: 34,
+  },
+
+  avatarImage: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+  },
+  avatarInitials: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    borderWidth: 1.5,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  avatarInitialsText: {
+    fontSize: 12,
+    fontWeight: "700",
   },
 });

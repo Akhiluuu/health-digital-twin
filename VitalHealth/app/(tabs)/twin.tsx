@@ -257,7 +257,7 @@ export default function TwinScreen() {
     lastVitals, lastAnomalies, lastInteractionWarnings, lastAiInsights,
     todayEvents, addEvent, removeEvent, clearToday,
     savedRoutines, saveCurrentRoutine, loadRoutine, deleteRoutine,
-    editingRoutineId, setEditingRoutineId, setDefaultRoutine,
+    editingRoutineId, setEditingRoutineId, setDefaultRoutine, restoreDefaultRoutine,
     sessions, refreshSessions,
     simulationName, setSimulationName,
     runSimulation,
@@ -718,6 +718,17 @@ export default function TwinScreen() {
         catch (e: any) { Alert.alert('Error', e.message); }
       }},
     ]);
+  };
+
+  const handleRestoreDefault = () => {
+    Alert.alert(
+      'Restore Default State',
+      "Would you like to restore your initial onboarding routine ('My Saved State') as your default catch-up routine?",
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Restore', onPress: restoreDefaultRoutine },
+      ]
+    );
   };
 
   // ────────────────────────────────────────────────────────────────────────────
@@ -1445,33 +1456,44 @@ export default function TwinScreen() {
         <QuickAddRow addEvent={addEvent} />
 
         {/* Saved Routines (Moved here for immediate access on Clinical Twin page) */}
-        {savedRoutines.length > 0 && (
-          <>
-            <Text style={[ss.section, { color: c.text }]}>Saved Routines</Text>
-            {savedRoutines.map(r => (
-              <TouchableOpacity key={r.id} style={[ss.routineCard, { backgroundColor: c.card }]}
-                onPress={() => handleLoadRoutine(r.id, r.name)}
-                onLongPress={() => Alert.alert('Routine Options', `"${r.name}"`, [
-                  { text: r.isDefault ? 'Remove Default' : 'Set as Default', onPress: () => setDefaultRoutine(r.id) },
-                  { text: 'Edit Events', onPress: () => handleEditRoutine(r.id, r.name) },
-                  { text: 'Delete Routine', style: 'destructive', onPress: () => Alert.alert('Delete Routine', `Delete "${r.name}"? This cannot be undone.`, [
-                    { text: 'Cancel', style: 'cancel' },
-                    { text: 'Delete', style: 'destructive', onPress: () => deleteRoutine(r.id) },
-                  ])},
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 15, marginBottom: 8, paddingHorizontal: 4 }}>
+          <Text style={[ss.section, { color: c.text, marginTop: 0 }]}>Saved Routines</Text>
+          <TouchableOpacity onPress={handleRestoreDefault}>
+            <Text style={{ color: c.active, fontSize: 12, fontWeight: '600' }}>🔄 Restore Default State</Text>
+          </TouchableOpacity>
+        </View>
+
+        {savedRoutines.length > 0 ? (
+          savedRoutines.map(r => (
+            <TouchableOpacity key={r.id} style={[ss.routineCard, { backgroundColor: c.card }]}
+              onPress={() => handleLoadRoutine(r.id, r.name)}
+              onLongPress={() => Alert.alert('Routine Options', `"${r.name}"`, [
+                { text: r.isDefault ? 'Remove Default' : 'Set as Default', onPress: () => setDefaultRoutine(r.id) },
+                { text: 'Edit Events', onPress: () => handleEditRoutine(r.id, r.name) },
+                { text: 'Delete Routine', style: 'destructive', onPress: () => Alert.alert('Delete Routine', `Delete "${r.name}"? This cannot be undone.`, [
                   { text: 'Cancel', style: 'cancel' },
-                ])}>
-                <View style={ss.routineIcon}><Text style={{ fontSize: 20 }}>{r.isDefault ? '⭐' : '📋'}</Text></View>
-                <View style={{ flex: 1 }}>
-                  <Text style={[ss.routineName, { color: c.text }]}>{r.name}</Text>
-                  <Text style={[ss.routineMeta, { color: c.sub }]}>
-                    {r.eventCount} events · {new Date(r.createdAt).toLocaleDateString('en-IN')}
-                    {r.isDefault && <Text style={{ color: '#f59e0b', fontWeight: 'bold' }}> · Default Catch-up</Text>}
-                  </Text>
-                </View>
-                <Ionicons name="play-circle" size={28} color={c.active} />
-              </TouchableOpacity>
-            ))}
-          </>
+                  { text: 'Delete', style: 'destructive', onPress: () => deleteRoutine(r.id) },
+                ])},
+                { text: 'Cancel', style: 'cancel' },
+              ])}>
+              <View style={ss.routineIcon}><Text style={{ fontSize: 20 }}>{r.isDefault ? '⭐' : '📋'}</Text></View>
+              <View style={{ flex: 1 }}>
+                <Text style={[ss.routineName, { color: c.text }]}>{r.name}</Text>
+                <Text style={[ss.routineMeta, { color: c.sub }]}>
+                  {r.eventCount} events · {new Date(r.createdAt).toLocaleDateString('en-IN')}
+                  {r.isDefault && <Text style={{ color: '#f59e0b', fontWeight: 'bold' }}> · Default Catch-up</Text>}
+                </Text>
+              </View>
+              <Ionicons name="play-circle" size={28} color={c.active} />
+            </TouchableOpacity>
+          ))
+        ) : (
+          <View style={[ss.routineCard, { backgroundColor: c.card, paddingVertical: 18, justifyContent: 'center', alignItems: 'center', borderStyle: 'dashed', borderWidth: 1, borderColor: c.border }]}>
+            <Text style={{ color: c.sub, fontSize: 13 }}>No saved routines found.</Text>
+            <TouchableOpacity onPress={handleRestoreDefault} style={{ marginTop: 8 }}>
+              <Text style={{ color: c.active, fontSize: 12, fontWeight: 'bold' }}>Retrieve Default State</Text>
+            </TouchableOpacity>
+          </View>
         )}
 
         {/* Vitals Grid */}

@@ -5,7 +5,7 @@ import { doc, updateDoc } from "firebase/firestore";
 import * as BiogearsAPI from "../../services/biogears";
 import { buildDefaultRoutine } from "../../services/onboardingRoutineBuilder";
 import { getTwinId } from "../../utils/twinUtils";
-import { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   Animated,
   Easing,
@@ -17,6 +17,7 @@ import {
 } from "react-native";
 
 import { useTheme } from "../../context/ThemeContext";
+import { colors as globalColors } from "../../theme/colors";
 // ✅ STEP 1: ADD FIREBASE IMPORT
 import { saveProfile } from "../../services/profileService";
 
@@ -25,9 +26,16 @@ export default function Review() {
   const params  = useLocalSearchParams();
   const { theme } = useTheme();
 
-  const colors = theme === "light"
-    ? { background: "#f8fafc", card: "#ffffff", text: "#020617", subText: "#64748b", border: "#e2e8f0", headerGradient: ["#6366f1", "#4f46e5"] }
-    : { background: "#0D0D0F", card: "rgba(255,255,255,0.04)", text: "#ffffff", subText: "rgba(255,255,255,0.4)", border: "rgba(255,255,255,0.08)", headerGradient: ["#0f0c29", "#302b63"] };
+  const c = globalColors[theme];
+  const colors = {
+    background: c.bg,
+    card: c.card,
+    text: c.text,
+    subText: c.sub,
+    border: c.border,
+    headerGradient: c.headerGradient,
+    accent: c.accent,
+  };
 
   const [signupName,  setSignupName]  = useState("");
   const [signupEmail, setSignupEmail] = useState("");
@@ -38,7 +46,11 @@ export default function Review() {
   const [customActivity, setCustomActivity] = useState<string>("Moderate");
   const [customDiet, setCustomDiet] = useState<string>("Vegetarian");
 
-  // Load name & email from AsyncStorage on mount
+  // Capture params in stable refs so they don't re-trigger effects
+  const paramsRef = React.useRef(params);
+  paramsRef.current = params;
+
+  // Load name & email from AsyncStorage on mount ONLY
   useEffect(() => {
     (async () => {
       const n = await AsyncStorage.getItem("signupName");
@@ -59,13 +71,17 @@ export default function Review() {
       }
       console.log("📋 Review loaded — name:", n, "email:", e);
     })();
-  }, [params]);
+  // ✅ Run only once on mount — params is intentionally excluded to prevent
+  //    the infinite re-render cycle (params is a new object on every render)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Recalculate default routine when user adjusts custom controls
   useEffect(() => {
     if (!habits) return;
-    const heightVal = parseFloat((params.height as string || '').replace(/[^0-9.]/g, '')) || 175;
-    const weightVal = parseFloat((params.weight as string || '').replace(/[^0-9.]/g, '')) || 70;
+    const p = paramsRef.current;
+    const heightVal = parseFloat((p.height as string || '').replace(/[^0-9.]/g, '')) || 175;
+    const weightVal = parseFloat((p.weight as string || '').replace(/[^0-9.]/g, '')) || 70;
     const updatedHabits = {
       ...habits,
       activity: customActivity,
@@ -74,16 +90,17 @@ export default function Review() {
         dietType: customDiet,
       }
     };
-    const allergies = params.allergies ? (params.allergies as string).split(',').map(a => a.trim()).filter(Boolean) : [];
+    const allergies = p.allergies ? (p.allergies as string).split(',').map((a: string) => a.trim()).filter(Boolean) : [];
     const routine = buildDefaultRoutine(updatedHabits, {
-      gender: params.gender as string,
-      dateOfBirth: params.dateOfBirth as string,
+      gender: p.gender as string,
+      dateOfBirth: p.dateOfBirth as string,
       height: heightVal,
       weight: weightVal,
       allergies,
     });
     setGeneratedRoutine(routine);
-  }, [customActivity, customDiet, habits, params]);
+  // ✅ Only re-run when the user changes the pickers or habits load — NOT on params change
+  }, [customActivity, customDiet, habits]);
 
   const orb1Y = useRef(new Animated.Value(0)).current;
   const orb2Y = useRef(new Animated.Value(0)).current;
@@ -176,7 +193,7 @@ export default function Review() {
              const twinId = getTwinId(profileData);
              await BiogearsAPI.saveRoutine(twinId, routine);
              await BiogearsAPI.setDefaultRoutine(twinId, routine.id);
-             console.log('✅ Custom default routine "My Typical Day" created from onboarding habits');
+             console.log('✅ Custom default routine "My Saved State" created from onboarding habits');
           }
         } catch (routineErr) {
           // Non-fatal — user can always set a default manually
@@ -319,7 +336,7 @@ export default function Review() {
               <Text style={[styles.sectionTitle, { color: colors.subText }]}>Digital Twin Routine Baseline</Text>
             </View>
             <Text style={{ fontSize: 13, color: colors.text, fontWeight: '700', marginBottom: 12 }}>
-              "My Typical Day" Catch-up Routine
+              "My Saved State" Catch-up Routine
             </Text>
 
             {/* Interactive Tuner Selection */}
