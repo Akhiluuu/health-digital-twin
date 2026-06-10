@@ -270,6 +270,29 @@ export default function TwinScreen() {
     twinUserId,
   } = useBiogearsTwin();
 
+  // ── Custom Alert State ──────────────────────────────────────────────────────
+  const [customAlert, setCustomAlert] = useState<{
+    visible: boolean;
+    title: string;
+    message: string;
+    buttons: { text: string; style?: 'cancel' | 'destructive' | 'default'; onPress?: () => void }[];
+  } | null>(null);
+
+  const Alert = {
+    alert: (
+      title: string,
+      message?: string,
+      buttons?: { text: string; style?: 'cancel' | 'destructive' | 'default'; onPress?: () => void }[]
+    ) => {
+      setCustomAlert({
+        visible: true,
+        title,
+        message: message || '',
+        buttons: buttons || [{ text: 'OK' }],
+      });
+    }
+  };
+
   // ── Mode ──────────────────────────────────────────────────────────────────
   const [mode, setMode] = useState<'dashboard' | 'routine'>((params.mode as any) || 'dashboard');
   const [dashTab, setDashTab] = useState<DashTab>('overview');  // dashboard inner tab
@@ -1824,9 +1847,9 @@ export default function TwinScreen() {
   // ────────────────────────────────────────────────────────────────────────────
 
   const renderSubPickerModal = () => (
-    <Modal visible={showSubPicker} transparent animationType="slide">
-      <View style={ss.modalOverlay}>
-        <View style={[ss.modalCard, { backgroundColor: c.card, maxHeight: '80%' }]}>
+    <Modal visible={showSubPicker} transparent animationType="slide" onRequestClose={() => setShowSubPicker(false)}>
+      <Pressable style={ss.modalOverlay} onPress={() => setShowSubPicker(false)}>
+        <Pressable style={[ss.modalCard, { backgroundColor: c.card, maxHeight: '80%' }]} onPress={(e) => e.stopPropagation()}>
           <View style={ss.rowBetween}>
             <Text style={[ss.modalTitle, { color: c.text }]}>Select Substance</Text>
             <TouchableOpacity onPress={() => setShowSubPicker(false)}>
@@ -1850,8 +1873,8 @@ export default function TwinScreen() {
               </TouchableOpacity>
             ))}
           </ScrollView>
-        </View>
-      </View>
+        </Pressable>
+      </Pressable>
     </Modal>
   );
 
@@ -1865,9 +1888,9 @@ export default function TwinScreen() {
 
       {/* CSV Food Quantity Modal */}
       {selectedCsvFood && (
-        <Modal visible={true} transparent animationType="fade">
-          <View style={ss.modalOverlay}>
-            <View style={[ss.modalCard, { backgroundColor: c.card }]}>
+        <Modal visible={true} transparent animationType="fade" onRequestClose={() => setSelectedCsvFood(null)}>
+          <Pressable style={ss.modalOverlay} onPress={() => setSelectedCsvFood(null)}>
+            <Pressable style={[ss.modalCard, { backgroundColor: c.card }]} onPress={(e) => e.stopPropagation()}>
               <View style={ss.rowBetween}>
                 <Text style={[ss.modalTitle, { color: c.text }]}>{selectedCsvFood.food}</Text>
                 <TouchableOpacity onPress={() => setSelectedCsvFood(null)}>
@@ -1906,15 +1929,15 @@ export default function TwinScreen() {
                   <Text style={{ color: '#fff', fontWeight: 'bold' }}>Add Meal</Text>
                 </TouchableOpacity>
               </View>
-            </View>
-          </View>
+            </Pressable>
+          </Pressable>
         </Modal>
       )}
 
       {/* Save Routine */}
-      <Modal visible={saveRoutineModal} transparent animationType="slide">
-        <View style={ss.modalOverlay}>
-          <View style={[ss.modalCard, { backgroundColor: c.card }]}>
+      <Modal visible={saveRoutineModal} transparent animationType="slide" onRequestClose={() => setSaveRoutineModal(false)}>
+        <Pressable style={ss.modalOverlay} onPress={() => setSaveRoutineModal(false)}>
+          <Pressable style={[ss.modalCard, { backgroundColor: c.card }]} onPress={(e) => e.stopPropagation()}>
             <Text style={[ss.modalTitle, { color: c.text }]}>Save Routine</Text>
             <Text style={[ss.modalSub, { color: c.sub }]}>Events saved with their wall times. Loading later adds them at the same times of day.</Text>
             <TextInput style={[ss.input, { backgroundColor: c.bg, color: c.text, borderColor: c.border }]}
@@ -1928,14 +1951,14 @@ export default function TwinScreen() {
                 <Text style={{ color: '#fff' }}>Save</Text>
               </TouchableOpacity>
             </View>
-          </View>
-        </View>
+          </Pressable>
+        </Pressable>
       </Modal>
 
       {/* Sim Name */}
-      <Modal visible={simNameModal} transparent animationType="fade">
-        <View style={ss.modalOverlay}>
-          <View style={[ss.modalCard, { backgroundColor: c.card }]}>
+      <Modal visible={simNameModal} transparent animationType="fade" onRequestClose={() => setSimNameModal(false)}>
+        <Pressable style={ss.modalOverlay} onPress={() => setSimNameModal(false)}>
+          <Pressable style={[ss.modalCard, { backgroundColor: c.card }]} onPress={(e) => e.stopPropagation()}>
             <Text style={[ss.modalTitle, { color: c.text }]}>Name This Simulation</Text>
             <Text style={[ss.modalSub, { color: c.sub }]}>{todayEvents.length} events will be sent to BioGears.</Text>
             <TextInput style={[ss.input, { backgroundColor: c.bg, color: c.text, borderColor: c.border }]}
@@ -1950,8 +1973,60 @@ export default function TwinScreen() {
                 <Text style={{ color: '#fff', marginLeft: 4, fontWeight: '700' }}>Run Simulation</Text>
               </TouchableOpacity>
             </View>
-          </View>
-        </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      {/* Themed Custom Alert Modal */}
+      <Modal
+        visible={customAlert !== null && customAlert.visible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setCustomAlert(null)}
+      >
+        <Pressable style={ss.modalOverlay} onPress={() => setCustomAlert(null)}>
+          <Pressable style={[ss.modalCard, { backgroundColor: c.card, borderWidth: 1, borderColor: c.border }]} onPress={(e) => e.stopPropagation()}>
+            <Text style={[ss.modalTitle, { color: c.text }]}>{customAlert?.title}</Text>
+            {customAlert?.message ? (
+              <Text style={[ss.modalSub, { color: c.sub }]}>{customAlert.message}</Text>
+            ) : null}
+            <View style={{
+              flexDirection: customAlert?.buttons && customAlert.buttons.length > 2 ? 'column' : 'row',
+              justifyContent: 'flex-end',
+              gap: 8,
+              marginTop: 16,
+              width: '100%'
+            }}>
+              {customAlert?.buttons.map((btn, idx) => {
+                const isDestructive = btn.style === 'destructive';
+                const isCancel = btn.style === 'cancel';
+                const isStack = customAlert.buttons.length > 2;
+                return (
+                  <TouchableOpacity
+                    key={idx}
+                    style={[
+                      ss.modalBtn,
+                      isDestructive
+                        ? { backgroundColor: '#ef4444' }
+                        : isCancel
+                        ? { borderColor: c.border, borderWidth: 1 }
+                        : { backgroundColor: c.active },
+                      isStack && { width: '100%', justifyContent: 'center' }
+                    ]}
+                    onPress={() => {
+                      setCustomAlert(null);
+                      if (btn.onPress) btn.onPress();
+                    }}
+                  >
+                    <Text style={{ color: isCancel ? c.sub : '#fff', fontWeight: 'bold', fontSize: 14, textAlign: 'center' }}>
+                      {btn.text}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </Pressable>
+        </Pressable>
       </Modal>
     </>
   );
@@ -1962,7 +2037,11 @@ export default function TwinScreen() {
 
   return (
     <View style={[ss.root, { backgroundColor: c.bg }]}>
-      <Header title={mode === 'dashboard' ? 'Clinical Twin' : 'Log Routine'} showBack={false} />
+      <Header
+        title={mode === 'dashboard' ? 'Clinical Twin' : 'Log Routine'}
+        showBack={mode === 'routine'}
+        onBack={() => switchMode('dashboard')}
+      />
 
       {twinStatus === 'unregistered' && (
         <View style={[ss.noticeBar, { backgroundColor: '#f59e0b20', borderColor: '#f59e0b', marginTop: insets.top + 52 }]}>

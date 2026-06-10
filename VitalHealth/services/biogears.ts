@@ -508,7 +508,7 @@ export interface LocalSessionMeta {
   ai_insights?: string[];
 }
 
-export async function saveSessionMeta(userId: string, meta: LocalSessionMeta): Promise<void> {
+export async function saveSessionMeta(userId: string, meta: LocalSessionMeta, ownerUid?: string): Promise<void> {
   const key = SESSION_META_KEY(userId);
   const existing = await loadSessionsMeta(userId);
   const updated = [meta, ...existing.filter(s => s.session_id !== meta.session_id)];
@@ -516,9 +516,10 @@ export async function saveSessionMeta(userId: string, meta: LocalSessionMeta): P
 
   try {
     const user = auth.currentUser;
-    if (user) {
-      await setDoc(doc(db, "users", user.uid, "session_meta", meta.session_id), meta);
-      console.log(`☁️ Session meta synced to Firestore: ${meta.session_id}`);
+    const firestoreUid = ownerUid || user?.uid;
+    if (firestoreUid) {
+      await setDoc(doc(db, "users", firestoreUid, "session_meta", meta.session_id), meta);
+      console.log(`☁️ Session meta synced to Firestore: ${meta.session_id} for owner: ${firestoreUid}`);
     }
   } catch (err) {
     console.warn("⚠️ Failed to sync session meta to Firestore:", err);
@@ -535,7 +536,7 @@ export async function loadSessionsMeta(userId: string): Promise<LocalSessionMeta
   }
 }
 
-export async function deleteSessionMeta(userId: string, sessionId: string): Promise<void> {
+export async function deleteSessionMeta(userId: string, sessionId: string, ownerUid?: string): Promise<void> {
   const key = SESSION_META_KEY(userId);
   const existing = await loadSessionsMeta(userId);
   const updated = existing.filter(s => s.session_id !== sessionId);
@@ -543,9 +544,10 @@ export async function deleteSessionMeta(userId: string, sessionId: string): Prom
 
   try {
     const user = auth.currentUser;
-    if (user) {
-      await deleteDoc(doc(db, "users", user.uid, "session_meta", sessionId));
-      console.log(`☁️ Session meta deleted from Firestore: ${sessionId}`);
+    const firestoreUid = ownerUid || user?.uid;
+    if (firestoreUid) {
+      await deleteDoc(doc(db, "users", firestoreUid, "session_meta", sessionId));
+      console.log(`☁️ Session meta deleted from Firestore: ${sessionId} for owner: ${firestoreUid}`);
     }
   } catch (err) {
     console.warn("⚠️ Failed to delete session meta from Firestore:", err);
@@ -576,39 +578,41 @@ export async function loadSavedRoutines(userId: string): Promise<SavedRoutine[]>
   }
 }
 
-export async function saveRoutine(userId: string, routine: SavedRoutine): Promise<void> {
+export async function saveRoutine(userId: string, routine: SavedRoutine, ownerUid?: string): Promise<void> {
   const existing = await loadSavedRoutines(userId);
   const updated = [routine, ...existing.filter(r => r.id !== routine.id)];
   await AsyncStorage.setItem(ROUTINES_KEY(userId), JSON.stringify(updated));
 
   try {
     const user = auth.currentUser;
-    if (user) {
-      await setDoc(doc(db, "users", user.uid, "routines", routine.id), routine);
-      console.log(`☁️ Routine synced to Firestore: ${routine.id}`);
+    const firestoreUid = ownerUid || user?.uid;
+    if (firestoreUid) {
+      await setDoc(doc(db, "users", firestoreUid, "routines", routine.id), routine);
+      console.log(`☁️ Routine synced to Firestore: ${routine.id} for owner: ${firestoreUid}`);
     }
   } catch (err) {
     console.warn("⚠️ Failed to sync routine to Firestore:", err);
   }
 }
 
-export async function deleteRoutine(userId: string, routineId: string): Promise<void> {
+export async function deleteRoutine(userId: string, routineId: string, ownerUid?: string): Promise<void> {
   const existing = await loadSavedRoutines(userId);
   const updated = existing.filter(r => r.id !== routineId);
   await AsyncStorage.setItem(ROUTINES_KEY(userId), JSON.stringify(updated));
 
   try {
     const user = auth.currentUser;
-    if (user) {
-      await deleteDoc(doc(db, "users", user.uid, "routines", routineId));
-      console.log(`☁️ Routine deleted from Firestore: ${routineId}`);
+    const firestoreUid = ownerUid || user?.uid;
+    if (firestoreUid) {
+      await deleteDoc(doc(db, "users", firestoreUid, "routines", routineId));
+      console.log(`☁️ Routine deleted from Firestore: ${routineId} for owner: ${firestoreUid}`);
     }
   } catch (err) {
     console.warn("⚠️ Failed to delete routine from Firestore:", err);
   }
 }
 
-export async function markRoutineUsed(userId: string, routineId: string): Promise<void> {
+export async function markRoutineUsed(userId: string, routineId: string, ownerUid?: string): Promise<void> {
   const existing = await loadSavedRoutines(userId);
   const updated = existing.map(r =>
     r.id === routineId ? { ...r, lastUsed: new Date().toISOString() } : r
@@ -618,16 +622,17 @@ export async function markRoutineUsed(userId: string, routineId: string): Promis
   try {
     const user = auth.currentUser;
     const routine = updated.find(r => r.id === routineId);
-    if (user && routine) {
-      await setDoc(doc(db, "users", user.uid, "routines", routineId), routine);
-      console.log(`☁️ Routine lastUsed synced to Firestore: ${routineId}`);
+    const firestoreUid = ownerUid || user?.uid;
+    if (firestoreUid && routine) {
+      await setDoc(doc(db, "users", firestoreUid, "routines", routineId), routine);
+      console.log(`☁️ Routine lastUsed synced to Firestore: ${routineId} for owner: ${firestoreUid}`);
     }
   } catch (err) {
     console.warn("⚠️ Failed to sync lastUsed for routine:", err);
   }
 }
 
-export async function setDefaultRoutine(userId: string, routineId: string): Promise<void> {
+export async function setDefaultRoutine(userId: string, routineId: string, ownerUid?: string): Promise<void> {
   const existing = await loadSavedRoutines(userId);
   const updated = existing.map(r => ({
     ...r,
@@ -637,14 +642,15 @@ export async function setDefaultRoutine(userId: string, routineId: string): Prom
 
   try {
     const user = auth.currentUser;
-    if (user) {
+    const firestoreUid = ownerUid || user?.uid;
+    if (firestoreUid) {
       const batch = writeBatch(db);
       for (const r of updated) {
-        const ref = doc(db, "users", user.uid, "routines", r.id);
+        const ref = doc(db, "users", firestoreUid, "routines", r.id);
         batch.set(ref, r);
       }
       await batch.commit();
-      console.log(`☁️ Routine defaults synced to Firestore`);
+      console.log(`☁️ Routine defaults synced to Firestore for owner: ${firestoreUid}`);
     }
   } catch (err) {
     console.warn("⚠️ Failed to sync default routine status to Firestore:", err);

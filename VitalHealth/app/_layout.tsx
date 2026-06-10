@@ -25,7 +25,7 @@ import { ProfileProvider, useProfile } from "../context/ProfileContext";
 import { StepProvider } from "../context/StepContext";
 import { SymptomsProvider } from "../context/SymptomContext";
 import { ThemeProvider } from "../context/ThemeContext";
-import { FamilyProvider } from "../context/FamilyContext";
+import { FamilyProvider, useFamily } from "../context/FamilyContext";
 
 ///////////////////////////////////////////////////////////
 // DATABASE INITIALIZATION
@@ -89,9 +89,9 @@ const FamilyProviderWithProfile: React.FC<{ children: React.ReactNode }> = ({
 const StepProviderWrapper: React.FC<{ children: React.ReactNode }> = ({
   children,
 }) => {
-  const profile = useProfile();
-  const weightKg = profile?.weightKg ?? 70;
-  const heightCm = profile?.heightCm ?? 170;
+  const { activeProfile } = useFamily();
+  const weightKg = activeProfile?.weight ? parseFloat(activeProfile.weight.replace(/[^0-9.]/g, '')) : 70;
+  const heightCm = activeProfile?.height ? parseFloat(activeProfile.height.replace(/[^0-9.]/g, '')) : 170;
   return (
     <StepProvider weightKg={weightKg} heightCm={heightCm}>
       {children}

@@ -152,3 +152,22 @@ export const initAllTables = async (): Promise<void> => {
 
 // ── Legacy alias: kept so any existing import of initDB still works ───────────
 export const initDB = initAllTables;
+
+export const clearAllSqliteTables = async (): Promise<void> => {
+  try {
+    await db.execAsync(`
+      DELETE FROM medicines;
+      DELETE FROM medicine_history;
+      DELETE FROM hydration;
+      DELETE FROM hydration_history;
+      DELETE FROM symptoms;
+      DELETE FROM history;
+      DELETE FROM user_profile;
+      DELETE FROM simulation_history;
+      DELETE FROM backup_meta;
+    `);
+    console.log("🧹 Cleared all SQLite database tables");
+  } catch (error) {
+    console.error("❌ Failed to clear SQLite database tables:", error);
+  }
+};

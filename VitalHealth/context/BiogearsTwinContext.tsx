@@ -16,6 +16,10 @@ import { useFamily } from './FamilyContext';
 import { buildDefaultRoutine } from '../services/onboardingRoutineBuilder';
 import * as BiogearsAPI from '../services/biogears';
 import { auth } from '../services/firebase';
+import {
+  syncBiogearsAnalytics,
+  fetchBiogearsAnalyticsFromFirebase,
+} from '../services/firebaseSync';
 import { getTwinId } from '../utils/twinUtils';
 import { scheduleDailyLogReminder } from '../services/notifeeService';
 import { useMedicine } from './MedicineContext';
@@ -110,7 +114,7 @@ export interface BiogearsTwinContextValue {
 
   // Session history (local metadata)
   sessions: LocalSessionMeta[];
-  refreshSessions: () => Promise<void>;
+  refreshSessions: () => Promise<LocalSessionMeta[]>;
   deleteSession: (sessionId: string) => Promise<void>;
 
   // Simulation name
@@ -307,24 +311,42 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
       loadTodayFromStorage();
 
       (async () => {
-        await BiogearsAPI.syncDigitalTwinDataFromFirestore(twinUserId, firestoreOwnerUid);
-        await loadRoutinesFromStorage();
-        await refreshSessions();
-        await refreshAnalytics();
-      })();
+        try {
+          await BiogearsAPI.syncDigitalTwinDataFromFirestore(twinUserId, firestoreOwnerUid);
+          await loadRoutinesFromStorage();
+          const syncedSessions = await refreshSessions();
 
-      getLastSimulation(twinUserId).then((record) => {
-        if (record) {
-          setLastVitals(recordToVitals(record));
-          if (record.anomaly_labels) {
-            try {
-              const labels: string[] = JSON.parse(record.anomaly_labels);
-              setLastAnomalies(labels.map(l => ({ label: l, severity: 'warning', value: 0, normal_range: '' })));
-            } catch { /* ignore */ }
+          // Self-heal SQLite simulation_history table from synced sessions
+          if (syncedSessions && syncedSessions.length > 0) {
+            console.log(`[BiogearsTwin] Self-healing SQLite simulation_history with ${syncedSessions.length} sessions`);
+            for (const s of syncedSessions) {
+              if (s.vitals_snapshot) {
+                const anomaliesList = s.has_anomaly ? [{ label: 'Anomaly' }] : [];
+                await saveSimulationResult(twinUserId, s.session_id, s.vitals_snapshot, anomaliesList).catch(() => {});
+              }
+            }
           }
-          console.log('[BiogearsTwin] Loaded cached vitals from local DB (offline fallback)');
+
+          const record = await getLastSimulation(twinUserId);
+          if (record) {
+            setLastVitals(recordToVitals(record));
+            if (record.anomaly_labels) {
+              try {
+                const labels: string[] = JSON.parse(record.anomaly_labels);
+                setLastAnomalies(labels.map(l => ({ label: l, severity: 'warning', value: 0, normal_range: '' })));
+              } catch { /* ignore */ }
+            }
+            console.log('[BiogearsTwin] Loaded cached vitals from local DB (offline fallback)');
+          } else {
+            setLastVitals(null);
+            setLastAnomalies([]);
+          }
+
+          await refreshAnalytics();
+        } catch (e) {
+          console.error('[BiogearsTwin] Sync & load error:', e);
         }
-      }).catch(() => {});
+      })();
 
       resumeActiveJob();
     }, 200);
@@ -332,7 +354,7 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
     return () => {
       if (initDebounceRef.current) clearTimeout(initDebounceRef.current);
     };
-  }, [twinUserId]);
+  }, [twinUserId, firestoreOwnerUid]);
 
 
   const resumeActiveJob = async () => {
@@ -431,7 +453,7 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
       ai_insights: fallbackInsights,
 
     };
-    await BiogearsAPI.saveSessionMeta(twinUserId!, sessionMeta);
+    await BiogearsAPI.saveSessionMeta(twinUserId!, sessionMeta, firestoreOwnerUid);
     setSessions(prev => [sessionMeta, ...prev]);
 
     setSimulationStatus('done');
@@ -509,8 +531,8 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
             height: heightVal || 175,
             weight: weightVal || 70,
           });
-          await BiogearsAPI.saveRoutine(twinUserId, routine);
-          await BiogearsAPI.setDefaultRoutine(twinUserId, routine.id);
+          await BiogearsAPI.saveRoutine(twinUserId, routine, firestoreOwnerUid);
+          await BiogearsAPI.setDefaultRoutine(twinUserId, routine.id, firestoreOwnerUid);
           setSavedRoutines([routine]);
           console.log('[BiogearsTwin] ✅ Auto-generated default routine "My Saved State" from habits');
           return;
@@ -546,8 +568,8 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
       if (primary.name !== 'My Saved State' || !primary.isDefault) {
         primary.name = 'My Saved State';
         primary.isDefault = true;
-        await BiogearsAPI.saveRoutine(twinUserId, primary);
-        await BiogearsAPI.setDefaultRoutine(twinUserId, primary.id);
+        await BiogearsAPI.saveRoutine(twinUserId, primary, firestoreOwnerUid);
+        await BiogearsAPI.setDefaultRoutine(twinUserId, primary.id, firestoreOwnerUid);
         needsRefresh = true;
       }
 
@@ -555,7 +577,7 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
       if (toDelete.length > 0) {
         console.log(`[BiogearsTwin] Cleaning up ${toDelete.length} duplicate onboarding routine(s).`);
         for (const dup of toDelete) {
-          await BiogearsAPI.deleteRoutine(twinUserId, dup.id);
+          await BiogearsAPI.deleteRoutine(twinUserId, dup.id, firestoreOwnerUid);
         }
         needsRefresh = true;
       }
@@ -589,7 +611,7 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
     if (duplicatesToRemove.length > 0) {
       console.log(`[BiogearsTwin] Cleaned up ${duplicatesToRemove.length} duplicate routine(s).`);
       for (const dup of duplicatesToRemove) {
-        await BiogearsAPI.deleteRoutine(twinUserId, dup.id);
+        await BiogearsAPI.deleteRoutine(twinUserId, dup.id, firestoreOwnerUid);
       }
       const cleaned = await BiogearsAPI.loadSavedRoutines(twinUserId);
       setSavedRoutines(cleaned);
@@ -600,14 +622,75 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
   };
 
   const refreshSessions = useCallback(async () => {
-    if (!twinUserId) return;
+    if (!twinUserId) return [];
     const s = await BiogearsAPI.loadSessionsMeta(twinUserId);
     setSessions(s);
+    return s;
   }, [twinUserId]);
 
+  const getVitalsTrendsFallback = useCallback((sessionsList: LocalSessionMeta[]): VitalsTrendResponse => {
+    // Sort sessions chronologically (oldest first)
+    const sorted = [...sessionsList]
+      .filter(s => s.vitals_snapshot)
+      .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+
+    // Map each session to a trend point matching the API schema
+    const trendSessions = sorted.map(s => {
+      const v = s.vitals_snapshot;
+      let systolic_bp: number | undefined = undefined;
+      let diastolic_bp: number | undefined = undefined;
+      if (v?.blood_pressure) {
+        const parts = v.blood_pressure.split('/');
+        if (parts.length === 2) {
+          systolic_bp = parseFloat(parts[0]);
+          diastolic_bp = parseFloat(parts[1]);
+        }
+      }
+
+      return {
+        session_id: s.session_id,
+        timestamp: s.timestamp,
+        heart_rate: v?.heart_rate ?? undefined,
+        respiration_rate: v?.respiration ?? undefined,
+        systolic_bp,
+        diastolic_bp,
+        oxygen_saturation: v?.spo2 ?? undefined,
+        temperature: v?.core_temperature ?? undefined,
+        glucose: v?.glucose ?? undefined,
+      };
+    });
+
+    const trends: Record<string, { direction: string; normal_range: string }> = {};
+    const overall_averages: Record<string, number> = {};
+
+    const metrics = ['heart_rate', 'respiration_rate', 'systolic_bp', 'diastolic_bp', 'oxygen_saturation', 'temperature', 'glucose'];
+    metrics.forEach(m => {
+      const values = trendSessions.map((s: any) => s[m]).filter(v => v != null);
+      if (values.length > 0) {
+        const sum = values.reduce((a, b) => a + b, 0);
+        overall_averages[m] = sum / values.length;
+
+        let direction = 'stable';
+        if (values.length >= 2) {
+          const first = values[0];
+          const last = values[values.length - 1];
+          const pct = (last - first) / first;
+          if (pct > 0.05) direction = 'rising';
+          else if (pct < -0.05) direction = 'falling';
+        }
+        trends[m] = { direction, normal_range: '' };
+      }
+    });
+
+    return {
+      sessions: trendSessions,
+      trends,
+      overall_averages,
+    };
+  }, []);
+
   const refreshAnalytics = useCallback(async () => {
-    // Don't hammer the server when the twin isn't registered yet —
-    // all 7 analytics endpoints return 404 and generate noise in logs.
+    // Don't hammer the server when the twin isn't registered yet
     if (!twinUserId || twinStatus === 'unregistered' || twinStatus === 'checking') return;
     try {
       const results = await Promise.allSettled([
@@ -620,17 +703,66 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
         BiogearsAPI.getBodyMetrics(twinUserId),
       ]);
       const [organs, trends, cvd, recovery, weekly, score, metrics] = results;
+
+      let activeTrends = trends.status === 'fulfilled' ? trends.value : null;
+
+      // Fallback for vitalsTrends if API failed or empty
+      if (!activeTrends || !activeTrends.sessions || activeTrends.sessions.length === 0) {
+        console.log('[BiogearsTwin] Constructing local fallback for vitals trends from sessions...');
+        activeTrends = getVitalsTrendsFallback(sessions);
+      }
+
       if (organs.status === 'fulfilled') setOrganScores(organs.value);
-      if (trends.status === 'fulfilled') setVitalsTrends(trends.value);
+      if (activeTrends) setVitalsTrends(activeTrends);
       if (cvd.status === 'fulfilled') setCvdRisk(cvd.value);
       if (recovery.status === 'fulfilled') setRecoveryReadiness(recovery.value);
       if (weekly.status === 'fulfilled') setWeeklySummary(weekly.value);
       if (score.status === 'fulfilled') setHealthScore(score.value);
       if (metrics.status === 'fulfilled') setBodyMetrics(metrics.value);
+
+      // Cache all resolved analytics to Firestore
+      const cacheObj = {
+        organScores: organs.status === 'fulfilled' ? organs.value : organScores,
+        vitalsTrends: activeTrends,
+        cvdRisk: cvd.status === 'fulfilled' ? cvd.value : cvdRisk,
+        recoveryReadiness: recovery.status === 'fulfilled' ? recovery.value : recoveryReadiness,
+        weeklySummary: weekly.status === 'fulfilled' ? weekly.value : weeklySummary,
+        healthScore: score.status === 'fulfilled' ? score.value : healthScore,
+        bodyMetrics: metrics.status === 'fulfilled' ? metrics.value : bodyMetrics,
+      };
+      await syncBiogearsAnalytics(cacheObj, firestoreOwnerUid);
     } catch (err) {
       console.error('Failed to fetch analytics:', err);
+
+      // Offline/failure fallback: load from Firestore cache
+      const cached = await fetchBiogearsAnalyticsFromFirebase(firestoreOwnerUid);
+      if (cached) {
+        if (cached.organScores) setOrganScores(cached.organScores);
+        if (cached.vitalsTrends) setVitalsTrends(cached.vitalsTrends);
+        if (cached.cvdRisk) setCvdRisk(cached.cvdRisk);
+        if (cached.recoveryReadiness) setRecoveryReadiness(cached.recoveryReadiness);
+        if (cached.weeklySummary) setWeeklySummary(cached.weeklySummary);
+        if (cached.healthScore) setHealthScore(cached.healthScore);
+        if (cached.bodyMetrics) setBodyMetrics(cached.bodyMetrics);
+      } else {
+        // Construct fallback trends as a last resort
+        setVitalsTrends(getVitalsTrendsFallback(sessions));
+      }
     }
-  }, [twinUserId, twinStatus]);
+  }, [
+    twinUserId,
+    twinStatus,
+    sessions,
+    getVitalsTrendsFallback,
+    firestoreOwnerUid,
+    organScores,
+    vitalsTrends,
+    cvdRisk,
+    recoveryReadiness,
+    weeklySummary,
+    healthScore,
+    bodyMetrics,
+  ]);
 
 
   useEffect(() => {
@@ -714,10 +846,10 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
     if (autoDefault) {
       routine.isDefault = true;
     }
-    await BiogearsAPI.saveRoutine(twinUserId, routine);
+    await BiogearsAPI.saveRoutine(twinUserId, routine, firestoreOwnerUid);
     // If we just set a new default, clear isDefault on all others in storage
     if (routine.isDefault) {
-      await BiogearsAPI.setDefaultRoutine(twinUserId, routine.id);
+      await BiogearsAPI.setDefaultRoutine(twinUserId, routine.id, firestoreOwnerUid);
     }
     setSavedRoutines(prev => {
       const filtered = prev.filter(r => r.id !== routine.id);
@@ -726,7 +858,7 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
       return [routine, ...base];
     });
     setEditingRoutineId(null);
-  }, [twinUserId, todayEvents, savedRoutines]);
+  }, [twinUserId, todayEvents, savedRoutines, firestoreOwnerUid]);
 
   const loadRoutine = useCallback((routineId: string) => {
     const routine = savedRoutines.find(r => r.id === routineId);
@@ -744,31 +876,31 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
     const sorted = remapped.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
     setTodayEvents(sorted);
     persistToday(sorted);
-    if (twinUserId) BiogearsAPI.markRoutineUsed(twinUserId, routineId);
-  }, [savedRoutines, twinUserId]);
+    if (twinUserId) BiogearsAPI.markRoutineUsed(twinUserId, routineId, firestoreOwnerUid);
+  }, [savedRoutines, twinUserId, firestoreOwnerUid]);
 
   const deleteRoutine = useCallback(async (routineId: string) => {
     if (!twinUserId) return;
-    await BiogearsAPI.deleteRoutine(twinUserId, routineId);
+    await BiogearsAPI.deleteRoutine(twinUserId, routineId, firestoreOwnerUid);
     setSavedRoutines(prev => prev.filter(r => r.id !== routineId));
-  }, [twinUserId]);
+  }, [twinUserId, firestoreOwnerUid]);
 
   const setDefaultRoutine = useCallback(async (routineId: string) => {
     if (!twinUserId) return;
-    await BiogearsAPI.setDefaultRoutine(twinUserId, routineId);
+    await BiogearsAPI.setDefaultRoutine(twinUserId, routineId, firestoreOwnerUid);
     setSavedRoutines(prev => prev.map(r => ({
       ...r,
       isDefault: r.id === routineId ? !r.isDefault : false
     })));
-  }, [twinUserId]);
+  }, [twinUserId, firestoreOwnerUid]);
 
   // ── Session History ───────────────────────────────────────────────────────
 
   const deleteSession = useCallback(async (sessionId: string) => {
     if (!twinUserId) return;
-    await BiogearsAPI.deleteSessionMeta(twinUserId, sessionId);
+    await BiogearsAPI.deleteSessionMeta(twinUserId, sessionId, firestoreOwnerUid);
     setSessions(prev => prev.filter(s => s.session_id !== sessionId));
-  }, [twinUserId]);
+  }, [twinUserId, firestoreOwnerUid]);
 
   // ── Register Twin ─────────────────────────────────────────────────────────
 
@@ -993,8 +1125,8 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
       routine.name = 'My Saved State';
       routine.isDefault = true;
 
-      await BiogearsAPI.saveRoutine(twinUserId, routine);
-      await BiogearsAPI.setDefaultRoutine(twinUserId, routine.id);
+      await BiogearsAPI.saveRoutine(twinUserId, routine, firestoreOwnerUid);
+      await BiogearsAPI.setDefaultRoutine(twinUserId, routine.id, firestoreOwnerUid);
 
       // Refresh saved routines list and clear isDefault on all other routines
       setSavedRoutines(prev => {
@@ -1006,7 +1138,7 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
     } catch (err: any) {
       Alert.alert("Error", err.message || "Failed to restore default routine.");
     }
-  }, [twinUserId, profile]);
+  }, [twinUserId, profile, firestoreOwnerUid]);
 
   // ─────────────────────────────────────────────────────────────────────────────
 

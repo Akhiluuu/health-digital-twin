@@ -78,6 +78,45 @@ export function addMedicine(
   );
 }
 
+export function insertOrReplaceMedicine(med: {
+  id: number;
+  name: string;
+  dose: string;
+  type: string;
+  time: string;
+  timestamp: number;
+  meal: string;
+  frequency: string;
+  startDate: string;
+  endDate: string;
+  reminder: number;
+  notificationId: string | null;
+  taken?: number;
+  takenDate?: string | null;
+}) {
+  db.runSync(
+    `INSERT OR REPLACE INTO medicines
+    (id, name, dose, type, time, timestamp, meal, frequency, startDate, endDate, reminder, notificationId, taken, takenDate)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      med.id,
+      med.name,
+      med.dose,
+      med.type,
+      med.time,
+      med.timestamp,
+      med.meal,
+      med.frequency,
+      med.startDate,
+      med.endDate,
+      med.reminder,
+      med.notificationId,
+      med.taken ?? 0,
+      med.takenDate ?? null,
+    ]
+  );
+}
+
 ///////////////////////////////////////////////////////////
 // GET ALL
 // ✅ FIX (Auto-tick Bug): `taken` is now date-scoped.

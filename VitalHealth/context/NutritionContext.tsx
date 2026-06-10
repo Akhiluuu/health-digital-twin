@@ -3,11 +3,24 @@
 // Shared Nutrition Context
 // • Single source of truth for all nutrition data
 // • Syncs between nutrition.tsx and calorie-intelligence.tsx
-// • Persists via AsyncStorage
+// • Persists via AsyncStorage & Firestore for multi-profile support
 // ─────────────────────────────────────────────────────────────────────────────
 
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useReducer } from "react";
+import { auth, db } from "../services/firebase";
+import { doc, getDoc, setDoc } from "firebase/firestore";
+import { useFamily } from "./FamilyContext";
+import {
+  syncAddFoodEntry,
+  syncDeleteFoodEntry,
+  syncClearFoodEntries,
+  fetchFoodEntriesFromFirebase,
+  syncAddActivityEntry,
+  syncDeleteActivityEntry,
+  syncClearActivityEntries,
+  fetchActivityEntriesFromFirebase,
+} from "../services/firebaseSync";
 
 // ─── Keys ────────────────────────────────────────────────────────────────────
 const NUTRITION_DATA_KEY   = "nutrition_data_v2";
@@ -72,7 +85,7 @@ export type HealthProfile = {
   label: string;
   icon: string;
   color: string;
-  activityMultiplier: number; // ✅ Added
+  activityMultiplier: number;
   recommendations: NutritionTotals;
   tips: string[];
 };
@@ -305,8 +318,8 @@ type NutritionContextType = {
   mealReminders: MealReminder[];
   selectedProfile: HealthProfile;
   totals: NutritionTotals;
-  totalActivityCalories: number;  // sum of all activity burns today
-  netCalories: number;            // totals.calories - totalActivityCalories
+  totalActivityCalories: number;
+  netCalories: number;
   loaded: boolean;
 
   // Actions
@@ -326,59 +339,204 @@ const NutritionContext = createContext<NutritionContextType | null>(null);
 // ─── Provider ─────────────────────────────────────────────────────────────────
 export function NutritionProvider({ children }: { children: React.ReactNode }) {
   const [state, dispatch] = useReducer(reducer, initialState);
+  const { isSwitched, activeMemberId } = useFamily();
 
-  // Load from AsyncStorage on mount
-  useEffect(() => {
-    (async () => {
+  // Sync / Load with Firebase
+  const syncNutritionWithFirebase = useCallback(async () => {
+    if (isSwitched && activeMemberId && activeMemberId !== "self") {
       try {
-        const [dataRaw, remindersRaw, activityRaw] = await Promise.all([
-          AsyncStorage.getItem(NUTRITION_DATA_KEY),
-          AsyncStorage.getItem(MEAL_REMINDER_KEY),
-          AsyncStorage.getItem(ACTIVITY_LOG_KEY),
+        const [foodFirebase, activityFirebase, configDoc] = await Promise.all([
+          fetchFoodEntriesFromFirebase(activeMemberId),
+          fetchActivityEntriesFromFirebase(activeMemberId),
+          getDoc(doc(db, "users", activeMemberId, "nutrition_config", "latest")),
         ]);
 
-        const payload: Partial<State> = {};
+        const todayStr = new Date().toDateString();
 
-        if (dataRaw) {
-          const data = JSON.parse(dataRaw);
-          payload.foodEntries = data.foodEntries ?? [];
-          payload.selectedProfileId = data.selectedProfileId ?? "standard";
+        const todayFood = foodFirebase.filter(
+          (f) => new Date(f.timestamp).toDateString() === todayStr
+        );
+        const todayActivity = activityFirebase.filter(
+          (a) => new Date(a.timestamp).toDateString() === todayStr
+        );
+
+        let selectedProfileId: HealthProfileId = "standard";
+        let mealReminders = defaultReminders;
+
+        if (configDoc.exists()) {
+          const cfg = configDoc.data();
+          if (cfg.selectedProfileId) selectedProfileId = cfg.selectedProfileId;
+          if (cfg.mealReminders) mealReminders = cfg.mealReminders;
         }
 
-        if (remindersRaw) {
-          payload.mealReminders = JSON.parse(remindersRaw);
-        }
-
-        if (activityRaw) {
-          payload.activityEntries = JSON.parse(activityRaw);
-        }
-
-        dispatch({ type: "LOAD", payload });
+        dispatch({
+          type: "LOAD",
+          payload: {
+            foodEntries: todayFood,
+            activityEntries: todayActivity,
+            mealReminders,
+            selectedProfileId,
+          },
+        });
+        console.log(`🍽️ Switched nutrition loaded for ${activeMemberId}`);
       } catch (err) {
-        console.error("[NutritionContext] load error:", err);
-        dispatch({ type: "LOAD", payload: {} });
+        console.log("❌ Switched nutrition load error:", err);
       }
-    })();
-  }, []);
+      return;
+    }
 
-  // Persist whenever relevant state changes
+    // Self
+    try {
+      const [foodFirebase, activityFirebase, configDoc] = await Promise.all([
+        fetchFoodEntriesFromFirebase(),
+        fetchActivityEntriesFromFirebase(),
+        getDoc(doc(db, "users", "self", "nutrition_config", "latest")).catch(() => null),
+      ]);
+
+      const todayStr = new Date().toDateString();
+      const todayFirebaseFood = foodFirebase.filter(
+        (f) => new Date(f.timestamp).toDateString() === todayStr
+      );
+      const todayFirebaseActivity = activityFirebase.filter(
+        (a) => new Date(a.timestamp).toDateString() === todayStr
+      );
+
+      // Load local
+      const [dataRaw, remindersRaw, activityRaw] = await Promise.all([
+        AsyncStorage.getItem(NUTRITION_DATA_KEY),
+        AsyncStorage.getItem(MEAL_REMINDER_KEY),
+        AsyncStorage.getItem(ACTIVITY_LOG_KEY),
+      ]);
+
+      let localFood: FoodEntry[] = [];
+      let localActivity: ActivityEntry[] = [];
+      let selectedProfileId: HealthProfileId = "standard";
+      let mealReminders = defaultReminders;
+
+      if (dataRaw) {
+        const data = JSON.parse(dataRaw);
+        localFood = data.foodEntries ?? [];
+        selectedProfileId = data.selectedProfileId ?? "standard";
+      }
+      if (remindersRaw) {
+        mealReminders = JSON.parse(remindersRaw);
+      }
+      if (activityRaw) {
+        localActivity = JSON.parse(activityRaw);
+      }
+
+      // Filter local to today only
+      localFood = localFood.filter(
+        (f) => new Date(f.timestamp).toDateString() === todayStr
+      );
+      localActivity = localActivity.filter(
+        (a) => new Date(a.timestamp).toDateString() === todayStr
+      );
+
+      // Sync food: upload missing, download missing
+      const localFoodIds = new Set(localFood.map((f) => f.id));
+      const firebaseFoodIds = new Set(todayFirebaseFood.map((f) => f.id));
+
+      for (const entry of localFood) {
+        if (!firebaseFoodIds.has(entry.id)) {
+          await syncAddFoodEntry(entry);
+        }
+      }
+
+      for (const entry of todayFirebaseFood) {
+        if (!localFoodIds.has(entry.id)) {
+          localFood.push(entry);
+        }
+      }
+
+      // Sync activity: upload missing, download missing
+      const localActivityIds = new Set(localActivity.map((a) => a.id));
+      const firebaseActivityIds = new Set(todayFirebaseActivity.map((a) => a.id));
+
+      for (const entry of localActivity) {
+        if (!firebaseActivityIds.has(entry.id)) {
+          await syncAddActivityEntry(entry);
+        }
+      }
+
+      for (const entry of todayFirebaseActivity) {
+        if (!localActivityIds.has(entry.id)) {
+          localActivity.push(entry);
+        }
+      }
+
+      // Sync config if firebase exists
+      if (configDoc && configDoc.exists()) {
+        const cfg = configDoc.data();
+        if (cfg.selectedProfileId) selectedProfileId = cfg.selectedProfileId;
+        if (cfg.mealReminders) mealReminders = cfg.mealReminders;
+      } else {
+        const user = auth.currentUser;
+        if (user) {
+          await setDoc(doc(db, "users", user.uid, "nutrition_config", "latest"), {
+            selectedProfileId,
+            mealReminders,
+          }).catch(() => {});
+        }
+      }
+
+      dispatch({
+        type: "LOAD",
+        payload: {
+          foodEntries: localFood,
+          activityEntries: localActivity,
+          mealReminders,
+          selectedProfileId,
+        },
+      });
+
+      // Write updated local back to AsyncStorage
+      await Promise.all([
+        AsyncStorage.setItem(
+          NUTRITION_DATA_KEY,
+          JSON.stringify({ foodEntries: localFood, selectedProfileId })
+        ),
+        AsyncStorage.setItem(MEAL_REMINDER_KEY, JSON.stringify(mealReminders)),
+        AsyncStorage.setItem(ACTIVITY_LOG_KEY, JSON.stringify(localActivity)),
+      ]);
+
+      console.log(`🍽️ Self nutrition synced and loaded`);
+    } catch (err) {
+      console.log("❌ Self nutrition sync error:", err);
+    }
+  }, [isSwitched, activeMemberId]);
+
   useEffect(() => {
-    if (!state.loaded) return;
+    syncNutritionWithFirebase();
+  }, [isSwitched, activeMemberId, syncNutritionWithFirebase]);
+
+  // Persist whenever relevant state changes (only for SELF)
+  useEffect(() => {
+    if (!state.loaded || isSwitched) return;
     AsyncStorage.setItem(
       NUTRITION_DATA_KEY,
       JSON.stringify({ foodEntries: state.foodEntries, selectedProfileId: state.selectedProfileId })
     ).catch(console.error);
-  }, [state.foodEntries, state.selectedProfileId, state.loaded]);
+  }, [state.foodEntries, state.selectedProfileId, state.loaded, isSwitched]);
 
   useEffect(() => {
-    if (!state.loaded) return;
+    if (!state.loaded || isSwitched) return;
     AsyncStorage.setItem(MEAL_REMINDER_KEY, JSON.stringify(state.mealReminders)).catch(console.error);
-  }, [state.mealReminders, state.loaded]);
+  }, [state.mealReminders, state.loaded, isSwitched]);
 
   useEffect(() => {
-    if (!state.loaded) return;
+    if (!state.loaded || isSwitched) return;
     AsyncStorage.setItem(ACTIVITY_LOG_KEY, JSON.stringify(state.activityEntries)).catch(console.error);
-  }, [state.activityEntries, state.loaded]);
+  }, [state.activityEntries, state.loaded, isSwitched]);
+
+  // Persist config to Firestore for switched family members
+  useEffect(() => {
+    if (!state.loaded || !isSwitched || !activeMemberId || activeMemberId === "self") return;
+    setDoc(doc(db, "users", activeMemberId, "nutrition_config", "latest"), {
+      selectedProfileId: state.selectedProfileId,
+      mealReminders: state.mealReminders,
+    }, { merge: true }).catch(() => {});
+  }, [state.selectedProfileId, state.mealReminders, state.loaded, isSwitched, activeMemberId]);
 
   // ── Derived ─────────────────────────────────────────────────────────────────
   const selectedProfile = useMemo(
@@ -412,31 +570,66 @@ export function NutritionProvider({ children }: { children: React.ReactNode }) {
   );
 
   // ── Actions ──────────────────────────────────────────────────────────────────
-  const addFoodEntry = useCallback((entry: Omit<FoodEntry, "id" | "timestamp">) => {
-    dispatch({
-      type: "ADD_ENTRY",
-      payload: { ...entry, id: Date.now().toString(), timestamp: new Date().toISOString() },
-    });
-  }, []);
+  const addFoodEntry = useCallback(async (entry: Omit<FoodEntry, "id" | "timestamp">) => {
+    const id = Date.now().toString();
+    const timestamp = new Date().toISOString();
+    const fullEntry: FoodEntry = { ...entry, id, timestamp };
 
-  const removeFoodEntry = useCallback((id: string) => {
+    dispatch({ type: "ADD_ENTRY", payload: fullEntry });
+
+    if (isSwitched && activeMemberId && activeMemberId !== "self") {
+      await syncAddFoodEntry(fullEntry, activeMemberId);
+    } else {
+      await syncAddFoodEntry(fullEntry);
+    }
+  }, [isSwitched, activeMemberId]);
+
+  const removeFoodEntry = useCallback(async (id: string) => {
     dispatch({ type: "REMOVE_ENTRY", payload: id });
-  }, []);
 
-  const addActivityEntry = useCallback((entry: Omit<ActivityEntry, "id" | "timestamp">) => {
-    dispatch({
-      type: "ADD_ACTIVITY",
-      payload: { ...entry, id: `act_${Date.now()}`, timestamp: new Date().toISOString() },
-    });
-  }, []);
+    if (isSwitched && activeMemberId && activeMemberId !== "self") {
+      await syncDeleteFoodEntry(id, activeMemberId);
+    } else {
+      await syncDeleteFoodEntry(id);
+    }
+  }, [isSwitched, activeMemberId]);
 
-  const removeActivityEntry = useCallback((id: string) => {
+  const addActivityEntry = useCallback(async (entry: Omit<ActivityEntry, "id" | "timestamp">) => {
+    const id = `act_${Date.now()}`;
+    const timestamp = new Date().toISOString();
+    const fullEntry: ActivityEntry = { ...entry, id, timestamp };
+
+    dispatch({ type: "ADD_ACTIVITY", payload: fullEntry });
+
+    if (isSwitched && activeMemberId && activeMemberId !== "self") {
+      await syncAddActivityEntry(fullEntry, activeMemberId);
+    } else {
+      await syncAddActivityEntry(fullEntry);
+    }
+  }, [isSwitched, activeMemberId]);
+
+  const removeActivityEntry = useCallback(async (id: string) => {
     dispatch({ type: "REMOVE_ACTIVITY", payload: id });
-  }, []);
 
-  const setProfile = useCallback((id: HealthProfileId) => {
+    if (isSwitched && activeMemberId && activeMemberId !== "self") {
+      await syncDeleteActivityEntry(id, activeMemberId);
+    } else {
+      await syncDeleteActivityEntry(id);
+    }
+  }, [isSwitched, activeMemberId]);
+
+  const setProfile = useCallback(async (id: HealthProfileId) => {
     dispatch({ type: "SET_PROFILE", payload: id });
-  }, []);
+
+    const uid = isSwitched ? activeMemberId : auth.currentUser?.uid;
+    if (uid) {
+      await setDoc(
+        doc(db, "users", uid, "nutrition_config", "latest"),
+        { selectedProfileId: id },
+        { merge: true }
+      ).catch(() => {});
+    }
+  }, [isSwitched, activeMemberId]);
 
   const toggleReminder = useCallback((reminderId: string) => {
     dispatch({ type: "TOGGLE_REMINDER", payload: reminderId });
@@ -451,9 +644,17 @@ export function NutritionProvider({ children }: { children: React.ReactNode }) {
     [state.foodEntries]
   );
 
-  const resetToday = useCallback(() => {
+  const resetToday = useCallback(async () => {
     dispatch({ type: "RESET_TODAY" });
-  }, []);
+
+    if (isSwitched && activeMemberId && activeMemberId !== "self") {
+      await syncClearFoodEntries(activeMemberId);
+      await syncClearActivityEntries(activeMemberId);
+    } else {
+      await syncClearFoodEntries();
+      await syncClearActivityEntries();
+    }
+  }, [isSwitched, activeMemberId]);
 
   const value = useMemo<NutritionContextType>(
     () => ({

@@ -16,6 +16,7 @@ import {
   getMedicines,
   markMedicineTakenByNotificationId,
   updateMedicineNotificationId,
+  insertOrReplaceMedicine,
 } from "../database/medicineDB";
 
 import {
@@ -165,6 +166,86 @@ export const MedicineProvider = ({
         // ── Self: load from local SQLite ───────────────────
         const data = getMedicines() as Medicine[];
         setMedicines([...data]);
+
+        // Background bidirectional sync/merge with Firebase
+        (async () => {
+          try {
+            const firebaseMeds = await fetchMedicinesFromFirebase();
+            if (firebaseMeds && firebaseMeds.length > 0) {
+              let didChange = false;
+
+              // 1. Sync Firebase -> SQLite (heal missing)
+              for (const fm of firebaseMeds) {
+                const exists = data.some((lm) => lm.id === fm.id);
+                if (!exists) {
+                  insertOrReplaceMedicine({
+                    id: fm.id,
+                    name: fm.name,
+                    dose: fm.dose,
+                    type: fm.type,
+                    time: fm.time,
+                    timestamp: fm.timestamp,
+                    meal: fm.meal,
+                    frequency: fm.frequency,
+                    startDate: fm.startDate,
+                    endDate: fm.endDate,
+                    reminder: fm.reminder,
+                    notificationId: fm.notificationId,
+                    taken: fm.taken,
+                    takenDate: fm.takenDate,
+                  });
+                  didChange = true;
+                }
+              }
+
+              // 2. Sync SQLite -> Firebase (upload missing)
+              const fbIds = new Set(firebaseMeds.map((fm) => fm.id));
+              for (const lm of data) {
+                if (!fbIds.has(lm.id)) {
+                  await syncAddMedicine({
+                    id: lm.id,
+                    name: lm.name,
+                    dose: lm.dose,
+                    type: lm.type,
+                    time: lm.time,
+                    timestamp: lm.timestamp,
+                    meal: lm.meal,
+                    frequency: lm.frequency,
+                    startDate: lm.startDate,
+                    endDate: lm.endDate,
+                    reminder: lm.reminder,
+                    notificationId: lm.notificationId,
+                  }).catch(() => {});
+                }
+              }
+
+              if (didChange) {
+                const updated = getMedicines() as Medicine[];
+                setMedicines([...updated]);
+              }
+            } else if (data.length > 0) {
+              // Firebase is empty but local has data, upload all
+              for (const lm of data) {
+                await syncAddMedicine({
+                  id: lm.id,
+                  name: lm.name,
+                  dose: lm.dose,
+                  type: lm.type,
+                  time: lm.time,
+                  timestamp: lm.timestamp,
+                  meal: lm.meal,
+                  frequency: lm.frequency,
+                  startDate: lm.startDate,
+                  endDate: lm.endDate,
+                  reminder: lm.reminder,
+                  notificationId: lm.notificationId,
+                }).catch(() => {});
+              }
+            }
+          } catch (syncErr) {
+            console.log("⚠️ Background medicine sync failed:", syncErr);
+          }
+        })();
       }
     } catch (err) {
       console.log("💊 Load medicines error:", err);

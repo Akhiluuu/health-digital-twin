@@ -19,6 +19,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useTheme } from "../context/ThemeContext";
 import { colors } from "../theme/colors";
 import Header from "./components/Header";
+import { fetchMedicineHistoryFromFirebase } from "../services/firebaseSync";
 
 ///////////////////////////////////////////////////////////
 
@@ -60,20 +61,47 @@ export default function MedicineHistory() {
   const loadHistory = async () => {
     try {
       const saved = await AsyncStorage.getItem(HISTORY_STORAGE_KEY);
+      let local: MedicineHistoryEntry[] = saved ? JSON.parse(saved) : [];
 
-      if (!saved) {
-        setHistory([]);
-        return;
-      }
-
-      const parsed: MedicineHistoryEntry[] = JSON.parse(saved);
-
-      parsed.sort(
+      // Sort and set state immediately for fast response
+      local.sort(
         (a, b) =>
           new Date(b.takenAt).getTime() - new Date(a.takenAt).getTime()
       );
+      setHistory(local);
 
-      setHistory(parsed);
+      // In the background, fetch from Firebase and merge
+      try {
+        const firebaseHistory = await fetchMedicineHistoryFromFirebase();
+        if (firebaseHistory && firebaseHistory.length > 0) {
+          const normalizedFirebase: MedicineHistoryEntry[] = firebaseHistory.map((h: any) => ({
+            id:           h.id           ?? `${Date.now()}-${Math.random()}`,
+            medicineId:   h.medicineId   ?? 0,
+            medicineName: h.medicineName ?? "",
+            dose:         h.dose         ?? "",
+            time:         h.time         ?? "",
+            status:       h.status       ?? "taken",
+            date:         h.date         ?? "",
+            takenAt:      h.takenAt      ?? new Date().toISOString(),
+          }));
+
+          const merged = [...local, ...normalizedFirebase].filter(
+            (item, index, self) => index === self.findIndex((t) => t.id === item.id)
+          );
+
+          merged.sort(
+            (a, b) =>
+              new Date(b.takenAt).getTime() - new Date(a.takenAt).getTime()
+          );
+
+          if (merged.length !== local.length) {
+            await AsyncStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(merged));
+            setHistory(merged);
+          }
+        }
+      } catch (fbErr) {
+        console.log("⚠️ Background medicine history sync failed:", fbErr);
+      }
     } catch (error) {
       console.error("❌ Error loading history:", error);
       setHistory([]);

@@ -21,6 +21,7 @@ interface HeaderProps {
   showBack?: boolean;
   showProfile?: boolean;
   showSOS?: boolean;
+  onBack?: () => void;
 }
 
 export default function Header({
@@ -28,6 +29,7 @@ export default function Header({
   showBack = false,
   showProfile = true,
   showSOS = true,
+  onBack,
 }: HeaderProps) {
   const router = useRouter();
   const pathname = usePathname();
@@ -66,7 +68,7 @@ export default function Header({
         {/* LEFT: Back Button or Profile Switcher Trigger */}
         {showBack ? (
           <TouchableOpacity
-            onPress={() => router.back()}
+            onPress={onBack || (() => router.back())}
             activeOpacity={0.7}
           >
             <Ionicons

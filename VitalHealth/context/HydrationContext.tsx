@@ -24,6 +24,13 @@ import {
   initHydrationHistoryDB,
 } from "../database/hydrationHistoryDB";
 
+import { useFamily } from "./FamilyContext";
+import {
+  syncAddHydration,
+  syncClearHydration,
+  fetchHydrationFromFirebase,
+} from "../services/firebaseSync";
+
 // ✅ Delegates to the shared utility so background and foreground
 //    both write through the same code path
 import { saveWaterToStorage } from "../utils/hydrationStorage";
@@ -67,43 +74,96 @@ export const HydrationProvider = ({
 }) => {
   const [water, setWater] = useState<number>(0);
   const [history, setHistory] = useState<HydrationEntry[]>([]);
+  const { isSwitched, activeMemberId } = useFamily();
 
   const appState = useRef<AppStateStatus>(AppState.currentState);
   const lastStoredValue = useRef<number>(0);
-  const hasInitialized = useRef<boolean>(false);
   const lastCheckedDate = useRef<string>(getTodayDate());
 
   /////////////////////////////////////////////////////////
-  // Reload history from DB
+  // Sync / Reload with Firebase
   /////////////////////////////////////////////////////////
+
+  const syncHydrationWithFirebase = useCallback(async () => {
+    if (isSwitched && activeMemberId && activeMemberId !== "self") {
+      try {
+        const firebaseEntries = await fetchHydrationFromFirebase(activeMemberId);
+        const startOfDay = new Date();
+        startOfDay.setHours(0, 0, 0, 0);
+        const startMs = startOfDay.getTime();
+
+        const todayEntries = firebaseEntries
+          .filter((e) => e.timestamp >= startMs)
+          .sort((a, b) => b.timestamp - a.timestamp);
+
+        const total = todayEntries.reduce((sum, e) => sum + e.amount, 0);
+        setWater(total);
+        setHistory(todayEntries);
+        console.log(`💧 Switched hydration synced from Firestore for ${activeMemberId}: ${total}ml`);
+      } catch (err) {
+        console.log("❌ Switched hydration sync error:", err);
+      }
+      return;
+    }
+
+    // Self
+    try {
+      const firebaseEntries = await fetchHydrationFromFirebase();
+      const startOfDay = new Date();
+      startOfDay.setHours(0, 0, 0, 0);
+      const startMs = startOfDay.getTime();
+
+      const todayFirebase = firebaseEntries.filter((e) => e.timestamp >= startMs);
+      const todayLocal = getTodayHydrationHistory();
+
+      const firebaseTimestamps = new Set(todayFirebase.map((e) => e.timestamp));
+      const localTimestamps = new Set(todayLocal.map((e) => e.timestamp));
+
+      // Upload local missing ones
+      for (const entry of todayLocal) {
+        if (!firebaseTimestamps.has(entry.timestamp)) {
+          await syncAddHydration(entry);
+        }
+      }
+
+      // Download Firebase missing ones
+      let didInsertLocal = false;
+      for (const entry of todayFirebase) {
+        if (!localTimestamps.has(entry.timestamp)) {
+          await addHydrationEntry(entry.amount, entry.total, entry.source);
+          didInsertLocal = true;
+        }
+      }
+
+      if (didInsertLocal) {
+        const updatedLocal = getTodayHydrationHistory();
+        const total = updatedLocal.length > 0 ? updatedLocal[0].total : 0;
+        await AsyncStorage.setItem(getTodayKey(), String(total));
+        setWater(total);
+        setHistory(updatedLocal);
+      } else {
+        const localWater = await AsyncStorage.getItem(getTodayKey());
+        setWater(localWater ? Number(localWater) : 0);
+        setHistory(todayLocal);
+      }
+      console.log(`💧 Self hydration synced and loaded`);
+    } catch (err) {
+      console.log("❌ Self hydration sync error:", err);
+    }
+  }, [isSwitched, activeMemberId]);
 
   const reloadHistory = useCallback(() => {
-    try {
-      const entries = getTodayHydrationHistory();
-      setHistory(entries);
-    } catch (err) {
-      console.log("❌ History reload error:", err);
+    if (isSwitched) {
+      syncHydrationWithFirebase();
+    } else {
+      try {
+        const entries = getTodayHydrationHistory();
+        setHistory(entries);
+      } catch (err) {
+        console.log("❌ History reload error:", err);
+      }
     }
-  }, []);
-
-  /////////////////////////////////////////////////////////
-  // Load saved water from AsyncStorage
-  // Called on mount and when returning from background
-  /////////////////////////////////////////////////////////
-
-  const loadWater = useCallback(async () => {
-    try {
-      const saved = await AsyncStorage.getItem(getTodayKey());
-      const value = saved ? Number(saved) : 0;
-
-      lastStoredValue.current = value;
-      setWater(value);
-
-      console.log(`💧 Hydration loaded: ${value}ml`);
-    } catch (err) {
-      console.log("❌ Hydration load error:", err);
-    }
-  }, []);
+  }, [isSwitched, syncHydrationWithFirebase]);
 
   /////////////////////////////////////////////////////////
   // Schedule Hydration Reminder
@@ -120,32 +180,101 @@ export const HydrationProvider = ({
   }, []);
 
   /////////////////////////////////////////////////////////
-  // Initial Load
+  // Add Water (manual or foreground notification)
+  /////////////////////////////////////////////////////////
+
+  const addWater = useCallback(
+    (ml: number, source: "manual" | "notification" = "manual") => {
+      if (isSwitched && activeMemberId && activeMemberId !== "self") {
+        const timestamp = Date.now();
+        const entry = {
+          id: timestamp,
+          amount: ml,
+          total: water + ml,
+          timestamp,
+          source,
+        };
+        setWater((prev) => prev + ml);
+        setHistory((prev) => [entry, ...prev]);
+        syncAddHydration(entry, activeMemberId);
+        console.log(`💧 Switched addWater: +${ml}ml for ${activeMemberId}`);
+      } else {
+        setWater((prev) => {
+          const newValue = prev + ml;
+          lastStoredValue.current = newValue;
+
+          AsyncStorage.setItem(getTodayKey(), String(newValue)).catch(
+            (err: unknown) => console.log("❌ Hydration save error:", err)
+          );
+
+          addHydrationEntry(ml, newValue, source)
+            .then(() => {
+              const entries = getTodayHydrationHistory();
+              setHistory(entries);
+              const lastEntry = entries[0];
+              if (lastEntry) {
+                syncAddHydration(lastEntry);
+              }
+            })
+            .catch((err: unknown) => console.log("❌ History entry error:", err));
+
+          console.log(`💧 addWater: +${ml}ml (${source}) → total: ${newValue}ml`);
+
+          return newValue;
+        });
+      }
+    },
+    [isSwitched, activeMemberId, water]
+  );
+
+  /////////////////////////////////////////////////////////
+  // Reset Water Intake + History
+  /////////////////////////////////////////////////////////
+
+  const reset = useCallback(() => {
+    if (isSwitched && activeMemberId && activeMemberId !== "self") {
+      setWater(0);
+      setHistory([]);
+      syncClearHydration(activeMemberId);
+      console.log(`💧 Switched hydration reset for ${activeMemberId}`);
+    } else {
+      lastStoredValue.current = 0;
+      setWater(0);
+      setHistory([]);
+
+      AsyncStorage.setItem(getTodayKey(), "0").catch((err: unknown) =>
+        console.log("❌ Hydration reset error:", err)
+      );
+
+      clearTodayHydrationHistory().catch((err: unknown) =>
+        console.log("❌ History clear error:", err)
+      );
+
+      syncClearHydration();
+      console.log(`💧 Self hydration reset`);
+    }
+  }, [isSwitched, activeMemberId]);
+
+  /////////////////////////////////////////////////////////
+  // Initial Load & Profile Switch Trigger
   /////////////////////////////////////////////////////////
 
   useEffect(() => {
-    if (!hasInitialized.current) {
-      hasInitialized.current = true;
+    const init = async () => {
+      await initHydrationHistoryDB();
+      await syncHydrationWithFirebase();
 
-      const init = async () => {
-        await initHydrationHistoryDB();
-        await loadWater();
-        reloadHistory();
-
+      if (!isSwitched) {
         setTimeout(() => {
           initializeHydrationReminder();
         }, 800);
-      };
-
-      init();
-    }
-  }, [loadWater, initializeHydrationReminder, reloadHistory]);
+      }
+    };
+    init();
+  }, [isSwitched, activeMemberId, syncHydrationWithFirebase, initializeHydrationReminder]);
 
   /////////////////////////////////////////////////////////
   // Reload when returning from background
-  // ✅ This is what picks up water logged from background notifications:
-  //    saveWaterToStorage wrote to AsyncStorage, and when the user
-  //    opens the app this handler calls loadWater() to sync the UI.
   /////////////////////////////////////////////////////////
 
   useEffect(() => {
@@ -160,13 +289,13 @@ export const HydrationProvider = ({
           lastCheckedDate.current = today;
           console.log("💧 New day detected — resetting hydration");
           reset();
-          reloadHistory();
-          initializeHydrationReminder();
+          syncHydrationWithFirebase();
+          if (!isSwitched) {
+            initializeHydrationReminder();
+          }
         } else {
-          // Same day — reload in case a background notification added water
-          console.log("💧 Returning to app — reloading hydration from storage");
-          loadWater();
-          reloadHistory();
+          console.log("💧 Returning to app — syncing hydration");
+          syncHydrationWithFirebase();
         }
       }
 
@@ -179,54 +308,7 @@ export const HydrationProvider = ({
     );
 
     return () => subscription.remove();
-  }, [loadWater, initializeHydrationReminder, reloadHistory]);
-
-  /////////////////////////////////////////////////////////
-  // Add Water (manual or foreground notification)
-  /////////////////////////////////////////////////////////
-
-  const addWater = useCallback(
-    (ml: number, source: "manual" | "notification" = "manual") => {
-      setWater((prev) => {
-        const newValue = prev + ml;
-        lastStoredValue.current = newValue;
-
-        AsyncStorage.setItem(getTodayKey(), String(newValue)).catch(
-          (err: unknown) => console.log("❌ Hydration save error:", err)
-        );
-
-        addHydrationEntry(ml, newValue, source)
-          .then(() => {
-            const entries = getTodayHydrationHistory();
-            setHistory(entries);
-          })
-          .catch((err: unknown) => console.log("❌ History entry error:", err));
-
-        console.log(`💧 addWater: +${ml}ml (${source}) → total: ${newValue}ml`);
-
-        return newValue;
-      });
-    },
-    []
-  );
-
-  /////////////////////////////////////////////////////////
-  // Reset Water Intake + History
-  /////////////////////////////////////////////////////////
-
-  const reset = useCallback(() => {
-    lastStoredValue.current = 0;
-    setWater(0);
-    setHistory([]);
-
-    AsyncStorage.setItem(getTodayKey(), "0").catch((err: unknown) =>
-      console.log("❌ Hydration reset error:", err)
-    );
-
-    clearTodayHydrationHistory().catch((err: unknown) =>
-      console.log("❌ History clear error:", err)
-    );
-  }, []);
+  }, [isSwitched, reset, syncHydrationWithFirebase, initializeHydrationReminder]);
 
   /////////////////////////////////////////////////////////
   // Expose addWater globally so addWaterFromNotification
@@ -263,35 +345,11 @@ export const useHydration = () => {
   return ctx;
 };
 
-///////////////////////////////////////////////////////////
-// addWaterFromNotification
-//
-// Called from notifeeService foreground handler when the app is open.
-//
-// Strategy:
-//   1. Always write to AsyncStorage via saveWaterToStorage (durable, works
-//      in both foreground and background, survives app kill).
-//   2. If globalAddWater is set (provider is mounted), also update React
-//      state immediately so the UI reflects the change without waiting
-//      for an appState "active" event.
-//
-// ✅ FIXED: No longer contains its own AsyncStorage fallback logic.
-//    saveWaterToStorage is the single source of truth for persistence.
-///////////////////////////////////////////////////////////
-
 export const addWaterFromNotification = async (ml: number) => {
-  // Always persist to storage first (works even if provider unmounts)
   await saveWaterToStorage(ml);
 
   if (globalAddWater) {
-    // Provider is mounted — update live UI state too.
-    // Note: saveWaterToStorage already wrote to AsyncStorage,
-    // so addWater will double-count if it also writes.
-    // We pass source "notification" and let addWater handle UI state only.
-    // To avoid double-writing AsyncStorage, reload from storage instead:
     console.log(`💧 Provider mounted — reloading water state from storage`);
-    // The appState "active" handler will call loadWater() when user returns.
-    // If they're already in the app, trigger it via globalAddWater:
     globalAddWater(ml, "notification");
   } else {
     console.log(`💧 Provider not mounted — AsyncStorage updated by saveWaterToStorage`);

@@ -494,3 +494,268 @@ export async function fetchMedicinesFromFirebase(uid?: string): Promise<any[]> {
 export async function fetchMedicinesFromFirebaseForUser(uid: string): Promise<any[]> {
   return fetchMedicinesFromFirebase(uid);
 }
+
+// ─────────────────────────────────────────────────────────────────
+// 💧 HYDRATION SYNC
+// ─────────────────────────────────────────────────────────────────
+const hydrationCol = (uid: string) => collection(db, "users", uid, "hydration");
+
+export async function syncAddHydration(
+  entry: {
+    id: number;
+    amount: number;
+    total: number;
+    timestamp: number;
+    source: string;
+  },
+  targetUid?: string
+): Promise<void> {
+  try {
+    const uid = targetUid || await getUserId();
+    if (!uid) return;
+    await setDoc(doc(hydrationCol(uid), String(entry.timestamp)), {
+      ...entry,
+      syncedAt: serverTimestamp(),
+    });
+    console.log(`✅ Hydration synced to Firebase: +${entry.amount}ml`);
+  } catch (e) {
+    console.log("⚠️ syncAddHydration failed:", e);
+  }
+}
+
+export async function syncClearHydration(targetUid?: string): Promise<void> {
+  try {
+    const uid = targetUid || await getUserId();
+    if (!uid) return;
+    const snap = await getDocs(hydrationCol(uid));
+    const batch = writeBatch(db);
+    snap.forEach((d) => batch.delete(d.ref));
+    await batch.commit();
+    console.log("✅ Hydration cleared in Firebase");
+  } catch (e) {
+    console.log("⚠️ syncClearHydration failed:", e);
+  }
+}
+
+export async function fetchHydrationFromFirebase(uid?: string): Promise<any[]> {
+  try {
+    const userId = uid || await getUserId();
+    if (!userId) return [];
+    const snap = await getDocs(hydrationCol(userId));
+    return snap.docs.map(d => d.data());
+  } catch (e) {
+    console.log("⚠️ fetchHydrationFromFirebase failed:", e);
+    return [];
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────
+// 🍽️ NUTRITION SYNC
+// ─────────────────────────────────────────────────────────────────
+const nutritionCol = (uid: string) => collection(db, "users", uid, "nutrition");
+
+export async function syncAddFoodEntry(
+  entry: {
+    id: string;
+    mealId: string;
+    foodId: string;
+    foodName: string;
+    calories: number;
+    protein: number;
+    carbs: number;
+    fat: number;
+    sugar: number;
+    sodium: number;
+    fiber: number;
+    timestamp: string;
+  },
+  targetUid?: string
+): Promise<void> {
+  try {
+    const uid = targetUid || await getUserId();
+    if (!uid) return;
+    await setDoc(doc(nutritionCol(uid), entry.id), {
+      ...entry,
+      syncedAt: serverTimestamp(),
+    });
+    console.log(`✅ Food entry synced to Firebase: ${entry.foodName}`);
+  } catch (e) {
+    console.log("⚠️ syncAddFoodEntry failed:", e);
+  }
+}
+
+export async function syncDeleteFoodEntry(id: string, targetUid?: string): Promise<void> {
+  try {
+    const uid = targetUid || await getUserId();
+    if (!uid) return;
+    await deleteDoc(doc(nutritionCol(uid), id));
+    console.log(`✅ Food entry deleted from Firebase: ${id}`);
+  } catch (e) {
+    console.log("⚠️ syncDeleteFoodEntry failed:", e);
+  }
+}
+
+export async function syncClearFoodEntries(targetUid?: string): Promise<void> {
+  try {
+    const uid = targetUid || await getUserId();
+    if (!uid) return;
+    const snap = await getDocs(nutritionCol(uid));
+    const batch = writeBatch(db);
+    snap.forEach((d) => batch.delete(d.ref));
+    await batch.commit();
+    console.log("✅ All food entries cleared in Firebase");
+  } catch (e) {
+    console.log("⚠️ syncClearFoodEntries failed:", e);
+  }
+}
+
+export async function fetchFoodEntriesFromFirebase(uid?: string): Promise<any[]> {
+  try {
+    const userId = uid || await getUserId();
+    if (!userId) return [];
+    const snap = await getDocs(nutritionCol(userId));
+    return snap.docs.map(d => d.data());
+  } catch (e) {
+    console.log("⚠️ fetchFoodEntriesFromFirebase failed:", e);
+    return [];
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────
+// 💪 ACTIVITY/EXERCISE SYNC
+// ─────────────────────────────────────────────────────────────────
+const activityCol = (uid: string) => collection(db, "users", uid, "activity");
+
+export async function syncAddActivityEntry(
+  entry: {
+    id: string;
+    activityName: string;
+    activityIcon: string;
+    durationMins: number;
+    intensity: string;
+    caloriesBurned: number;
+    met: number;
+    timestamp: string;
+  },
+  targetUid?: string
+): Promise<void> {
+  try {
+    const uid = targetUid || await getUserId();
+    if (!uid) return;
+    await setDoc(doc(activityCol(uid), entry.id), {
+      ...entry,
+      syncedAt: serverTimestamp(),
+    });
+    console.log(`✅ Activity entry synced to Firebase: ${entry.activityName}`);
+  } catch (e) {
+    console.log("⚠️ syncAddActivityEntry failed:", e);
+  }
+}
+
+export async function syncDeleteActivityEntry(id: string, targetUid?: string): Promise<void> {
+  try {
+    const uid = targetUid || await getUserId();
+    if (!uid) return;
+    await deleteDoc(doc(activityCol(uid), id));
+    console.log(`✅ Activity entry deleted from Firebase: ${id}`);
+  } catch (e) {
+    console.log("⚠️ syncDeleteActivityEntry failed:", e);
+  }
+}
+
+export async function syncClearActivityEntries(targetUid?: string): Promise<void> {
+  try {
+    const uid = targetUid || await getUserId();
+    if (!uid) return;
+    const snap = await getDocs(activityCol(uid));
+    const batch = writeBatch(db);
+    snap.forEach((d) => batch.delete(d.ref));
+    await batch.commit();
+    console.log("✅ All activity entries cleared in Firebase");
+  } catch (e) {
+    console.log("⚠️ syncClearActivityEntries failed:", e);
+  }
+}
+
+export async function fetchActivityEntriesFromFirebase(uid?: string): Promise<any[]> {
+  try {
+    const userId = uid || await getUserId();
+    if (!userId) return [];
+    const snap = await getDocs(activityCol(userId));
+    return snap.docs.map(d => d.data());
+  } catch (e) {
+    console.log("⚠️ fetchActivityEntriesFromFirebase failed:", e);
+    return [];
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────
+// 🚶 STEPS SYNC
+// ─────────────────────────────────────────────────────────────────
+const stepsCol = (uid: string) => collection(db, "users", uid, "steps");
+
+export async function syncStepsData(
+  data: {
+    steps: number;
+    goal: number;
+    isTracking: boolean;
+    lastMoveTs: number;
+    date: string;
+  },
+  targetUid?: string
+): Promise<void> {
+  try {
+    const uid = targetUid || await getUserId();
+    if (!uid) return;
+    await setDoc(doc(stepsCol(uid), data.date), {
+      ...data,
+      syncedAt: serverTimestamp(),
+    });
+    console.log(`✅ Steps synced to Firebase: ${data.steps} steps`);
+  } catch (e) {
+    console.log("⚠️ syncStepsData failed:", e);
+  }
+}
+
+export async function fetchStepsDataFromFirebase(date: string, uid?: string): Promise<any | null> {
+  try {
+    const userId = uid || await getUserId();
+    if (!userId) return null;
+    const snap = await getDoc(doc(stepsCol(userId), date));
+    return snap.exists() ? snap.data() : null;
+  } catch (e) {
+    console.log("⚠️ fetchStepsDataFromFirebase failed:", e);
+    return null;
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────
+// 🧬 BIOGEARS ANALYTICS CACHE SYNC
+// ─────────────────────────────────────────────────────────────────
+const biogearsCol = (uid: string) => collection(db, "users", uid, "biogears_analytics");
+
+export async function syncBiogearsAnalytics(analytics: any, targetUid?: string): Promise<void> {
+  try {
+    const uid = targetUid || await getUserId();
+    if (!uid) return;
+    await setDoc(doc(biogearsCol(uid), "latest"), {
+      ...analytics,
+      updatedAt: serverTimestamp(),
+    });
+    console.log("✅ BioGears analytics cached in Firestore");
+  } catch (e) {
+    console.log("⚠️ syncBiogearsAnalytics failed:", e);
+  }
+}
+
+export async function fetchBiogearsAnalyticsFromFirebase(uid?: string): Promise<any | null> {
+  try {
+    const userId = uid || await getUserId();
+    if (!userId) return null;
+    const snap = await getDoc(doc(biogearsCol(userId), "latest"));
+    return snap.exists() ? snap.data() : null;
+  } catch (e) {
+    console.log("⚠️ fetchBiogearsAnalyticsFromFirebase failed:", e);
+    return null;
+  }
+}

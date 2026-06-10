@@ -10,6 +10,8 @@ import {
   ActivityIndicator,
   Alert,
   Image,
+  Modal,
+  Pressable,
   RefreshControl,
   ScrollView,
   StatusBar,
@@ -113,6 +115,29 @@ function InfoRow({
 export default function MemberDetailsScreen() {
   const { theme } = useTheme();
   const c = globalColors[theme];
+
+  // ── Custom Alert State ──────────────────────────────────────────────────────
+  const [customAlert, setCustomAlert] = useState<{
+    visible: boolean;
+    title: string;
+    message: string;
+    buttons: { text: string; style?: 'cancel' | 'destructive' | 'default'; onPress?: () => void }[];
+  } | null>(null);
+
+  const Alert = {
+    alert: (
+      title: string,
+      message?: string,
+      buttons?: { text: string; style?: 'cancel' | 'destructive' | 'default'; onPress?: () => void }[]
+    ) => {
+      setCustomAlert({
+        visible: true,
+        title,
+        message: message || "",
+        buttons: buttons || [{ text: "OK" }],
+      });
+    }
+  };
 
   const params = useLocalSearchParams<{ id?: string | string[] }>();
   const memberId = (Array.isArray(params.id) ? params.id[0] : params.id) ?? "";
@@ -436,6 +461,114 @@ export default function MemberDetailsScreen() {
           ) : null}
         </ScrollView>
       </View>
+
+      {/* Themed Custom Alert Modal */}
+      <Modal
+        visible={customAlert !== null && customAlert.visible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setCustomAlert(null)}
+      >
+        <Pressable
+          style={{
+            flex: 1,
+            backgroundColor: "rgba(0,0,0,0.5)",
+            justifyContent: "center",
+            alignItems: "center"
+          }}
+          onPress={() => setCustomAlert(null)}
+        >
+          <Pressable
+            style={{
+              backgroundColor: c.card,
+              borderRadius: 24,
+              padding: 20,
+              width: "85%",
+              maxWidth: 320,
+              borderWidth: 1,
+              borderColor: c.border,
+              shadowColor: "#000",
+              shadowOffset: { width: 0, height: 10 },
+              shadowOpacity: 0.2,
+              shadowRadius: 20,
+              elevation: 10
+            }}
+            onPress={(e) => e.stopPropagation()}
+          >
+            <Text
+              style={{
+                fontSize: 20,
+                fontWeight: "bold",
+                marginBottom: 8,
+                color: c.text,
+                textAlign: 'center'
+              }}
+            >
+              {customAlert?.title}
+            </Text>
+            {customAlert?.message ? (
+              <Text
+                style={{
+                  fontSize: 14,
+                  color: c.sub,
+                  textAlign: 'center',
+                  marginBottom: 16
+                }}
+              >
+                {customAlert.message}
+              </Text>
+            ) : null}
+            <View
+              style={{
+                flexDirection: customAlert?.buttons && customAlert.buttons.length > 2 ? 'column' : 'row',
+                justifyContent: 'center',
+                gap: 10,
+                width: '100%'
+              }}
+            >
+              {customAlert?.buttons.map((btn, idx) => {
+                const isDestructive = btn.style === 'destructive';
+                const isCancel = btn.style === 'cancel';
+                const isStack = customAlert.buttons.length > 2;
+                return (
+                  <TouchableOpacity
+                    key={idx}
+                    style={[
+                      {
+                        padding: 14,
+                        borderRadius: 12,
+                        alignItems: "center"
+                      },
+                      isDestructive
+                        ? { backgroundColor: '#ef4444' }
+                        : isCancel
+                        ? { backgroundColor: c.border }
+                        : { backgroundColor: c.accent },
+                      isStack && { width: '100%', justifyContent: 'center' },
+                      !isStack && { flex: 1 }
+                    ]}
+                    onPress={() => {
+                      setCustomAlert(null);
+                      if (btn.onPress) btn.onPress();
+                    }}
+                  >
+                    <Text
+                      style={{
+                        color: isCancel ? c.text : '#fff',
+                        fontWeight: 'bold',
+                        fontSize: 14,
+                        textAlign: 'center'
+                      }}
+                    >
+                      {btn.text}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </>
   );
 }

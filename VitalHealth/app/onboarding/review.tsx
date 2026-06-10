@@ -191,8 +191,8 @@ export default function Review() {
             });
              // Save the routine then mark it as default using proper twinId slug
              const twinId = getTwinId(profileData);
-             await BiogearsAPI.saveRoutine(twinId, routine);
-             await BiogearsAPI.setDefaultRoutine(twinId, routine.id);
+             await BiogearsAPI.saveRoutine(twinId, routine, user.uid);
+             await BiogearsAPI.setDefaultRoutine(twinId, routine.id, user.uid);
              console.log('✅ Custom default routine "My Saved State" created from onboarding habits');
           }
         } catch (routineErr) {
