@@ -49,8 +49,8 @@ const { width: W } = Dimensions.get('window');
 
 const pad = (n: number) => String(n).padStart(2, '0');
 
-function parseBP(bp: string | null | undefined) {
-  if (!bp) return { sys: null, dia: null };
+function parseBP(bp: any) {
+  if (!bp || typeof bp !== 'string') return { sys: null, dia: null };
   const parts = bp.split('/');
   return { sys: parts[0] ? parseFloat(parts[0]) : null, dia: parts[1] ? parseFloat(parts[1]) : null };
 }
@@ -60,8 +60,8 @@ function currentTime(): string {
   return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-function wallTimeToLabel(wallTime: string): string {
-  if (!wallTime) return '';
+function wallTimeToLabel(wallTime: any): string {
+  if (!wallTime || typeof wallTime !== 'string') return '';
   const [h, m] = wallTime.split(':').map(Number);
   const ampm = h >= 12 ? 'PM' : 'AM';
   const hr = h % 12 || 12;

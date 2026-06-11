@@ -46,6 +46,12 @@ export default function Header({
     accent: c.accent,
   };
 
+  const [imageError, setImageError] = React.useState(false);
+
+  React.useEffect(() => {
+    setImageError(false);
+  }, [activeProfile?.profileImage]);
+
   const handleProfilePress = () => {
     if (!pathname.includes("profile")) {
       router.push("/profile");
@@ -82,10 +88,11 @@ export default function Header({
             onPress={handleProfilePress}
             activeOpacity={0.7}
           >
-            {activeProfile?.profileImage ? (
+            {activeProfile?.profileImage && !imageError ? (
               <Image
                 source={{ uri: activeProfile.profileImage }}
                 style={styles.avatarImage}
+                onError={() => setImageError(true)}
               />
             ) : (activeProfile?.firstName || activeProfile?.lastName) ? (
               <View style={[styles.avatarInitials, { backgroundColor: colors.accent + "15", borderColor: colors.accent }]}>

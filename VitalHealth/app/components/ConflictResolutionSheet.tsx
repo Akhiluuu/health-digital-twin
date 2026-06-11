@@ -57,9 +57,9 @@ const EVENT_ICON: Record<string, string> = {
   environment: '🌡️',
 };
 
-function formatWallTime(wt?: string): string {
+function formatWallTime(wt?: any): string {
   if (!wt) return '';
-  const [hh, mm] = wt.split(':').map(Number);
+  const [hh, mm] = String(wt || '').split(':').map(Number);
   const period = hh >= 12 ? 'PM' : 'AM';
   const h12 = hh % 12 || 12;
   return `${h12}:${String(mm).padStart(2, '0')} ${period}`;

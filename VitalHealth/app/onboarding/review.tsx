@@ -63,10 +63,16 @@ export default function Review() {
       if (user) {
         const raw = await AsyncStorage.getItem(`@onboarding_habits_${user.uid}`);
         if (raw) {
-          const parsedHabits = JSON.parse(raw);
-          setHabits(parsedHabits);
-          if (parsedHabits.activity) setCustomActivity(parsedHabits.activity);
-          if (parsedHabits.foodHabits?.dietType) setCustomDiet(parsedHabits.foodHabits.dietType);
+          try {
+            const parsedHabits = JSON.parse(raw);
+            if (parsedHabits && typeof parsedHabits === "object") {
+              setHabits(parsedHabits);
+              if (parsedHabits.activity) setCustomActivity(parsedHabits.activity);
+              if (parsedHabits.foodHabits?.dietType) setCustomDiet(parsedHabits.foodHabits.dietType);
+            }
+          } catch (e) {
+            console.warn("Failed to parse onboarding habits:", e);
+          }
         }
       }
       console.log("📋 Review loaded — name:", n, "email:", e);
@@ -80,8 +86,8 @@ export default function Review() {
   useEffect(() => {
     if (!habits) return;
     const p = paramsRef.current;
-    const heightVal = parseFloat((p.height as string || '').replace(/[^0-9.]/g, '')) || 175;
-    const weightVal = parseFloat((p.weight as string || '').replace(/[^0-9.]/g, '')) || 70;
+    const heightVal = parseFloat(String(p.height || '').replace(/[^0-9.]/g, '')) || 175;
+    const weightVal = parseFloat(String(p.weight || '').replace(/[^0-9.]/g, '')) || 70;
     const updatedHabits = {
       ...habits,
       activity: customActivity,
@@ -180,8 +186,8 @@ export default function Review() {
               habits: updatedHabits,
             });
 
-            const heightVal = parseFloat((profileData.height || '').replace(/[^0-9.]/g, '')) || 175;
-            const weightVal = parseFloat((profileData.weight || '').replace(/[^0-9.]/g, '')) || 70;
+            const heightVal = parseFloat(String(profileData.height || '').replace(/[^0-9.]/g, '')) || 175;
+            const weightVal = parseFloat(String(profileData.weight || '').replace(/[^0-9.]/g, '')) || 70;
             const routine = buildDefaultRoutine(updatedHabits, {
               gender: profileData.gender,
               dateOfBirth: profileData.dateOfBirth,

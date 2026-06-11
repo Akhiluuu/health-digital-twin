@@ -416,7 +416,7 @@ export default function HydrationScreen() {
                   <TimePicker
                     value={`${reminderSettings.startTime.getHours()}:${reminderSettings.startTime.getMinutes()}`}
                     onChange={(t) => {
-                      const [h, m] = t.split(':');
+                      const [h, m] = String(t || "").split(':');
                       const d = new Date(reminderSettings.startTime);
                       d.setHours(parseInt(h, 10), parseInt(m, 10));
                       onTimeChange("start", null, d);
@@ -429,7 +429,7 @@ export default function HydrationScreen() {
                   <TimePicker
                     value={`${reminderSettings.endTime.getHours()}:${reminderSettings.endTime.getMinutes()}`}
                     onChange={(t) => {
-                      const [h, m] = t.split(':');
+                      const [h, m] = String(t || "").split(':');
                       const d = new Date(reminderSettings.endTime);
                       d.setHours(parseInt(h, 10), parseInt(m, 10));
                       onTimeChange("end", null, d);

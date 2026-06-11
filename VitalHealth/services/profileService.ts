@@ -47,6 +47,7 @@ export interface UserProfile {
   // Registration status (local only — not synced to Firebase)
   biogears_registered?: boolean;      // whether twin has been calibrated
   biogears_registered_at?: string;    // ISO timestamp of last registration
+  waterGoal?: number;
 }
 
 ////////////////////////////////////////////////////////////
@@ -87,6 +88,7 @@ export const EMPTY_PROFILE: UserProfile = {
   biogears_fitness_level: 'sedentary',
   biogears_vo2max: null,
   biogears_registered: false,
+  waterGoal: 2000,
 };
 
 ////////////////////////////////////////////////////////////

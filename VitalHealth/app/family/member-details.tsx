@@ -35,8 +35,8 @@ import { FamilyMember } from "../../types/FamilyMember";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function getAge(dob?: string): string {
-  if (!dob) return "--";
+function getAge(dob?: any): string {
+  if (!dob || typeof dob !== "string") return "--";
   try {
     let date: Date;
     if (dob.includes("/")) {

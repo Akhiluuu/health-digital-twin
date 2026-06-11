@@ -6,7 +6,7 @@ export default {
     orientation: "portrait",
 
     // ✅ NEW APP ICON
-    icon: "./assets/images/vitalhealth-icon.png",
+    icon: "./assets/images/vitalhealthapp-icon.png",
 
     scheme: "vitalhealth",
     userInterfaceStyle: "automatic",
@@ -57,7 +57,7 @@ export default {
 
       // ✅ Notification icon (must be simple white icon ideally)
       notification: {
-        icon: "./assets/images/vitalhealth-icon.png",
+        icon: "./assets/images/vitalhealthapp-icon.png",
         color: "#4CAF50",
       },
 

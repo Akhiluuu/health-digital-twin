@@ -23,8 +23,8 @@ import { FamilyMember } from "../../types/FamilyMember";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function getAge(dob?: string): string {
-  if (!dob) return "--";
+function getAge(dob?: any): string {
+  if (!dob || typeof dob !== "string") return "--";
   try {
     // Support DD/MM/YYYY and YYYY-MM-DD
     let date: Date;

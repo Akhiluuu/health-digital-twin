@@ -318,7 +318,7 @@ export default function StepIntelligenceScreen() {
         >
           <Ionicons name="person-circle-outline" size={16} color={colors.subText} />
           <Text style={[s.profileText, { color: colors.subText }]}>
-            Stride {strideM}m · {weightKg}kg · {profile.gender}
+            Stride {strideM}m · {weightKg}kg · {profile?.gender || ""}
           </Text>
           <Text style={[s.profileEdit, { color: colors.subText }]}>Edit profile ›</Text>
         </TouchableOpacity>

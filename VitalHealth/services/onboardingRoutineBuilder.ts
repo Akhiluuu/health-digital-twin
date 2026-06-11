@@ -345,7 +345,7 @@ export function buildDefaultRoutine(habits: OnboardingHabits, profile?: UserMedi
 
   // 8. Water (250 ml cups)
   let waterLiters = 2;
-  const cleanWater = (habits.water || '2L').toLowerCase();
+  const cleanWater = String(habits.water || '2L').toLowerCase();
   if (cleanWater.includes('glass')) {
     const num = parseInt(cleanWater.replace(/[^0-9]/g, '')) || 8;
     waterLiters = (num * 250) / 1000;

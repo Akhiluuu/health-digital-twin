@@ -28,7 +28,8 @@ const genId = () => Math.random().toString(36).slice(2, 9);
 
 // ── Inline markdown renderer ──────────────────────────────────────────────────
 
-function MarkdownText({ text, style }: { text: string; style?: any }) {
+function MarkdownText({ text, style }: { text: any; style?: any }) {
+  if (!text || typeof text !== "string") return null;
   const parts = text.split(/(\*\*[^*]+\*\*)/g);
   return (
     <Text style={style}>
@@ -89,7 +90,7 @@ function AIInsightsCard({
         </View>
       )}
 
-      {insightsText.length > 0 && (
+      {insightsText && typeof insightsText === "string" && insightsText.length > 0 && (
         <>
           {expanded && (
             <View style={[S.narrativeBox, { borderTopColor: c.border }]}>
@@ -390,7 +391,8 @@ function MacroStat({ label, value, target, color, theme }: any) {
 }
 
 function OrganCard({ name, score, status, theme }: any) {
-  const color = status.includes('Critical') ? '#ef4444' : status.includes('Warning') ? '#f59e0b' : '#10b981';
+  const statusStr = String(status || "");
+  const color = statusStr.includes('Critical') ? '#ef4444' : (statusStr.includes('Warning') ? '#f59e0b' : '#10b981');
   return (
     <View style={[S.organCard, { backgroundColor: theme.card }]}>
       <Text style={{ fontSize: 14, fontWeight: '600', color: theme.text }}>{name}</Text>

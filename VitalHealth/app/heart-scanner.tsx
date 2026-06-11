@@ -63,8 +63,9 @@ interface HRResult {
 // ── Pixel helpers (run entirely in JS) ────────────────────────────────────────
 
 /** Decode base64 JPEG → average R, G, B using OffscreenCanvas (Hermes JSI). */
-async function getRGBFromBase64(b64: string): Promise<{ r: number; g: number; b: number } | null> {
+async function getRGBFromBase64(b64: any): Promise<{ r: number; g: number; b: number } | null> {
   try {
+    if (!b64 || typeof b64 !== "string") return null;
     const data   = b64.includes(",") ? b64.split(",")[1] : b64;
     const binary = atob(data);
     const bytes  = new Uint8Array(binary.length);

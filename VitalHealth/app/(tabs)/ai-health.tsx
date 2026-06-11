@@ -23,7 +23,7 @@ import {
   TouchableWithoutFeedback,
   View,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { PermissionsAndroid } from "react-native";
 
 import { useTheme } from "../../context/ThemeContext";
@@ -262,7 +262,7 @@ function ProcessingModal({ visible, progress, onCancel, c }: { visible: boolean;
 // ─── Chat History Drawer ──────────────────────────────────────────────────────
 
 function ChatHistoryDrawer({
-  visible, sessions, onClose, onSelectSession, onDeleteSession, onNewChat, c,
+  visible, sessions, onClose, onSelectSession, onDeleteSession, onNewChat, c, headerH,
 }: {
   visible: boolean;
   sessions: ChatSession[];
@@ -271,6 +271,7 @@ function ChatHistoryDrawer({
   onDeleteSession: (id: string) => void;
   onNewChat: () => void;
   c: any;
+  headerH: number;
 }) {
   const slideAnim   = useRef(new Animated.Value(-340)).current;
   const overlayAnim = useRef(new Animated.Value(0)).current;
@@ -313,7 +314,7 @@ function ChatHistoryDrawer({
         </TouchableWithoutFeedback>
       </Animated.View>
 
-      <Animated.View style={[styles.drawer, { backgroundColor: c.card, borderRightColor: c.border, transform: [{ translateX: slideAnim }] }]}>
+      <Animated.View style={[styles.drawer, { backgroundColor: c.card, borderRightColor: c.border, transform: [{ translateX: slideAnim }], paddingTop: headerH }]}>
         <SafeAreaView style={{ flex: 1 }}>
           {/* Header */}
           <View style={[styles.drawerHeader, { borderBottomColor: c.border }]}>
@@ -484,6 +485,8 @@ export default function AIHealthScreen() {
   const c           = colors[theme];
   const { medicines }                      = useMedicine();
   const { activeSymptoms, historySymptoms } = useSymptoms();
+  const insets = useSafeAreaInsets();
+  const headerH = 60 + insets.top;
 
   // Server — always production, no user config
   const [connected, setConnected]   = useState(false);
@@ -782,10 +785,10 @@ export default function AIHealthScreen() {
 
   // ── Bubble colours ──────────────────────────────────────────────────────────
 
-  const getUserBubbleColor  = () => theme === "light" ? "#2563eb" : "#3b82f6";
-  const getAiBubbleColor    = () => theme === "light" ? "#f1f5f9" : "#1e293b";
-  const getUserBubbleBorder = () => theme === "light" ? "#1d4ed8" : "#2563eb";
-  const getAiBubbleBorder   = () => theme === "light" ? "#e2e8f0" : "#334155";
+  const getUserBubbleColor  = () => c.accent;
+  const getAiBubbleColor    = () => c.card;
+  const getUserBubbleBorder = () => c.accent;
+  const getAiBubbleBorder   = () => c.border;
 
   // ── Message renderer ────────────────────────────────────────────────────────
 
@@ -798,10 +801,13 @@ export default function AIHealthScreen() {
         </View>
       </View>
     );
+    const userTextColor = theme === "light" ? "#ffffff" : "#0b1329";
+    const userTimeColor = theme === "light" ? "rgba(255,255,255,0.7)" : "rgba(11,19,41,0.7)";
+
     return (
       <View style={[styles.messageRow, { justifyContent: isUser ? "flex-end" : "flex-start" }]}>
         {!isUser && (
-          <View style={[styles.avatar, { backgroundColor: theme === 'light' ? '#f8fafc' : '#0f172a', borderColor: c.border }]}>
+          <View style={[styles.avatar, { backgroundColor: theme === 'light' ? '#eff6ff' : '#1e294b', borderColor: c.border }]}>
             <Text style={{ fontSize: 16 }}>👩‍⚕️</Text>
           </View>
         )}
@@ -810,8 +816,8 @@ export default function AIHealthScreen() {
           isUser ? styles.userBubble : styles.aiBubble,
           { backgroundColor: isUser ? getUserBubbleColor() : getAiBubbleColor(), borderColor: isUser ? getUserBubbleBorder() : getAiBubbleBorder() }
         ]}>
-          <RichText text={item.text} style={[styles.messageText, { color: isUser ? "#ffffff" : c.text }]} />
-          <Text style={[styles.messageTime, { color: isUser ? "#ffffff80" : c.sub }]}>{fmtTime(item.timestamp.getTime())}</Text>
+          <RichText text={item.text} style={[styles.messageText, { color: isUser ? userTextColor : c.text }]} />
+          <Text style={[styles.messageTime, { color: isUser ? userTimeColor : c.sub }]}>{fmtTime(item.timestamp.getTime())}</Text>
         </View>
       </View>
     );
@@ -820,44 +826,42 @@ export default function AIHealthScreen() {
   // ── Render ──────────────────────────────────────────────────────────────────
 
   return (
-    <SafeAreaView style={[styles.safe, { backgroundColor: c.bg }]}>
+    <View style={{ flex: 1, backgroundColor: c.bg }}>
       <StatusBar style={theme === "dark" ? "light" : "dark"} backgroundColor={c.bg} />
-      <Header />
+      <Header title="Dr. Aria" showSOS={true} />
 
-      {/* Smart Page Header */}
-      <View style={[styles.header, { backgroundColor: theme === 'light' ? '#ffffff' : '#0f172a', paddingTop: 100, borderBottomWidth: 0, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.05, shadowRadius: 12, elevation: 5 }]}>
-        <View style={styles.headerLeft}>
-          <View style={[styles.avatarContainer, { backgroundColor: c.card, borderColor: c.border }]}>
-            <Text style={{ fontSize: 22 }}>👩‍⚕️</Text>
-            <View style={[styles.statusBadge, { backgroundColor: connected ? "#10b981" : "#ef4444", borderColor: c.bg }]} />
-          </View>
-          <View>
-            <Text style={[styles.headerTitle, { color: c.text }]}>Dr. Aria</Text>
-            <Text style={[styles.statusLabel, { color: connected ? "#10b981" : "#ef4444" }]}>
-              {connected ? "AI Assistant Active" : "Offline (Check Settings)"}
-            </Text>
-          </View>
+      {/* Sub-header toolbar for connection status and quick actions */}
+      <View style={[styles.subHeader, { backgroundColor: c.card, borderBottomColor: c.border, marginTop: headerH }]}>
+        <View style={styles.subHeaderLeft}>
+          <View style={[styles.statusDot, { backgroundColor: connected ? "#10b981" : "#ef4444" }]} />
+          <Text style={[styles.statusText, { color: connected ? "#10b981" : "#ef4444" }]}>
+            {connected ? "Active" : "Offline"}
+          </Text>
         </View>
 
-        <View style={styles.headerRight}>
-          <TouchableOpacity style={[styles.actionBtn, { backgroundColor: theme === 'light' ? '#f1f5f9' : '#1e293b' }]} onPress={() => setShowHistory(true)}>
-            <Ionicons name="time-outline" size={20} color={c.accent} />
+        <View style={styles.subHeaderRight}>
+          <TouchableOpacity style={[styles.toolBtn, { backgroundColor: theme === 'light' ? '#f1f5f9' : '#1e294b' }]} onPress={() => setShowHistory(true)}>
+            <Ionicons name="chatbubble-ellipses-outline" size={16} color={c.accent} />
+            <Text style={[styles.toolBtnTxt, { color: c.text }]}>History</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={[styles.actionBtn, { backgroundColor: theme === 'light' ? '#f1f5f9' : '#1e293b', marginLeft: 8 }]} onPress={handleNewChat}>
-            <Ionicons name="create-outline" size={20} color={c.accent} />
+          <TouchableOpacity style={[styles.toolBtn, { backgroundColor: theme === 'light' ? '#f1f5f9' : '#1e294b', marginLeft: 8 }]} onPress={handleNewChat}>
+            <Ionicons name="refresh-outline" size={16} color={c.accent} />
+            <Text style={[styles.toolBtnTxt, { color: c.text }]}>Reset</Text>
           </TouchableOpacity>
         </View>
       </View>
 
       {/* RAG bar */}
       {allChunks.length > 0 && (
-        <View style={[styles.ragBar, { backgroundColor: c.card, borderBottomColor: c.border }]}>
+        <View style={[styles.ragBar, { backgroundColor: theme === 'light' ? '#f1f5f9' : '#0e172e', borderBottomColor: c.border }]}>
           <TouchableOpacity style={{ flexDirection: "row", alignItems: "center" }} onPress={() => setShowAllChunks(true)}>
-            <Text style={[styles.ragBarTxt, { color: c.accent }]}>🔍 On-device RAG · {allChunks.length} chunks</Text>
+            <Ionicons name="document-text-outline" size={14} color={c.accent} style={{ marginRight: 6 }} />
+            <Text style={[styles.ragBarTxt, { color: c.accent }]}>On-device RAG · {allChunks.length} chunks</Text>
             {modelLoading && <ActivityIndicator size="small" color={c.accent} style={{ marginLeft: 8 }} />}
           </TouchableOpacity>
-          <TouchableOpacity onPress={() => handleUpload("pdf")}>
-            <Text style={[styles.ragBarTxt, { color: c.sub }]}>+ Upload</Text>
+          <TouchableOpacity style={styles.ragUploadBtn} onPress={() => handleUpload("pdf")}>
+            <Ionicons name="cloud-upload-outline" size={14} color={c.sub} style={{ marginRight: 4 }} />
+            <Text style={[styles.ragUploadTxt, { color: c.sub }]}>Upload</Text>
           </TouchableOpacity>
         </View>
       )}
@@ -873,10 +877,10 @@ export default function AIHealthScreen() {
 
           <View style={[styles.inputContainer, { backgroundColor: c.card, borderTopColor: c.border }]}>
             <TouchableOpacity onPress={handleFile} style={styles.iconButton}>
-              <Ionicons name="attach" size={24} color={c.sub} />
+              <Ionicons name="attach-outline" size={24} color={c.accent} />
             </TouchableOpacity>
 
-            <View style={[styles.inputWrapper, { backgroundColor: theme === 'light' ? '#f8fafc' : '#0f172a', borderColor: c.border }]}>
+            <View style={[styles.inputWrapper, { backgroundColor: theme === 'light' ? '#f1f5f9' : '#0b1329', borderColor: c.border }]}>
               <TextInput
                 ref={inputRef} value={input} onChangeText={setInput}
                 placeholder="Message Dr. Aria..."
@@ -887,7 +891,15 @@ export default function AIHealthScreen() {
             </View>
 
             <TouchableOpacity onPress={sendMessage} style={[styles.sendButton, { backgroundColor: input.trim() ? c.accent : c.border }]} disabled={!input.trim() || loading}>
-              {loading ? <ActivityIndicator color="#fff" size="small" /> : <Ionicons name="send" size={20} color={input.trim() ? "#ffffff" : c.sub} />}
+              {loading ? (
+                <ActivityIndicator color="#fff" size="small" />
+              ) : (
+                <Ionicons
+                  name={input.trim() ? "send" : "send-outline"}
+                  size={18}
+                  color={input.trim() ? (theme === 'light' ? '#ffffff' : '#0b1329') : c.sub}
+                />
+              )}
             </TouchableOpacity>
           </View>
         </View>
@@ -903,8 +915,9 @@ export default function AIHealthScreen() {
         visible={showHistory} sessions={chatSessions}
         onClose={() => setShowHistory(false)} onSelectSession={handleSelectSession}
         onDeleteSession={handleDeleteSession} onNewChat={handleNewChat} c={c}
+        headerH={headerH}
       />
-    </SafeAreaView>
+    </View>
   );
 }
 
@@ -913,19 +926,18 @@ export default function AIHealthScreen() {
 const styles = StyleSheet.create({
   safe: { flex: 1 }, flex: { flex: 1 }, container: { flex: 1 },
 
-  header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 20, paddingBottom: 16, zIndex: 10 },
-  headerLeft: { flexDirection: "row", alignItems: "center", gap: 12, flex: 1 },
-  headerRight: { flexDirection: "row", alignItems: "center" },
-  headerTitle: { fontSize: 20, fontWeight: "800", letterSpacing: -0.5 },
-  statusLabel: { fontSize: 12, fontWeight: "600", marginTop: 2 },
+  subHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 16, paddingVertical: 10, borderBottomWidth: 1, zIndex: 10 },
+  subHeaderLeft: { flexDirection: "row", alignItems: "center", gap: 8 },
+  statusDot: { width: 8, height: 8, borderRadius: 4 },
+  statusText: { fontSize: 12, fontWeight: "700", textTransform: "uppercase", letterSpacing: 0.5 },
+  subHeaderRight: { flexDirection: "row", alignItems: "center" },
+  toolBtn: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8 },
+  toolBtnTxt: { fontSize: 11, fontWeight: "600" },
 
-  avatarContainer: { width: 44, height: 44, borderRadius: 22, borderWidth: 1, alignItems: "center", justifyContent: "center", position: "relative" },
-  statusBadge: { position: "absolute", bottom: -2, right: -2, width: 14, height: 14, borderRadius: 7, borderWidth: 2 },
-
-  actionBtn: { width: 38, height: 38, borderRadius: 19, alignItems: "center", justifyContent: "center" },
-
-  ragBar: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingHorizontal: 20, paddingVertical: 10, borderBottomWidth: 1 },
+  ragBar: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingHorizontal: 16, paddingVertical: 8, borderBottomWidth: 1 },
   ragBarTxt: { fontSize: 11, fontWeight: "600" },
+  ragUploadBtn: { flexDirection: "row", alignItems: "center" },
+  ragUploadTxt: { fontSize: 11, fontWeight: "600" },
 
   messagesList: { paddingHorizontal: 16, paddingBottom: 24, paddingTop: 16 },
   messageRow: { flexDirection: "row", alignItems: "flex-end", marginBottom: 12 },

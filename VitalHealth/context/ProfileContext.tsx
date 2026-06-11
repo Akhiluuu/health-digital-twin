@@ -37,12 +37,12 @@ const ProfileContext = createContext<ProfileContextType>({
   reloadProfile:  async () => {},
 });
 
-function parseKg(raw: string): number {
-  const n = parseFloat((raw || "").replace(/[^0-9.]/g, ""));
+function parseKg(raw: any): number {
+  const n = parseFloat(String(raw || "").replace(/[^0-9.]/g, ""));
   return isNaN(n) || n <= 0 ? 0 : n;
 }
-function parseCm(raw: string): number {
-  const n = parseFloat((raw || "").replace(/[^0-9.]/g, ""));
+function parseCm(raw: any): number {
+  const n = parseFloat(String(raw || "").replace(/[^0-9.]/g, ""));
   return isNaN(n) || n <= 0 ? 0 : n;
 }
 function parseAge(dob: string): number {

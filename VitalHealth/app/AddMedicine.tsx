@@ -316,7 +316,7 @@ export default function AddMedicine() {
           <TimePicker
             value={`${time.getHours()}:${time.getMinutes()}`}
             onChange={(t) => {
-              const [h, m] = t.split(':');
+              const [h, m] = String(t || "").split(':');
               const d = new Date(time);
               d.setHours(parseInt(h, 10));
               d.setMinutes(parseInt(m, 10));

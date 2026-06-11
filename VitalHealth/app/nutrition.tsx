@@ -32,7 +32,6 @@ import {
   useNutrition,
 } from "../context/NutritionContext";
 import { useTheme } from "../context/ThemeContext";
-import { useBiogearsTwin } from "../context/BiogearsTwinContext";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 export interface CsvFoodItem {
@@ -52,12 +51,12 @@ export interface CsvFoodItem {
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-export function parseDisplayAmount(display_amount: string): {
+export function parseDisplayAmount(display_amount?: string): {
   base: number;
   unit: string;
   unitLabel: string;
 } {
-  const trimmed = display_amount.trim();
+  const trimmed = String(display_amount || "").trim();
   const match = trimmed.match(/^(\d+(?:\.\d+)?)\s*(.*)/);
   if (!match) return { base: 1, unit: trimmed, unitLabel: trimmed };
   const base = parseFloat(match[1]);
@@ -614,7 +613,6 @@ export default function NutritionScreen() {
     toggleReminder, updateReminderTime, getMealEntries,
   } = useNutrition();
 
-  const { addEvent } = useBiogearsTwin();
   const { calories, protein, carbs, fat, sugar, sodium, fiber } = totals;
 
   const colors = theme === "light"
@@ -712,16 +710,6 @@ export default function NutritionScreen() {
       carbs: scaled.carbs, fat: scaled.fat, sugar: scaled.sugar,
       sodium: scaled.sodium, fiber: scaled.fiber,
     });
-    try {
-      addEvent({
-        event_type: "meal", value: scaled.calories,
-        wallTime: new Date().toTimeString().slice(0, 5),
-        meal_type: "custom",
-        carb_g: scaled.carbs, fat_g: scaled.fat, protein_g: scaled.protein,
-        displayLabel: `${selectedMeal.label} · ${label} (${scaled.calories} kcal)`,
-        displayIcon: selectedMeal.icon,
-      });
-    } catch (err) { console.error("BioGears sync error:", err); }
     closeModal();
     Alert.alert("✅ Added", `${label} added to ${selectedMeal.label}`);
   }, [selectedCsvFood, selectedMeal, scaled, quantity, parsedUnit]);
@@ -736,24 +724,6 @@ export default function NutritionScreen() {
       foodName: customFood, calories: cal,
       protein: 0, carbs: 0, fat: 0, sugar: 0, sodium: 0, fiber: 0,
     });
-    try {
-      // Estimate balanced macros from calories so BioGears validator never sees
-      // meal_type='custom' without carb_g / fat_g / protein_g.
-      // Balanced split: 40% carb (4 kcal/g) · 30% fat (9 kcal/g) · 30% protein (4 kcal/g)
-      const estimatedCarb    = Math.round(cal * 0.40 / 4);
-      const estimatedFat     = Math.round(cal * 0.30 / 9);
-      const estimatedProtein = Math.round(cal * 0.30 / 4);
-      addEvent({
-        event_type: "meal", value: cal,
-        wallTime: new Date().toTimeString().slice(0, 5),
-        meal_type: "custom",
-        carb_g: estimatedCarb,
-        fat_g: estimatedFat,
-        protein_g: estimatedProtein,
-        displayLabel: `${selectedMeal.label} · ${customFood} (${cal} kcal)`,
-        displayIcon: selectedMeal.icon,
-      });
-    } catch (err) { console.error("BioGears sync error:", err); }
     closeModal();
     Alert.alert("✅ Added", `${customFood} added to ${selectedMeal.label}`);
   };

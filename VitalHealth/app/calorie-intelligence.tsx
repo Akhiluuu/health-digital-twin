@@ -24,6 +24,7 @@ import { useProfile } from "../context/ProfileContext";
 import { useSteps } from "../context/StepContext";
 import { useTheme } from "../context/ThemeContext";
 import { useBiogearsTwin } from "../context/BiogearsTwinContext";
+import { useFamily } from "../context/FamilyContext";
 
 // 🔹 Firebase Imports
 import { doc, setDoc, onSnapshot } from "firebase/firestore";
@@ -33,9 +34,10 @@ import { getUserId } from "../services/firebaseSync";
 const { width } = Dimensions.get("window");
 
 // ─── Calorie science ─────────────────────────────────────────────────────────
-function calcBMR(weightKg: number, heightCm: number, ageYears: number, gender: string): number {
+function calcBMR(weightKg: number, heightCm: number, ageYears: number, gender?: string): number {
   const base = 10 * weightKg + 6.25 * heightCm - 5 * ageYears;
-  return Math.round(gender.toLowerCase().startsWith("f") ? base - 161 : base + 5);
+  const g = String(gender || '').toLowerCase();
+  return Math.round(g.startsWith("f") ? base - 161 : base + 5);
 }
 
 const ACTIVITY_LEVELS = [
@@ -219,16 +221,48 @@ export default function CalorieIntelligenceScreen() {
         border: "#334155",
       };
 
-  const { weightKg, heightCm, ageYears, profile } = useProfile();
+  const { activeProfile: profile, isSwitched, activeMemberId } = useFamily();
   const { steps, calories: stepCalFromContext, sessionSecs, isTracking } = useSteps();
-  const { caloricBalance } = useBiogearsTwin();
+  const { caloricBalance, refreshAnalytics } = useBiogearsTwin();
 
   // ── Nutrition sync ────────────────────────────────────────────────────────
   const { totals, selectedProfile } = useNutrition();
   const rec = selectedProfile.recommendations;
 
+  useEffect(() => {
+    refreshAnalytics().catch((err) => console.log("Error refreshing BioGears analytics:", err));
+  }, [activeMemberId, steps, totals.calories, refreshAnalytics]);
+
+  const parseKg = (raw: any) => {
+    const n = parseFloat(String(raw || "").replace(/[^0-9.]/g, ""));
+    return isNaN(n) || n <= 0 ? 70 : n;
+  };
+  const parseCm = (raw: any) => {
+    const n = parseFloat(String(raw || "").replace(/[^0-9.]/g, ""));
+    return isNaN(n) || n <= 0 ? 170 : n;
+  };
+  const parseAge = (dob: any) => {
+    try {
+      if (!dob) return 30;
+      let date: Date;
+      if (String(dob).includes("/")) {
+        const [d, m, y] = String(dob).split("/").map(Number);
+        const year = y < 100 ? 2000 + y : y;
+        date = new Date(year, m - 1, d);
+      } else {
+        date = new Date(dob);
+      }
+      const age = Math.floor((Date.now() - date.getTime()) / (1000 * 60 * 60 * 24 * 365.25));
+      return age > 0 && age < 150 ? age : 30;
+    } catch { return 30; }
+  };
+
+  const weightKg = useMemo(() => parseKg(profile?.weight), [profile?.weight]);
+  const heightCm = useMemo(() => parseCm(profile?.height), [profile?.height]);
+  const ageYears = useMemo(() => parseAge(profile?.dateOfBirth), [profile?.dateOfBirth]);
+
   // ── Derived science ───────────────────────────────────────────────────────
-  const baseBmr   = useMemo(() => calcBMR(weightKg, heightCm, ageYears, profile.gender), [weightKg, heightCm, ageYears, profile.gender]);
+  const baseBmr   = useMemo(() => calcBMR(weightKg, heightCm, ageYears, profile?.gender), [weightKg, heightCm, ageYears, profile?.gender]);
   const bmr = caloricBalance?.bmr_kcal_day ?? baseBmr;
   
   // UPDATED: TDEE now uses activity multiplier from selected profile
@@ -261,10 +295,16 @@ export default function CalorieIntelligenceScreen() {
 
     const syncCaloriesWithFirebase = async () => {
       try {
-        const uid = await getUserId();
+        const uid = isSwitched && activeMemberId && activeMemberId !== "self" ? activeMemberId : await getUserId();
         if (!uid) return;
 
         const userRef = doc(db, "users", uid);
+
+        // Guard against writing zero/default values before contexts are fully loaded
+        if (steps === 0 && totals.calories === 0 && bmr === baseBmr) {
+          console.log("[CalorieIntelligence] Skipping initial default/zero sync to prevent data overwrite");
+          return;
+        }
 
         // 🔹 Save calorie data to Firebase
         await setDoc(
@@ -296,7 +336,7 @@ export default function CalorieIntelligenceScreen() {
     return () => {
       if (unsubscribe) unsubscribe();
     };
-  }, [stepCal, totals.calories, tdee, bmr, steps]);
+  }, [stepCal, totals.calories, tdee, bmr, steps, activeMemberId, isSwitched]);
 
   // Calorie balance: TDEE vs what user has actually eaten
   const caloriesConsumed = totals.calories;
@@ -425,7 +465,7 @@ export default function CalorieIntelligenceScreen() {
         <TouchableOpacity style={[s.profileBanner, { backgroundColor: colors.card, borderColor: colors.border }]} onPress={() => router.push("/profile")} activeOpacity={0.8}>
           <Ionicons name="person-circle" size={20} color={colors.sub} />
           <Text style={[s.profileBannerText, { color: colors.sub }]}>
-            {weightKg} kg · {heightCm} cm · {profile.gender} · Age {ageYears}
+            {weightKg} kg · {heightCm} cm · {profile?.gender || "Unknown"} · Age {ageYears}
           </Text>
           <Text style={[s.profileBannerEdit, { color: colors.sub }]}>Edit ›</Text>
         </TouchableOpacity>

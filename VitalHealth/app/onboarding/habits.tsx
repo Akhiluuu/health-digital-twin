@@ -235,8 +235,8 @@ const FOOD_QUIZ: {
 
 const pad = (n: number) => String(n).padStart(2, "0");
 
-function formatDisplayTime(timeStr: string): string {
-  if (!timeStr) return "";
+function formatDisplayTime(timeStr: any): string {
+  if (!timeStr || typeof timeStr !== "string") return "";
   const [hStr, mStr] = timeStr.split(":");
   const h24 = parseInt(hStr, 10);
   const m   = parseInt(mStr, 10);

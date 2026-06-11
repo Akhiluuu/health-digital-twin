@@ -114,16 +114,16 @@ const CATEGORY_STYLES: Record<ReportCategory, CategoryStyle> = {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function fileTypeLabel(mimeType: string, originalName: string): string {
-  if (mimeType?.includes("pdf"))   return "PDF";
-  if (mimeType?.includes("image")) return mimeType.split("/")[1]?.toUpperCase() ?? "Image";
-  const ext = originalName.split(".").pop()?.toUpperCase();
+function fileTypeLabel(mimeType: any, originalName: any): string {
+  if (mimeType && typeof mimeType === "string" && mimeType.includes("pdf"))   return "PDF";
+  if (mimeType && typeof mimeType === "string" && mimeType.includes("image")) return mimeType.split("/")[1]?.toUpperCase() ?? "Image";
+  const ext = String(originalName || "").split(".").pop()?.toUpperCase();
   return ext ?? "File";
 }
 
-function viewerIcon(mimeType: string): keyof typeof Ionicons.glyphMap {
-  if (mimeType?.includes("pdf"))   return "document-text-outline";
-  if (mimeType?.includes("image")) return "image-outline";
+function viewerIcon(mimeType: any): keyof typeof Ionicons.glyphMap {
+  if (mimeType && typeof mimeType === "string" && mimeType.includes("pdf"))   return "document-text-outline";
+  if (mimeType && typeof mimeType === "string" && mimeType.includes("image")) return "image-outline";
   return "open-outline";
 }
 
@@ -132,12 +132,12 @@ function formatSize(kb: number): string {
   return `${(kb / 1024).toFixed(1)} MB`;
 }
 
-function isImage(mimeType: string): boolean {
-  return mimeType?.startsWith("image/");
+function isImage(mimeType: any): boolean {
+  return typeof mimeType === "string" && mimeType.startsWith("image/");
 }
 
-function isPdf(mimeType: string, name: string): boolean {
-  return mimeType?.includes("pdf") || name?.toLowerCase().endsWith(".pdf");
+function isPdf(mimeType: any, name: any): boolean {
+  return (typeof mimeType === "string" && mimeType.includes("pdf")) || (typeof name === "string" && name.toLowerCase().endsWith(".pdf"));
 }
 
 // ─── Animated Placeholder ─────────────────────────────────────────────────────

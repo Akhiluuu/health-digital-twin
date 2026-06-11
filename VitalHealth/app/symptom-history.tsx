@@ -59,9 +59,9 @@ export default function SymptomHistory() {
   };
 
   const getSeverityColor = (
-    severity: string
+    severity?: string
   ) => {
-    switch (severity.toLowerCase()) {
+    switch (String(severity || '').toLowerCase()) {
       case "mild":
         return "#22c55e";
       case "moderate":

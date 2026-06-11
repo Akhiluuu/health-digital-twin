@@ -91,6 +91,7 @@ export interface BiogearsTwinContextValue {
 
   // Today's routine
   todayEvents: RoutineEvent[];
+  setTodayEvents: (events: RoutineEvent[]) => void;
   addEvent: (event: Omit<RoutineEvent, 'id'>) => void;
   addEventAndSimulate: (event: Omit<RoutineEvent, 'id'>, customSimName?: string) => Promise<void>;
   removeEvent: (id: string) => void;
@@ -286,9 +287,9 @@ function buildStepExerciseEvent(steps: number, weightKg: number, heightCm: numbe
  * Computes a local estimate of Basal Metabolic Rate and daily calorie burn
  */
 function computeLocalCaloricBalanceFallback(profile: any, todayEvents: RoutineEvent[], steps: number): CaloricBalanceResponse {
-  const weightVal = profile ? parseFloat((profile.weight || '').replace(/[^0-9.]/g, '')) : 70;
-  const heightVal = profile ? parseFloat((profile.height || '').replace(/[^0-9.]/g, '')) : 170;
-  const ageVal = profile ? parseInt((profile.age || '').replace(/[^0-9]/g, '')) : 30;
+  const weightVal = profile ? parseFloat(String(profile.weight || '').replace(/[^0-9.]/g, '')) : 70;
+  const heightVal = profile ? parseFloat(String(profile.height || '').replace(/[^0-9.]/g, '')) : 170;
+  const ageVal = profile ? parseInt(String(profile.age || '').replace(/[^0-9]/g, '')) : 30;
   const isMale = (profile?.gender || 'male').toLowerCase() === 'male';
 
   // Mifflin-St Jeor BMR
@@ -741,8 +742,8 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
         }
 
         if (habits) {
-          const heightVal = profile ? parseFloat((profile.height || '').replace(/[^0-9.]/g, '')) : 175;
-          const weightVal = profile ? parseFloat((profile.weight || '').replace(/[^0-9.]/g, '')) : 70;
+          const heightVal = profile ? parseFloat(String(profile.height || '').replace(/[^0-9.]/g, '')) : 175;
+          const weightVal = profile ? parseFloat(String(profile.weight || '').replace(/[^0-9.]/g, '')) : 70;
           const routine = buildDefaultRoutine(habits, {
             gender: profile ? profile.gender : 'Male',
             dateOfBirth: profile ? profile.dateOfBirth : '1995-01-01',
@@ -946,8 +947,8 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
       }));
 
       // Append steps exercise
-      const weightVal = profile ? parseFloat((profile.weight || '').replace(/[^0-9.]/g, '')) : 70;
-      const heightVal = profile ? parseFloat((profile.height || '').replace(/[^0-9.]/g, '')) : 170;
+      const weightVal = profile ? parseFloat(String(profile.weight || '').replace(/[^0-9.]/g, '')) : 70;
+      const heightVal = profile ? parseFloat(String(profile.height || '').replace(/[^0-9.]/g, '')) : 170;
       const stepEvent = buildStepExerciseEvent(steps, weightVal || 70, heightVal || 170);
       if (stepEvent) {
         eventsForBurn.push(stepEvent);
@@ -1071,8 +1072,8 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
   const updateCaloricBalance = useCallback(async () => {
     if (!profile) return;
     
-    const weightVal = parseFloat((profile.weight || '').replace(/[^0-9.]/g, '')) || 70;
-    const heightVal = parseFloat((profile.height || '').replace(/[^0-9.]/g, '')) || 170;
+    const weightVal = parseFloat(String(profile.weight || '').replace(/[^0-9.]/g, '')) || 70;
+    const heightVal = parseFloat(String(profile.height || '').replace(/[^0-9.]/g, '')) || 170;
     const stepEvent = buildStepExerciseEvent(steps, weightVal, heightVal);
     const eventsForBurn: BiogearsHealthEvent[] = todayEvents.map(e => ({
       event_type: e.event_type,
@@ -1155,6 +1156,11 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
       return updated;
     });
   }, [twinUserId]);
+
+  const setTodayEventsWrapped = useCallback((events: RoutineEvent[]) => {
+    setTodayEvents(events);
+    persistToday(events);
+  }, [twinUserId, firestoreOwnerUid]);
 
   const clearToday = useCallback(() => {
     setTodayEvents([]);
@@ -1435,8 +1441,8 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
         notes: e.notes,
       }));
 
-      const weightVal = profile ? parseFloat((profile.weight || '').replace(/[^0-9.]/g, '')) : 70;
-      const heightVal = profile ? parseFloat((profile.height || '').replace(/[^0-9.]/g, '')) : 170;
+      const weightVal = profile ? parseFloat(String(profile.weight || '').replace(/[^0-9.]/g, '')) : 70;
+      const heightVal = profile ? parseFloat(String(profile.height || '').replace(/[^0-9.]/g, '')) : 170;
       const stepEvent = buildStepExerciseEvent(steps, weightVal || 70, heightVal || 170);
       if (stepEvent) {
         events.push(stepEvent);
@@ -1507,8 +1513,8 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
         notes: e.notes,
       }));
 
-      const weightVal = profile ? parseFloat((profile.weight || '').replace(/[^0-9.]/g, '')) : 70;
-      const heightVal = profile ? parseFloat((profile.height || '').replace(/[^0-9.]/g, '')) : 170;
+      const weightVal = profile ? parseFloat(String(profile.weight || '').replace(/[^0-9.]/g, '')) : 70;
+      const heightVal = profile ? parseFloat(String(profile.height || '').replace(/[^0-9.]/g, '')) : 170;
       const stepEvent = buildStepExerciseEvent(steps, weightVal || 70, heightVal || 170);
       if (stepEvent) {
         events.push(stepEvent);
@@ -1794,8 +1800,8 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
         throw new Error("No onboarding habits found. Please complete onboarding first.");
       }
 
-      const heightVal = profile ? parseFloat((profile.height || '').replace(/[^0-9.]/g, '')) : 175;
-      const weightVal = profile ? parseFloat((profile.weight || '').replace(/[^0-9.]/g, '')) : 70;
+      const heightVal = profile ? parseFloat(String(profile.height || '').replace(/[^0-9.]/g, '')) : 175;
+      const weightVal = profile ? parseFloat(String(profile.weight || '').replace(/[^0-9.]/g, '')) : 70;
       const routine = buildDefaultRoutine(habits, {
         gender: profile ? profile.gender : 'Male',
         dateOfBirth: profile ? profile.dateOfBirth : '1995-01-01',
@@ -1879,6 +1885,7 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
     setAiServerUrl,
     querySimulation,
     todayEvents,
+    setTodayEvents: setTodayEventsWrapped,
     addEvent,
     removeEvent,
     updateEvent,

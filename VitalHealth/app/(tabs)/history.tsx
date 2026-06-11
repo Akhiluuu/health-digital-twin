@@ -1,6 +1,6 @@
 // app/(tabs)/history.tsx — Log Routine: reminders + all context data
 import React, { useCallback, useEffect, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Switch, RefreshControl, Platform, Alert, TextInput } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Switch, RefreshControl, Platform, Alert, TextInput, Modal, KeyboardAvoidingView } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -11,19 +11,22 @@ import { useHydration } from '../../context/HydrationContext';
 import { useNutrition } from '../../context/NutritionContext';
 import { useSymptoms } from '../../context/SymptomContext';
 import { useTheme } from '../../context/ThemeContext';
+import { useFamily } from '../../context/FamilyContext';
+import { useProfile } from '../../context/ProfileContext';
 import { colors as themeColors } from '../../theme/colors';
 import Header from '../components/Header';
 import TimePicker from '../../components/twin/TimePicker';
 import { auth } from '../../services/firebase';
+import { updateProfile as firebaseUpdateProfile } from '../../services/profileService';
 import { scheduleRoutineReminder, cancelRoutineReminder } from '../../services/notifeeService';
 
 type LogTab = 'nutrition' | 'exercise' | 'sleep' | 'hydration' | 'symptoms';
 const TABS: { id: LogTab; label: string; icon: string; accent: string }[] = [
   { id: 'nutrition', label: 'Nutrition', icon: '🍽️', accent: '#f59e0b' },
-  { id: 'exercise',  label: 'Exercise',  icon: '💪', accent: '#10b981' },
-  { id: 'sleep',     label: 'Sleep',     icon: '😴', accent: '#6366f1' },
+  { id: 'exercise', label: 'Exercise', icon: '💪', accent: '#10b981' },
+  { id: 'sleep', label: 'Sleep', icon: '😴', accent: '#6366f1' },
   { id: 'hydration', label: 'Hydration', icon: '💧', accent: '#0ea5e9' },
-  { id: 'symptoms',  label: 'Symptoms',  icon: '🩺', accent: '#ef4444' },
+  { id: 'symptoms', label: 'Symptoms', icon: '🩺', accent: '#ef4444' },
 ];
 
 const REMINDER_KEY = (tab: LogTab) => `@log_reminder_${tab}`;
@@ -61,8 +64,8 @@ function getPrepopulatedReminders(tab: LogTab, habits: any): RoutineReminder[] {
   const dinner = habits?.dinner || '20:00';
   const sleep = habits?.sleep || '23:00';
 
-  const formatHM = (timeStr?: string) => {
-    if (!timeStr) return '08:00';
+  const formatHM = (timeStr?: any) => {
+    if (!timeStr || typeof timeStr !== 'string') return '08:00';
     let clean = timeStr.trim().toLowerCase();
     const isPM = clean.includes('pm');
     const isAM = clean.includes('am');
@@ -120,7 +123,7 @@ const syncNotificationsForReminders = async (tab: LogTab, list: RoutineReminder[
       await cancelRoutineReminder(notifId);
 
       if (r.enabled) {
-        const [h, m] = r.time.split(':').map(Number);
+        const [h, m] = String(r.time || '08:00').split(':').map(Number);
         const cleanLabel = r.label.replace(/[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|[\u2011-\u26FF]|\uD83E[\uDC00-\uDFFF]/g, '').trim();
         const tabEmoji = tab === 'nutrition' ? '🍽️' : tab === 'exercise' ? '💪' : tab === 'sleep' ? '😴' : tab === 'hydration' ? '💧' : '🩺';
         const title = `${tabEmoji} Habit Reminder`;
@@ -204,7 +207,7 @@ function ReminderCard({ tab, accent, c }: { tab: LogTab; accent: string; c: any 
       const notifId = `notif_routine_${tab}_${id}`;
       await cancelRoutineReminder(notifId);
       if (item.enabled) {
-        const [h, m] = item.time.split(':').map(Number);
+        const [h, m] = String(item.time || '08:00').split(':').map(Number);
         const cleanLabel = item.label.replace(/[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|[\u2011-\u26FF]|\uD83E[\uDC00-\uDFFF]/g, '').trim();
         const tabEmoji = tab === 'nutrition' ? '🍽️' : tab === 'exercise' ? '💪' : tab === 'sleep' ? '😴' : tab === 'hydration' ? '💧' : '🩺';
         const title = `${tabEmoji} Habit Reminder`;
@@ -238,7 +241,7 @@ function ReminderCard({ tab, accent, c }: { tab: LogTab; accent: string; c: any 
     await AsyncStorage.setItem(REMINDERS_LIST_KEY(tab), JSON.stringify(updated));
 
     const notifId = `notif_routine_${tab}_${newReminder.id}`;
-    const [h, m] = newTime.split(':').map(Number);
+    const [h, m] = String(newTime || '08:00').split(':').map(Number);
     const cleanLabel = newReminder.label.replace(/[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|[\u2011-\u26FF]|\uD83E[\uDC00-\uDFFF]/g, '').trim();
     const tabEmoji = tab === 'nutrition' ? '🍽️' : tab === 'exercise' ? '💪' : tab === 'sleep' ? '😴' : tab === 'hydration' ? '💧' : '🩺';
     const title = `${tabEmoji} Habit Reminder`;
@@ -341,7 +344,7 @@ function ReminderCard({ tab, accent, c }: { tab: LogTab; accent: string; c: any 
           {showAddForm ? (
             <View style={[rc.addForm, { backgroundColor: c.bg, borderColor: c.border }]}>
               <Text style={[rc.formTitle, { color: c.text }]}>Add New Reminder</Text>
-              
+
               {/* Presets Row */}
               <View style={rc.presetContainer}>
                 <Text style={[rc.presetTitle, { color: c.sub }]}>Quick Presets:</Text>
@@ -421,22 +424,22 @@ const rc = StyleSheet.create({
   iconBox: { width: 36, height: 36, borderRadius: 9, justifyContent: 'center', alignItems: 'center' },
   title: { fontSize: 14, fontWeight: '700' },
   sub: { fontSize: 11, marginTop: 2 },
-  
+
   body: { marginTop: 12, paddingTop: 12, borderTopWidth: 1 },
   emptyText: { fontSize: 12, textAlign: 'center', paddingVertical: 12, fontStyle: 'italic' },
-  
+
   reminderRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 10, borderBottomWidth: 1 },
   reminderLabel: { fontSize: 13, fontWeight: '600' },
   reminderSub: { fontSize: 10, marginTop: 2 },
   reminderControls: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   deleteBtn: { padding: 4, marginLeft: 4 },
-  
+
   actionsRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 12, flexWrap: 'wrap', gap: 8 },
   addButton: { flexDirection: 'row', alignItems: 'center', gap: 4, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 12 },
   addButtonText: { fontSize: 12, fontWeight: '600' },
   resetLink: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingVertical: 8 },
   resetLinkText: { fontSize: 11, textDecorationLine: 'underline' },
-  
+
   addForm: { borderRadius: 12, borderWidth: 1, padding: 12, marginTop: 12 },
   formTitle: { fontSize: 13, fontWeight: '700', marginBottom: 8 },
   presetContainer: { marginBottom: 10 },
@@ -468,11 +471,11 @@ function EntryCard({ icon, title, sub, time, accent, c }: any) {
   );
 }
 const ec = StyleSheet.create({
-  card:  { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 11, borderRadius: 13, marginBottom: 7 },
-  box:   { width: 36, height: 36, borderRadius: 9, justifyContent: 'center', alignItems: 'center' },
+  card: { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 11, borderRadius: 13, marginBottom: 7 },
+  box: { width: 36, height: 36, borderRadius: 9, justifyContent: 'center', alignItems: 'center' },
   title: { fontSize: 13, fontWeight: '600' },
-  sub:   { fontSize: 11, marginTop: 1 },
-  time:  { fontSize: 10, minWidth: 44, textAlign: 'right' },
+  sub: { fontSize: 11, marginTop: 1 },
+  time: { fontSize: 10, minWidth: 44, textAlign: 'right' },
 });
 
 // ── Empty State ───────────────────────────────────────────────────────────────
@@ -490,27 +493,40 @@ function Empty({ icon, text, btn, onPress, accent, c }: any) {
 const em = StyleSheet.create({
   wrap: { borderRadius: 18, padding: 24, alignItems: 'center', marginBottom: 10, gap: 8 },
   text: { fontSize: 13, textAlign: 'center', lineHeight: 20 },
-  btn:  { marginTop: 4, paddingHorizontal: 22, paddingVertical: 9, borderRadius: 18 },
+  btn: { marginTop: 4, paddingHorizontal: 22, paddingVertical: 9, borderRadius: 18 },
   btnT: { color: '#fff', fontWeight: '700', fontSize: 13 },
 });
 
 // ── Summary Pills Row ─────────────────────────────────────────────────────────
-function Pills({ items }: { items: { label: string; value: string; accent: string }[] }) {
+function Pills({ items }: { items: { label: string; value: string; accent: string; onPress?: () => void }[] }) {
   return (
     <View style={{ flexDirection: 'row', gap: 7, marginBottom: 12 }}>
-      {items.map(i => (
-        <View key={i.label} style={[pi.pill, { backgroundColor: i.accent + '18' }]}>
-          <Text style={[pi.val, { color: i.accent }]}>{i.value}</Text>
-          <Text style={[pi.lbl, { color: i.accent + 'bb' }]}>{i.label}</Text>
-        </View>
-      ))}
+      {items.map(i => {
+        if (i.onPress) {
+          return (
+            <TouchableOpacity key={i.label} style={[pi.pill, { backgroundColor: i.accent + '18' }]} onPress={i.onPress} activeOpacity={0.75}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
+                <Text style={[pi.val, { color: i.accent }]}>{i.value}</Text>
+                <Ionicons name="pencil-sharp" size={10} color={i.accent} />
+              </View>
+              <Text style={[pi.lbl, { color: i.accent + 'bb' }]}>{i.label}</Text>
+            </TouchableOpacity>
+          );
+        }
+        return (
+          <View key={i.label} style={[pi.pill, { backgroundColor: i.accent + '18' }]}>
+            <Text style={[pi.val, { color: i.accent }]}>{i.value}</Text>
+            <Text style={[pi.lbl, { color: i.accent + 'bb' }]}>{i.label}</Text>
+          </View>
+        );
+      })}
     </View>
   );
 }
 const pi = StyleSheet.create({
   pill: { flex: 1, alignItems: 'center', padding: 9, borderRadius: 11 },
-  val:  { fontSize: 14, fontWeight: '900' },
-  lbl:  { fontSize: 9, marginTop: 2, fontWeight: '600' },
+  val: { fontSize: 14, fontWeight: '900' },
+  lbl: { fontSize: 9, marginTop: 2, fontWeight: '600' },
 });
 
 function SectionTitle({ text, c }: any) {
@@ -531,7 +547,43 @@ export default function LogRoutineScreen() {
   const { totals, foodEntries, activityEntries, totalActivityCalories, mealReminders } = useNutrition();
   const { activeSymptoms, historySymptoms, refreshSymptoms } = useSymptoms();
 
-  const [tab, setTab]           = useState<LogTab>('nutrition');
+  const { isSwitched, activeMemberId, activeProfile, updateActiveProfile } = useFamily();
+  const { profile, updateProfile } = useProfile();
+
+  const [showGoalModal, setShowGoalModal] = useState(false);
+  const [goalInput, setGoalInput] = useState('');
+
+  const currentProfile = isSwitched ? activeProfile : profile;
+  const waterGoal = currentProfile?.waterGoal || 2000;
+
+  const openGoalModal = () => {
+    setGoalInput(String(waterGoal));
+    setShowGoalModal(true);
+  };
+
+  const handleSaveGoal = async () => {
+    const val = parseInt(goalInput.replace(/[^0-9]/g, ''), 10);
+    if (isNaN(val) || val <= 0) {
+      Alert.alert('Invalid Goal', 'Please enter a valid hydration amount in mL.');
+      return;
+    }
+
+    try {
+      if (isSwitched && activeMemberId && activeMemberId !== "self") {
+        const updatedProfile = { ...activeProfile, waterGoal: val } as any;
+        await updateActiveProfile(updatedProfile);
+        await firebaseUpdateProfile({ waterGoal: val }, activeMemberId);
+      } else {
+        await updateProfile({ waterGoal: val });
+      }
+      setShowGoalModal(false);
+    } catch (err) {
+      console.log('❌ Error saving water goal:', err);
+      Alert.alert('Error', 'Failed to update daily water goal.');
+    }
+  };
+
+  const [tab, setTab] = useState<LogTab>('nutrition');
 
   useEffect(() => {
     if (params.tab && ['nutrition', 'exercise', 'sleep', 'hydration', 'symptoms'].includes(params.tab as string)) {
@@ -543,7 +595,7 @@ export default function LogRoutineScreen() {
 
   const onRefresh = useCallback(async () => {
     setRefresh(true);
-    await Promise.all([refreshSessions(), refreshSymptoms()]).catch(() => {});
+    await Promise.all([refreshSessions(), refreshSymptoms()]).catch(() => { });
     setRefresh(false);
   }, [refreshSessions, refreshSymptoms]);
 
@@ -555,13 +607,13 @@ export default function LogRoutineScreen() {
   const bgMeals = todayEvents.filter(e => e.event_type === 'meal');
   const bgWater = todayEvents.filter(e => e.event_type === 'water');
   const bgSleep = todayEvents.filter(e => e.event_type === 'sleep');
-  const bgEx    = todayEvents.filter(e => e.event_type === 'exercise');
+  const bgEx = todayEvents.filter(e => e.event_type === 'exercise');
 
-  const goMeal  = () => router.push({ pathname: '/twin', params: { mode: 'routine', tab: 'meal'  } } as any);
+  const goMeal = () => router.push({ pathname: '/twin', params: { mode: 'routine', tab: 'meal' } } as any);
   const goWater = () => router.push({ pathname: '/twin', params: { mode: 'routine', tab: 'water' } } as any);
   const goSleep = () => router.push({ pathname: '/twin', params: { mode: 'routine', tab: 'sleep' } } as any);
-  const goEx    = () => router.push('/activity' as any);
-  const goSym   = () => router.push('/symptom-log' as any);
+  const goEx = () => router.push('/activity' as any);
+  const goSym = () => router.push('/symptom-log' as any);
 
   // ── NUTRITION ───────────────────────────────────────────────────────────────
   const renderNutrition = () => {
@@ -572,9 +624,9 @@ export default function LogRoutineScreen() {
         {totals.calories > 0 && (
           <Pills items={[
             { label: 'Calories', value: `${Math.round(totals.calories)} kcal`, accent },
-            { label: 'Carbs',    value: `${Math.round(totals.carbs)}g`,         accent: '#f97316' },
-            { label: 'Protein',  value: `${Math.round(totals.protein)}g`,       accent: '#10b981' },
-            { label: 'Fat',      value: `${Math.round(totals.fat)}g`,           accent: '#ef4444' },
+            { label: 'Carbs', value: `${Math.round(totals.carbs)}g`, accent: '#f97316' },
+            { label: 'Protein', value: `${Math.round(totals.protein)}g`, accent: '#10b981' },
+            { label: 'Fat', value: `${Math.round(totals.fat)}g`, accent: '#ef4444' },
           ]} />
         )}
         {/* Meal reminders from nutrition context */}
@@ -633,8 +685,8 @@ export default function LogRoutineScreen() {
         <ReminderCard tab="exercise" accent={accent} c={c} />
         {totalActivityCalories > 0 && (
           <Pills items={[
-            { label: 'Burned',    value: `${totalActivityCalories} kcal`, accent },
-            { label: 'Sessions',  value: `${activityEntries.length}`,      accent: '#38bdf8' },
+            { label: 'Burned', value: `${totalActivityCalories} kcal`, accent },
+            { label: 'Sessions', value: `${activityEntries.length}`, accent: '#38bdf8' },
           ]} />
         )}
         {/* Activity Lab entries */}
@@ -695,9 +747,9 @@ export default function LogRoutineScreen() {
       <>
         <ReminderCard tab="hydration" accent={accent} c={c} />
         <Pills items={[
-          { label: 'Today',     value: `${water} mL`,                      accent },
-          { label: 'Goal',      value: '2000 mL',                           accent: '#64748b' },
-          { label: 'Remaining', value: `${Math.max(0, 2000 - water)} mL`,  accent: water >= 2000 ? '#10b981' : '#f59e0b' },
+          { label: 'Today', value: `${water} mL`, accent },
+          { label: 'Goal', value: `${waterGoal} mL`, accent: '#64748b', onPress: openGoalModal },
+          { label: 'Remaining', value: `${Math.max(0, waterGoal - water)} mL`, accent: water >= waterGoal ? '#10b981' : '#f59e0b' },
         ]} />
         {/* Raw hydration history */}
         {(hydHist as any[]).length > 0 && (
@@ -722,7 +774,7 @@ export default function LogRoutineScreen() {
             ))}
           </>
         )}
-        {allHydEmpty && <Empty icon="💧" text={'No hydration logged today.\nStay hydrated — aim for 2000 mL.'} btn="Log Water" onPress={goWater} accent={accent} c={c} />}
+        {allHydEmpty && <Empty icon="💧" text={`No hydration logged today.\nStay hydrated — aim for ${waterGoal} mL.`} btn="Log Water" onPress={goWater} accent={accent} c={c} />}
       </>
     );
   };
@@ -775,20 +827,20 @@ export default function LogRoutineScreen() {
   const tabContent = () => {
     switch (tab) {
       case 'nutrition': return renderNutrition();
-      case 'exercise':  return renderExercise();
-      case 'sleep':     return renderSleep();
+      case 'exercise': return renderExercise();
+      case 'sleep': return renderSleep();
       case 'hydration': return renderHydration();
-      case 'symptoms':  return renderSymptoms();
+      case 'symptoms': return renderSymptoms();
     }
   };
 
   const logAction = () => {
     switch (tab) {
       case 'nutrition': return goMeal;
-      case 'exercise':  return goEx;
-      case 'sleep':     return goSleep;
+      case 'exercise': return goEx;
+      case 'sleep': return goSleep;
       case 'hydration': return goWater;
-      default:          return goSym;
+      default: return goSym;
     }
   };
 
@@ -796,9 +848,21 @@ export default function LogRoutineScreen() {
     <View style={[s.root, { backgroundColor: c.bg }]}>
       <Header title="Log Routine" showBack={false} />
 
-      {/* Tab bar */}
+      {/* Tab bar — absolutely positioned below the absolute Header, no layout space taken */}
       <ScrollView horizontal showsHorizontalScrollIndicator={false}
-        style={{ marginTop: headerH, maxHeight: 56 }}
+        style={{
+          position: 'absolute',
+          top: headerH,
+          left: 0,
+          right: 0,
+          height: 48,
+          backgroundColor: c.bg,
+          zIndex: 10,
+          borderTopWidth: 8,
+          borderTopColor: c.border,
+          borderBottomWidth: 1,
+          borderBottomColor: c.border,
+        }}
         contentContainerStyle={s.tabRow}>
         {TABS.map(t => {
           const active = t.id === tab;
@@ -813,8 +877,9 @@ export default function LogRoutineScreen() {
         })}
       </ScrollView>
 
-      <ScrollView contentContainerStyle={s.scroll}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={accent} />}
+      {/* Content scroll — paddingTop accounts for header + tab bar so content starts below both */}
+      <ScrollView style={{ flex: 1 }} contentContainerStyle={[s.scroll, { paddingTop: headerH + 55 }]}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={accent} progressViewOffset={headerH + 44} />}
         showsVerticalScrollIndicator={false}>
 
         {/* Section header */}
@@ -842,23 +907,90 @@ export default function LogRoutineScreen() {
 
         <View style={{ height: 100 }} />
       </ScrollView>
+
+      {/* ── Water Goal Edit Modal ─────────────────────────────── */}
+      <Modal visible={showGoalModal} transparent animationType="fade" onRequestClose={() => setShowGoalModal(false)}>
+        <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+          <TouchableOpacity style={{ flex: 1, backgroundColor: '#00000077', justifyContent: 'center', alignItems: 'center', padding: 24 }}
+            activeOpacity={1} onPress={() => setShowGoalModal(false)}>
+            <TouchableOpacity activeOpacity={1} style={[gm.card, { backgroundColor: c.card, borderColor: c.border }]}>
+              <View style={gm.row}>
+                <Text style={{ fontSize: 28 }}>💧</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={[gm.title, { color: c.text }]}>Daily Water Goal</Text>
+                  <Text style={[gm.sub, { color: c.sub }]}>Set your personal hydration target in mL</Text>
+                </View>
+              </View>
+
+              <Text style={[gm.label, { color: c.sub }]}>AMOUNT (mL)</Text>
+              <View style={[gm.inputWrap, { backgroundColor: c.bg, borderColor: c.border }]}>
+                <Ionicons name="water-outline" size={18} color="#64748b" style={{ marginHorizontal: 10 }} />
+                <TextInput
+                  style={[gm.input, { color: c.text }]}
+                  value={goalInput}
+                  onChangeText={setGoalInput}
+                  keyboardType="numeric"
+                  placeholder="e.g. 2500"
+                  placeholderTextColor={c.sub}
+                  maxLength={5}
+                  autoFocus
+                />
+                <Text style={[gm.unit, { color: c.sub }]}>mL</Text>
+              </View>
+
+              <View style={{ flexDirection: 'row', gap: 10, marginTop: 6 }}>
+                {[1500, 2000, 2500, 3000].map(v => (
+                  <TouchableOpacity key={v} onPress={() => setGoalInput(String(v))}
+                    style={[gm.preset, { backgroundColor: goalInput === String(v) ? '#0ea5e920' : c.bg, borderColor: goalInput === String(v) ? '#0ea5e9' : c.border }]}>
+                    <Text style={[gm.presetTxt, { color: goalInput === String(v) ? '#0ea5e9' : c.sub }]}>{v}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              <View style={{ flexDirection: 'row', gap: 10, marginTop: 20 }}>
+                <TouchableOpacity style={[gm.btn, { backgroundColor: c.bg, borderColor: c.border, borderWidth: 1 }]} onPress={() => setShowGoalModal(false)}>
+                  <Text style={[gm.btnTxt, { color: c.sub }]}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={[gm.btn, { backgroundColor: '#0ea5e9' }]} onPress={handleSaveGoal}>
+                  <Text style={[gm.btnTxt, { color: '#fff' }]}>Save Goal</Text>
+                </TouchableOpacity>
+              </View>
+            </TouchableOpacity>
+          </TouchableOpacity>
+        </KeyboardAvoidingView>
+      </Modal>
     </View>
   );
 }
 
 const s = StyleSheet.create({
-  root:     { flex: 1 },
-  scroll:   { paddingHorizontal: 16, paddingTop: 8 },
-  tabRow:   { paddingHorizontal: 12, paddingVertical: 8, gap: 8, flexDirection: 'row', alignItems: 'center' },
-  tabBtn:   { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 13, paddingVertical: 6, borderRadius: 18, borderWidth: 1 },
+  root: { flex: 1 },
+  scroll: { paddingHorizontal: 16, paddingTop: 6 },
+  tabRow: { paddingHorizontal: 12, paddingVertical: 4, gap: 8, flexDirection: 'row', alignItems: 'center' },
+  tabBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 13, paddingVertical: 6, borderRadius: 18, borderWidth: 1 },
   tabLabel: { fontSize: 12, fontWeight: '600' },
-  secHeader:{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
+  secHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
   secTitle: { fontSize: 16, fontWeight: '700' },
-  addBtn:   { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 13, paddingVertical: 7, borderRadius: 15 },
-  addBtnT:  { color: '#fff', fontSize: 13, fontWeight: '700' },
-  sec:      { fontSize: 10, fontWeight: '700', letterSpacing: 1.2, marginTop: 12, marginBottom: 6, textTransform: 'uppercase' },
-  pill:     { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8 },
-  twin:     { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14, borderRadius: 16, marginTop: 16 },
-  twinT:    { fontSize: 14, fontWeight: '700' },
-  twinS:    { fontSize: 12, marginTop: 2 },
+  addBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 13, paddingVertical: 7, borderRadius: 15 },
+  addBtnT: { color: '#fff', fontSize: 13, fontWeight: '700' },
+  sec: { fontSize: 10, fontWeight: '700', letterSpacing: 1.2, marginTop: 12, marginBottom: 6, textTransform: 'uppercase' },
+  pill: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8 },
+  twin: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14, borderRadius: 16, marginTop: 16 },
+  twinT: { fontSize: 14, fontWeight: '700' },
+  twinS: { fontSize: 12, marginTop: 2 },
+});
+
+const gm = StyleSheet.create({
+  card: { width: '100%', maxWidth: 360, borderRadius: 20, padding: 22, borderWidth: 1 },
+  row: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 18 },
+  title: { fontSize: 17, fontWeight: '800' },
+  sub: { fontSize: 12, marginTop: 2, lineHeight: 17 },
+  label: { fontSize: 10, fontWeight: '700', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 6 },
+  inputWrap: { flexDirection: 'row', alignItems: 'center', borderRadius: 12, borderWidth: 1, marginBottom: 14, height: 48 },
+  input: { flex: 1, fontSize: 20, fontWeight: '700', paddingVertical: 0 },
+  unit: { fontSize: 13, fontWeight: '600', marginRight: 14 },
+  preset: { flex: 1, alignItems: 'center', paddingVertical: 7, borderRadius: 10, borderWidth: 1 },
+  presetTxt: { fontSize: 12, fontWeight: '700' },
+  btn: { flex: 1, paddingVertical: 13, borderRadius: 12, alignItems: 'center' },
+  btnTxt: { fontSize: 14, fontWeight: '700' },
 });

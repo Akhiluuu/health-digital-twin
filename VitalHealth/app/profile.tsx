@@ -13,6 +13,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import Clipboard from "@react-native-clipboard/clipboard";
 import { BlurView } from "expo-blur";
 import * as ImagePicker from "expo-image-picker";
+import * as FileSystem from "expo-file-system";
 import { LinearGradient } from "expo-linear-gradient";
 import { useFocusEffect, useRouter } from "expo-router";
 import React, { useEffect, useRef, useState } from "react";
@@ -211,9 +212,13 @@ function DatePickerModal({
   onClose: () => void;
   colors: any;
 }) {
-  const parseDMY = (v: string) => {
-    const parts = v?.split("/");
-    if (parts?.length === 3) {
+  const parseDMY = (v: any) => {
+    if (typeof v !== "string") {
+      const today = new Date();
+      return { day: today.getDate(), month: today.getMonth() + 1, year: today.getFullYear() - 25 };
+    }
+    const parts = v.split("/");
+    if (parts.length === 3) {
       return {
         day: parseInt(parts[0]) || 1,
         month: parseInt(parts[1]) || 1,
@@ -427,6 +432,17 @@ export default function ProfileScreen() {
 
   const safeProfile = { ...defaultProfile, ...(isSwitched ? activeProfile : (profile || {})) };
 
+  const [profileImageError, setProfileImageError] = useState(false);
+  const [memberImageErrors, setMemberImageErrors] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    setProfileImageError(false);
+  }, [safeProfile.profileImage]);
+
+  const handleMemberImageError = (id: string) => {
+    setMemberImageErrors(prev => ({ ...prev, [id]: true }));
+  };
+
   const [settings, setSettings] = useState<AppSettings>({
     notifications: true,
     darkMode: theme === "dark",
@@ -558,8 +574,8 @@ export default function ProfileScreen() {
         const raw = await AsyncStorage.getItem(`@onboarding_habits_${uid}`);
         if (raw) {
           const habits = JSON.parse(raw);
-          const heightVal = parseFloat((newProfile.height || '').replace(/[^0-9.]/g, '')) || 175;
-          const weightVal = parseFloat((newProfile.weight || '').replace(/[^0-9.]/g, '')) || 70;
+          const heightVal = parseFloat(String(newProfile.height || '').replace(/[^0-9.]/g, '')) || 175;
+          const weightVal = parseFloat(String(newProfile.weight || '').replace(/[^0-9.]/g, '')) || 70;
           const routine = buildDefaultRoutine(habits, {
             gender: newProfile.gender,
             dateOfBirth: newProfile.dateOfBirth,
@@ -789,12 +805,22 @@ export default function ProfileScreen() {
   const pickImage = async () => {
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true, aspect: [1, 1], quality: 1,
+      allowsEditing: true, aspect: [1, 1], quality: 0.2,
     });
     if (!result.canceled) {
-      const updated = { ...localProfile, profileImage: result.assets[0].uri };
-      setLocalProfile(updated);
-      saveProfileData(updated);
+      try {
+        const uri = result.assets[0].uri;
+        const base64 = await FileSystem.readAsStringAsync(uri, {
+          encoding: 'base64',
+        });
+        const base64Uri = `data:image/jpeg;base64,${base64}`;
+        const updated = { ...localProfile, profileImage: base64Uri };
+        setLocalProfile(updated);
+        saveProfileData(updated);
+      } catch (err) {
+        console.error("Failed to read picked image as base64:", err);
+        Alert.alert("Error", "Failed to process selected image.");
+      }
     }
   };
 
@@ -826,8 +852,12 @@ export default function ProfileScreen() {
         onPress={pickImage}
         style={styles.profileImageContainer}
       >
-        {safeProfile.profileImage ? (
-          <Image source={{ uri: safeProfile.profileImage }} style={styles.profileImage} />
+        {safeProfile.profileImage && !profileImageError ? (
+          <Image 
+            source={{ uri: safeProfile.profileImage }} 
+            style={styles.profileImage} 
+            onError={() => setProfileImageError(true)} 
+          />
         ) : (
           <View style={[styles.profileImagePlaceholder, { backgroundColor: colors.card }]}>
             <Text style={[styles.profileImageInitial, { color: colors.accent }]}>
@@ -882,8 +912,8 @@ export default function ProfileScreen() {
     </View>
   );
 
-  const parseAge = (dob?: string) => {
-    if (!dob) return 30;
+  const parseAge = (dob?: any) => {
+    if (!dob || typeof dob !== "string") return 30;
     const parts = dob.split("/");
     if (parts.length === 3) {
       const year = parts[2].length === 2 ? parseInt("20" + parts[2]) : parseInt(parts[2]);
@@ -893,15 +923,15 @@ export default function ProfileScreen() {
     return 30;
   };
 
-  const parseKg = (weight?: string) => {
+  const parseKg = (weight?: any) => {
     if (!weight) return 70.0;
-    const match = weight.match(/\d+(\.\d+)?/);
+    const match = String(weight).match(/\d+(\.\d+)?/);
     return match ? parseFloat(match[0]) : 70.0;
   };
 
-  const parseCm = (height?: string) => {
+  const parseCm = (height?: any) => {
     if (!height) return 170.0;
-    const match = height.match(/\d+(\.\d+)?/);
+    const match = String(height).match(/\d+(\.\d+)?/);
     return match ? parseFloat(match[0]) : 170.0;
   };
 
@@ -1093,8 +1123,12 @@ export default function ProfileScreen() {
             }}
             activeOpacity={0.8}
           >
-            {profile?.profileImage ? (
-              <Image source={{ uri: profile.profileImage }} style={styles.memberAvatar} />
+            {profile?.profileImage && !memberImageErrors['self'] ? (
+              <Image 
+                source={{ uri: profile.profileImage }} 
+                style={styles.memberAvatar} 
+                onError={() => handleMemberImageError('self')} 
+              />
             ) : (
               <View style={[styles.memberAvatar, { backgroundColor: colors.accent }]}>
                 <Text style={styles.memberAvatarText}>
@@ -1149,8 +1183,12 @@ export default function ProfileScreen() {
               ])}
               activeOpacity={0.8}
             >
-              {member.profileImage ? (
-                <Image source={{ uri: member.profileImage }} style={styles.memberAvatar} />
+              {member.profileImage && !memberImageErrors[targetId] ? (
+                <Image 
+                  source={{ uri: member.profileImage }} 
+                  style={styles.memberAvatar} 
+                  onError={() => handleMemberImageError(targetId)} 
+                />
               ) : (
                 <View style={[styles.memberAvatar, { backgroundColor: colors.purple }]}>
                   <Text style={styles.memberAvatarText}>
@@ -1451,9 +1489,9 @@ export default function ProfileScreen() {
                     placeholder="9876543210"
                     placeholderTextColor={colors.subText}
                     style={[styles.phoneInput, { color: colors.text }]}
-                    value={localProfile.phone?.replace(/^\+91\s?/, "") || ""}
+                    value={localProfile.phone ? String(localProfile.phone).replace(/^\+91\s?/, "") : ""}
                     onChangeText={(t) => {
-                      const digits = t.replace(/\D/g, "").slice(0, 10);
+                      const digits = String(t || "").replace(/\D/g, "").slice(0, 10);
                       setLocalProfile({ ...localProfile, phone: digits });
                     }}
                     keyboardType="number-pad"
@@ -1725,8 +1763,8 @@ export default function ProfileScreen() {
                 </View>
 
                 <Text style={{ color: colors.subText, fontSize: 12, marginBottom: 8 }}>General Health</Text>
-                <TextInput placeholder="Allergies (comma separated)" placeholderTextColor={colors.subText} style={[styles.input, { backgroundColor: colors.bg, color: colors.text }]} value={(localProfile.allergies || []).join(", ")} onChangeText={(t) => setLocalProfile({ ...localProfile, allergies: t.split(",").map((a) => a.trim()).filter(Boolean) })} />
-                <TextInput placeholder="Medications (comma separated)" placeholderTextColor={colors.subText} style={[styles.input, { backgroundColor: colors.bg, color: colors.text }]} value={(localProfile.medications || []).join(", ")} onChangeText={(t) => setLocalProfile({ ...localProfile, medications: t.split(",").map((m) => m.trim()).filter(Boolean) })} />
+                <TextInput placeholder="Allergies (comma separated)" placeholderTextColor={colors.subText} style={[styles.input, { backgroundColor: colors.bg, color: colors.text }]} value={Array.isArray(localProfile.allergies) ? localProfile.allergies.join(", ") : (localProfile.allergies ? String(localProfile.allergies) : "")} onChangeText={(t) => setLocalProfile({ ...localProfile, allergies: t.split(",").map((a) => a.trim()).filter(Boolean) })} />
+                <TextInput placeholder="Medications (comma separated)" placeholderTextColor={colors.subText} style={[styles.input, { backgroundColor: colors.bg, color: colors.text }]} value={Array.isArray(localProfile.medications) ? localProfile.medications.join(", ") : (localProfile.medications ? String(localProfile.medications) : "")} onChangeText={(t) => setLocalProfile({ ...localProfile, medications: t.split(",").map((m) => m.trim()).filter(Boolean) })} />
 
                 <Text style={{ color: colors.subText, fontSize: 12, marginBottom: 8, marginTop: 8 }}>Clinical Conditions</Text>
                 <Text style={{ color: colors.subText, fontSize: 10, marginTop: -6, marginBottom: 10, fontStyle: "italic" }}>These conditions modify fundamental physiological parameters in the engine.</Text>

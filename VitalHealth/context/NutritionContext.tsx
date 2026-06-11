@@ -11,6 +11,7 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useR
 import { auth, db } from "../services/firebase";
 import { doc, getDoc, setDoc } from "firebase/firestore";
 import { useFamily } from "./FamilyContext";
+import { useBiogearsTwin } from "./BiogearsTwinContext";
 import {
   syncAddFoodEntry,
   syncDeleteFoodEntry,
@@ -340,6 +341,7 @@ const NutritionContext = createContext<NutritionContextType | null>(null);
 export function NutritionProvider({ children }: { children: React.ReactNode }) {
   const [state, dispatch] = useReducer(reducer, initialState);
   const { isSwitched, activeMemberId } = useFamily();
+  const { todayEvents, setTodayEvents } = useBiogearsTwin();
 
   // Sync / Load with Firebase
   const syncNutritionWithFirebase = useCallback(async () => {
@@ -509,6 +511,56 @@ export function NutritionProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     syncNutritionWithFirebase();
   }, [isSwitched, activeMemberId, syncNutritionWithFirebase]);
+
+  // ── Sync Nutrition Food Entries to BioGears Today Events ───────────────────
+  useEffect(() => {
+    if (!state.loaded) return;
+
+    const mealIcons: Record<string, string> = {
+      breakfast: "🍳",
+      lunch: "🥪",
+      dinner: "🍲",
+      snacks: "🍎",
+    };
+
+    const mappedMealEvents = state.foodEntries.map((fe) => {
+      const cal = fe.calories;
+      const estimatedCarb    = fe.carbs || Math.round(cal * 0.40 / 4);
+      const estimatedFat     = fe.fat || Math.round(cal * 0.30 / 9);
+      const estimatedProtein = fe.protein || Math.round(cal * 0.30 / 4);
+      
+      const timestampMs = fe.timestamp ? new Date(fe.timestamp).getTime() : Date.now();
+      const wallTime = fe.timestamp ? new Date(fe.timestamp).toTimeString().slice(0, 5) : new Date().toTimeString().slice(0, 5);
+      const displayIcon = mealIcons[fe.mealId] || "🥗";
+
+      return {
+        id: `food_${fe.id}`,
+        event_type: "meal" as const,
+        value: cal,
+        timestamp: Math.round(timestampMs / 1000),
+        wallTime,
+        meal_type: "custom" as const,
+        carb_g: estimatedCarb,
+        fat_g: estimatedFat,
+        protein_g: estimatedProtein,
+        displayLabel: fe.foodName,
+        displayIcon,
+        source: "manual" as const,
+        notes: "Synced from nutrition log",
+      };
+    });
+
+    const nonFoodEvents = todayEvents.filter((ev) => !ev.id.startsWith("food_"));
+    const newEvents = [...nonFoodEvents, ...mappedMealEvents].sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+
+    const currentSerialized = JSON.stringify(todayEvents.map(e => e.id));
+    const newSerialized = JSON.stringify(newEvents.map(e => e.id));
+
+    if (currentSerialized !== newSerialized) {
+      console.log("[NutritionContext] Syncing food entries to BioGears twin:", mappedMealEvents.length, "meals");
+      setTodayEvents(newEvents);
+    }
+  }, [state.foodEntries, state.loaded, todayEvents, setTodayEvents]);
 
   // Persist whenever relevant state changes (only for SELF)
   useEffect(() => {

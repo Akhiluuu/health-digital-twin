@@ -36,7 +36,7 @@ async function getWeightKg(): Promise<number> {
     const raw = await AsyncStorage.getItem(PROFILE_KEY);
     if (!raw) return 70;
     const p = JSON.parse(raw);
-    const n = parseFloat((p.weight ?? "").replace(/[^0-9.]/g, ""));
+    const n = parseFloat(String(p.weight ?? "").replace(/[^0-9.]/g, ""));
     return isNaN(n) ? 70 : n;
   } catch { return 70; }
 }

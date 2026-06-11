@@ -8,9 +8,9 @@ import { UserProfile } from '../services/profileService';
 export function getTwinId(profile: Partial<UserProfile> | null): string {
   if (!profile) return 'temp_user';
 
-  const fNameStr = (profile.firstName || "").trim().toLowerCase().replace(/[^a-z0-9]/g, "");
-  const lNameStr = (profile.lastName || "").trim().toLowerCase().replace(/[^a-z0-9]/g, "");
-  const phoneDigits = (profile.phone || "").replace(/\D/g, "");
+  const fNameStr = String(profile.firstName || "").trim().toLowerCase().replace(/[^a-z0-9]/g, "");
+  const lNameStr = String(profile.lastName || "").trim().toLowerCase().replace(/[^a-z0-9]/g, "");
+  const phoneDigits = String(profile.phone || "").replace(/\D/g, "");
   const phoneExt = phoneDigits.length >= 4 ? phoneDigits.slice(-4) : "0000";
 
   if (fNameStr && lNameStr) {

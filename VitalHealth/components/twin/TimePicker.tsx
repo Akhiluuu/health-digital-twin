@@ -2,7 +2,7 @@
 // Custom themed time picker — no OS-native dialogs, fully matches app dark/light theme.
 // Renders a drum-style HH : MM selector inside the app's own Modal + card.
 
-import React, { useCallback, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   FlatList, Modal, StyleSheet, Text,
   TouchableOpacity, View,
@@ -18,6 +18,7 @@ const pad = (n: number) => String(n).padStart(2, '0');
 const ITEM_H = 48;     // height of each drum item (px)
 const VISIBLE = 5;     // how many items show at once (must be odd)
 const DRUM_H  = ITEM_H * VISIBLE;
+const MID_OFFSET = Math.floor(VISIBLE / 2); // 2
 
 // Generate [0 … max-1] as zero-padded strings, tripled so the user can
 // scroll in either direction without hitting a hard boundary.
@@ -55,7 +56,7 @@ function DrumColumn({
     (idx: number, animated: boolean) => {
       // clamp to middle copy range
       const clamped = count + (idx % count);
-      ref.current?.scrollToOffset({ offset: clamped * ITEM_H, animated });
+      ref.current?.scrollToOffset({ offset: (clamped - MID_OFFSET) * ITEM_H, animated });
     },
     [count]
   );
@@ -68,18 +69,37 @@ function DrumColumn({
     scrollTo(initial, false);
   }, [initial, scrollTo]);
 
+  // Sync state if initial value changes externally/on modal open
+  useEffect(() => {
+    setCurrent(initial);
+    if (didMount.current) {
+      scrollTo(initial, false);
+    }
+  }, [initial, scrollTo]);
+
   const onMomentumEnd = useCallback(
     (e: any) => {
       const offset = e.nativeEvent.contentOffset.y;
       const rawIdx = Math.round(offset / ITEM_H);
-      const value  = rawIdx % count;
+      const selectedIdx = rawIdx + MID_OFFSET;
+      const value  = selectedIdx % count;
       setCurrent(value);
       onChange(value);
       // Re-centre into the middle copy to keep infinite-scroll illusion
       const centred = count + value;
-      ref.current?.scrollToOffset({ offset: centred * ITEM_H, animated: false });
+      ref.current?.scrollToOffset({ offset: (centred - MID_OFFSET) * ITEM_H, animated: false });
     },
     [count, onChange]
+  );
+
+  const onScrollEndDrag = useCallback(
+    (e: any) => {
+      const velocityY = e.nativeEvent.velocity ? e.nativeEvent.velocity.y : 0;
+      if (velocityY === 0) {
+        onMomentumEnd(e);
+      }
+    },
+    [onMomentumEnd]
   );
 
   return (
@@ -90,7 +110,7 @@ function DrumColumn({
         style={[
           drumStyles.highlight,
           {
-            top: ITEM_H * Math.floor(VISIBLE / 2),
+            top: ITEM_H * MID_OFFSET,
             height: ITEM_H,
             backgroundColor: accent + '22',
             borderColor: accent + '55',
@@ -107,6 +127,7 @@ function DrumColumn({
         decelerationRate="fast"
         onLayout={onLayout}
         onMomentumScrollEnd={onMomentumEnd}
+        onScrollEndDrag={onScrollEndDrag}
         scrollEventThrottle={16}
         getItemLayout={(_, index) => ({ length: ITEM_H, offset: ITEM_H * index, index })}
         renderItem={({ item, index }) => {
@@ -145,8 +166,8 @@ export default function TimePicker({
   const { theme } = useTheme();
   const c = themeColors[theme as 'light' | 'dark'] ?? themeColors['dark'];
 
-  const parseTime = (v: string): [number, number] => {
-    if (!v) return [new Date().getHours(), new Date().getMinutes()];
+  const parseTime = (v: any): [number, number] => {
+    if (!v || typeof v !== 'string') return [new Date().getHours(), new Date().getMinutes()];
     const [h, m] = v.split(':').map(Number);
     return [isNaN(h) ? 0 : h, isNaN(m) ? 0 : m];
   };

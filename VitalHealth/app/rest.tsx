@@ -71,12 +71,22 @@ export default function RestScreen() {
   }, []);
 
   const loadData = async () => {
-    const saved = await AsyncStorage.getItem(STORAGE_KEY);
-    if (!saved) return;
+    try {
+      const saved = await AsyncStorage.getItem(STORAGE_KEY);
+      if (!saved) return;
 
-    const data = JSON.parse(saved);
-    setSleepAlarm(data.sleep);
-    setWakeAlarm(data.wake);
+      const data = JSON.parse(saved);
+      if (data && typeof data === "object") {
+        if (data.sleep && typeof data.sleep.enabled === "boolean" && typeof data.sleep.time === "string") {
+          setSleepAlarm(data.sleep);
+        }
+        if (data.wake && typeof data.wake.enabled === "boolean" && typeof data.wake.time === "string") {
+          setWakeAlarm(data.wake);
+        }
+      }
+    } catch (e) {
+      console.warn("Failed to parse sleep/wake alarm data:", e);
+    }
   };
 
   const saveData = async () => {
