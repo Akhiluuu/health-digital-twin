@@ -7,7 +7,8 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useReducer } from "react";
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useReducer, useRef } from "react";
+import { safeJsonParse, safeJsonStringify, safeArray } from "../utils/safeJson";
 import { auth, db } from "../services/firebase";
 import { doc, getDoc, setDoc } from "firebase/firestore";
 import { useFamily } from "./FamilyContext";
@@ -416,15 +417,17 @@ export function NutritionProvider({ children }: { children: React.ReactNode }) {
       let mealReminders = defaultReminders;
 
       if (dataRaw) {
-        const data = JSON.parse(dataRaw);
-        localFood = data.foodEntries ?? [];
-        selectedProfileId = data.selectedProfileId ?? "standard";
+        const data = safeJsonParse(dataRaw, { foodEntries: [], selectedProfileId: 'standard' });
+        localFood = safeArray<FoodEntry>(data.foodEntries);
+        selectedProfileId = (data.selectedProfileId ?? "standard") as HealthProfileId;
       }
       if (remindersRaw) {
-        mealReminders = JSON.parse(remindersRaw);
+        const parsed = safeJsonParse<MealReminder[]>(remindersRaw, defaultReminders);
+        mealReminders = Array.isArray(parsed) ? parsed : defaultReminders;
       }
       if (activityRaw) {
-        localActivity = JSON.parse(activityRaw);
+        const parsed = safeJsonParse<ActivityEntry[]>(activityRaw, []);
+        localActivity = Array.isArray(parsed) ? parsed : [];
       }
 
       // Filter local to today only
@@ -513,54 +516,88 @@ export function NutritionProvider({ children }: { children: React.ReactNode }) {
   }, [isSwitched, activeMemberId, syncNutritionWithFirebase]);
 
   // ── Sync Nutrition Food Entries to BioGears Today Events ───────────────────
+  // CRITICAL: Use a ref to track the last food IDs we pushed to BioGears so we
+  // don't re-trigger on every todayEvents change (which would cause infinite loops).
+  const lastSyncedFoodIdsRef = useRef<string>('');
+
   useEffect(() => {
     if (!state.loaded) return;
 
+    // Build a stable fingerprint of the current food entries
+    const currentFoodFingerprint = state.foodEntries.map(f => f.id).join(',');
+
+    // Skip if food entries haven't changed (prevents infinite re-render loop)
+    if (currentFoodFingerprint === lastSyncedFoodIdsRef.current) return;
+    lastSyncedFoodIdsRef.current = currentFoodFingerprint;
+
     const mealIcons: Record<string, string> = {
       breakfast: "🍳",
+      morning_snack: "🍎",
       lunch: "🥪",
+      afternoon_snack: "🍪",
       dinner: "🍲",
+      evening_snack: "🥛",
       snacks: "🍎",
     };
 
-    const mappedMealEvents = state.foodEntries.map((fe) => {
-      const cal = fe.calories;
-      const estimatedCarb    = fe.carbs || Math.round(cal * 0.40 / 4);
-      const estimatedFat     = fe.fat || Math.round(cal * 0.30 / 9);
-      const estimatedProtein = fe.protein || Math.round(cal * 0.30 / 4);
-      
-      const timestampMs = fe.timestamp ? new Date(fe.timestamp).getTime() : Date.now();
-      const wallTime = fe.timestamp ? new Date(fe.timestamp).toTimeString().slice(0, 5) : new Date().toTimeString().slice(0, 5);
-      const displayIcon = mealIcons[fe.mealId] || "🥗";
+    const mappedMealEvents = state.foodEntries
+      .filter(fe => fe && fe.id && fe.calories >= 0)
+      .map((fe) => {
+        const cal = fe.calories || 0;
+        const estimatedCarb    = fe.carbs  || Math.round(cal * 0.40 / 4);
+        const estimatedFat     = fe.fat    || Math.round(cal * 0.30 / 9);
+        const estimatedProtein = fe.protein || Math.round(cal * 0.30 / 4);
 
-      return {
-        id: `food_${fe.id}`,
-        event_type: "meal" as const,
-        value: cal,
-        timestamp: Math.round(timestampMs / 1000),
-        wallTime,
-        meal_type: "custom" as const,
-        carb_g: estimatedCarb,
-        fat_g: estimatedFat,
-        protein_g: estimatedProtein,
-        displayLabel: fe.foodName,
-        displayIcon,
-        source: "manual" as const,
-        notes: "Synced from nutrition log",
-      };
-    });
+        let timestampMs = Date.now();
+        let wallTime = new Date().toTimeString().slice(0, 5);
+        try {
+          if (fe.timestamp) {
+            const d = new Date(fe.timestamp);
+            if (!isNaN(d.getTime())) {
+              timestampMs = d.getTime();
+              wallTime = d.toTimeString().slice(0, 5);
+            }
+          }
+        } catch { /* use defaults */ }
 
-    const nonFoodEvents = todayEvents.filter((ev) => !ev.id.startsWith("food_"));
-    const newEvents = [...nonFoodEvents, ...mappedMealEvents].sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+        const displayIcon = mealIcons[fe.mealId] || "🥗";
 
-    const currentSerialized = JSON.stringify(todayEvents.map(e => e.id));
-    const newSerialized = JSON.stringify(newEvents.map(e => e.id));
+        return {
+          id: `food_${fe.id}`,
+          event_type: "meal" as const,
+          value: cal,
+          timestamp: Math.round(timestampMs / 1000),
+          wallTime,
+          meal_type: "custom" as const,
+          carb_g: estimatedCarb,
+          fat_g: estimatedFat,
+          protein_g: estimatedProtein,
+          displayLabel: fe.foodName || 'Meal',
+          displayIcon,
+          source: "manual" as const,
+          notes: "Synced from nutrition log",
+        };
+      });
 
-    if (currentSerialized !== newSerialized) {
+    // Update BioGears events — use functional form cast properly.
+    // setTodayEvents in BiogearsTwinContext wraps setTodayEventsWrapped which
+    // only accepts RoutineEvent[] (not a functional updater). We must call the
+    // non-wrapped version. Since we don't have direct access to the raw state here,
+    // we use the context's todayEvents snapshot (safe because we only run when
+    // foodEntries change, not when todayEvents change).
+    // The ref prevents re-triggering on todayEvents changes.
+    setTodayEvents(((prev: any[]) => {
+      const nonFoodEvents = prev.filter((ev: any) => !ev.id.startsWith("food_"));
+      const newEvents = [...nonFoodEvents, ...mappedMealEvents].sort(
+        (a: any, b: any) => (a.timestamp || 0) - (b.timestamp || 0)
+      );
       console.log("[NutritionContext] Syncing food entries to BioGears twin:", mappedMealEvents.length, "meals");
-      setTodayEvents(newEvents);
-    }
-  }, [state.foodEntries, state.loaded, todayEvents, setTodayEvents]);
+      return newEvents;
+    }) as any);
+  // ⚠️ CRITICAL: DO NOT add todayEvents or setTodayEvents to this dependency array.
+  // setTodayEvents is stable (useCallback with empty deps in BiogearsTwinContext).
+  // Adding todayEvents would cause an infinite loop.
+  }, [state.foodEntries, state.loaded]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Persist whenever relevant state changes (only for SELF)
   useEffect(() => {

@@ -32,13 +32,19 @@ const TABS: { id: LogTab; label: string; icon: string; accent: string }[] = [
 const REMINDER_KEY = (tab: LogTab) => `@log_reminder_${tab}`;
 
 function fmt(ts: number) {
-  return new Date(ts).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
+  if (!ts || isNaN(ts)) return '';
+  try {
+    return new Date(ts).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
+  } catch { return ''; }
 }
 function ago(ts: number) {
-  const m = Math.floor((Date.now() - ts) / 60000);
-  if (m < 1) return 'Just now'; if (m < 60) return `${m}m ago`;
-  const h = Math.floor(m / 60); if (h < 24) return `${h}h ago`;
-  return `${Math.floor(h / 24)}d ago`;
+  if (!ts || isNaN(ts)) return '';
+  try {
+    const m = Math.floor((Date.now() - ts) / 60000);
+    if (m < 1) return 'Just now'; if (m < 60) return `${m}m ago`;
+    const h = Math.floor(m / 60); if (h < 24) return `${h}h ago`;
+    return `${Math.floor(h / 24)}d ago`;
+  } catch { return ''; }
 }
 
 // ── Routine Reminder Types & Helpers ──────────────────────────────────────────
@@ -156,12 +162,17 @@ function ReminderCard({ tab, accent, c }: { tab: LogTab; accent: string; c: any 
       try {
         const raw = await AsyncStorage.getItem(REMINDERS_LIST_KEY(tab));
         if (raw) {
-          setReminders(JSON.parse(raw));
+          try {
+            const parsedR = JSON.parse(raw);
+            if (Array.isArray(parsedR)) setReminders(parsedR);
+          } catch { /* corrupted — fall through to defaults */ }
         } else {
           // Check for legacy single reminder migration
           const oldRaw = await AsyncStorage.getItem(OLD_REMINDER_KEY(tab));
           if (oldRaw) {
-            const oldData = JSON.parse(oldRaw);
+            let oldData: any = null;
+            try { oldData = JSON.parse(oldRaw); } catch { /* ignore corrupted legacy */ }
+            if (!oldData) oldData = {};
             const migrated: RoutineReminder[] = [
               {
                 id: `legacy_${Date.now()}`,
@@ -178,7 +189,7 @@ function ReminderCard({ tab, accent, c }: { tab: LogTab; accent: string; c: any 
             let habits = null;
             if (user) {
               const habitsRaw = await AsyncStorage.getItem(`@onboarding_habits_${user.uid}`);
-              if (habitsRaw) habits = JSON.parse(habitsRaw);
+              if (habitsRaw) { try { habits = JSON.parse(habitsRaw); } catch { habits = null; } }
             }
             const prepopulated = getPrepopulatedReminders(tab, habits);
             setReminders(prepopulated);
@@ -270,7 +281,7 @@ function ReminderCard({ tab, accent, c }: { tab: LogTab; accent: string; c: any 
             let habits = null;
             if (user) {
               const habitsRaw = await AsyncStorage.getItem(`@onboarding_habits_${user.uid}`);
-              if (habitsRaw) habits = JSON.parse(habitsRaw);
+              if (habitsRaw) { try { habits = JSON.parse(habitsRaw); } catch { habits = null; } }
             }
             const prepopulated = getPrepopulatedReminders(tab, habits);
             setReminders(prepopulated);
@@ -649,27 +660,29 @@ export default function LogRoutineScreen() {
             ))}
           </>
         )}
-        {/* Food entries from nutrition page */}
+        {/* Food entries from nutrition page - limited to prevent OOM on large datasets */}
         {foodEntries.length > 0 && (
           <>
             <SectionTitle text="FOOD LOGGED TODAY" c={c} />
-            {foodEntries.map(f => (
-              <EntryCard key={f.id} icon="🍽️" title={f.foodName}
-                sub={`${Math.round(f.calories)} kcal · P:${Math.round(f.protein)}g C:${Math.round(f.carbs)}g F:${Math.round(f.fat)}g`}
-                time={f.timestamp ? new Date(f.timestamp).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true }) : ''}
+            {foodEntries.slice(0, 15).map(f => (
+              <EntryCard key={f.id} icon="🍽️" title={f.foodName || 'Food'}
+                sub={`${Math.round(f.calories || 0)} kcal · P:${Math.round(f.protein || 0)}g C:${Math.round(f.carbs || 0)}g F:${Math.round(f.fat || 0)}g`}
+                time={f.timestamp ? (() => { try { return new Date(f.timestamp).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true }); } catch { return ''; } })() : ''}
                 accent={accent} c={c} />
             ))}
+            {foodEntries.length > 15 && <Text style={[s.sec, { color: c.sub, textAlign: 'center', marginTop: 4 }]}>+{foodEntries.length - 15} more entries today</Text>}
           </>
         )}
-        {/* BioGears meal events */}
+        {/* BioGears meal events - limited to prevent OOM */}
         {bgMeals.length > 0 && (
           <>
             <SectionTitle text="BIOGEARS MEAL EVENTS" c={c} />
-            {bgMeals.map(e => (
+            {bgMeals.slice(0, 10).map(e => (
               <EntryCard key={e.id} icon={e.displayIcon || '🍽️'} title={e.displayLabel || 'Meal'}
-                sub={`${Math.round(e.value)} kcal · synced to twin`}
-                time={e.wallTime} accent={accent} c={c} />
+                sub={`${Math.round(e.value || 0)} kcal · synced to twin`}
+                time={e.wallTime || ''} accent={accent} c={c} />
             ))}
+            {bgMeals.length > 10 && <Text style={[s.sec, { color: c.sub, textAlign: 'center', marginTop: 4 }]}>+{bgMeals.length - 10} more twin events</Text>}
           </>
         )}
         {allEmpty && <Empty icon="🍽️" text={'No food logged today.\nTap to add meals to your twin log.'} btn="Log Meal" onPress={goMeal} accent={accent} c={c} />}
@@ -689,25 +702,25 @@ export default function LogRoutineScreen() {
             { label: 'Sessions', value: `${activityEntries.length}`, accent: '#38bdf8' },
           ]} />
         )}
-        {/* Activity Lab entries */}
+        {/* Activity Lab entries - limited to prevent OOM */}
         {activityEntries.length > 0 && (
           <>
             <SectionTitle text="ACTIVITY LAB" c={c} />
-            {activityEntries.map((a: any) => (
-              <EntryCard key={a.id} icon={a.activityIcon} title={a.activityName}
-                sub={`${a.intensity} · ${a.durationMins} min · −${a.caloriesBurned} kcal`}
+            {activityEntries.slice(0, 10).map((a: any) => (
+              <EntryCard key={a.id} icon={a.activityIcon || '🏃'} title={a.activityName || 'Activity'}
+                sub={`${a.intensity || 'Unknown'} · ${a.durationMins || 0} min · −${a.caloriesBurned || 0} kcal`}
                 time="Today" accent={accent} c={c} />
             ))}
           </>
         )}
-        {/* BioGears exercise events */}
+        {/* BioGears exercise events - limited to prevent OOM */}
         {bgEx.length > 0 && (
           <>
             <SectionTitle text="BIOGEARS SESSIONS" c={c} />
-            {bgEx.map(e => (
+            {bgEx.slice(0, 10).map(e => (
               <EntryCard key={e.id} icon="🏃" title={e.displayLabel || 'Exercise'}
-                sub={`${Math.round(e.value * 100)}% intensity · ${Math.round((e.duration_seconds || 0) / 60)} min`}
-                time={e.wallTime} accent={accent} c={c} />
+                sub={`${Math.round((e.value || 0) * 100)}% intensity · ${Math.round((e.duration_seconds || 0) / 60)} min`}
+                time={e.wallTime || ''} accent={accent} c={c} />
             ))}
           </>
         )}
@@ -742,35 +755,38 @@ export default function LogRoutineScreen() {
 
   // ── HYDRATION ───────────────────────────────────────────────────────────────
   const renderHydration = () => {
-    const allHydEmpty = (hydHist as any[]).length === 0 && bgWater.length === 0;
+    // Safely coerce hydHist to array — never crash on non-array data shapes
+    const hydHistArray = Array.isArray(hydHist) ? (hydHist as any[]) : [];
+    const allHydEmpty = hydHistArray.length === 0 && bgWater.length === 0;
     return (
       <>
         <ReminderCard tab="hydration" accent={accent} c={c} />
         <Pills items={[
-          { label: 'Today', value: `${water} mL`, accent },
+          { label: 'Today', value: `${water || 0} mL`, accent },
           { label: 'Goal', value: `${waterGoal} mL`, accent: '#64748b', onPress: openGoalModal },
-          { label: 'Remaining', value: `${Math.max(0, waterGoal - water)} mL`, accent: water >= waterGoal ? '#10b981' : '#f59e0b' },
+          { label: 'Remaining', value: `${Math.max(0, waterGoal - (water || 0))} mL`, accent: (water || 0) >= waterGoal ? '#10b981' : '#f59e0b' },
         ]} />
-        {/* Raw hydration history */}
-        {(hydHist as any[]).length > 0 && (
+        {/* Raw hydration history - limited to prevent OOM */}
+        {hydHistArray.length > 0 && (
           <>
             <SectionTitle text="INTAKE LOG" c={c} />
-            {(hydHist as any[]).slice(0, 12).map((e: any, i: number) => (
+            {hydHistArray.slice(0, 12).map((e: any, i: number) => (
               <EntryCard key={e.id ?? i}
                 icon={e.source === 'notification' ? '🔔' : '💧'}
-                title={`+${e.amount} mL`}
-                sub={e.source === 'notification' ? 'From reminder' : 'Manual entry · running total: ' + e.total + ' mL'}
-                time={fmt(e.timestamp)} accent={accent} c={c} />
+                title={`+${e.amount || 0} mL`}
+                sub={e.source === 'notification' ? 'From reminder' : 'Manual entry · running total: ' + (e.total || 0) + ' mL'}
+                time={e.timestamp ? fmt(e.timestamp) : ''} accent={accent} c={c} />
             ))}
+            {hydHistArray.length > 12 && <Text style={[s.sec, { color: c.sub, textAlign: 'center', marginTop: 4 }]}>+{hydHistArray.length - 12} more entries</Text>}
           </>
         )}
-        {/* BioGears water events */}
+        {/* BioGears water events - limited to prevent OOM */}
         {bgWater.length > 0 && (
           <>
             <SectionTitle text="BIOGEARS WATER EVENTS" c={c} />
-            {bgWater.map(e => (
-              <EntryCard key={e.id} icon="💧" title={`${Math.round(e.value)} mL`}
-                sub="Synced to twin simulation" time={e.wallTime} accent={accent} c={c} />
+            {bgWater.slice(0, 10).map(e => (
+              <EntryCard key={e.id} icon="💧" title={`${Math.round(e.value || 0)} mL`}
+                sub="Synced to twin simulation" time={e.wallTime || ''} accent={accent} c={c} />
             ))}
           </>
         )}

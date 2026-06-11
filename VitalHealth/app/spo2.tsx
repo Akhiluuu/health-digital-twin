@@ -138,7 +138,12 @@ export default function Spo2Screen() {
       if (!hist && activeMemberId === "self") {
         hist = await AsyncStorage.getItem("spo2_history");
       }
-      if (hist) setHistory(JSON.parse(hist));
+      if (hist) {
+        try {
+          const parsedHist = JSON.parse(hist);
+          setHistory(Array.isArray(parsedHist) ? parsedHist : []);
+        } catch { setHistory([]); }
+      }
       else setHistory([]);
     } catch {}
   };

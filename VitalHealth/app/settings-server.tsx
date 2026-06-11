@@ -62,7 +62,7 @@ export default function ServerConfigScreen() {
         setIp(savedUrl);
         setPort("");
       }
-    });
+    }).catch(() => {});
 
     getHeartRateBaseUrl().then((savedUrl) => {
       try {
@@ -76,9 +76,9 @@ export default function ServerConfigScreen() {
         setHrIp(savedUrl);
         setHrPort("");
       }
-    });
+    }).catch(() => {});
 
-    getApiKey().then((k) => setApiKeyInput(k));
+    getApiKey().then((k) => setApiKeyInput(k)).catch(() => {});
   }, []);
 
   const buildUrl = () => {

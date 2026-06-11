@@ -397,7 +397,8 @@ export default function DocumentsScreen() {
     try {
       const raw = await AsyncStorage.getItem(STORAGE_KEY);
       if (raw) {
-        const parsed: StoredDocument[] = JSON.parse(raw);
+        let parsed: StoredDocument[] = [];
+        try { const p = JSON.parse(raw); if (Array.isArray(p)) parsed = p; } catch { console.log('[Documents] Corrupted document store'); }
         parsed.sort((a, b) => b.dateMs - a.dateMs);
         setDocuments(parsed);
       }

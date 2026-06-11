@@ -10,7 +10,8 @@ export const addToMedicineHistory = async (
 ): Promise<MedicineHistoryEntry> => {
   try {
     const existing = await AsyncStorage.getItem(HISTORY_STORAGE_KEY);
-    let history: MedicineHistoryEntry[] = existing ? JSON.parse(existing) : [];
+    let history: MedicineHistoryEntry[] = [];
+    if (existing) { try { const p = JSON.parse(existing); if (Array.isArray(p)) history = p; } catch {} }
 
     const now = new Date();
 
@@ -58,7 +59,8 @@ export const addToMedicineHistory = async (
 export const getMedicineHistory = async (): Promise<MedicineHistoryEntry[]> => {
   try {
     const data = await AsyncStorage.getItem(HISTORY_STORAGE_KEY);
-    return data ? JSON.parse(data) : [];
+    if (!data) return [];
+    try { const p = JSON.parse(data); return Array.isArray(p) ? p : []; } catch { return []; }
   } catch (error) {
     console.error("Error loading medicine history:", error);
     return [];

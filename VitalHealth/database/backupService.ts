@@ -110,7 +110,12 @@ export async function exportDBToJSON(): Promise<string> {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export async function importDBFromJSON(json: string): Promise<void> {
-  const backup = JSON.parse(json);
+  let backup: any;
+  try {
+    backup = JSON.parse(json);
+  } catch (e) {
+    throw new Error("Backup file is corrupted or not valid JSON. Cannot restore.");
+  }
 
   if (!backup._meta) throw new Error("Invalid backup file — missing _meta header.");
 

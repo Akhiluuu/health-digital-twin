@@ -103,7 +103,7 @@ export default function QuickAddRow({ addEventAndSimulate, twinStatus }: Props) 
       const key = `biogears_custom_shortcuts_${twinUserId}`;
       const raw = await AsyncStorage.getItem(key);
       if (raw) {
-        setShortcuts(JSON.parse(raw));
+        try { const p = JSON.parse(raw); if (Array.isArray(p)) setShortcuts(p); } catch {}
       } else {
         // Seed default shortcuts
         setShortcuts(DEFAULT_SHORTCUTS);

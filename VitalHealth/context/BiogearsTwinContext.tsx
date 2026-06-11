@@ -593,13 +593,19 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
   };
 
   const finishSimulationSuccess = async (result: any) => {
+    if (!result) {
+      console.error('[BiogearsTwin] finishSimulationSuccess called with null result');
+      setSimulationStatus('failed');
+      setSimulationError('Simulation returned no data');
+      return;
+    }
     const todayStr = new Date().toDateString();
     await AsyncStorage.setItem('@last_simulated_date', todayStr);
     await scheduleDailyLogReminder();
 
-    setLastVitals(result.vitals);
-    setLastAnomalies(result.anomalies || []);
-    setLastInteractionWarnings(result.interaction_warnings || []);
+    setLastVitals(result.vitals || null);
+    setLastAnomalies(Array.isArray(result.anomalies) ? result.anomalies : []);
+    setLastInteractionWarnings(Array.isArray(result.interaction_warnings) ? result.interaction_warnings : []);
 
     const sessionId = new Date().toISOString().replace(/[:.]/g, '-');
     await saveSimulationResult(
@@ -735,8 +741,8 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
           if (habitsKey) {
             const raw = await AsyncStorage.getItem(habitsKey);
             if (raw) {
-              habits = JSON.parse(raw);
-              console.log('[BiogearsTwin] Found habits in local AsyncStorage');
+              try { habits = JSON.parse(raw); } catch { console.log('[BiogearsTwin] Habits JSON corrupted in AsyncStorage'); habits = null; }
+              if (habits) console.log('[BiogearsTwin] Found habits in local AsyncStorage');
             }
           }
         }
@@ -1027,18 +1033,14 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
     sessions,
     getVitalsTrendsFallback,
     firestoreOwnerUid,
-    organScores,
-    vitalsTrends,
-    cvdRisk,
-    recoveryReadiness,
-    weeklySummary,
-    healthScore,
-    bodyMetrics,
     todayEvents,
     steps,
     profile,
-    caloricBalance,
-  ]);
+    // NOTE: organScores, vitalsTrends, cvdRisk, recoveryReadiness, weeklySummary,
+    // healthScore, bodyMetrics, caloricBalance are intentionally EXCLUDED.
+    // Including them causes an infinite re-render loop: refreshAnalytics sets them,
+    // then the dep change re-fires refreshAnalytics, which sets them again, ad nauseam.
+  ]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const refreshAnalyticsRef = useRef(refreshAnalytics);
   useEffect(() => {
@@ -1160,7 +1162,7 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
   const setTodayEventsWrapped = useCallback((events: RoutineEvent[]) => {
     setTodayEvents(events);
     persistToday(events);
-  }, [twinUserId, firestoreOwnerUid]);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const clearToday = useCallback(() => {
     setTodayEvents([]);
@@ -1792,7 +1794,7 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
         const habitsKey = user ? `@onboarding_habits_${user.uid}` : null;
         if (habitsKey) {
           const raw = await AsyncStorage.getItem(habitsKey);
-          if (raw) habits = JSON.parse(raw);
+          if (raw) { try { habits = JSON.parse(raw); } catch { habits = null; } }
         }
       }
 

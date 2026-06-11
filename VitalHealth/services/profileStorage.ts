@@ -8,7 +8,8 @@ export const saveProfile = async (profile: any) => {
 
 export const getProfile = async () => {
   const data = await AsyncStorage.getItem(PROFILE_KEY);
-  return data ? JSON.parse(data) : null;
+  if (!data) return null;
+  try { const p = JSON.parse(data); return (p && typeof p === 'object') ? p : null; } catch { return null; }
 };
 
 export const updateProfile = async (profile: any) => {

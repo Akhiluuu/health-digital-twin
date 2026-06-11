@@ -204,7 +204,8 @@ export const FamilyProvider = ({
 
       const stored = await AsyncStorage.getItem(STORAGE_KEY);
       if (stored) {
-        const parsed = JSON.parse(stored);
+        let parsed: any = null;
+        try { parsed = JSON.parse(stored); } catch { console.log('[FamilyContext] Corrupted member cache, clearing'); await AsyncStorage.removeItem(STORAGE_KEY); }
         if (Array.isArray(parsed)) setMembers(parsed);
         else { await AsyncStorage.removeItem(STORAGE_KEY); setMembers([]); }
       }
@@ -374,20 +375,26 @@ export const FamilyProvider = ({
     try {
       const stored = await AsyncStorage.getItem(STORAGE_KEY);
       if (stored) {
-        const parsed = JSON.parse(stored) as FamilyMember[];
-        const updatedList = parsed.map((m) => {
-          if (m.uid === activeMemberId || m.id === activeMemberId || m.userId === activeMemberId) {
-            return {
-              ...m,
-              firstName: newProfile.firstName,
-              lastName: newProfile.lastName || "",
-              name: `${newProfile.firstName} ${newProfile.lastName || ""}`.trim(),
-            };
+          let parsed: FamilyMember[] = [];
+          try {
+            const p = JSON.parse(stored);
+            if (Array.isArray(p)) parsed = p;
+          } catch { console.log('[FamilyContext] updateActiveProfile: corrupted member cache'); }
+          if (parsed.length > 0) {
+            const updatedList = parsed.map((m) => {
+              if (m.uid === activeMemberId || m.id === activeMemberId || m.userId === activeMemberId) {
+                return {
+                  ...m,
+                  firstName: newProfile.firstName,
+                  lastName: newProfile.lastName || "",
+                  name: `${newProfile.firstName} ${newProfile.lastName || ""}`.trim(),
+                };
+              }
+              return m;
+            });
+            await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(updatedList));
           }
-          return m;
-        });
-        await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(updatedList));
-      }
+        }
     } catch (err) {
       console.error("❌ updateActiveProfile storage error:", err);
     }

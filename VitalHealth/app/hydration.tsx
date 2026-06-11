@@ -192,13 +192,20 @@ export default function HydrationScreen() {
       setIsLoading(true);
       const saved = await AsyncStorage.getItem(REMINDER_STORAGE_KEY);
       if (saved) {
-        const parsed = JSON.parse(saved);
-        setReminderSettings({
-          enabled: parsed.enabled || false,
-          interval: parsed.interval || "1h",
-          startTime: new Date(parsed.startTime) || new Date(new Date().setHours(7, 0, 0, 0)),
-          endTime: new Date(parsed.endTime) || new Date(new Date().setHours(21, 0, 0, 0)),
-        });
+        let parsed: any = null;
+        try { parsed = JSON.parse(saved); } catch { /* corrupted settings, use defaults */ }
+        if (parsed && typeof parsed === 'object') {
+          const safeDate = (val: any, fallback: Date): Date => {
+            if (!val) return fallback;
+            try { const d = new Date(val); return isNaN(d.getTime()) ? fallback : d; } catch { return fallback; }
+          };
+          setReminderSettings({
+            enabled: parsed.enabled || false,
+            interval: parsed.interval || "1h",
+            startTime: safeDate(parsed.startTime, new Date(new Date().setHours(7, 0, 0, 0))),
+            endTime:   safeDate(parsed.endTime,   new Date(new Date().setHours(21, 0, 0, 0))),
+          });
+        }
       }
     } catch (err) {
       console.error("Error loading reminder settings:", err);

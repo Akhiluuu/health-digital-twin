@@ -45,7 +45,8 @@ function generateDocId(): string {
 export async function loadDocuments(): Promise<Document[]> {
   try {
     const data = await AsyncStorage.getItem(KEY_DOCUMENTS);
-    return data ? JSON.parse(data) : [];
+    if (!data) return [];
+    try { const p = JSON.parse(data); return Array.isArray(p) ? p : []; } catch { return []; }
   } catch (error) {
     console.error('[DocProcessing] Error loading documents:', error);
     return [];
@@ -69,7 +70,8 @@ export async function saveDocuments(docs: Document[]): Promise<void> {
 export async function loadChunks(): Promise<EmbeddedChunk[]> {
   try {
     const data = await AsyncStorage.getItem(KEY_CHUNKS);
-    return data ? JSON.parse(data) : [];
+    if (!data) return [];
+    try { const p = JSON.parse(data); return Array.isArray(p) ? p : []; } catch { return []; }
   } catch (error) {
     console.error('[DocProcessing] Error loading chunks:', error);
     return [];

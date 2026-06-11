@@ -14,6 +14,7 @@ import { ActivityIndicator, View } from "react-native";
 import * as SplashScreen from "expo-splash-screen";
 import notifee from "@notifee/react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
+import { ErrorBoundary } from "../components/ErrorBoundary";
 
 ///////////////////////////////////////////////////////////
 // CONTEXT PROVIDERS
@@ -227,90 +228,103 @@ export default function RootLayout() {
   ///////////////////////////////////////////////////////////
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <ThemeProvider defaultTheme="light">
-        <ProfileProvider>
-          <FamilyProviderWithProfile>
-            <StepProviderWrapper>
-              <HydrationProvider>
-                <BiogearsTwinProvider>
-                  <NutritionProvider>
-                    <Stack
-                      screenOptions={{
-                        headerShown: false,
-                        animation: 'slide_from_right',
-                        gestureEnabled: true,
-                        gestureDirection: 'horizontal',
-                        fullScreenGestureEnabled: true,
-                      }}
-                    >
-                      {/* Authentication & Startup */}
-                      <Stack.Screen name="startup" options={{ animation: 'fade', gestureEnabled: false }} />
-                      <Stack.Screen name="welcome" options={{ animation: 'fade', gestureEnabled: false }} />
-                      <Stack.Screen name="signin"  options={{ animation: 'slide_from_bottom', gestureDirection: 'vertical', gestureEnabled: true }} />
-                      <Stack.Screen name="signup"  options={{ animation: 'slide_from_bottom', gestureDirection: 'vertical', gestureEnabled: true }} />
+      <ErrorBoundary>
+        <ThemeProvider defaultTheme="light">
+          <ProfileProvider>
+            <FamilyProviderWithProfile>
+              <StepProviderWrapper>
+                <HydrationProvider>
+                  <BiogearsTwinProvider>
+                    <NutritionProvider>
+                      <MedicineProvider>
+                        <SymptomsProvider>
+                          <Stack
+                            screenOptions={{
+                              headerShown: false,
+                              animation: 'slide_from_right',
+                              gestureEnabled: true,
+                              gestureDirection: 'horizontal',
+                              fullScreenGestureEnabled: true,
+                            }}
+                          >
+                            {/* Authentication & Startup */}
+                            <Stack.Screen name="startup" options={{ animation: 'fade', gestureEnabled: false }} />
+                            <Stack.Screen name="welcome" options={{ animation: 'fade', gestureEnabled: false }} />
+                            <Stack.Screen name="signin"  options={{ animation: 'slide_from_bottom', gestureDirection: 'vertical', gestureEnabled: true }} />
+                            <Stack.Screen name="signup"  options={{ animation: 'slide_from_bottom', gestureDirection: 'vertical', gestureEnabled: true }} />
 
-                      {/* Onboarding — linear forward flow, no back swipe */}
-                      <Stack.Screen name="onboarding/personal" options={{ animation: 'slide_from_right', gestureEnabled: false }} />
-                      <Stack.Screen name="onboarding/medical"  options={{ animation: 'slide_from_right', gestureEnabled: false }} />
-                      <Stack.Screen name="onboarding/habits"   options={{ animation: 'slide_from_right', gestureEnabled: false }} />
-                      <Stack.Screen name="onboarding/history"  options={{ animation: 'slide_from_right', gestureEnabled: false }} />
-                      <Stack.Screen name="onboarding/review"   options={{ animation: 'slide_from_right', gestureEnabled: false }} />
+                            {/* Onboarding — linear forward flow, no back swipe */}
+                            <Stack.Screen name="onboarding/personal" options={{ animation: 'slide_from_right', gestureEnabled: false }} />
+                            <Stack.Screen name="onboarding/medical"  options={{ animation: 'slide_from_right', gestureEnabled: false }} />
+                            <Stack.Screen name="onboarding/habits"   options={{ animation: 'slide_from_right', gestureEnabled: false }} />
+                            <Stack.Screen name="onboarding/history"  options={{ animation: 'slide_from_right', gestureEnabled: false }} />
+                            <Stack.Screen name="onboarding/review"   options={{ animation: 'slide_from_right', gestureEnabled: false }} />
 
-                      {/* Main App Tabs — instant switch, no swipe-back to auth */}
-                      <Stack.Screen name="(tabs)" options={{ animation: 'none', gestureEnabled: false }} />
+                            {/* Main App Tabs */}
+                            <Stack.Screen name="(tabs)" options={{ animation: 'none', gestureEnabled: false }} />
 
-                      {/* Family Health */}
-                      <Stack.Screen name="family/index"          options={{ animation: 'slide_from_right', gestureEnabled: true, fullScreenGestureEnabled: true }} />
-                      <Stack.Screen name="family/member-details" options={{ animation: 'slide_from_right', gestureEnabled: true, fullScreenGestureEnabled: true }} />
-                      <Stack.Screen name="family/add-member"     options={{ animation: 'slide_from_right', gestureEnabled: true, fullScreenGestureEnabled: true }} />
+                            {/* Family Health */}
+                            <Stack.Screen name="family/index"          options={{ animation: 'slide_from_right', gestureEnabled: true, fullScreenGestureEnabled: true }} />
+                            <Stack.Screen name="family/member-details" options={{ animation: 'slide_from_right', gestureEnabled: true, fullScreenGestureEnabled: true }} />
+                            <Stack.Screen name="family/add-member"     options={{ animation: 'slide_from_right', gestureEnabled: true, fullScreenGestureEnabled: true }} />
 
-                      {/* Health Sub-screens */}
-                      <Stack.Screen name="MedicationVault"      options={{ animation: 'slide_from_right', gestureEnabled: true, fullScreenGestureEnabled: true }} />
-                      <Stack.Screen name="MedicineHistory"      options={{ animation: 'slide_from_right', gestureEnabled: true, fullScreenGestureEnabled: true }} />
-                      <Stack.Screen name="AddMedicine"          options={{ animation: 'slide_from_right', gestureEnabled: true, fullScreenGestureEnabled: true }} />
-                      <Stack.Screen name="member-health"        options={{ animation: 'slide_from_right', gestureEnabled: true, fullScreenGestureEnabled: true }} />
-                      <Stack.Screen name="backup-restore"       options={{ animation: 'slide_from_right', gestureEnabled: true, fullScreenGestureEnabled: true }} />
-                      <Stack.Screen name="activity"             options={{ animation: 'slide_from_right', gestureEnabled: true, fullScreenGestureEnabled: true }} />
-                      <Stack.Screen name="hydration"            options={{ animation: 'slide_from_right', gestureEnabled: true, fullScreenGestureEnabled: true }} />
-                      <Stack.Screen name="nutrition"            options={{ animation: 'slide_from_right', gestureEnabled: true, fullScreenGestureEnabled: true }} />
-                      <Stack.Screen name="rest"                 options={{ animation: 'slide_from_right', gestureEnabled: true, fullScreenGestureEnabled: true }} />
-                      <Stack.Screen name="profile"              options={{ animation: 'slide_from_right', gestureEnabled: true, fullScreenGestureEnabled: true }} />
-                      <Stack.Screen name="spo2"                 options={{ animation: 'slide_from_right', gestureEnabled: true, fullScreenGestureEnabled: true }} />
-                      <Stack.Screen name="sos"                  options={{ animation: 'slide_from_bottom', gestureDirection: 'vertical', gestureEnabled: true }} />
-                      <Stack.Screen name="step-intelligence"    options={{ animation: 'slide_from_right', gestureEnabled: true, fullScreenGestureEnabled: true }} />
-                      <Stack.Screen name="calorie-intelligence" options={{ animation: 'slide_from_right', gestureEnabled: true, fullScreenGestureEnabled: true }} />
-                      <Stack.Screen name="heart-scanner"        options={{ animation: 'slide_from_right', gestureEnabled: true, fullScreenGestureEnabled: true }} />
+                            {/* Health Sub-screens */}
+                            <Stack.Screen name="MedicationVault"      options={{ animation: 'slide_from_right', gestureEnabled: true, fullScreenGestureEnabled: true }} />
+                            <Stack.Screen name="MedicineHistory"      options={{ animation: 'slide_from_right', gestureEnabled: true, fullScreenGestureEnabled: true }} />
+                            <Stack.Screen name="AddMedicine"          options={{ animation: 'slide_from_right', gestureEnabled: true, fullScreenGestureEnabled: true }} />
+                            <Stack.Screen name="member-health"        options={{ animation: 'slide_from_right', gestureEnabled: true, fullScreenGestureEnabled: true }} />
+                            <Stack.Screen name="backup-restore"       options={{ animation: 'slide_from_right', gestureEnabled: true, fullScreenGestureEnabled: true }} />
+                            <Stack.Screen name="activity"             options={{ animation: 'slide_from_right', gestureEnabled: true, fullScreenGestureEnabled: true }} />
+                            <Stack.Screen name="hydration"            options={{ animation: 'slide_from_right', gestureEnabled: true, fullScreenGestureEnabled: true }} />
+                            <Stack.Screen name="nutrition"            options={{ animation: 'slide_from_right', gestureEnabled: true, fullScreenGestureEnabled: true }} />
+                            <Stack.Screen name="rest"                 options={{ animation: 'slide_from_right', gestureEnabled: true, fullScreenGestureEnabled: true }} />
+                            <Stack.Screen name="profile"              options={{ animation: 'slide_from_right', gestureEnabled: true, fullScreenGestureEnabled: true }} />
+                            <Stack.Screen name="spo2"                 options={{ animation: 'slide_from_right', gestureEnabled: true, fullScreenGestureEnabled: true }} />
+                            <Stack.Screen name="sos"                  options={{ animation: 'slide_from_bottom', gestureDirection: 'vertical', gestureEnabled: true }} />
+                            <Stack.Screen name="step-intelligence"    options={{ animation: 'slide_from_right', gestureEnabled: true, fullScreenGestureEnabled: true }} />
+                            <Stack.Screen name="calorie-intelligence" options={{ animation: 'slide_from_right', gestureEnabled: true, fullScreenGestureEnabled: true }} />
+                            <Stack.Screen name="heart-scanner"        options={{ animation: 'slide_from_right', gestureEnabled: true, fullScreenGestureEnabled: true }} />
 
-                      {/* Settings */}
-                      <Stack.Screen name="settings"                  options={{ animation: 'slide_from_right', gestureEnabled: true, fullScreenGestureEnabled: true }} />
-                      <Stack.Screen name="settings-server"           options={{ animation: 'slide_from_right', gestureEnabled: true, fullScreenGestureEnabled: true }} />
-                      <Stack.Screen name="settings-ai"               options={{ animation: 'slide_from_right', gestureEnabled: true, fullScreenGestureEnabled: true }} />
-                      <Stack.Screen name="settings-about"            options={{ animation: 'slide_from_right', gestureEnabled: true, fullScreenGestureEnabled: true }} />
-                      <Stack.Screen name="settings-contacts"         options={{ animation: 'slide_from_right', gestureEnabled: true, fullScreenGestureEnabled: true }} />
-                      <Stack.Screen name="settings-data"             options={{ animation: 'slide_from_right', gestureEnabled: true, fullScreenGestureEnabled: true }} />
-                      <Stack.Screen name="settings-help"             options={{ animation: 'slide_from_right', gestureEnabled: true, fullScreenGestureEnabled: true }} />
-                      <Stack.Screen name="settings-language"         options={{ animation: 'slide_from_right', gestureEnabled: true, fullScreenGestureEnabled: true }} />
-                      <Stack.Screen name="settings-notifications"    options={{ animation: 'slide_from_right', gestureEnabled: true, fullScreenGestureEnabled: true }} />
-                      <Stack.Screen name="settings-security"         options={{ animation: 'slide_from_right', gestureEnabled: true, fullScreenGestureEnabled: true }} />
+                            {/* Settings */}
+                            <Stack.Screen name="settings"                  options={{ animation: 'slide_from_right', gestureEnabled: true, fullScreenGestureEnabled: true }} />
+                            <Stack.Screen name="settings-server"           options={{ animation: 'slide_from_right', gestureEnabled: true, fullScreenGestureEnabled: true }} />
+                            <Stack.Screen name="settings-ai"               options={{ animation: 'slide_from_right', gestureEnabled: true, fullScreenGestureEnabled: true }} />
+                            <Stack.Screen name="settings-about"            options={{ animation: 'slide_from_right', gestureEnabled: true, fullScreenGestureEnabled: true }} />
+                            <Stack.Screen name="settings-contacts"         options={{ animation: 'slide_from_right', gestureEnabled: true, fullScreenGestureEnabled: true }} />
+                            <Stack.Screen name="settings-data"             options={{ animation: 'slide_from_right', gestureEnabled: true, fullScreenGestureEnabled: true }} />
+                            <Stack.Screen name="settings-help"             options={{ animation: 'slide_from_right', gestureEnabled: true, fullScreenGestureEnabled: true }} />
+                            <Stack.Screen name="settings-language"         options={{ animation: 'slide_from_right', gestureEnabled: true, fullScreenGestureEnabled: true }} />
+                            <Stack.Screen name="settings-notifications"    options={{ animation: 'slide_from_right', gestureEnabled: true, fullScreenGestureEnabled: true }} />
+                            <Stack.Screen name="settings-security"         options={{ animation: 'slide_from_right', gestureEnabled: true, fullScreenGestureEnabled: true }} />
 
-                      {/* Session Detail */}
-                      <Stack.Screen name="session/[sessionId]" options={{ animation: 'slide_from_right', gestureEnabled: true, fullScreenGestureEnabled: true }} />
-                      <Stack.Screen name="session/[id]"        options={{ animation: 'slide_from_right', gestureEnabled: true, fullScreenGestureEnabled: true }} />
+                            {/* Session Detail */}
+                            <Stack.Screen name="session/[sessionId]" options={{ animation: 'slide_from_right', gestureEnabled: true, fullScreenGestureEnabled: true }} />
+                            <Stack.Screen name="session/[id]"        options={{ animation: 'slide_from_right', gestureEnabled: true, fullScreenGestureEnabled: true }} />
 
-                      {/* Symptom flow */}
-                      <Stack.Screen name="symptom-log"      options={{ animation: 'slide_from_bottom', gestureDirection: 'vertical', gestureEnabled: true }} />
-                      <Stack.Screen name="symptom-flow"     options={{ animation: 'slide_from_right', gestureEnabled: true, fullScreenGestureEnabled: true }} />
-                      <Stack.Screen name="symptom-followup" options={{ animation: 'slide_from_right', gestureEnabled: true, fullScreenGestureEnabled: true }} />
-                      <Stack.Screen name="symptom-chat"     options={{ animation: 'slide_from_right', gestureEnabled: true, fullScreenGestureEnabled: true }} />
-                      <Stack.Screen name="symptom-history"  options={{ animation: 'slide_from_right', gestureEnabled: true, fullScreenGestureEnabled: true }} />
-                    </Stack>
-                  </NutritionProvider>
-                </BiogearsTwinProvider>
-              </HydrationProvider>
-            </StepProviderWrapper>
-          </FamilyProviderWithProfile>
-        </ProfileProvider>
-      </ThemeProvider>
+                            {/* Symptom flow */}
+                            <Stack.Screen name="symptom-log"      options={{ animation: 'slide_from_bottom', gestureDirection: 'vertical', gestureEnabled: true }} />
+                            <Stack.Screen name="symptom-flow"     options={{ animation: 'slide_from_right', gestureEnabled: true, fullScreenGestureEnabled: true }} />
+                            <Stack.Screen name="symptom-followup" options={{ animation: 'slide_from_right', gestureEnabled: true, fullScreenGestureEnabled: true }} />
+                            <Stack.Screen name="symptom-chat"     options={{ animation: 'slide_from_right', gestureEnabled: true, fullScreenGestureEnabled: true }} />
+                            <Stack.Screen name="symptom-history"  options={{ animation: 'slide_from_right', gestureEnabled: true, fullScreenGestureEnabled: true }} />
+
+                            {/* Brain Lab */}
+                            <Stack.Screen name="brain/brain-lab"     options={{ animation: 'slide_from_right', gestureEnabled: true, fullScreenGestureEnabled: true }} />
+                            <Stack.Screen name="brain/PatternTest"   options={{ animation: 'slide_from_right', gestureEnabled: true, fullScreenGestureEnabled: true }} />
+                            <Stack.Screen name="brain/StroopTest"    options={{ animation: 'slide_from_right', gestureEnabled: true, fullScreenGestureEnabled: true }} />
+                            <Stack.Screen name="brain/MemoryTest"    options={{ animation: 'slide_from_right', gestureEnabled: true, fullScreenGestureEnabled: true }} />
+                            <Stack.Screen name="brain/ReactionTest"  options={{ animation: 'slide_from_right', gestureEnabled: true, fullScreenGestureEnabled: true }} />
+                          </Stack>
+                        </SymptomsProvider>
+                      </MedicineProvider>
+                    </NutritionProvider>
+                  </BiogearsTwinProvider>
+                </HydrationProvider>
+              </StepProviderWrapper>
+            </FamilyProviderWithProfile>
+          </ProfileProvider>
+        </ThemeProvider>
+      </ErrorBoundary>
     </GestureHandlerRootView>
   );
 }

@@ -499,7 +499,14 @@ export default function ProfileScreen() {
   const loadSettings = async () => {
     try {
       const saved = await AsyncStorage.getItem("appSettings");
-      if (saved) setSettings(JSON.parse(saved));
+      if (saved) {
+        try {
+          const parsed = JSON.parse(saved);
+          if (parsed && typeof parsed === 'object') setSettings(parsed);
+        } catch {
+          console.log('[Profile] Settings JSON corrupted, using defaults');
+        }
+      }
     } catch (e) { console.log(e); }
   };
 
@@ -571,21 +578,28 @@ export default function ProfileScreen() {
       // Recalculate default routine if height/weight/gender/DOB changes
       const uid = isSwitched ? activeMemberId : auth.currentUser?.uid;
       if (uid) {
-        const raw = await AsyncStorage.getItem(`@onboarding_habits_${uid}`);
-        if (raw) {
-          const habits = JSON.parse(raw);
-          const heightVal = parseFloat(String(newProfile.height || '').replace(/[^0-9.]/g, '')) || 175;
-          const weightVal = parseFloat(String(newProfile.weight || '').replace(/[^0-9.]/g, '')) || 70;
-          const routine = buildDefaultRoutine(habits, {
-            gender: newProfile.gender,
-            dateOfBirth: newProfile.dateOfBirth,
-            height: heightVal,
-            weight: weightVal,
-          });
-          const twinId = getTwinId(newProfile);
-          await BiogearsAPI.saveRoutine(twinId, routine, uid);
-          await BiogearsAPI.setDefaultRoutine(twinId, routine.id, uid, true);
-          console.log('[Profile] ✅ Recalculated and updated default routine for twin:', twinId);
+        try {
+          const raw = await AsyncStorage.getItem(`@onboarding_habits_${uid}`);
+          if (raw) {
+            let habits: any = null;
+            try { habits = JSON.parse(raw); } catch { console.log('[Profile] Habits JSON corrupted, skipping routine update'); }
+            if (habits) {
+              const heightVal = parseFloat(String(newProfile.height || '').replace(/[^0-9.]/g, '')) || 175;
+              const weightVal = parseFloat(String(newProfile.weight || '').replace(/[^0-9.]/g, '')) || 70;
+              const routine = buildDefaultRoutine(habits, {
+                gender: newProfile.gender,
+                dateOfBirth: newProfile.dateOfBirth,
+                height: heightVal,
+                weight: weightVal,
+              });
+              const twinId = getTwinId(newProfile);
+              await BiogearsAPI.saveRoutine(twinId, routine, uid);
+              await BiogearsAPI.setDefaultRoutine(twinId, routine.id, uid, true);
+              console.log('[Profile] ✅ Recalculated and updated default routine for twin:', twinId);
+            }
+          }
+        } catch (routineErr) {
+          console.log('[Profile] Routine update error (non-fatal):', routineErr);
         }
       }
     } catch (e) {

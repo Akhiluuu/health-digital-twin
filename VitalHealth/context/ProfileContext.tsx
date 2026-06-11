@@ -61,9 +61,12 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
       // ✅ STEP 1: Load from AsyncStorage instantly (no auth needed)
       const raw = await AsyncStorage.getItem("userProfile");
       if (raw) {
-        const local = JSON.parse(raw) as UserProfile;
-        setProfile(local);
-        console.log("✅ Profile loaded from AsyncStorage:", local.firstName, local.email);
+        let local: UserProfile | null = null;
+        try { local = JSON.parse(raw) as UserProfile; } catch { console.log('[ProfileContext] Corrupted profile cache, ignoring'); }
+        if (local && typeof local === 'object' && local.email !== undefined) {
+          setProfile({ ...EMPTY_PROFILE, ...local });
+          console.log("✅ Profile loaded from AsyncStorage:", local.firstName, local.email);
+        }
       }
       setIsLoaded(true);
 

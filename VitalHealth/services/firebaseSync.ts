@@ -81,9 +81,10 @@ export const getUserId = async (): Promise<string | null> => {
   try {
     const cached = await AsyncStorage.getItem("@firebase_auth_user");
     if (cached) {
-      const parsed = JSON.parse(cached);
-      console.log("🔑 Using cached auth uid:", parsed.uid);
-      return parsed.uid ?? null;
+      let parsed: any = null;
+      try { parsed = JSON.parse(cached); } catch { return null; }
+      if (parsed && parsed.uid) { console.log('🔑 Using cached auth uid:', parsed.uid); return parsed.uid; }
+      return null;
     }
   } catch (e) {
     console.log("⚠️ AsyncStorage auth cache read error:", e);

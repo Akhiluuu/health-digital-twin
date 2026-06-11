@@ -170,14 +170,11 @@ export function SymptomsProvider({ children }: { children: React.ReactNode }) {
   const [isLoaded,        setIsLoaded]        = useState(false);
   const [isLoadingMemberSymptoms, setIsLoadingMember] = useState(false);
 
-  // ── Get active profile context ────────────────────────
-  let isSwitched     = false;
-  let activeMemberId = "self";
-  try {
-    const family   = useFamily();
-    isSwitched     = family.isSwitched;
-    activeMemberId = family.activeMemberId;
-  } catch (_) {}
+  // ── Get active profile context ─────────────────────────
+  // NOTE: SymptomsProvider is always rendered inside FamilyProvider (see _layout.tsx).
+  // useFamily() is safe to call unconditionally here. The previous try/catch pattern
+  // was a React Rules of Hooks VIOLATION (hooks must never be called in try/catch).
+  const { isSwitched, activeMemberId } = useFamily();
 
   //////////////////////////////////////////////////////////
   // REFRESH — reacts to profile switching
@@ -216,8 +213,12 @@ export function SymptomsProvider({ children }: { children: React.ReactNode }) {
         const activeRaw  = await AsyncStorage.getItem(ACTIVE_KEY);
         const historyRaw = await AsyncStorage.getItem(HISTORY_KEY);
 
-        const localActive:  Symptom[]        = activeRaw  ? JSON.parse(activeRaw)  : [];
-        const localHistory: HistorySymptom[]  = historyRaw ? JSON.parse(historyRaw) : [];
+        let localActive: Symptom[] = [];
+        let localHistory: HistorySymptom[] = [];
+        try { if (activeRaw)  localActive  = JSON.parse(activeRaw);  } catch { console.log('[SymptomContext] activeRaw corrupted'); }
+        try { if (historyRaw) localHistory = JSON.parse(historyRaw); } catch { console.log('[SymptomContext] historyRaw corrupted'); }
+        if (!Array.isArray(localActive))  localActive  = [];
+        if (!Array.isArray(localHistory)) localHistory = [];
 
         const firebaseActive  = await fetchSymptomsFromFirebase();
         const firebaseHistory = await fetchSymptomHistoryFromFirebase();
@@ -365,7 +366,8 @@ export function SymptomsProvider({ children }: { children: React.ReactNode }) {
 
         await AsyncStorage.setItem(ACTIVE_KEY, JSON.stringify(updatedActive));
         const existingHistory = await AsyncStorage.getItem(HISTORY_KEY);
-        const parsedHistory   = existingHistory ? JSON.parse(existingHistory) : [];
+        let parsedHistory: any[] = [];
+        try { if (existingHistory) { const p = JSON.parse(existingHistory); if (Array.isArray(p)) parsedHistory = p; } } catch { console.log('[SymptomContext] historyStorage corrupted'); }
         await AsyncStorage.setItem(HISTORY_KEY, JSON.stringify([resolved, ...parsedHistory]));
 
         await cancelSymptomNotification();

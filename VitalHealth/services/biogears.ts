@@ -556,7 +556,8 @@ export async function loadSessionsMeta(userId: string): Promise<LocalSessionMeta
   const key = SESSION_META_KEY(userId);
   try {
     const raw = await AsyncStorage.getItem(key);
-    return raw ? JSON.parse(raw) : [];
+    if (!raw) return [];
+    try { const p = JSON.parse(raw); return Array.isArray(p) ? p : []; } catch { return []; }
   } catch {
     return [];
   }
@@ -598,7 +599,8 @@ const ROUTINES_KEY = (userId: string) => `@biogears_routines_${userId}`;
 export async function loadSavedRoutines(userId: string): Promise<SavedRoutine[]> {
   try {
     const raw = await AsyncStorage.getItem(ROUTINES_KEY(userId));
-    return raw ? JSON.parse(raw) : [];
+    if (!raw) return [];
+    try { const p = JSON.parse(raw); return Array.isArray(p) ? p : []; } catch { return []; }
   } catch {
     return [];
   }

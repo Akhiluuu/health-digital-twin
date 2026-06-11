@@ -6,7 +6,7 @@ export default {
     orientation: "portrait",
 
     // ✅ NEW APP ICON
-    icon: "./assets/images/vitalhealthapp-icon.png",
+    icon: "./assets/images/vitalhealth-icon.png",
 
     scheme: "vitalhealth",
     userInterfaceStyle: "automatic",
@@ -51,7 +51,7 @@ export default {
 
       // ✅ FIXED ICON (NO ZOOM / PERFECT FIT)
       adaptiveIcon: {
-        foregroundImage: "./assets/images/vitalhealth-icon.png",
+        foregroundImage: "./assets/images/vitalhealthapp-icon.png",
         backgroundColor: "#ffffff",
       },
 

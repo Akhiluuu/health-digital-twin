@@ -61,7 +61,8 @@ export default function MedicineHistory() {
   const loadHistory = async () => {
     try {
       const saved = await AsyncStorage.getItem(HISTORY_STORAGE_KEY);
-      let local: MedicineHistoryEntry[] = saved ? JSON.parse(saved) : [];
+      let local: MedicineHistoryEntry[] = [];
+      if (saved) { try { const p = JSON.parse(saved); if (Array.isArray(p)) local = p; } catch {} }
 
       // Sort and set state immediately for fast response
       local.sort(

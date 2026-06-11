@@ -127,7 +127,8 @@ type ChatSession = {
 const loadChatHistory = async (): Promise<ChatSession[]> => {
   try {
     const raw = await AsyncStorage.getItem(KEY_CHAT_HISTORY);
-    return raw ? JSON.parse(raw) : [];
+    if (!raw) return [];
+    try { const p = JSON.parse(raw); return Array.isArray(p) ? p : []; } catch { return []; }
   } catch { return []; }
 };
 
