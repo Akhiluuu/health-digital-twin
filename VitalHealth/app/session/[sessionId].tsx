@@ -163,9 +163,9 @@ export default function SessionDetailScreen() {
                         {ev.substance_name ? ` · ${ev.substance_name}` : ''}
                       </Text>
                     </View>
-                    {ev.timestamp && (
+                    {(ev.wallTime || ev.timestamp) && (
                       <Text style={{ color: c.sub, fontSize: 11 }}>
-                        {new Date(ev.timestamp * 1000).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
+                        {ev.wallTime || new Date((ev.timestamp || 0) * 1000).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
                       </Text>
                     )}
                   </View>

@@ -1,6 +1,6 @@
 // app/settings.tsx
 
-import React from "react";
+import React, { useState } from "react";
 import {
   View,
   Text,
@@ -8,6 +8,7 @@ import {
   TouchableOpacity,
   Switch,
   ScrollView,
+  Modal,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
@@ -19,14 +20,32 @@ export default function SettingsScreen() {
   const router = useRouter();
   const { theme, toggleTheme } = useTheme();
 
-  const isLight = theme === "light";
+  const [showUnderConstruction, setShowUnderConstruction] = useState(false);
+  const [activeFeature, setActiveFeature] = useState("");
 
+  const isLight = theme === "light";
   const colors = globalColors[theme];
+
+  const handlePress = (label: string, route?: string) => {
+    const underConstructionRoutes = [
+      "/backup-restore",
+      "/settings-security",
+      "/settings-language"
+    ];
+
+    if (route && underConstructionRoutes.includes(route)) {
+      const cleanLabel = label.replace(/[^\w\s&]/g, "").trim();
+      setActiveFeature(cleanLabel);
+      setShowUnderConstruction(true);
+    } else if (route) {
+      router.push(route as any);
+    }
+  };
 
   const Item = (label: string, route?: string) => (
     <TouchableOpacity
       style={[styles.item, { borderColor: colors.border }]}
-      onPress={() => route && router.push(route as any)}
+      onPress={() => handlePress(label, route)}
     >
       <Text style={[styles.itemText, { color: colors.text }]}>{label}</Text>
       <Ionicons name="chevron-forward" size={20} color="#64748b" />
@@ -66,8 +85,6 @@ export default function SettingsScreen() {
         <View style={[styles.section, { backgroundColor: colors.card, borderColor: colors.border }]}>
           {Item("Data Sharing", "/settings-data")}
           {Item("☁️  Backup & Restore", "/backup-restore")}
-          {Item("🌐  BioGears Simulation Engine", "/settings-server")}
-          {Item("🤖  Health AI Chatbot", "/settings-ai")}
         </View>
 
         <View style={[styles.section, { backgroundColor: colors.card, borderColor: colors.border }]}>
@@ -87,6 +104,42 @@ export default function SettingsScreen() {
           Version 2.0.0
         </Text>
       </ScrollView>
+
+      {/* Under Construction Modal */}
+      <Modal
+        visible={showUnderConstruction}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowUnderConstruction(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <View style={[styles.iconContainer, { backgroundColor: colors.accent + "15" }]}>
+              <Ionicons name="construct" size={32} color={colors.accent} />
+            </View>
+
+            <Text style={[styles.modalTitle, { color: colors.text }]}>
+              {activeFeature}
+            </Text>
+
+            <Text style={[styles.modalSubtitle, { color: colors.accent }]}>
+              Under Construction
+            </Text>
+
+            <Text style={[styles.modalDescription, { color: colors.sub }]}>
+              We are currently refining this feature to ensure a seamless, production-grade experience. It will be available in the next update!
+            </Text>
+
+            <TouchableOpacity
+              style={[styles.dismissButton, { backgroundColor: colors.accent }]}
+              onPress={() => setShowUnderConstruction(false)}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.dismissButtonText}>Got it</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -154,5 +207,72 @@ const styles = StyleSheet.create({
     textAlign: "center",
     fontSize: 12,
     marginTop: 20,
+  },
+
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.5)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 24,
+  },
+
+  modalCard: {
+    width: "100%",
+    maxWidth: 340,
+    borderRadius: 24,
+    borderWidth: 1,
+    padding: 24,
+    alignItems: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.15,
+    shadowRadius: 20,
+    elevation: 8,
+  },
+
+  iconContainer: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 16,
+  },
+
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: "700",
+    textAlign: "center",
+    marginBottom: 4,
+  },
+
+  modalSubtitle: {
+    fontSize: 12,
+    fontWeight: "800",
+    textTransform: "uppercase",
+    letterSpacing: 1,
+    marginBottom: 16,
+  },
+
+  modalDescription: {
+    fontSize: 14,
+    lineHeight: 20,
+    textAlign: "center",
+    marginBottom: 24,
+  },
+
+  dismissButton: {
+    width: "100%",
+    height: 52,
+    borderRadius: 16,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+
+  dismissButtonText: {
+    color: "#ffffff",
+    fontSize: 16,
+    fontWeight: "600",
   },
 });

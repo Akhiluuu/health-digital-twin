@@ -16,6 +16,7 @@ import { useRouter } from "expo-router";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Ionicons } from "@expo/vector-icons";
 import { useTheme } from "../context/ThemeContext";
+import { useFamily } from "../context/FamilyContext";
 
 // 🔹 Firebase Imports
 import { doc, setDoc, onSnapshot } from "firebase/firestore";
@@ -86,6 +87,7 @@ export default function Spo2Screen() {
   const [latestReading, setLatestReading] = useState<Spo2Reading | null>(null);
   const [history, setHistory] = useState<Spo2Reading[]>([]);
   const [saving, setSaving] = useState(false);
+  const { activeMemberId, isSwitched } = useFamily();
 
   // Pulse animation
   const pulseAnim = useRef(new Animated.Value(1)).current;
@@ -94,8 +96,12 @@ export default function Spo2Screen() {
   // 🔹 Updated useEffect with Firebase subscription
   useEffect(() => {
     loadData();
-    subscribeToSpo2();
-  }, []);
+    let unsub: (() => void) | undefined;
+    subscribeToSpo2().then(fn => { unsub = fn; });
+    return () => {
+      unsub?.();
+    };
+  }, [activeMemberId]);
 
   useEffect(() => {
     const pulse = Animated.loop(
@@ -118,17 +124,28 @@ export default function Spo2Screen() {
 
   const loadData = async () => {
     try {
-      const latest = await AsyncStorage.getItem("latest_spo2");
-      if (latest) setLatestReading(JSON.parse(latest));
+      const latestKey = `latest_spo2_${activeMemberId}`;
+      const histKey = `spo2_history_${activeMemberId}`;
 
-      const hist = await AsyncStorage.getItem("spo2_history");
+      let latest = await AsyncStorage.getItem(latestKey);
+      if (!latest && activeMemberId === "self") {
+        latest = await AsyncStorage.getItem("latest_spo2");
+      }
+      if (latest) setLatestReading(JSON.parse(latest));
+      else setLatestReading(null);
+
+      let hist = await AsyncStorage.getItem(histKey);
+      if (!hist && activeMemberId === "self") {
+        hist = await AsyncStorage.getItem("spo2_history");
+      }
       if (hist) setHistory(JSON.parse(hist));
+      else setHistory([]);
     } catch {}
   };
 
   // 🔹 Firebase subscription function
   const subscribeToSpo2 = async () => {
-    const uid = await getUserId();
+    const uid = activeMemberId === "self" ? await getUserId() : activeMemberId;
     if (!uid) return;
 
     const ref = doc(db, "users", uid);
@@ -137,10 +154,11 @@ export default function Spo2Screen() {
       if (!snapshot.exists()) return;
 
       const data = snapshot.data();
-      if (data.spo2 !== undefined) {
+      const health = data.healthData || data;
+      if (health.spo2 !== undefined) {
         setLatestReading({
-          value: data.spo2,
-          timestamp: data.spo2Timestamp || new Date().toISOString(),
+          value: health.spo2,
+          timestamp: health.spo2Timestamp || new Date().toISOString(),
         });
       }
     });
@@ -161,17 +179,17 @@ export default function Spo2Screen() {
     try {
       const reading: Spo2Reading = { value, timestamp: new Date().toISOString() };
 
-      await AsyncStorage.setItem("latest_spo2", JSON.stringify(reading));
+      await AsyncStorage.setItem(`latest_spo2_${activeMemberId}`, JSON.stringify(reading));
 
       const updatedHistory = [reading, ...history].slice(0, 10);
-      await AsyncStorage.setItem("spo2_history", JSON.stringify(updatedHistory));
+      await AsyncStorage.setItem(`spo2_history_${activeMemberId}`, JSON.stringify(updatedHistory));
 
       setLatestReading(reading);
       setHistory(updatedHistory);
       setSpo2("");
 
       // 🔹 Save SpO₂ to Firebase
-      const uid = await getUserId();
+      const uid = activeMemberId === "self" ? await getUserId() : activeMemberId;
       if (uid) {
         await setDoc(
           doc(db, "users", uid),

@@ -23,6 +23,7 @@ import { useNutrition } from "../context/NutritionContext";
 import { useProfile } from "../context/ProfileContext";
 import { useSteps } from "../context/StepContext";
 import { useTheme } from "../context/ThemeContext";
+import { useBiogearsTwin } from "../context/BiogearsTwinContext";
 
 // 🔹 Firebase Imports
 import { doc, setDoc, onSnapshot } from "firebase/firestore";
@@ -220,17 +221,20 @@ export default function CalorieIntelligenceScreen() {
 
   const { weightKg, heightCm, ageYears, profile } = useProfile();
   const { steps, calories: stepCalFromContext, sessionSecs, isTracking } = useSteps();
+  const { caloricBalance } = useBiogearsTwin();
 
   // ── Nutrition sync ────────────────────────────────────────────────────────
   const { totals, selectedProfile } = useNutrition();
   const rec = selectedProfile.recommendations;
 
   // ── Derived science ───────────────────────────────────────────────────────
-  const bmr   = useMemo(() => calcBMR(weightKg, heightCm, ageYears, profile.gender), [weightKg, heightCm, ageYears, profile.gender]);
+  const baseBmr   = useMemo(() => calcBMR(weightKg, heightCm, ageYears, profile.gender), [weightKg, heightCm, ageYears, profile.gender]);
+  const bmr = caloricBalance?.bmr_kcal_day ?? baseBmr;
   
   // UPDATED: TDEE now uses activity multiplier from selected profile
   const activityMultiplier = selectedProfile?.activityMultiplier ?? 1.375;
-  const tdee = useMemo(() => Math.round(bmr * activityMultiplier), [bmr, activityMultiplier]);
+  const localTdee = useMemo(() => Math.round(baseBmr * activityMultiplier), [baseBmr, activityMultiplier]);
+  const tdee = caloricBalance?.estimated_burn_kcal ?? localTdee;
   
   const mac   = useMemo(() => stdMacros(tdee), [tdee]);
   const bmi   = useMemo(() => parseFloat((weightKg / ((heightCm / 100) ** 2)).toFixed(1)), [weightKg, heightCm]);
@@ -242,12 +246,14 @@ export default function CalorieIntelligenceScreen() {
     :            { label: "Obese",        color: "#ef4444" };
 
   // UPDATED: walkCalories now includes heightCm parameter
-  const stepCal = useMemo(
+  const localStepCal = useMemo(
     () => walkCalories(steps, sessionSecs, weightKg, heightCm), 
     [steps, sessionSecs, weightKg, heightCm]
   );
+  const stepCal = caloricBalance ? Math.max(0, caloricBalance.estimated_burn_kcal - caloricBalance.bmr_kcal_day) : localStepCal;
+
   const netCal  = Math.max(0, tdee - stepCal);
-  const burnPct = Math.min(1, stepCal / (tdee * 0.3));
+  const burnPct = Math.min(1, stepCal / (tdee * 0.3 || 1));
 
   /* 🔹 Sync Calorie Data with Firebase */
   useEffect(() => {
@@ -428,7 +434,7 @@ export default function CalorieIntelligenceScreen() {
         <View style={[s.syncBanner, { backgroundColor: colors.card, borderColor: colors.border }]}>
           <View style={[s.syncDot, { backgroundColor: "#22c55e" }]} />
           <Text style={[s.syncText, { color: colors.sub }]}>
-            Synced with Nutrition · {selectedProfile.icon} {selectedProfile.label} profile
+            Synced with Log Routine · {selectedProfile.icon} {selectedProfile.label} profile
           </Text>
           <TouchableOpacity onPress={() => router.push({ pathname: "/twin", params: { mode: "routine", tab: "meal" } } as any)}>
             <Text style={[s.syncLink, { color: colors.sub }]}>Log food ›</Text>
@@ -604,9 +610,14 @@ export default function CalorieIntelligenceScreen() {
 
         {/* ── MACRO TARGETS — SYNCED WITH NUTRITION PAGE ─────────────────────── */}
         <View style={[s.card, { backgroundColor: colors.card }]}>
-          <Text style={[s.cardTitle, { color: colors.sub }]}>🍽️ MACRO TARGETS — SYNCED WITH NUTRITION</Text>
+          <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+            <Text style={[s.cardTitle, { color: colors.sub, marginBottom: 0 }]}>🍽️ MACRO TARGETS — SYNCED WITH ROUTINE</Text>
+            <TouchableOpacity onPress={() => router.push({ pathname: "/twin", params: { mode: "routine", tab: "meal" } } as any)}>
+              <Ionicons name="add" size={20} color={colors.text} />
+            </TouchableOpacity>
+          </View>
           <Text style={[s.syncNote, { color: colors.sub }]}>
-            Profile: {selectedProfile.icon} {selectedProfile.label} · Update in Nutrition page
+            Profile: {selectedProfile.icon} {selectedProfile.label} · Update in Log Routine
           </Text>
 
           {/* Side-by-side donuts: Consumed vs Target */}
@@ -697,7 +708,7 @@ export default function CalorieIntelligenceScreen() {
           </View>
 
           {totals.calories === 0 && (
-            <TouchableOpacity style={s.emptyPrompt} onPress={() => router.push("/nutrition")}>
+            <TouchableOpacity style={s.emptyPrompt} onPress={() => router.push({ pathname: "/twin", params: { mode: "routine", tab: "meal" } } as any)}>
               <Ionicons name="add-circle-outline" size={28} color={colors.sub} />
               <Text style={[s.emptyPromptText, { color: colors.sub }]}>No food logged yet — tap to add meals</Text>
             </TouchableOpacity>

@@ -12,7 +12,6 @@ import {
   TextInput,
   TouchableOpacity,
   View,
-  Dimensions,
   Modal,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -22,115 +21,203 @@ import { colors as globalColors } from "../../theme/colors";
 import { Ionicons } from "@expo/vector-icons";
 
 const BLOOD_GROUPS = ["A+", "A−", "B+", "B−", "AB+", "AB−", "O+", "O−"];
-const HEIGHT_OPTIONS = Array.from({ length: 151 }, (_, i) => String(100 + i));
-const WEIGHT_OPTIONS = Array.from({ length: 171 }, (_, i) => String(30 + i));
 
-const { width } = Dimensions.get("window");
+// ─── Quick-select chips for Height + Weight ─────────────────────────────────
 
-function DropdownPicker({ visible, options, selected, onSelect, onClose, colors, title, accent }: any) {
+const HEIGHT_PRESETS = [155, 160, 163, 165, 168, 170, 173, 175, 178, 180, 183, 185, 188, 190];
+const WEIGHT_PRESETS = [45, 50, 55, 60, 65, 70, 75, 80, 85, 90, 95, 100, 110, 120];
+
+// ─── Blood group dropdown (unchanged — only 8 items, fine as a modal list) ──
+
+function BloodGroupModal({ visible, selected, onSelect, onClose, colors, accent }: any) {
   return (
     <Modal visible={visible} transparent animationType="fade">
-      <TouchableOpacity style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "center", alignItems: "center" }} activeOpacity={1} onPress={onClose}>
-        <View style={{ backgroundColor: colors.card, borderRadius: 20, width: width * 0.75, maxHeight: 400, overflow: "hidden" }}>
+      <TouchableOpacity
+        style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.55)", justifyContent: "center", alignItems: "center" }}
+        activeOpacity={1}
+        onPress={onClose}
+      >
+        <View style={{ backgroundColor: colors.card, borderRadius: 20, width: 300, overflow: "hidden" }}>
           <View style={{ padding: 16, borderBottomWidth: 1, borderBottomColor: colors.border }}>
-            <Text style={{ color: colors.text, fontSize: 16, fontWeight: "700", textAlign: "center" }}>{title}</Text>
+            <Text style={{ color: colors.text, fontSize: 16, fontWeight: "700", textAlign: "center" }}>Blood Group</Text>
           </View>
-          <ScrollView>
-            {options.map((opt: string) => (
-              <TouchableOpacity
-                key={opt}
-                style={{
-                  flexDirection: "row",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  paddingHorizontal: 20,
-                  paddingVertical: 14,
-                  borderBottomWidth: 0.5,
-                  borderBottomColor: colors.border,
-                  backgroundColor: selected === opt ? accent + "20" : "transparent",
-                }}
-                onPress={() => { onSelect(opt); onClose(); }}
-              >
-                <Text style={{ color: selected === opt ? accent : colors.text, fontSize: 15, fontWeight: selected === opt ? "700" : "400" }}>{opt}</Text>
-                {selected === opt && <Ionicons name="checkmark" size={18} color={accent} />}
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
+          {BLOOD_GROUPS.map(opt => (
+            <TouchableOpacity
+              key={opt}
+              style={{
+                flexDirection: "row", alignItems: "center", justifyContent: "space-between",
+                paddingHorizontal: 20, paddingVertical: 14,
+                borderBottomWidth: 0.5, borderBottomColor: colors.border,
+                backgroundColor: selected === opt ? accent + "20" : "transparent",
+              }}
+              onPress={() => { onSelect(opt); onClose(); }}
+            >
+              <Text style={{ color: selected === opt ? accent : colors.text, fontSize: 16, fontWeight: selected === opt ? "800" : "400" }}>
+                {opt}
+              </Text>
+              {selected === opt && <Ionicons name="checkmark" size={20} color={accent} />}
+            </TouchableOpacity>
+          ))}
         </View>
       </TouchableOpacity>
     </Modal>
   );
 }
 
+// ─── ValueInput — shared component for Height + Weight ────────────────────────
+// Shows a text input (numeric) with quick-select chip presets above.
+
+function ValueInput({
+  label,
+  unit,
+  icon,
+  value,
+  onChange,
+  presets,
+  min,
+  max,
+  placeholder,
+  colors,
+  accent,
+}: {
+  label: string;
+  unit: string;
+  icon: string;
+  value: string;
+  onChange: (v: string) => void;
+  presets: number[];
+  min: number;
+  max: number;
+  placeholder: string;
+  colors: any;
+  accent: string;
+}) {
+  const raw = parseFloat(value);
+  const valid = !isNaN(raw) && raw >= min && raw <= max;
+
+  return (
+    <View style={{ marginBottom: 20 }}>
+      <Text style={[vi.label, { color: colors.labelText }]}>{label}</Text>
+
+      {/* ── Main input row ── */}
+      <View style={[vi.inputRow, {
+        backgroundColor: colors.inputBg,
+        borderColor: valid ? accent + "80" : colors.inputBorder,
+      }]}>
+        <Text style={vi.icon}>{icon}</Text>
+        <TextInput
+          style={[vi.input, { color: colors.inputText }]}
+          value={value}
+          onChangeText={txt => {
+            // allow digits + one dot only
+            const cleaned = txt.replace(/[^0-9.]/g, '').replace(/(\..*)\./g, '$1');
+            onChange(cleaned);
+          }}
+          keyboardType="decimal-pad"
+          returnKeyType="done"
+          placeholder={placeholder}
+          placeholderTextColor={colors.inputPlaceholder}
+          maxLength={5}
+        />
+        <Text style={[vi.unit, { color: accent }]}>{unit}</Text>
+        {valid && <Ionicons name="checkmark-circle" size={18} color={accent} />}
+      </View>
+
+      {/* ── Preset chips ── */}
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={vi.chipsRow}
+      >
+        {presets.map(p => {
+          const active = String(p) === value;
+          return (
+            <TouchableOpacity
+              key={p}
+              style={[vi.chip, {
+                backgroundColor: active ? accent : colors.inputBg,
+                borderColor: active ? accent : colors.inputBorder,
+              }]}
+              onPress={() => onChange(String(p))}
+            >
+              <Text style={[vi.chipTxt, { color: active ? "#fff" : colors.subText }]}>{p}</Text>
+            </TouchableOpacity>
+          );
+        })}
+      </ScrollView>
+
+      {/* ── Validation hint ── */}
+      {value !== "" && !valid && (
+        <Text style={{ color: "#ef4444", fontSize: 11, marginTop: 4 }}>
+          Enter a value between {min}–{max} {unit}
+        </Text>
+      )}
+    </View>
+  );
+}
+
+const vi = StyleSheet.create({
+  label:    { fontSize: 11, fontWeight: "700", letterSpacing: 0.4, textTransform: "uppercase", marginBottom: 8 },
+  inputRow: { flexDirection: "row", alignItems: "center", borderWidth: 1.5, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 12, gap: 8, marginBottom: 8 },
+  icon:     { fontSize: 18 },
+  input:    { flex: 1, fontSize: 20, fontWeight: "700" },
+  unit:     { fontSize: 13, fontWeight: "700", opacity: 0.8 },
+  chipsRow: { flexDirection: "row", gap: 8, paddingVertical: 2 },
+  chip:     { paddingHorizontal: 14, paddingVertical: 7, borderRadius: 20, borderWidth: 1.5 },
+  chipTxt:  { fontSize: 13, fontWeight: "600" },
+});
+
+// ─── Main Screen ─────────────────────────────────────────────────────────────
+
 export default function Medical() {
   const router = useRouter();
   const { theme } = useTheme();
 
   const {
-    signupName,
-    signupEmail,
-    firstName,
-    lastName,
-    phone,
-    dateOfBirth,
-    gender,
+    signupName, signupEmail,
+    firstName, lastName, phone, dateOfBirth, gender,
   } = useLocalSearchParams<{
-    signupName:  string;
-    signupEmail: string;
-    firstName:   string;
-    lastName:    string;
-    phone:       string;
-    dateOfBirth: string;
-    gender:      string;
+    signupName: string; signupEmail: string;
+    firstName: string; lastName: string;
+    phone: string; dateOfBirth: string; gender: string;
   }>();
 
   const c = globalColors[theme];
   const colors = {
-    background:            c.bg,
-    card:                  c.card,
-    text:                  c.text,
-    subText:               c.sub,
-    border:                c.border,
-    inputBg:               c.inputBg,
-    inputBorder:           c.border,
-    inputFocusedBorder:    c.focusBorder,
-    inputText:             c.text,
-    inputPlaceholder:      c.placeholder,
-    labelText:             c.text,
-    iconBadgeBg:           c.border,
-    titleText:             c.text,
-    subtitleText:          c.sub,
-    progressTrackBg:       c.border,
-    progressFillBg:        c.primary,
-    progressLabelText:     c.sub,
-    orb1:                  c.primary,
-    orb2:                  c.primaryLight,
-    orb3:                  c.primaryDark,
-    nextBtnBg:             c.accent,
-    nextBtnText:           "#ffffff",
-    chipBg:                c.card,
-    chipBorder:            c.border,
-    chipText:              c.text,
-    chipActiveBg:          c.accent,
-    chipActiveBorder:      c.accent,
-    chipActiveText:        "#ffffff",
-    safeAreaBg:            c.bg,
-    sectionHeaderBg:       theme === "light" ? "#f1f5f9" : c.card,
-    sectionHeaderText:     c.sub,
+    background:         c.bg,
+    card:               c.card,
+    text:               c.text,
+    subText:            c.sub,
+    border:             c.border,
+    inputBg:            c.inputBg,
+    inputBorder:        c.border,
+    inputFocusedBorder: c.focusBorder,
+    inputText:          c.text,
+    inputPlaceholder:   c.placeholder,
+    labelText:          c.text,
+    iconBadgeBg:        c.border,
+    titleText:          c.text,
+    subtitleText:       c.sub,
+    progressTrackBg:    c.border,
+    progressFillBg:     c.primary,
+    progressLabelText:  c.sub,
+    orb1:               c.primary,
+    orb2:               c.primaryLight,
+    orb3:               c.primaryDark,
+    nextBtnBg:          c.accent,
+    nextBtnText:        "#ffffff",
+    safeAreaBg:         c.bg,
   };
 
-  const [height,      setHeight]      = useState("");
-  const [weight,      setWeight]      = useState("");
-  const [bloodGroup,  setBloodGroup]  = useState("");
-  const [allergies,   setAllergies]   = useState("");
+  const accent = c.accent;
 
-  const [heightFocused,    setHeightFocused]    = useState(false);
-  const [weightFocused,    setWeightFocused]    = useState(false);
-  const [allergiesFocused, setAllergiesFocused] = useState(false);
+  const [height,     setHeight]     = useState("");
+  const [weight,     setWeight]     = useState("");
+  const [bloodGroup, setBloodGroup] = useState("");
+  const [allergies,  setAllergies]  = useState("");
 
-  const [showHeightPicker, setShowHeightPicker] = useState(false);
-  const [showWeightPicker, setShowWeightPicker] = useState(false);
-  const [showBloodPicker, setShowBloodPicker] = useState(false);
+  const [allergiesFocused,  setAllergiesFocused]  = useState(false);
+  const [showBloodPicker,   setShowBloodPicker]   = useState(false);
 
   // ── Orb animations ────────────────────────────────────────────────────────
   const orb1Y = useRef(new Animated.Value(0)).current;
@@ -138,49 +225,44 @@ export default function Medical() {
   const orb3Y = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    const makeLoop = (anim: Animated.Value, duration: number, delay: number) =>
-      Animated.loop(
-        Animated.sequence([
-          Animated.delay(delay),
-          Animated.timing(anim, { toValue: -20, duration, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
-          Animated.timing(anim, { toValue: 0,   duration, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
-        ])
-      );
+    const makeLoop = (anim: Animated.Value, dur: number, delay: number) =>
+      Animated.loop(Animated.sequence([
+        Animated.delay(delay),
+        Animated.timing(anim, { toValue: -20, duration: dur, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
+        Animated.timing(anim, { toValue: 0,   duration: dur, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
+      ]));
     makeLoop(orb1Y, 3400, 0).start();
     makeLoop(orb2Y, 4000, 700).start();
     makeLoop(orb3Y, 3000, 1400).start();
   }, []);
 
-  // ── Scroll ref — used to scroll a field into view when focused ────────────
-  const scrollRef = useRef<ScrollView>(null);
-
-  // ── Field layout refs — store each field's Y position ────────────────────
-  const heightY    = useRef(0);
-  const weightY    = useRef(0);
-  const bloodY     = useRef(0);
+  const scrollRef  = useRef<ScrollView>(null);
   const allergiesY = useRef(0);
 
-  /** Scroll to a stored Y offset with comfortable padding above the field */
-  const scrollToY = (y: number) => {
-    scrollRef.current?.scrollTo({ y: Math.max(0, y - 24), animated: true });
-  };
-
-  // ── Submit ────────────────────────────────────────────────────────────────
   const goNext = async () => {
     const user = auth.currentUser;
     if (!user) { alert("User not logged in"); return; }
+
+    const h = parseFloat(height);
+    const w = parseFloat(weight);
     if (!height || !weight || !bloodGroup) {
       alert("Please fill required medical details");
       return;
     }
+    if (isNaN(h) || h < 100 || h > 250) { alert("Please enter a valid height (100–250 cm)"); return; }
+    if (isNaN(w) || w < 30  || w > 200) { alert("Please enter a valid weight (30–200 kg)");  return; }
+
     try {
       await updateDoc(doc(db, "users", user.uid), {
-        medical:   { height, weight, bloodGroup, allergies },
+        medical:   { height: String(Math.round(h)), weight: String(Math.round(w)), bloodGroup, allergies },
         updatedAt: new Date().toISOString(),
       });
       router.push({
         pathname: "/onboarding/habits",
-        params: { signupName, signupEmail, firstName, lastName, phone, dateOfBirth, gender, height, weight, bloodGroup, allergies },
+        params: {
+          signupName, signupEmail, firstName, lastName, phone, dateOfBirth, gender,
+          height: String(Math.round(h)), weight: String(Math.round(w)), bloodGroup, allergies,
+        },
       });
     } catch (error: any) {
       alert(error.message);
@@ -189,49 +271,33 @@ export default function Medical() {
 
   const canContinue = !!height && !!weight && !!bloodGroup;
 
-  // ─────────────────────────────────────────────────────────────────────────
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.safeAreaBg }]}>
-      {/*
-        ✅ FIX: KeyboardAvoidingView shrinks the available space when the keyboard
-        appears. The ScrollView inside then becomes scrollable so every field
-        is reachable without dismissing the keyboard.
+      <BloodGroupModal
+        visible={showBloodPicker}
+        selected={bloodGroup}
+        onSelect={setBloodGroup}
+        onClose={() => setShowBloodPicker(false)}
+        colors={colors}
+        accent={accent}
+      />
 
-        • iOS  → behavior="padding"  pushes the scroll view up by the keyboard height
-        • Android → behavior="height" shrinks the container instead
-        Both combined with keyboardShouldPersistTaps="handled" keep the keyboard
-        visible while the user scrolls to the next field.
-      */}
       <KeyboardAvoidingView
         style={styles.flex}
         behavior={Platform.OS === "ios" ? "padding" : "height"}
-        // On iOS give a little extra room above the keyboard
-        keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 0}
       >
         <ScrollView
           ref={scrollRef}
-          keyboardShouldPersistTaps="handled"   // ✅ tap chips/button without dismissing keyboard
+          keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
-          contentContainerStyle={[
-            styles.scroll,
-            { backgroundColor: colors.background },
-          ]}
+          contentContainerStyle={[styles.scroll, { backgroundColor: colors.background }]}
         >
-          {/* ── Background Orbs (decorative, pointer-events: none) ──────── */}
-          <Animated.View
-            pointerEvents="none"
-            style={[styles.orb, styles.orb1, { backgroundColor: colors.orb1, transform: [{ translateY: orb1Y }], opacity: theme === "light" ? 0.08 : 0.1 }]}
-          />
-          <Animated.View
-            pointerEvents="none"
-            style={[styles.orb, styles.orb2, { backgroundColor: colors.orb2, transform: [{ translateY: orb2Y }], opacity: theme === "light" ? 0.06 : 0.08 }]}
-          />
-          <Animated.View
-            pointerEvents="none"
-            style={[styles.orb, styles.orb3, { backgroundColor: colors.orb3, transform: [{ translateY: orb3Y }], opacity: theme === "light" ? 0.07 : 0.09 }]}
-          />
+          {/* ── Background Orbs ──────────────────────────────────────── */}
+          <Animated.View pointerEvents="none" style={[styles.orb, styles.orb1, { backgroundColor: colors.orb1, transform: [{ translateY: orb1Y }], opacity: theme === "light" ? 0.08 : 0.1 }]} />
+          <Animated.View pointerEvents="none" style={[styles.orb, styles.orb2, { backgroundColor: colors.orb2, transform: [{ translateY: orb2Y }], opacity: theme === "light" ? 0.06 : 0.08 }]} />
+          <Animated.View pointerEvents="none" style={[styles.orb, styles.orb3, { backgroundColor: colors.orb3, transform: [{ translateY: orb3Y }], opacity: theme === "light" ? 0.07 : 0.09 }]} />
 
-          {/* ── Progress bar ──────────────────────────────────────────────── */}
+          {/* ── Progress ─────────────────────────────────────────────── */}
           <View style={styles.progressRow}>
             <View style={[styles.progressTrack, { backgroundColor: colors.progressTrackBg }]}>
               <View style={[styles.progressFill, { width: "50%", backgroundColor: colors.progressFillBg }]} />
@@ -239,7 +305,7 @@ export default function Medical() {
             <Text style={[styles.progressLabel, { color: colors.progressLabelText }]}>Step 2 of 4</Text>
           </View>
 
-          {/* ── Header ────────────────────────────────────────────────────── */}
+          {/* ── Header ───────────────────────────────────────────────── */}
           <View style={styles.header}>
             <View style={[styles.iconBadge, { backgroundColor: colors.iconBadgeBg }]}>
               <Text style={styles.iconEmoji}>🩺</Text>
@@ -250,79 +316,44 @@ export default function Medical() {
             </Text>
           </View>
 
-          {/* ── Height + Weight (side by side) ────────────────────────────── */}
-          <View
-            style={styles.rowFields}
-            onLayout={(e) => {
-              // Store Y of the entire row so we can scroll to it
-              heightY.current = e.nativeEvent.layout.y;
-              weightY.current = e.nativeEvent.layout.y;
-            }}
-          >
-            {/* Height */}
-            <View style={[styles.fieldWrapper, styles.flex]}>
-              <Text style={[styles.fieldLabel, { color: colors.labelText }]}>Height (cm) *</Text>
-              <TouchableOpacity
-                style={[
-                  styles.inputWrapper,
-                  {
-                    backgroundColor: colors.inputBg,
-                    borderColor: showHeightPicker ? colors.inputFocusedBorder : colors.inputBorder,
-                  },
-                ]}
-                onPress={() => setShowHeightPicker(true)}
-              >
-                <Text style={styles.inputIcon}>📏</Text>
-                <Text style={[styles.input, { color: height ? colors.inputText : colors.inputPlaceholder }]}>
-                  {height || "175"}
-                </Text>
-                <Ionicons name="chevron-down" size={18} color={colors.subText} />
-              </TouchableOpacity>
-              <DropdownPicker visible={showHeightPicker} options={HEIGHT_OPTIONS} selected={height} onSelect={setHeight} onClose={() => setShowHeightPicker(false)} colors={colors} title="Select Height (cm)" accent={colors.nextBtnBg} />
-            </View>
+          {/* ── Height ───────────────────────────────────────────────── */}
+          <ValueInput
+            label="Height *"
+            unit="cm"
+            icon="📏"
+            value={height}
+            onChange={setHeight}
+            presets={HEIGHT_PRESETS}
+            min={100}
+            max={250}
+            placeholder="e.g. 175"
+            colors={colors}
+            accent={accent}
+          />
 
-            {/* Weight */}
-            <View style={[styles.fieldWrapper, styles.flex]}>
-              <Text style={[styles.fieldLabel, { color: colors.labelText }]}>Weight (kg) *</Text>
-              <TouchableOpacity
-                style={[
-                  styles.inputWrapper,
-                  {
-                    backgroundColor: colors.inputBg,
-                    borderColor: showWeightPicker ? colors.inputFocusedBorder : colors.inputBorder,
-                  },
-                ]}
-                onPress={() => setShowWeightPicker(true)}
-              >
-                <Text style={styles.inputIcon}>⚖️</Text>
-                <Text style={[styles.input, { color: weight ? colors.inputText : colors.inputPlaceholder }]}>
-                  {weight || "70"}
-                </Text>
-                <Ionicons name="chevron-down" size={18} color={colors.subText} />
-              </TouchableOpacity>
-              <DropdownPicker visible={showWeightPicker} options={WEIGHT_OPTIONS} selected={weight} onSelect={setWeight} onClose={() => setShowWeightPicker(false)} colors={colors} title="Select Weight (kg)" accent={colors.nextBtnBg} />
-            </View>
-          </View>
+          {/* ── Weight ───────────────────────────────────────────────── */}
+          <ValueInput
+            label="Weight *"
+            unit="kg"
+            icon="⚖️"
+            value={weight}
+            onChange={setWeight}
+            presets={WEIGHT_PRESETS}
+            min={30}
+            max={200}
+            placeholder="e.g. 70"
+            colors={colors}
+            accent={accent}
+          />
 
-          {/* ── Blood Group grid ──────────────────────────────────────────── */}
-          <View
-            style={styles.fieldWrapper}
-            onLayout={(e) => { bloodY.current = e.nativeEvent.layout.y; }}
-          >
-            <Text style={[styles.fieldLabel, { color: colors.labelText }]}>Blood Group *</Text>
-
-            {/* Tip — shown when nothing selected yet */}
-            {!bloodGroup && (
-              <Text style={[styles.bloodTip, { color: colors.subText }]}>
-                Tap to select your blood group
-              </Text>
-            )}
-
+          {/* ── Blood Group ───────────────────────────────────────────── */}
+          <View style={{ marginBottom: 20 }}>
+            <Text style={[vi.label, { color: colors.labelText }]}>Blood Group *</Text>
             <TouchableOpacity
-              style={[
-                styles.inputWrapper,
-                { backgroundColor: colors.inputBg, borderColor: showBloodPicker ? colors.inputFocusedBorder : colors.inputBorder },
-              ]}
+              style={[styles.inputWrapper, {
+                backgroundColor: colors.inputBg,
+                borderColor: showBloodPicker ? colors.inputFocusedBorder : colors.inputBorder,
+              }]}
               onPress={() => setShowBloodPicker(true)}
             >
               <Text style={styles.inputIcon}>🩸</Text>
@@ -331,27 +362,20 @@ export default function Medical() {
               </Text>
               <Ionicons name="chevron-down" size={18} color={colors.subText} />
             </TouchableOpacity>
-            <DropdownPicker visible={showBloodPicker} options={BLOOD_GROUPS} selected={bloodGroup} onSelect={setBloodGroup} onClose={() => setShowBloodPicker(false)} colors={colors} title="Select Blood Group" accent={colors.nextBtnBg} />
           </View>
 
-          {/* ── Allergies ─────────────────────────────────────────────────── */}
+          {/* ── Allergies ─────────────────────────────────────────────── */}
           <View
-            style={styles.fieldWrapper}
+            style={{ marginBottom: 20 }}
             onLayout={(e) => { allergiesY.current = e.nativeEvent.layout.y; }}
           >
-            <Text style={[styles.fieldLabel, { color: colors.labelText }]}>
-              Allergies{" "}
-              <Text style={{ fontWeight: "400", opacity: 0.6 }}>(optional)</Text>
+            <Text style={[vi.label, { color: colors.labelText }]}>
+              Allergies <Text style={{ fontWeight: "400", textTransform: "none", opacity: 0.6, letterSpacing: 0 }}>(optional)</Text>
             </Text>
-            <View
-              style={[
-                styles.inputWrapper,
-                {
-                  backgroundColor: colors.inputBg,
-                  borderColor: allergiesFocused ? colors.inputFocusedBorder : colors.inputBorder,
-                },
-              ]}
-            >
+            <View style={[styles.inputWrapper, {
+              backgroundColor: colors.inputBg,
+              borderColor: allergiesFocused ? colors.inputFocusedBorder : colors.inputBorder,
+            }]}>
               <Text style={styles.inputIcon}>⚠️</Text>
               <TextInput
                 placeholder="e.g. pollen, penicillin"
@@ -363,8 +387,7 @@ export default function Medical() {
                 blurOnSubmit
                 onFocus={() => {
                   setAllergiesFocused(true);
-                  // ✅ Scroll extra far so the field + button are both visible
-                  scrollToY(allergiesY.current);
+                  scrollRef.current?.scrollTo({ y: allergiesY.current - 24, animated: true });
                 }}
                 onBlur={() => setAllergiesFocused(false)}
               />
@@ -374,14 +397,9 @@ export default function Medical() {
             </Text>
           </View>
 
-          {/* ── Summary card (appears once all required fields are filled) ── */}
+          {/* ── Summary card ─────────────────────────────────────────── */}
           {canContinue && (
-            <View
-              style={[
-                styles.summaryCard,
-                { backgroundColor: colors.card, borderColor: colors.inputFocusedBorder + "40" },
-              ]}
-            >
+            <View style={[styles.summaryCard, { backgroundColor: colors.card, borderColor: accent + "40" }]}>
               <Text style={[styles.summaryTitle, { color: colors.labelText }]}>✅ Looking good!</Text>
               <Text style={[styles.summaryLine, { color: colors.subText }]}>
                 {height} cm · {weight} kg · Blood {bloodGroup}
@@ -390,17 +408,9 @@ export default function Medical() {
             </View>
           )}
 
-          {/* ── Continue button ────────────────────────────────────────────── */}
-          {/*
-            Extra bottom padding inside the scroll view ensures the button is
-            fully visible even when the keyboard is open (it will just scroll
-            to the bottom naturally via the extra padding).
-          */}
+          {/* ── Continue button ───────────────────────────────────────── */}
           <TouchableOpacity
-            style={[
-              styles.nextBtn,
-              { backgroundColor: canContinue ? colors.nextBtnBg : colors.inputBorder },
-            ]}
+            style={[styles.nextBtn, { backgroundColor: canContinue ? colors.nextBtnBg : colors.inputBorder }]}
             onPress={goNext}
             disabled={!canContinue}
             activeOpacity={0.85}
@@ -410,7 +420,6 @@ export default function Medical() {
             </Text>
           </TouchableOpacity>
 
-          {/* Extra space at the bottom so the button clears the keyboard */}
           <View style={styles.keyboardSpacer} />
         </ScrollView>
       </KeyboardAvoidingView>
@@ -421,68 +430,44 @@ export default function Medical() {
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
-  safeArea:  { flex: 1 },
-  flex:      { flex: 1 },
+  safeArea: { flex: 1 },
+  flex:     { flex: 1 },
 
-  /*
-   * paddingBottom is large enough so that when the keyboard is open and
-   * the user focuses the Allergies field, there is still room to scroll
-   * the Continue button into view.
-   */
   scroll: {
     paddingHorizontal: 26,
     paddingTop: 40,
-    paddingBottom: 120,   // ✅ KEY: generous bottom padding = button always reachable
+    paddingBottom: 120,
     flexGrow: 1,
   },
 
-  // Orbs
   orb:  { position: "absolute", borderRadius: 999 },
   orb1: { width: 280, height: 280, top: -60,   left: -100 },
   orb2: { width: 200, height: 200, bottom: 60, right: -80 },
   orb3: { width: 140, height: 140, top: "45%", right: -40 },
 
-  // Progress
   progressRow:   { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 30 },
   progressTrack: { flex: 1, height: 4, borderRadius: 2, overflow: "hidden" },
   progressFill:  { height: "100%" },
   progressLabel: { fontSize: 12 },
 
-  // Header
-  header:     { alignItems: "center", marginBottom: 30 },
-  iconBadge:  { width: 62, height: 62, borderRadius: 18, alignItems: "center", justifyContent: "center", marginBottom: 14 },
-  iconEmoji:  { fontSize: 26 },
-  title:      { fontSize: 28, fontWeight: "800", marginBottom: 6 },
-  subtitle:   { fontSize: 13, textAlign: "center", lineHeight: 20 },
+  header:    { alignItems: "center", marginBottom: 30 },
+  iconBadge: { width: 62, height: 62, borderRadius: 18, alignItems: "center", justifyContent: "center", marginBottom: 14 },
+  iconEmoji: { fontSize: 26 },
+  title:     { fontSize: 28, fontWeight: "800", marginBottom: 6 },
+  subtitle:  { fontSize: 13, textAlign: "center", lineHeight: 20 },
 
-  // Fields
-  rowFields:    { flexDirection: "row", gap: 12, marginBottom: 0 },
-  fieldWrapper: { marginBottom: 20 },
-  fieldLabel:   { fontSize: 11, fontWeight: "700", letterSpacing: 0.4, marginBottom: 8, textTransform: "uppercase" },
+  inputWrapper:  { flexDirection: "row", alignItems: "center", borderWidth: 1.5, borderRadius: 14, paddingHorizontal: 12, height: 52 },
+  inputIcon:     { marginRight: 8, fontSize: 16 },
+  input:         { flex: 1, fontSize: 15 },
 
-  // Input
-  inputWrapper: { flexDirection: "row", alignItems: "center", borderWidth: 1.5, borderRadius: 14, paddingHorizontal: 12, height: 52 },
-  inputIcon:    { marginRight: 8, fontSize: 16 },
-  input:        { flex: 1, fontSize: 15 },
-
-  // Blood group
-  bloodTip:       { fontSize: 12, marginBottom: 10, opacity: 0.6 },
-  bloodGroupGrid: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
-  bloodGroupChip: { paddingHorizontal: 20, paddingVertical: 12, borderRadius: 12, borderWidth: 1.5, minWidth: 60, alignItems: "center" },
-  bloodGroupText: { fontWeight: "700", fontSize: 14 },
-
-  // Allergies hint
   allergiesHint: { fontSize: 11, marginTop: 5, opacity: 0.7 },
 
-  // Summary card
   summaryCard:  { borderRadius: 14, borderWidth: 1, padding: 14, marginBottom: 20 },
   summaryTitle: { fontSize: 13, fontWeight: "700", marginBottom: 4 },
   summaryLine:  { fontSize: 12, lineHeight: 18 },
 
-  // Button
-  nextBtn:      { height: 54, borderRadius: 14, alignItems: "center", justifyContent: "center", marginTop: 4 },
-  nextBtnText:  { fontSize: 16, fontWeight: "700" },
+  nextBtn:     { height: 54, borderRadius: 14, alignItems: "center", justifyContent: "center", marginTop: 4 },
+  nextBtnText: { fontSize: 16, fontWeight: "700" },
 
-  // ✅ Extra space so the button is visible above the keyboard
   keyboardSpacer: { height: 40 },
 });

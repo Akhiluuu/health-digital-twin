@@ -144,13 +144,20 @@ export default function SessionDetailScreen() {
               </View>
               <View style={[styles.vitalsGrid, { backgroundColor: c.card }]}>
                  {session.events.map((ev, i) => (
-                    <View key={i} style={styles.eventRow}>
-                       <Text style={[styles.eventLabel, { color: c.text }]}>
-                          {ev.event_type.toUpperCase()}
-                       </Text>
-                       <Text style={[styles.eventDetail, { color: c.sub }]}>
-                          Value: {ev.value} {ev.substance_name ? `(${ev.substance_name})` : ''}
-                       </Text>
+                    <View key={i} style={[styles.eventRow, { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }]}>
+                       <View style={{ flex: 1 }}>
+                          <Text style={[styles.eventLabel, { color: c.text }]}>
+                             {ev.event_type.toUpperCase()}
+                          </Text>
+                          <Text style={[styles.eventDetail, { color: c.sub }]}>
+                             Value: {ev.value} {ev.substance_name ? `(${ev.substance_name})` : ''}
+                          </Text>
+                       </View>
+                       {((ev as any).wallTime || ev.timestamp) && (
+                          <Text style={{ color: c.sub, fontSize: 12, fontWeight: '600' }}>
+                             {(ev as any).wallTime || new Date((ev.timestamp || 0) * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          </Text>
+                       )}
                     </View>
                  ))}
               </View>

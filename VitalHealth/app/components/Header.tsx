@@ -87,12 +87,16 @@ export default function Header({
                 source={{ uri: activeProfile.profileImage }}
                 style={styles.avatarImage}
               />
-            ) : (
+            ) : (activeProfile?.firstName || activeProfile?.lastName) ? (
               <View style={[styles.avatarInitials, { backgroundColor: colors.accent + "15", borderColor: colors.accent }]}>
                 <Text style={[styles.avatarInitialsText, { color: colors.accent }]}>
                   {activeProfile?.firstName?.charAt(0)?.toUpperCase() || ""}
                   {activeProfile?.lastName?.charAt(0)?.toUpperCase() || ""}
                 </Text>
+              </View>
+            ) : (
+              <View style={[styles.avatarInitials, { backgroundColor: colors.accent + "15", borderColor: colors.accent }]}>
+                <Ionicons name="person" size={16} color={colors.accent} />
               </View>
             )}
           </TouchableOpacity>

@@ -1,29 +1,78 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   View,
   Text,
   StyleSheet,
   Switch,
   ScrollView,
+  ActivityIndicator,
 } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import Header from "./components/Header";
 import { useTheme } from "../context/ThemeContext";
 import { colors as globalColors } from "../theme/colors";
 
 export default function DataSharing() {
+  const { theme } = useTheme();
+  const colors = globalColors[theme];
+
   const [vitals, setVitals] = useState(true);
   const [bio, setBio] = useState(false);
   const [location, setLocation] = useState(true);
+  const [loading, setLoading] = useState(true);
 
-  const { theme } = useTheme();
+  // ── Load stored settings ─────────────────────────────────────────────────
+  useEffect(() => {
+    (async () => {
+      try {
+        const storedVitals = await AsyncStorage.getItem("@data_share_vitals");
+        const storedBio = await AsyncStorage.getItem("@data_share_biometric");
+        const storedLocation = await AsyncStorage.getItem("@data_share_location");
 
-  const colors = globalColors[theme];
+        if (storedVitals !== null) setVitals(storedVitals === "true");
+        if (storedBio !== null) setBio(storedBio === "true");
+        if (storedLocation !== null) setLocation(storedLocation === "true");
+      } catch (e) {
+        console.error("Failed to load data sharing settings:", e);
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, []);
+
+  // ── Save helpers ────────────────────────────────────────────────────────
+  const handleToggleVitals = async (val: boolean) => {
+    setVitals(val);
+    try {
+      await AsyncStorage.setItem("@data_share_vitals", String(val));
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleToggleBio = async (val: boolean) => {
+    setBio(val);
+    try {
+      await AsyncStorage.setItem("@data_share_biometric", String(val));
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleToggleLocation = async (val: boolean) => {
+    setLocation(val);
+    try {
+      await AsyncStorage.setItem("@data_share_location", String(val));
+    } catch (e) {
+      console.error(e);
+    }
+  };
 
   const Row = (
     title: string,
     desc: string,
     value: boolean,
-    set: any
+    onToggle: (val: boolean) => void
   ) => (
     <View
       style={[
@@ -34,7 +83,7 @@ export default function DataSharing() {
         },
       ]}
     >
-      <View style={{ flex: 1, paddingRight: 10 }}>
+      <View style={{ flex: 1, paddingRight: 12 }}>
         <Text
           style={[
             styles.title,
@@ -56,7 +105,9 @@ export default function DataSharing() {
 
       <Switch
         value={value}
-        onValueChange={set}
+        onValueChange={onToggle}
+        trackColor={{ false: colors.border, true: colors.accent }}
+        thumbColor={value ? "#ffffff" : "#f4f3f4"}
       />
     </View>
   );
@@ -68,41 +119,48 @@ export default function DataSharing() {
         { backgroundColor: colors.bg },
       ]}
     >
-      <Header />
+      <Header title="Data Sharing" showBack={true} showProfile={false} showSOS={false} />
 
-      <ScrollView
-        contentContainerStyle={styles.content}
-      >
-        <Text
-          style={[
-            styles.header,
-            { color: colors.sub },
-          ]}
+      {loading ? (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={colors.accent} />
+        </View>
+      ) : (
+        <ScrollView
+          contentContainerStyle={styles.content}
+          showsVerticalScrollIndicator={false}
         >
-          Health Cloud Sync — encrypted sharing
-        </Text>
+          <Text
+            style={[
+              styles.headerText,
+              { color: colors.sub },
+            ]}
+          >
+            Manage what health information is synced to the Firebase Cloud backup. Toggling a setting off disables cloud sync for that specific category.
+          </Text>
 
-        {Row(
-          "Vitals Data",
-          "Heart rate, SpO2, sleep",
-          vitals,
-          setVitals
-        )}
+          {Row(
+            "Vitals Data",
+            "Sync heart rate, SpO2, sleep tracker, steps, activity history and water intake.",
+            vitals,
+            handleToggleVitals
+          )}
 
-        {Row(
-          "Biometric Profile",
-          "Age, weight, genetics",
-          bio,
-          setBio
-        )}
+          {Row(
+            "Biometric Profile",
+            "Sync body measurements, BioGears simulation history and metadata.",
+            bio,
+            handleToggleBio
+          )}
 
-        {Row(
-          "Location Data",
-          "Regional alerts",
-          location,
-          setLocation
-        )}
-      </ScrollView>
+          {Row(
+            "Location Data",
+            "Use location permissions for regional alerts and location-aware insights.",
+            location,
+            handleToggleLocation
+          )}
+        </ScrollView>
+      )}
     </View>
   );
 }
@@ -112,29 +170,42 @@ const styles = StyleSheet.create({
     flex: 1,
   },
 
-  content: {
-    paddingTop: 110,
-    padding: 16,
+  loadingContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
   },
 
-  header: {
-    marginBottom: 20,
+  content: {
+    paddingTop: 100,
+    paddingHorizontal: 16,
+    paddingBottom: 40,
+  },
+
+  headerText: {
+    fontSize: 14,
+    lineHeight: 20,
+    marginBottom: 24,
   },
 
   row: {
-    padding: 16,
-    borderRadius: 14,
-    marginBottom: 14,
+    padding: 18,
+    borderRadius: 16,
+    marginBottom: 16,
     flexDirection: "row",
+    alignItems: "center",
     justifyContent: "space-between",
     borderWidth: 1,
   },
 
   title: {
-    fontWeight: "bold",
+    fontSize: 16,
+    fontWeight: "600",
+    marginBottom: 4,
   },
 
   desc: {
-    marginTop: 4,
+    fontSize: 13,
+    lineHeight: 18,
   },
 });

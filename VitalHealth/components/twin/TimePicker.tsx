@@ -1,11 +1,137 @@
-import React, { useState } from 'react';
-import { Modal, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import DateTimePicker from '@react-native-community/datetimepicker';
+// components/twin/TimePicker.tsx
+// Custom themed time picker — no OS-native dialogs, fully matches app dark/light theme.
+// Renders a drum-style HH : MM selector inside the app's own Modal + card.
+
+import React, { useCallback, useRef, useState } from 'react';
+import {
+  FlatList, Modal, StyleSheet, Text,
+  TouchableOpacity, View,
+} from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../context/ThemeContext';
-import { colors } from '../../theme/colors';
+import { colors as themeColors } from '../../theme/colors';
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 const pad = (n: number) => String(n).padStart(2, '0');
+
+const ITEM_H = 48;     // height of each drum item (px)
+const VISIBLE = 5;     // how many items show at once (must be odd)
+const DRUM_H  = ITEM_H * VISIBLE;
+
+// Generate [0 … max-1] as zero-padded strings, tripled so the user can
+// scroll in either direction without hitting a hard boundary.
+function makeItems(max: number): string[] {
+  const base = Array.from({ length: max }, (_, i) => pad(i));
+  return [...base, ...base, ...base];   // triple
+}
+
+const HOURS   = makeItems(24);
+const MINUTES = makeItems(60);
+
+// ─── DrumColumn ──────────────────────────────────────────────────────────────
+
+function DrumColumn({
+  items,
+  count,     // 24 or 60 — the "real" length of one cycle
+  initial,   // starting index (0-based)
+  accent,
+  c,
+  onChange,
+}: {
+  items: string[];
+  count: number;
+  initial: number;
+  accent: string;
+  c: any;
+  onChange: (v: number) => void;
+}) {
+  const ref = useRef<FlatList>(null);
+
+  // Start at middle copy so user can scroll up and down
+  const [current, setCurrent] = useState(initial);
+
+  const scrollTo = useCallback(
+    (idx: number, animated: boolean) => {
+      // clamp to middle copy range
+      const clamped = count + (idx % count);
+      ref.current?.scrollToOffset({ offset: clamped * ITEM_H, animated });
+    },
+    [count]
+  );
+
+  // Jump to the middle triple on mount (no animation)
+  const didMount = useRef(false);
+  const onLayout = useCallback(() => {
+    if (didMount.current) return;
+    didMount.current = true;
+    scrollTo(initial, false);
+  }, [initial, scrollTo]);
+
+  const onMomentumEnd = useCallback(
+    (e: any) => {
+      const offset = e.nativeEvent.contentOffset.y;
+      const rawIdx = Math.round(offset / ITEM_H);
+      const value  = rawIdx % count;
+      setCurrent(value);
+      onChange(value);
+      // Re-centre into the middle copy to keep infinite-scroll illusion
+      const centred = count + value;
+      ref.current?.scrollToOffset({ offset: centred * ITEM_H, animated: false });
+    },
+    [count, onChange]
+  );
+
+  return (
+    <View style={[drumStyles.column, { height: DRUM_H }]}>
+      {/* Highlight bar behind the selected row */}
+      <View
+        pointerEvents="none"
+        style={[
+          drumStyles.highlight,
+          {
+            top: ITEM_H * Math.floor(VISIBLE / 2),
+            height: ITEM_H,
+            backgroundColor: accent + '22',
+            borderColor: accent + '55',
+          },
+        ]}
+      />
+
+      <FlatList
+        ref={ref}
+        data={items}
+        keyExtractor={(_, i) => String(i)}
+        showsVerticalScrollIndicator={false}
+        snapToInterval={ITEM_H}
+        decelerationRate="fast"
+        onLayout={onLayout}
+        onMomentumScrollEnd={onMomentumEnd}
+        scrollEventThrottle={16}
+        getItemLayout={(_, index) => ({ length: ITEM_H, offset: ITEM_H * index, index })}
+        renderItem={({ item, index }) => {
+          const val = index % count;
+          const selected = val === current;
+          return (
+            <View style={[drumStyles.item, { height: ITEM_H }]}>
+              <Text
+                style={[
+                  drumStyles.itemTxt,
+                  { color: selected ? accent : c.sub },
+                  selected && { fontWeight: '800', fontSize: 28, color: accent },
+                ]}
+              >
+                {item}
+              </Text>
+            </View>
+          );
+        }}
+      />
+    </View>
+  );
+}
+
+// ─── TimePicker ──────────────────────────────────────────────────────────────
 
 export default function TimePicker({
   value,
@@ -16,122 +142,167 @@ export default function TimePicker({
   onChange: (t: string) => void;
   accent?: string;
 }) {
-  const [modalVisible, setModalVisible] = useState(false);
   const { theme } = useTheme();
-  const c = colors[theme as 'light' | 'dark'] ?? colors['dark'];
+  const c = themeColors[theme as 'light' | 'dark'] ?? themeColors['dark'];
 
-  const parseTime = (v: string) => {
-    if (!v) {
-      return new Date();
-    }
-    const parts = v.split(':');
-    if (parts.length < 2) return new Date();
-    const [hStr, mStr] = parts;
-    const d = new Date();
-    d.setHours(parseInt(hStr, 10));
-    d.setMinutes(parseInt(mStr, 10));
-    return d;
+  const parseTime = (v: string): [number, number] => {
+    if (!v) return [new Date().getHours(), new Date().getMinutes()];
+    const [h, m] = v.split(':').map(Number);
+    return [isNaN(h) ? 0 : h, isNaN(m) ? 0 : m];
   };
 
-  const [date, setDate] = useState(parseTime(value));
+  const [open, setOpen]       = useState(false);
+  const [selH, setSelH]       = useState(() => parseTime(value)[0]);
+  const [selM, setSelM]       = useState(() => parseTime(value)[1]);
+  // Keep a local draft while the drum is open; only commit on "Done"
+  const draftH = useRef(selH);
+  const draftM = useRef(selM);
 
-  const openModal = () => {
-    setDate(parseTime(value));
-    setModalVisible(true);
+  const openPicker = () => {
+    const [h, m] = parseTime(value);
+    setSelH(h);
+    setSelM(m);
+    draftH.current = h;
+    draftM.current = m;
+    setOpen(true);
   };
 
   const confirm = () => {
-    onChange(`${pad(date.getHours())}:${pad(date.getMinutes())}`);
-    setModalVisible(false);
+    onChange(`${pad(draftH.current)}:${pad(draftM.current)}`);
+    setOpen(false);
   };
 
   const displayTime = () => {
-    const p = parseTime(value);
-    const h = p.getHours();
-    const m = p.getMinutes();
-    const ampm = h >= 12 ? 'PM' : 'AM';
-    const h12 = h % 12 || 12;
+    const [h, m] = parseTime(value);
+    const ampm  = h >= 12 ? 'PM' : 'AM';
+    const h12   = h % 12 || 12;
     return `${h12}:${pad(m)} ${ampm}`;
   };
 
   return (
     <>
+      {/* ── Trigger button ── */}
       <TouchableOpacity
-        onPress={openModal}
-        style={[clockStyles.timeDisplay, { borderColor: c.border, backgroundColor: c.card }]}
+        onPress={openPicker}
+        style={[tp.trigger, { borderColor: c.border, backgroundColor: c.card }]}
         activeOpacity={0.8}
       >
-        <Text style={[clockStyles.timeDisplayTxt, { color: c.text }]}>{displayTime()}</Text>
+        <Text style={[tp.triggerTxt, { color: c.text }]}>{displayTime()}</Text>
         <Ionicons name="time-outline" size={18} color={accent} />
       </TouchableOpacity>
 
-      {Platform.OS === 'ios' ? (
-        <Modal visible={modalVisible} transparent animationType="fade">
-          <View style={clockStyles.overlay}>
-            <View style={[clockStyles.sheet, { backgroundColor: c.card, borderWidth: 1, borderColor: c.border }]}>
-              <View style={{ padding: 20, alignItems: 'center' }}>
-                <DateTimePicker
-                  value={date}
-                  mode="time"
-                  display="spinner"
-                  themeVariant={theme as any}
-                  textColor={c.text}
-                  onChange={(e, selected) => {
-                    if (selected) setDate(selected);
-                  }}
-                />
-              </View>
-              <View style={[clockStyles.actions, { borderTopWidth: 1, borderTopColor: c.border }]}>
-                <TouchableOpacity onPress={() => setModalVisible(false)} style={clockStyles.cancelBtn}>
-                  <Text style={{ color: c.sub, fontWeight: '700', fontSize: 15 }}>CANCEL</Text>
-                </TouchableOpacity>
-                <TouchableOpacity onPress={confirm} style={clockStyles.okBtn}>
-                  <Text style={[clockStyles.okTxt, { color: accent }]}>OK</Text>
-                </TouchableOpacity>
-              </View>
+      {/* ── Modal picker ── */}
+      <Modal visible={open} transparent animationType="fade" onRequestClose={() => setOpen(false)}>
+        <View style={tp.overlay}>
+          <View style={[tp.sheet, { backgroundColor: c.card, borderColor: c.border }]}>
+
+            {/* Header */}
+            <View style={tp.sheetHeader}>
+              <Text style={[tp.sheetTitle, { color: c.text }]}>Select Time</Text>
+              <TouchableOpacity onPress={() => setOpen(false)}>
+                <Ionicons name="close" size={22} color={c.sub} />
+              </TouchableOpacity>
+            </View>
+
+            {/* Drums */}
+            <View style={tp.drums}>
+              <DrumColumn
+                items={HOURS}
+                count={24}
+                initial={selH}
+                accent={accent}
+                c={c}
+                onChange={v => { draftH.current = v; }}
+              />
+
+              <Text style={[tp.colon, { color: accent }]}>:</Text>
+
+              <DrumColumn
+                items={MINUTES}
+                count={60}
+                initial={selM}
+                accent={accent}
+                c={c}
+                onChange={v => { draftM.current = v; }}
+              />
+            </View>
+
+            {/* Divider */}
+            <View style={[tp.divider, { backgroundColor: c.border }]} />
+
+            {/* Actions */}
+            <View style={tp.actions}>
+              <TouchableOpacity
+                style={[tp.btn, { borderColor: c.border, borderWidth: 1.5 }]}
+                onPress={() => setOpen(false)}
+              >
+                <Text style={[tp.btnTxt, { color: c.sub }]}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[tp.btn, { backgroundColor: accent }]}
+                onPress={confirm}
+              >
+                <Ionicons name="checkmark" size={18} color="#fff" />
+                <Text style={[tp.btnTxt, { color: '#fff' }]}>Done</Text>
+              </TouchableOpacity>
             </View>
           </View>
-        </Modal>
-      ) : (
-        modalVisible && (
-          <DateTimePicker
-            value={date}
-            mode="time"
-            display="spinner"
-            themeVariant={theme as any}
-            onChange={(e, selected) => {
-              setModalVisible(false);
-              if (e.type === 'set' && selected) {
-                onChange(`${pad(selected.getHours())}:${pad(selected.getMinutes())}`);
-              }
-            }}
-          />
-        )
-      )}
+        </View>
+      </Modal>
     </>
   );
 }
 
-const clockStyles = StyleSheet.create({
-  timeDisplay: {
+// ─── Styles ──────────────────────────────────────────────────────────────────
+
+const drumStyles = StyleSheet.create({
+  column:    { width: 80, overflow: 'hidden' },
+  item:      { alignItems: 'center', justifyContent: 'center' },
+  itemTxt:   { fontSize: 22, fontWeight: '500' },
+  highlight: {
+    position: 'absolute', left: 0, right: 0,
+    borderTopWidth: 1.5, borderBottomWidth: 1.5, borderRadius: 10,
+  },
+});
+
+const tp = StyleSheet.create({
+  trigger: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
     paddingHorizontal: 14, paddingVertical: 8,
     borderRadius: 12, borderWidth: 1.5,
   },
-  timeDisplayTxt: { fontSize: 18, fontWeight: '800', letterSpacing: 1 },
+  triggerTxt: { fontSize: 18, fontWeight: '800', letterSpacing: 1 },
+
   overlay: {
-    flex: 1, backgroundColor: 'rgba(0,0,0,0.75)',
-    justifyContent: 'center', alignItems: 'center', padding: 20,
+    flex: 1, backgroundColor: 'rgba(0,0,0,0.72)',
+    justifyContent: 'center', alignItems: 'center', padding: 24,
   },
   sheet: {
     width: '100%', maxWidth: 340,
-    borderRadius: 28, overflow: 'hidden',
+    borderRadius: 28, borderWidth: 1.5,
+    overflow: 'hidden', paddingBottom: 4,
   },
+  sheetHeader: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: 22, paddingTop: 20, paddingBottom: 12,
+  },
+  sheetTitle: { fontSize: 18, fontWeight: '700' },
+
+  drums: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    paddingVertical: 8, gap: 4,
+  },
+  colon: { fontSize: 32, fontWeight: '900', paddingBottom: 4, marginHorizontal: 4 },
+
+  divider: { height: 1, marginHorizontal: 20, marginTop: 8 },
+
   actions: {
-    flexDirection: 'row', justifyContent: 'flex-end',
-    gap: 8, padding: 16, paddingTop: 8,
+    flexDirection: 'row', gap: 12,
+    paddingHorizontal: 20, paddingVertical: 16,
   },
-  cancelBtn: { paddingHorizontal: 16, paddingVertical: 10 },
-  okBtn:     { paddingHorizontal: 16, paddingVertical: 10 },
-  okTxt:     { fontWeight: '800', fontSize: 15 },
+  btn: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: 6, paddingVertical: 13, borderRadius: 14,
+  },
+  btnTxt: { fontSize: 15, fontWeight: '700' },
 });

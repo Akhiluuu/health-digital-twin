@@ -23,6 +23,7 @@ import {
 import { getTwinId } from '../utils/twinUtils';
 import { scheduleDailyLogReminder } from '../services/notifeeService';
 import { useMedicine } from './MedicineContext';
+import { useSteps } from './StepContext';
 import type {
   BiogearsHealthEvent,
   BiogearsVitals,
@@ -33,6 +34,7 @@ import type {
   RecoveryReadinessResponse,
   OrganScoresResponse,
   VitalsTrendResponse,
+  CaloricBalanceResponse,
 } from '../services/biogears';
 import {
   saveSimulationResult,
@@ -51,6 +53,13 @@ export interface RoutineEvent extends BiogearsHealthEvent {
   wallTime: string;       // "HH:MM" — wall clock time user selected
   displayLabel: string;   // e.g. "Idli (2 pieces) · 140 kcal"
   displayIcon: string;    // emoji
+  source?: 'manual' | 'routine' | 'baseline'; // provenance tag
+}
+
+export interface EventConflict {
+  incoming: RoutineEvent;
+  existing: RoutineEvent;
+  fingerprint: string;
 }
 
 export interface BiogearsTwinContextValue {
@@ -83,6 +92,7 @@ export interface BiogearsTwinContextValue {
   // Today's routine
   todayEvents: RoutineEvent[];
   addEvent: (event: Omit<RoutineEvent, 'id'>) => void;
+  addEventAndSimulate: (event: Omit<RoutineEvent, 'id'>, customSimName?: string) => Promise<void>;
   removeEvent: (id: string) => void;
   updateEvent: (id: string, updates: Partial<RoutineEvent>) => void;
   clearToday: () => void;
@@ -97,11 +107,13 @@ export interface BiogearsTwinContextValue {
   todayMacros: { carbs: number; protein: number; fat: number; calories: number };
   healthScore: { score: number; grade: string; label: string; components: any } | null;
   bodyMetrics: any | null;
+  caloricBalance: CaloricBalanceResponse | null;
 
   // Saved routines
   savedRoutines: SavedRoutine[];
   saveCurrentRoutine: (name: string, tags?: string[], overwriteId?: string, autoDefault?: boolean) => Promise<void>;
-  loadRoutine: (routineId: string) => void;
+  loadRoutine: (routineId: string, anchorDate?: Date) => void;
+  renameRoutine: (routineId: string, newName: string) => Promise<void>;
   deleteRoutine: (routineId: string) => Promise<void>;
   setDefaultRoutine: (routineId: string) => Promise<void>;
   editingRoutineId: string | null;
@@ -127,6 +139,16 @@ export interface BiogearsTwinContextValue {
   runMultiDayCatchup: (days: number) => Promise<void>;
   recheckTwinStatus: () => Promise<void>;
   undoLastSimulation: () => Promise<void>;
+  fillBaselineEvents: () => Promise<void>;
+  loadRoutineWithConflictCheck: (
+    routineId: string,
+    onConflicts: (conflicts: EventConflict[], resolve: (resolutions: Record<string, 'keep_mine' | 'use_routine' | 'keep_both'>) => void) => void
+  ) => void;
+
+  // Conflict resolution (surfaced from fillBaselineEvents / loadRoutineWithConflictCheck)
+  pendingConflicts: EventConflict[];
+  pendingConflictResolver: ((resolutions: Record<string, 'keep_mine' | 'use_routine' | 'keep_both'>) => void) | null;
+  dismissConflicts: () => void;
 }
 
 
@@ -147,9 +169,31 @@ const TODAY_EVENTS_KEY = (uid: string) => `@biogears_today_${uid}`;
 
 // ─── Helper: convert RoutineEvent wall time → Unix epoch timestamp ────────────
 
-function wallTimeToTimestamp(wallTime: string): number {
+/**
+ * Converts a "HH:MM" wall time string to a Unix epoch timestamp (seconds).
+ *
+ * Production-level chronology logic:
+ *  • When anchorDate is provided (e.g., date of last simulation), events are
+ *    stamped to that specific date — this is used when pulling saved states so
+ *    the simulation continues from where it left off, not from today.
+ *  • When no anchorDate is given (live event logging), we use today and apply
+ *    smart retroactive inference: if the HH:MM is in the future relative to
+ *    now, we assume the user is logging a yesterday event (e.g. logging last
+ *    night's 10 PM sleep at 8 AM today).
+ */
+function wallTimeToTimestamp(wallTime: string, anchorDate?: Date): number {
   // wallTime = "HH:MM"
   const [hh, mm] = wallTime.split(':').map(Number);
+
+  if (anchorDate) {
+    // Anchored mode: stamp exactly to the given date + wall time.
+    // No guessing — the caller has determined the correct date.
+    const d = new Date(anchorDate);
+    d.setHours(hh, mm, 0, 0);
+    return Math.floor(d.getTime() / 1000);
+  }
+
+  // Live logging mode: anchor to today with retroactive inference.
   const now = new Date();
   const current_hh = now.getHours();
   const current_mm = now.getMinutes();
@@ -167,10 +211,140 @@ function wallTimeToTimestamp(wallTime: string): number {
   return Math.floor(now.getTime() / 1000);
 }
 
+// ─── Event Fingerprinting & Conflict Detection ────────────────────────────────
+
+/**
+ * Produces a deterministic fingerprint for an event so near-duplicate events
+ * from different sources (routine vs manual) can be detected before merging.
+ *
+ * Strategy:
+ *  • event_type is an exact key.
+ *  • wallTime is quantised to 30-minute buckets so "08:00" and "08:17" share a bucket.
+ *  • value is quantised to 10-unit buckets to absorb minor portion differences.
+ */
+function getEventFingerprint(e: { event_type: string; wallTime?: string; value?: number }): string {
+  const [hh = 0, mm = 0] = (e.wallTime || '00:00').split(':').map(Number);
+  const totalMin = hh * 60 + mm;
+  const timeBucket = Math.floor(totalMin / 30);
+  const valueBucket = Math.floor((e.value || 0) / 10);
+  return `${e.event_type}|t${timeBucket}|v${valueBucket}`;
+}
+
+/**
+ * Compares incoming routine/baseline events against the existing todayEvents
+ * queue and returns any fingerprint collisions as EventConflict[]. Only events
+ * whose wallTime falls within the target time window are checked.
+ */
+function detectConflicts(
+  incoming: RoutineEvent[],
+  existing: RoutineEvent[]
+): EventConflict[] {
+  const conflicts: EventConflict[] = [];
+  for (const inc of incoming) {
+    const fp = getEventFingerprint(inc);
+    const clash = existing.find(ex => getEventFingerprint(ex) === fp);
+    if (clash) {
+      conflicts.push({ incoming: inc, existing: clash, fingerprint: fp });
+    }
+  }
+  return conflicts;
+}
+
+/**
+ * Helper to build step exercise event for BioGears simulation / caloric balance
+ */
+function buildStepExerciseEvent(steps: number, weightKg: number, heightCm: number): BiogearsHealthEvent | null {
+  if (steps <= 0) return null;
+  const strideM = 0.413 * (heightCm / 100);
+  const distanceM = steps * strideM;
+  // Assume a walking speed of 1.34 m/s (3 mph)
+  const speedMPS = 1.34;
+  const durationSecs = Math.round(distanceM / speedMPS);
+  if (durationSecs <= 0) return null;
+
+  // MET for walking 3 mph (4.8 km/h) is 3.5
+  // BioGears intensity = (MET - 1) / 13, clamped
+  const met = 3.5;
+  const biogearsIntensity = Math.max(0.05, Math.min(1.0, (met - 1.0) / 13.0));
+
+  return {
+    event_type: "exercise",
+    value: parseFloat(biogearsIntensity.toFixed(3)),
+    duration_seconds: durationSecs,
+    timestamp: Math.round(Date.now() / 1000) - durationSecs,
+    substance_name: undefined,
+    meal_type: undefined,
+    carb_g: 0,
+    fat_g: 0,
+    protein_g: 0,
+    environment_name: undefined,
+    notes: `Pedometer steps: ${steps}`,
+  };
+}
+
+/**
+ * Computes a local estimate of Basal Metabolic Rate and daily calorie burn
+ */
+function computeLocalCaloricBalanceFallback(profile: any, todayEvents: RoutineEvent[], steps: number): CaloricBalanceResponse {
+  const weightVal = profile ? parseFloat((profile.weight || '').replace(/[^0-9.]/g, '')) : 70;
+  const heightVal = profile ? parseFloat((profile.height || '').replace(/[^0-9.]/g, '')) : 170;
+  const ageVal = profile ? parseInt((profile.age || '').replace(/[^0-9]/g, '')) : 30;
+  const isMale = (profile?.gender || 'male').toLowerCase() === 'male';
+
+  // Mifflin-St Jeor BMR
+  let bmr = 10 * weightVal + 6.25 * heightVal - 5 * ageVal;
+  if (isMale) {
+    bmr += 5;
+  } else {
+    bmr -= 161;
+  }
+  bmr = Math.round(bmr);
+
+  // Exercise Kcal
+  let exerciseKcal = 0;
+  let mealKcal = 0;
+
+  // Add step exercise kcal
+  const stepEvent = buildStepExerciseEvent(steps, weightVal, heightVal);
+  const eventsForBurn: any[] = [...todayEvents];
+  if (stepEvent) {
+    eventsForBurn.push({
+      id: 'step_event',
+      event_type: 'exercise',
+      value: stepEvent.value,
+      wallTime: '12:00',
+      duration_seconds: stepEvent.duration_seconds,
+    });
+  }
+
+  eventsForBurn.forEach(ev => {
+    if (ev.event_type === 'exercise') {
+      const mets = 3 + (ev.value || 0.5) * 9;
+      const durHrs = (ev.duration_seconds || 1800) / 3600;
+      exerciseKcal += mets * weightVal * durHrs;
+    } else if (ev.event_type === 'meal') {
+      mealKcal += (ev.value || 0);
+    }
+  });
+
+  const totalBurn = Math.round(bmr + exerciseKcal);
+  const balance = Math.round(mealKcal - totalBurn);
+
+  return {
+    bmr_kcal_day: bmr,
+    estimated_burn_kcal: totalBurn,
+    meal_intake_kcal: Math.round(mealKcal),
+    caloric_balance: balance,
+    balance_status: balance > 100 ? "Surplus" : (balance < -100 ? "Deficit" : "Balanced"),
+    note: "Local estimated balance. Sync with engine for physiological details.",
+  };
+}
+
 // ─── Provider ─────────────────────────────────────────────────────────────────
 
 export function BiogearsTwinProvider({ children }: { children: React.ReactNode }) {
   const { activeProfile: profile, activeMemberId, isSwitched } = useFamily();
+  const { steps } = useSteps();
 
   // Derive userId from profile: use Firebase UID stored in profile, or firstName+lastName slug
   const { medicines } = useMedicine();
@@ -213,8 +387,14 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
   const [weeklySummary, setWeeklySummary] = useState<any>(null);
   const [healthScore, setHealthScore] = useState<any>(null);
   const [bodyMetrics, setBodyMetrics] = useState<any>(null);
+  const [caloricBalance, setCaloricBalance] = useState<CaloricBalanceResponse | null>(null);
   const [todayMacros, setTodayMacros] = useState({ carbs: 0, protein: 0, fat: 0, calories: 0 });
   const [substances, setSubstances] = useState<Record<string, string[]>>({});
+
+  // ── Conflict Resolution State ─────────────────────────────────────────────
+  const [pendingConflicts, setPendingConflicts] = useState<EventConflict[]>([]);
+  const [pendingConflictResolver, setPendingConflictResolver] =
+    useState<((resolutions: Record<string, 'keep_mine' | 'use_routine' | 'keep_both'>) => void) | null>(null);
 
   const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const simStartRef = useRef<number | null>(null);   // epoch ms when simulation started
@@ -313,6 +493,18 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
       (async () => {
         try {
           await BiogearsAPI.syncDigitalTwinDataFromFirestore(twinUserId, firestoreOwnerUid);
+          
+          const remotePending = await BiogearsAPI.fetchPendingEvents(twinUserId, firestoreOwnerUid);
+          if (remotePending && remotePending.length > 0) {
+            const todayStr = new Date().toDateString();
+            const fresh = remotePending.filter(e => {
+              if (!e.timestamp) return false;
+              return new Date(e.timestamp * 1000).toDateString() === todayStr;
+            });
+            setTodayEvents(fresh);
+            await AsyncStorage.setItem(TODAY_EVENTS_KEY(twinUserId), JSON.stringify(fresh));
+          }
+
           await loadRoutinesFromStorage();
           const syncedSessions = await refreshSessions();
 
@@ -354,7 +546,28 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
     return () => {
       if (initDebounceRef.current) clearTimeout(initDebounceRef.current);
     };
-  }, [twinUserId, firestoreOwnerUid]);
+  }, [
+    twinUserId,
+    firestoreOwnerUid,
+    profile?.weight,
+    profile?.height,
+    profile?.dateOfBirth,
+    profile?.gender,
+    profile?.biogears_resting_hr,
+    profile?.biogears_systolic_bp,
+    profile?.biogears_diastolic_bp,
+    profile?.biogears_body_fat,
+    profile?.biogears_is_smoker,
+    profile?.biogears_has_anemia,
+    profile?.biogears_has_type1_diabetes,
+    profile?.biogears_has_type2_diabetes,
+    profile?.biogears_hba1c,
+    profile?.biogears_ethnicity,
+    profile?.biogears_fitness_level,
+    profile?.biogears_vo2max,
+    profile?.biogears_registered,
+    JSON.stringify((profile as any)?.habits),
+  ]);
 
 
   const resumeActiveJob = async () => {
@@ -465,7 +678,11 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
       progressTickRef.current = null;
     }
     simStartRef.current = null;
-    await AsyncStorage.removeItem('biogears_active_job');
+    setTodayEvents([]);
+    if (twinUserId) {
+      await AsyncStorage.removeItem(TODAY_EVENTS_KEY(twinUserId));
+      await BiogearsAPI.syncPendingEvents(twinUserId, [], firestoreOwnerUid).catch(() => {});
+    }
 
     await refreshSessions();
     await refreshAnalytics();
@@ -480,7 +697,7 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
         // Only keep today's events (don't carry over from yesterday)
         const todayStr = new Date().toDateString();
         const fresh = stored.filter(e => {
-          if (!e.timestamp) return true;
+          if (!e.timestamp) return false;
           return new Date(e.timestamp * 1000).toDateString() === todayStr;
         });
         setTodayEvents(fresh);
@@ -492,6 +709,7 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
     if (!twinUserId) return;
     try {
       await AsyncStorage.setItem(TODAY_EVENTS_KEY(twinUserId), JSON.stringify(events));
+      await BiogearsAPI.syncPendingEvents(twinUserId, events, firestoreOwnerUid);
     } catch { /* ignore */ }
   };
 
@@ -532,7 +750,7 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
             weight: weightVal || 70,
           });
           await BiogearsAPI.saveRoutine(twinUserId, routine, firestoreOwnerUid);
-          await BiogearsAPI.setDefaultRoutine(twinUserId, routine.id, firestoreOwnerUid);
+          await BiogearsAPI.setDefaultRoutine(twinUserId, routine.id, firestoreOwnerUid, true);
           setSavedRoutines([routine]);
           console.log('[BiogearsTwin] ✅ Auto-generated default routine "My Saved State" from habits');
           return;
@@ -564,12 +782,22 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
 
       let needsRefresh = false;
 
-      // Rename to "My Saved State" and ensure isDefault is true
-      if (primary.name !== 'My Saved State' || !primary.isDefault) {
-        primary.name = 'My Saved State';
+      // Auto-rename ONLY if the routine still has its original onboarding ID
+      // AND has a default placeholder name. If the user has already manually
+      // renamed it (name differs from defaults), we respect that name.
+      const isStillPlaceholderName = (
+        primary.name === 'My Typical Day' ||
+        primary.name === 'Saved State' ||
+        primary.name === 'My Saved State'
+      );
+      const hasOnboardingId = primary.id.startsWith('routine_onboarding_');
+      const shouldAutoRename = (hasOnboardingId || isStillPlaceholderName) && primary.name !== 'My Saved State';
+
+      if (shouldAutoRename || !primary.isDefault) {
+        if (shouldAutoRename) primary.name = 'My Saved State';
         primary.isDefault = true;
         await BiogearsAPI.saveRoutine(twinUserId, primary, firestoreOwnerUid);
-        await BiogearsAPI.setDefaultRoutine(twinUserId, primary.id, firestoreOwnerUid);
+        await BiogearsAPI.setDefaultRoutine(twinUserId, primary.id, firestoreOwnerUid, true);
         needsRefresh = true;
       }
 
@@ -616,6 +844,15 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
       const cleaned = await BiogearsAPI.loadSavedRoutines(twinUserId);
       setSavedRoutines(cleaned);
       return;
+    }
+
+    // Ensure at least one routine is default if list is not empty
+    const hasDefault = r.some(routine => routine.isDefault);
+    if (r.length > 0 && !hasDefault) {
+      console.log('[BiogearsTwin] No default routine found. Auto-designating first routine as default.');
+      r[0].isDefault = true;
+      await BiogearsAPI.saveRoutine(twinUserId, r[0], firestoreOwnerUid);
+      await BiogearsAPI.setDefaultRoutine(twinUserId, r[0].id, firestoreOwnerUid, true);
     }
 
     setSavedRoutines(r);
@@ -693,6 +930,29 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
     // Don't hammer the server when the twin isn't registered yet
     if (!twinUserId || twinStatus === 'unregistered' || twinStatus === 'checking') return;
     try {
+      // Prepare events for caloric balance
+      const eventsForBurn: BiogearsHealthEvent[] = todayEvents.map(e => ({
+        event_type: e.event_type,
+        value: e.value,
+        timestamp: e.timestamp ?? wallTimeToTimestamp(e.wallTime),
+        substance_name: e.substance_name,
+        meal_type: e.meal_type,
+        carb_g: e.carb_g,
+        fat_g: e.fat_g,
+        protein_g: e.protein_g,
+        duration_seconds: e.duration_seconds,
+        environment_name: e.environment_name,
+        notes: e.notes,
+      }));
+
+      // Append steps exercise
+      const weightVal = profile ? parseFloat((profile.weight || '').replace(/[^0-9.]/g, '')) : 70;
+      const heightVal = profile ? parseFloat((profile.height || '').replace(/[^0-9.]/g, '')) : 170;
+      const stepEvent = buildStepExerciseEvent(steps, weightVal || 70, heightVal || 170);
+      if (stepEvent) {
+        eventsForBurn.push(stepEvent);
+      }
+
       const results = await Promise.allSettled([
         BiogearsAPI.getOrganScores(twinUserId),
         BiogearsAPI.getVitalsTrends(twinUserId),
@@ -701,8 +961,9 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
         BiogearsAPI.getWeeklySummary(twinUserId),
         BiogearsAPI.getHealthScore(twinUserId),
         BiogearsAPI.getBodyMetrics(twinUserId),
+        BiogearsAPI.getCaloricBalance(twinUserId, eventsForBurn),
       ]);
-      const [organs, trends, cvd, recovery, weekly, score, metrics] = results;
+      const [organs, trends, cvd, recovery, weekly, score, metrics, caloriesBal] = results;
 
       let activeTrends = trends.status === 'fulfilled' ? trends.value : null;
 
@@ -719,6 +980,12 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
       if (weekly.status === 'fulfilled') setWeeklySummary(weekly.value);
       if (score.status === 'fulfilled') setHealthScore(score.value);
       if (metrics.status === 'fulfilled') setBodyMetrics(metrics.value);
+      if (caloriesBal.status === 'fulfilled') {
+        setCaloricBalance(caloriesBal.value);
+      } else {
+        const localEst = computeLocalCaloricBalanceFallback(profile, todayEvents, steps);
+        setCaloricBalance(localEst);
+      }
 
       // Cache all resolved analytics to Firestore
       const cacheObj = {
@@ -729,6 +996,7 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
         weeklySummary: weekly.status === 'fulfilled' ? weekly.value : weeklySummary,
         healthScore: score.status === 'fulfilled' ? score.value : healthScore,
         bodyMetrics: metrics.status === 'fulfilled' ? metrics.value : bodyMetrics,
+        caloricBalance: caloriesBal.status === 'fulfilled' ? caloriesBal.value : caloricBalance,
       };
       await syncBiogearsAnalytics(cacheObj, firestoreOwnerUid);
     } catch (err) {
@@ -744,9 +1012,12 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
         if (cached.weeklySummary) setWeeklySummary(cached.weeklySummary);
         if (cached.healthScore) setHealthScore(cached.healthScore);
         if (cached.bodyMetrics) setBodyMetrics(cached.bodyMetrics);
+        if (cached.caloricBalance) setCaloricBalance(cached.caloricBalance);
       } else {
         // Construct fallback trends as a last resort
         setVitalsTrends(getVitalsTrendsFallback(sessions));
+        const localEst = computeLocalCaloricBalanceFallback(profile, todayEvents, steps);
+        setCaloricBalance(localEst);
       }
     }
   }, [
@@ -762,8 +1033,27 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
     weeklySummary,
     healthScore,
     bodyMetrics,
+    todayEvents,
+    steps,
+    profile,
+    caloricBalance,
   ]);
 
+  const refreshAnalyticsRef = useRef(refreshAnalytics);
+  useEffect(() => {
+    refreshAnalyticsRef.current = refreshAnalytics;
+  }, [refreshAnalytics]);
+
+  useEffect(() => {
+    if (!twinUserId || twinStatus === 'unregistered' || twinStatus === 'checking') return;
+
+    const timer = setTimeout(() => {
+      console.log('[BiogearsTwin] Steps or todayEvents changed. Refreshing analytics (debounced)...');
+      refreshAnalyticsRef.current();
+    }, 2000);
+
+    return () => clearTimeout(timer);
+  }, [steps, todayEvents, twinUserId, twinStatus]);
 
   useEffect(() => {
     const macros = todayEvents.reduce((acc, e) => {
@@ -777,6 +1067,52 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
     }, { carbs: 0, protein: 0, fat: 0, calories: 0 });
     setTodayMacros(macros);
   }, [todayEvents]);
+
+  const updateCaloricBalance = useCallback(async () => {
+    if (!profile) return;
+    
+    const weightVal = parseFloat((profile.weight || '').replace(/[^0-9.]/g, '')) || 70;
+    const heightVal = parseFloat((profile.height || '').replace(/[^0-9.]/g, '')) || 170;
+    const stepEvent = buildStepExerciseEvent(steps, weightVal, heightVal);
+    const eventsForBurn: BiogearsHealthEvent[] = todayEvents.map(e => ({
+      event_type: e.event_type,
+      value: e.value,
+      timestamp: e.timestamp ?? wallTimeToTimestamp(e.wallTime),
+      substance_name: e.substance_name,
+      meal_type: e.meal_type,
+      carb_g: e.carb_g,
+      fat_g: e.fat_g,
+      protein_g: e.protein_g,
+      duration_seconds: e.duration_seconds,
+      environment_name: e.environment_name,
+      notes: e.notes,
+    }));
+    if (stepEvent) {
+      eventsForBurn.push(stepEvent);
+    }
+
+    if (twinUserId && twinStatus !== 'unregistered' && twinStatus !== 'checking') {
+      try {
+        const bal = await BiogearsAPI.getCaloricBalance(twinUserId, eventsForBurn);
+        setCaloricBalance(bal);
+        return;
+      } catch (err) {
+        console.log('[BiogearsTwin] Failed to get BioGears caloric balance, using local fallback:', err);
+      }
+    }
+
+    const localEst = computeLocalCaloricBalanceFallback(profile, todayEvents, steps);
+    setCaloricBalance(localEst);
+  }, [profile, todayEvents, steps, twinUserId, twinStatus]);
+
+  // Update caloric balance as steps, profile, or todayEvents change with debounce
+  useEffect(() => {
+    const delayDebounceFn = setTimeout(() => {
+      updateCaloricBalance();
+    }, 1000);
+
+    return () => clearTimeout(delayDebounceFn);
+  }, [profile, todayEvents, steps, updateCaloricBalance]);
 
   // ── Today's Events ────────────────────────────────────────────────────────
 
@@ -822,8 +1158,11 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
 
   const clearToday = useCallback(() => {
     setTodayEvents([]);
-    if (twinUserId) AsyncStorage.removeItem(TODAY_EVENTS_KEY(twinUserId));
-  }, [twinUserId]);
+    if (twinUserId) {
+      AsyncStorage.removeItem(TODAY_EVENTS_KEY(twinUserId));
+      BiogearsAPI.syncPendingEvents(twinUserId, [], firestoreOwnerUid).catch(() => {});
+    }
+  }, [twinUserId, firestoreOwnerUid]);
 
   // ── Saved Routines ────────────────────────────────────────────────────────
 
@@ -860,17 +1199,16 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
     setEditingRoutineId(null);
   }, [twinUserId, todayEvents, savedRoutines, firestoreOwnerUid]);
 
-  const loadRoutine = useCallback((routineId: string) => {
+  const loadRoutine = useCallback((routineId: string, anchorDate?: Date) => {
     const routine = savedRoutines.find(r => r.id === routineId);
     if (!routine) return;
-    // Retime events to today (keep relative time between events if they had timestamps)
-    const now = new Date();
+
     const remapped: RoutineEvent[] = routine.events.map(e => ({
       ...(e as RoutineEvent),
       id: `evt_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
-      // Re-stamp to today using wallTime
+      source: 'routine' as const,
       timestamp: (e as RoutineEvent).wallTime
-        ? wallTimeToTimestamp((e as RoutineEvent).wallTime)
+        ? wallTimeToTimestamp((e as RoutineEvent).wallTime, anchorDate)
         : undefined,
     }));
     const sorted = remapped.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
@@ -878,6 +1216,134 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
     persistToday(sorted);
     if (twinUserId) BiogearsAPI.markRoutineUsed(twinUserId, routineId, firestoreOwnerUid);
   }, [savedRoutines, twinUserId, firestoreOwnerUid]);
+
+  /**
+   * Smart-merge: loads a routine into today's timeline, first detecting conflicts
+   * between incoming routine events and manually-entered todayEvents.
+   *
+   * If conflicts exist, calls onConflicts() so the UI can show a resolution sheet.
+   * The resolve() callback (passed into onConflicts) applies the user's decisions.
+   *
+   * If no conflicts, merges directly — appending only events whose wallTime <= now
+   * and deduplicating by fingerprint automatically.
+   */
+  const loadRoutineWithConflictCheck = useCallback((
+    routineId: string,
+    onConflicts?: (
+      conflicts: EventConflict[],
+      resolve: (resolutions: Record<string, 'keep_mine' | 'use_routine' | 'keep_both'>) => void
+    ) => void
+  ) => {
+    const routine = savedRoutines.find(r => r.id === routineId);
+    if (!routine) return;
+
+    const now = new Date();
+    const currentMinutes = now.getHours() * 60 + now.getMinutes();
+
+    // Parse a wallTime string into minutes-since-midnight
+    const toMin = (wt: string) => {
+      const [h = 0, m = 0] = wt.split(':').map(Number);
+      return h * 60 + m;
+    };
+
+    // Only consider events whose wallTime has already passed (past events only)
+    const incoming: RoutineEvent[] = routine.events
+      .filter(e => {
+        const wt = (e as any).wallTime || '00:00';
+        return toMin(wt) <= currentMinutes;
+      })
+      .map(e => ({
+        ...(e as RoutineEvent),
+        id: `evt_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+        source: 'routine' as const,
+        timestamp: (e as RoutineEvent).wallTime
+          ? wallTimeToTimestamp((e as RoutineEvent).wallTime)
+          : undefined,
+      }));
+
+    const conflicts = detectConflicts(incoming, todayEvents);
+
+    // Commit safe/non-conflicting events immediately
+    const conflictFps = new Set(conflicts.map(c => c.fingerprint));
+    const safeToAdd = incoming.filter(inc => !conflictFps.has(getEventFingerprint(inc)));
+
+    const commitSafeEvents = () => {
+      if (safeToAdd.length === 0) return;
+      setTodayEvents(prev => {
+        const merged = [...prev, ...safeToAdd].sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+        persistToday(merged);
+        return merged;
+      });
+    };
+
+    if (conflicts.length === 0) {
+      commitSafeEvents();
+      if (twinUserId) BiogearsAPI.markRoutineUsed(twinUserId, routineId, firestoreOwnerUid);
+      return;
+    }
+
+    // Surface conflicts using context state for ConflictResolutionSheet
+    commitSafeEvents();
+    setPendingConflicts(conflicts);
+    setPendingConflictResolver(() => (resolutions: Record<string, 'keep_mine' | 'use_routine' | 'keep_both'> | null) => {
+      setPendingConflicts([]);
+      setPendingConflictResolver(null);
+
+      if (!resolutions) {
+        return;
+      }
+
+      // Apply resolutions: incoming routine events
+      const toAppend: RoutineEvent[] = [];
+      for (const c of conflicts) {
+        const r = resolutions[c.fingerprint] ?? 'keep_mine';
+        if (r === 'use_routine' || r === 'keep_both') {
+          toAppend.push(c.incoming);
+        }
+      }
+
+      // Remove replaced events when 'use_routine' is chosen
+      setTodayEvents(prev => {
+        let current = [...prev];
+        for (const c of conflicts) {
+          const r = resolutions[c.fingerprint] ?? 'keep_mine';
+          if (r === 'use_routine') {
+            current = current.filter(e => e.id !== c.existing.id);
+          }
+        }
+        const merged = [...current, ...toAppend].sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+        persistToday(merged);
+        return merged;
+      });
+
+      if (twinUserId) BiogearsAPI.markRoutineUsed(twinUserId, routineId, firestoreOwnerUid);
+    });
+
+    if (onConflicts) {
+      onConflicts(conflicts, () => {});
+    }
+  }, [savedRoutines, todayEvents, twinUserId, firestoreOwnerUid]);
+
+  /**
+   * Rename a saved routine in-place without changing its events or ID.
+   * Respects Firestore sync. Also updates the in-memory savedRoutines list.
+   */
+  const renameRoutine = useCallback(async (routineId: string, newName: string) => {
+    if (!twinUserId) return;
+    const trimmed = newName.trim();
+    if (!trimmed) return;
+
+    // Detect name collision with other routines (not itself)
+    const conflict = savedRoutines.some(r => r.id !== routineId && r.name === trimmed);
+    if (conflict) throw new Error(`A routine named "${trimmed}" already exists.`);
+
+    const existing = savedRoutines.find(r => r.id === routineId);
+    if (!existing) return;
+
+    const updated: typeof existing = { ...existing, name: trimmed };
+    await BiogearsAPI.saveRoutine(twinUserId, updated, firestoreOwnerUid);
+    setSavedRoutines(prev => prev.map(r => r.id === routineId ? { ...r, name: trimmed } : r));
+  }, [twinUserId, savedRoutines, firestoreOwnerUid]);
 
   const deleteRoutine = useCallback(async (routineId: string) => {
     if (!twinUserId) return;
@@ -925,6 +1391,88 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
     }
   }, []);
 
+  // ── Add Event and Run Simulation Immediately ──────────────────────────────
+
+  const addEventAndSimulate = useCallback(async (event: Omit<RoutineEvent, 'id'>, customSimName?: string) => {
+    if (!twinUserId || twinStatus !== 'ready') {
+      throw new Error('Baseline Calibration Required. Please calibrate your clinical twin profile first.');
+    }
+    if (simulationStatus === 'running' || simulationStatus === 'queued') {
+      throw new Error('Simulation already in progress.');
+    }
+
+    const newEvent: RoutineEvent = {
+      ...event,
+      id: `evt_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+      timestamp: wallTimeToTimestamp(event.wallTime),
+    };
+
+    const updatedEvents = [...todayEvents, newEvent].sort((a, b) =>
+      (a.timestamp || 0) - (b.timestamp || 0)
+    );
+
+    setTodayEvents(updatedEvents);
+    await persistToday(updatedEvents);
+
+    setSimulationStatus('queued');
+    setSimulationError(null);
+    setSimulationProgress('Queuing simulation...');
+
+    const finalName = customSimName || `Sim ${new Date().toLocaleDateString('en-IN')}`;
+
+    try {
+      const events: BiogearsHealthEvent[] = updatedEvents.map(e => ({
+        event_type: e.event_type,
+        value: e.value,
+        timestamp: e.timestamp ?? wallTimeToTimestamp(e.wallTime),
+        substance_name: e.substance_name,
+        meal_type: e.meal_type,
+        carb_g: e.carb_g,
+        fat_g: e.fat_g,
+        protein_g: e.protein_g,
+        duration_seconds: e.duration_seconds,
+        environment_name: e.environment_name,
+        notes: e.notes,
+      }));
+
+      const weightVal = profile ? parseFloat((profile.weight || '').replace(/[^0-9.]/g, '')) : 70;
+      const heightVal = profile ? parseFloat((profile.height || '').replace(/[^0-9.]/g, '')) : 170;
+      const stepEvent = buildStepExerciseEvent(steps, weightVal || 70, heightVal || 170);
+      if (stepEvent) {
+        events.push(stepEvent);
+      }
+
+      setSimulationProgress('Starting BioGears engine...');
+      setSimulationStatus('running');
+      const { job_id } = await BiogearsAPI.simulateAsync(twinUserId, events);
+      await AsyncStorage.setItem('biogears_active_job', job_id);
+
+      simStartRef.current = Date.now();
+      setSimulationProgress('BioGears engine initialising...');
+      progressTickRef.current = setInterval(() => {
+        const elapsed = Math.round((Date.now() - (simStartRef.current ?? Date.now())) / 1000);
+        const mins = Math.floor(elapsed / 60);
+        const secs = elapsed % 60;
+        const timeStr = mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
+        setSimulationProgress(`BioGears computing physiology... (${timeStr} elapsed)`);
+      }, 5000);
+
+      const result = await BiogearsAPI.pollUntilDone(job_id, 3000, 43_200_000);
+      await finishSimulationSuccess(result);
+
+    } catch (err: any) {
+      if (progressTickRef.current) {
+        clearInterval(progressTickRef.current);
+        progressTickRef.current = null;
+      }
+      simStartRef.current = null;
+      setSimulationStatus('failed');
+      setSimulationError(err.message || 'Simulation failed');
+      setSimulationProgress('');
+      throw err;
+    }
+  }, [twinUserId, twinStatus, todayEvents, simulationStatus]);
+
   // ── Run Simulation ────────────────────────────────────────────────────────
 
   const runSimulation = useCallback(async () => {
@@ -958,6 +1506,13 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
         environment_name: e.environment_name,
         notes: e.notes,
       }));
+
+      const weightVal = profile ? parseFloat((profile.weight || '').replace(/[^0-9.]/g, '')) : 70;
+      const heightVal = profile ? parseFloat((profile.height || '').replace(/[^0-9.]/g, '')) : 170;
+      const stepEvent = buildStepExerciseEvent(steps, weightVal || 70, heightVal || 170);
+      if (stepEvent) {
+        events.push(stepEvent);
+      }
 
       // Start async job
       setSimulationProgress('Starting BioGears engine...');
@@ -1074,6 +1629,134 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
       throw err;
     }
   }, [twinUserId, savedRoutines, simulationStatus]);
+
+  // ── Fill Baseline Events ───────────────────────────────────────────────────
+  /**
+   * Fills missing default-routine events for the gap between the last simulation
+   * and now. Returns an EventConflict[] if any ambiguities are detected so the
+   * caller (UI) can show a ConflictResolutionSheet.
+   *
+   * - Events are stamped with source='baseline'.
+   * - Dedup window is ±30 min (tighter than load-routine's ±30 min fingerprint bucket).
+   * - Baseline events are always lower priority: default resolution = 'keep_mine'.
+   */
+  const fillBaselineEvents = useCallback(async (): Promise<void> => {
+    if (!twinUserId) return;
+    const defaultRoutine = savedRoutines.find(r => r.isDefault) || savedRoutines[0];
+    if (!defaultRoutine) {
+      Alert.alert('No Default Routine', 'Please create or set a default routine first.');
+      return;
+    }
+
+    const now = new Date();
+    const currentMinutes = now.getHours() * 60 + now.getMinutes();
+
+    const parseTime = (timeStr: string) => {
+      const [hh, mm] = timeStr.split(':').map(Number);
+      return (hh || 0) * 60 + (mm || 0);
+    };
+
+    // Find the last simulation time if it happened today
+    const lastSession = sessions && sessions.length > 0
+      ? [...sessions].sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())[0]
+      : null;
+
+    let startMinutes = 0;
+    if (lastSession) {
+      const lastSessionDate = new Date(lastSession.timestamp);
+      const today = new Date();
+      if (lastSessionDate.toDateString() === today.toDateString()) {
+        startMinutes = lastSessionDate.getHours() * 60 + lastSessionDate.getMinutes();
+      }
+    }
+
+    // Build candidate baseline events in the gap window
+    const candidates: RoutineEvent[] = [];
+    for (const de of defaultRoutine.events) {
+      const deTime = (de as any).wallTime || '08:00';
+      const deMinutes = parseTime(deTime);
+      if (deMinutes > startMinutes && deMinutes <= currentMinutes) {
+        candidates.push({
+          ...(de as RoutineEvent),
+          id: `evt_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+          wallTime: deTime,
+          source: 'baseline' as const,
+          timestamp: wallTimeToTimestamp(deTime),
+          notes: de.notes ? `${de.notes} (Filled Baseline)` : 'Filled from baseline',
+          displayLabel: (de as any).displayLabel || de.notes || de.event_type,
+          displayIcon: (de as any).displayIcon || '📝',
+        });
+      }
+    }
+
+    if (candidates.length === 0) {
+      const msg = startMinutes > 0
+        ? `No missing baseline events found between the last simulation (${Math.floor(startMinutes / 60)}:${String(startMinutes % 60).padStart(2, '0')}) and now.`
+        : 'No missing baseline events found for the past hours of today.';
+      Alert.alert('Baseline Up to Date', msg);
+      return;
+    }
+
+    // Run conflict detection — baseline events win only if explicitly accepted
+    const conflicts = detectConflicts(candidates, todayEvents);
+
+    // Non-conflicting candidates can be merged straight away
+    const conflictFps = new Set(conflicts.map(c => c.fingerprint));
+    const safeToAdd = candidates.filter(c => !conflictFps.has(getEventFingerprint(c)));
+
+    const commitSafeEvents = () => {
+      if (safeToAdd.length === 0) return;
+      setTodayEvents(prev => {
+        const updated = [...prev, ...safeToAdd].sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+        persistToday(updated);
+        return updated;
+      });
+    };
+
+    if (conflicts.length === 0) {
+      commitSafeEvents();
+      Alert.alert('Baseline Filled', `Added ${safeToAdd.length} missing event(s) to today's timeline.`);
+      return;
+    }
+
+    // Surface conflicts to the UI via the context's pending-conflict state
+    // We commit safe events now and store conflicts for the resolution sheet
+    commitSafeEvents();
+    setPendingConflicts(conflicts);
+    setPendingConflictResolver(() => (resolutions: Record<string, 'keep_mine' | 'use_routine' | 'keep_both'> | null) => {
+      setPendingConflicts([]);
+      setPendingConflictResolver(null);
+
+      if (!resolutions) {
+        return;
+      }
+
+      // Apply resolutions: baseline events are 'incoming'
+      const toAppend: RoutineEvent[] = [];
+      for (const c of conflicts) {
+        const r = resolutions[c.fingerprint] ?? 'keep_mine';
+        if (r === 'use_routine' || r === 'keep_both') {
+          toAppend.push(c.incoming);
+        }
+      }
+
+      if (toAppend.length === 0) return;
+
+      // Remove replaced events when 'use_routine' is chosen
+      setTodayEvents(prev => {
+        let current = [...prev];
+        for (const c of conflicts) {
+          const r = resolutions[c.fingerprint] ?? 'keep_mine';
+          if (r === 'use_routine') {
+            current = current.filter(e => e.id !== c.existing.id);
+          }
+        }
+        const merged = [...current, ...toAppend].sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+        persistToday(merged);
+        return merged;
+      });
+    });
+  }, [twinUserId, savedRoutines, todayEvents, sessions]);
 
   // ─── Undo Last Simulation ─────────────────────────────────────────────────────
   const undoLastSimulation = useCallback(async () => {
@@ -1209,9 +1892,11 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
     todayMacros,
     healthScore,
     bodyMetrics,
+    caloricBalance,
     savedRoutines,
     saveCurrentRoutine,
     loadRoutine,
+    renameRoutine,
     deleteRoutine,
     setDefaultRoutine,
     editingRoutineId,
@@ -1228,8 +1913,19 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
     runSimulation,
     runMultiDayCatchup,
     recheckTwinStatus,
+    addEventAndSimulate,
+    fillBaselineEvents,
+    loadRoutineWithConflictCheck,
 
     undoLastSimulation,
+
+    // Conflict resolution
+    pendingConflicts,
+    pendingConflictResolver,
+    dismissConflicts: () => {
+      setPendingConflicts([]);
+      setPendingConflictResolver(null);
+    },
   };
 
 

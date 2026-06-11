@@ -79,6 +79,7 @@ export const HydrationProvider = ({
   const appState = useRef<AppStateStatus>(AppState.currentState);
   const lastStoredValue = useRef<number>(0);
   const lastCheckedDate = useRef<string>(getTodayDate());
+  const lastSyncTimeRef = useRef<number>(0);
 
   /////////////////////////////////////////////////////////
   // Sync / Reload with Firebase
@@ -262,6 +263,7 @@ export const HydrationProvider = ({
   useEffect(() => {
     const init = async () => {
       await initHydrationHistoryDB();
+      lastSyncTimeRef.current = Date.now();
       await syncHydrationWithFirebase();
 
       if (!isSwitched) {
@@ -289,13 +291,18 @@ export const HydrationProvider = ({
           lastCheckedDate.current = today;
           console.log("💧 New day detected — resetting hydration");
           reset();
+          lastSyncTimeRef.current = Date.now();
           syncHydrationWithFirebase();
           if (!isSwitched) {
             initializeHydrationReminder();
           }
         } else {
-          console.log("💧 Returning to app — syncing hydration");
-          syncHydrationWithFirebase();
+          const now = Date.now();
+          if (now - lastSyncTimeRef.current > 10000) {
+            lastSyncTimeRef.current = now;
+            console.log("💧 Returning to app — syncing hydration");
+            syncHydrationWithFirebase();
+          }
         }
       }
 

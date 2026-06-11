@@ -13,7 +13,7 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import DateTimePicker from "@react-native-community/datetimepicker";
+import TimePicker from "../../components/twin/TimePicker";
 import { auth, db } from "../../services/firebase";
 import { useTheme } from "../../context/ThemeContext";
 
@@ -245,54 +245,6 @@ function formatDisplayTime(timeStr: string): string {
   return `${h12}:${pad(m)} ${isPM ? "PM" : "AM"}`;
 }
 
-// ─── Native Time Picker ───────────────────────────────────────────────────────
-
-function NativeTimePicker({
-  value, onChange, accent = "#3b82f6", colors,
-}: {
-  value: string; onChange: (t: string) => void; accent?: string; colors: any;
-}) {
-  const [showPicker, setShowPicker] = useState(false);
-  const parseTimeToDate = (t: string) => {
-    const [h, m] = (t || "08:00").split(":").map(Number);
-    const d = new Date(); d.setHours(h || 8, m || 0, 0, 0); return d;
-  };
-  const handleChange = (_: any, sel?: Date) => {
-    setShowPicker(false);
-    if (sel) onChange(`${pad(sel.getHours())}:${pad(sel.getMinutes())}`);
-  };
-  return (
-    <>
-      <TouchableOpacity
-        onPress={() => setShowPicker(true)}
-        style={[tpStyles.pill, {
-          borderColor:     value ? accent : colors.inputBorder,
-          backgroundColor: value ? accent + "18" : colors.inputBg,
-        }]}
-        activeOpacity={0.75}
-      >
-        <Text style={[tpStyles.pillTxt, { color: value ? accent : colors.inputPlaceholder }]}>
-          {value ? formatDisplayTime(value) : "Tap to set"}
-        </Text>
-      </TouchableOpacity>
-      {showPicker && (
-        <DateTimePicker
-          value={parseTimeToDate(value)}
-          mode="time" is24Hour={false} display="default"
-          onChange={handleChange}
-        />
-      )}
-    </>
-  );
-}
-
-const tpStyles = StyleSheet.create({
-  pill:    { paddingHorizontal: 16, paddingVertical: 9, borderRadius: 30, borderWidth: 1.5 },
-  pillTxt: { fontSize: 15, fontWeight: "600", letterSpacing: 0.3 },
-});
-
-// ─── TimeField ────────────────────────────────────────────────────────────────
-
 const TimeField = memo(function TimeField({
   label, icon, value, onChange, placeholder, colors, accent,
 }: {
@@ -310,7 +262,8 @@ const TimeField = memo(function TimeField({
         <Text style={[styles.inputPlaceholder, { color: colors.inputPlaceholder, flex: 1 }]}>
           {placeholder}
         </Text>
-        <NativeTimePicker value={value} onChange={onChange} accent={accent} colors={colors} />
+        {/* Custom themed drum picker — no OS-native UI */}
+        <TimePicker value={value} onChange={onChange} accent={accent} />
         {!!value && <Text style={[styles.checkIcon, { color: colors.checkIconColor }]}>✓</Text>}
       </View>
     </View>

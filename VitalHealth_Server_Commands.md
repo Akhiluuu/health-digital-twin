@@ -141,3 +141,26 @@ To install it directly on a connected Android device:
 adb install app/build/outputs/apk/release/app-release.apk
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+How It Works in Dev (__DEV__)
+You can still override the BioGears URL/key via settings-server screen (navigate directly if needed) — it's just hidden from users 
+
+how to do this and ican i be able to do for biogears and heathbot , give an answer?

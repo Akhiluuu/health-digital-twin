@@ -4,11 +4,13 @@
  * Tapping an organ shows its component vitals in a bottom-sheet style overlay.
  */
 import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, Modal, StyleSheet, Dimensions, ScrollView } from 'react-native';
+import { View, Text, TouchableOpacity, Modal, StyleSheet, Dimensions, ScrollView, Pressable } from 'react-native';
+import Svg, { Path, Defs, LinearGradient, Stop, Circle, Line, G } from 'react-native-svg';
+import { Ionicons } from '@expo/vector-icons';
 
 const W = Dimensions.get('window').width;
 const BODY_H = 340;
-const BODY_W = W - 48; // horizontal padding
+const BODY_W = 180;
 
 interface OrganData {
   score: number;
@@ -18,83 +20,310 @@ interface OrganData {
 interface Props {
   scores: Record<string, OrganData>;
   c: any; // theme colors
+  lastVitals?: any;
+  sessions?: any[];
+  profile?: any;
 }
 
 interface OrganPlacement {
   key: string;
   label: string;
   emoji: string;
-  // Position as fraction of body dimensions (0-1)
-  x: number; // 0 = left edge, 1 = right edge
-  y: number; // 0 = top, 1 = bottom
+  x: number; // center x of dot
+  y: number; // center y of dot
   detail: string;
+  icon: string;
 }
 
 const ORGANS: OrganPlacement[] = [
-  { key: 'brain',  label: 'Brain',  emoji: '🧠', x: 0.5,  y: 0.06, detail: 'Core temp stability · HR regulation' },
-  { key: 'heart',  label: 'Heart',  emoji: '🫀', x: 0.44, y: 0.28, detail: 'HR · Systolic BP · Diastolic BP' },
-  { key: 'lungs',  label: 'Lungs',  emoji: '🫁', x: 0.62, y: 0.28, detail: 'SpO₂ · Respiration rate' },
-  { key: 'liver',  label: 'Liver',  emoji: '🟤', x: 0.60, y: 0.42, detail: 'Glucose metabolism · Detoxification' },
-  { key: 'gut',    label: 'Gut',    emoji: '🦠', x: 0.50, y: 0.52, detail: 'Glucose · Core temperature balance' },
-  { key: 'legs',   label: 'Legs',   emoji: '🦵', x: 0.50, y: 0.82, detail: 'Peripheral circulation · Exercise output' },
+  { key: 'brain',  label: 'Brain',  emoji: '🧠', x: 90,  y: 32,  detail: 'Core temperature stability · MAP regulation', icon: 'settings' },
+  { key: 'heart',  label: 'Heart',  emoji: '🫀', x: 98,  y: 105, detail: 'HR · Systolic BP · Diastolic BP · Cardiac Output', icon: 'heart' },
+  { key: 'lungs',  label: 'Lungs',  emoji: '🫁', x: 82,  y: 102, detail: 'SpO₂ · Respiration rate · Tidal volume', icon: 'thermometer' },
+  { key: 'liver',  label: 'Liver',  emoji: '🟤', x: 82,  y: 145, detail: 'Glucose metabolism · Active physical output', icon: 'flash' },
+  { key: 'gut',    label: 'Gut',    emoji: '🦠', x: 98,  y: 165, detail: 'Nutritional digestion · Core body temperature', icon: 'restaurant' },
+  { key: 'legs',   label: 'Legs',   emoji: '🦵', x: 90,  y: 240, detail: 'Peripheral stroke volume · Muscle exercise load', icon: 'walk' },
 ];
 
-function scoreColor(score: number): string {
-  if (score >= 80) return '#10b981';
-  if (score >= 60) return '#f59e0b';
-  return '#ef4444';
+const LEFT_ORGANS: OrganPlacement[] = [
+  { key: 'lungs',  label: 'Lungs',  emoji: '🫁', x: 82,  y: 102, detail: 'SpO₂ · Respiration rate · Tidal volume', icon: 'thermometer' },
+  { key: 'liver',  label: 'Liver',  emoji: '🟤', x: 82,  y: 145, detail: 'Glucose metabolism · Active physical output', icon: 'flash' },
+  { key: 'legs',   label: 'Legs',   emoji: '🦵', x: 90,  y: 240, detail: 'Peripheral stroke volume · Muscle exercise load', icon: 'walk' },
+];
+
+const RIGHT_ORGANS: OrganPlacement[] = [
+  { key: 'brain',  label: 'Brain',  emoji: '🧠', x: 90,  y: 32,  detail: 'Core temperature stability · MAP regulation', icon: 'settings' },
+  { key: 'heart',  label: 'Heart',  emoji: '🫀', x: 98,  y: 105, detail: 'HR · Systolic BP · Diastolic BP · Cardiac Output', icon: 'heart' },
+  { key: 'gut',    label: 'Gut',    emoji: '🦠', x: 98,  y: 165, detail: 'Nutritional digestion · Core body temperature', icon: 'restaurant' },
+];
+
+// Connector line endpoints — where dashed lines point to (left card or right card boundary)
+const ORGAN_TARGETS: Record<string, { x2: number, y2: number }> = {
+  lungs: { x2: 0,   y2: 60  },   // → left card, top row
+  liver: { x2: 0,   y2: 170 },   // → left card, middle row
+  legs:  { x2: 0,   y2: 280 },   // → left card, bottom row
+  brain: { x2: 180, y2: 60  },   // → right card, top row
+  heart: { x2: 180, y2: 170 },   // → right card, middle row
+  gut:   { x2: 180, y2: 280 },   // → right card, bottom row
+};
+
+function statusColor(status?: string): string {
+  const norm = (status || '').toLowerCase();
+  if (norm === 'critical' || norm === 'poor') return '#ef4444'; // Red
+  if (norm === 'warning' || norm === 'fair') return '#f59e0b'; // Amber
+  return '#10b981'; // Green
 }
 
-export default function BodyMap({ scores, c }: Props) {
+export default function BodyMap({ scores, c, lastVitals, sessions = [], profile }: Props) {
   const [selected, setSelected] = useState<OrganPlacement | null>(null);
+  const [activeTab, setActiveTab] = useState<'stats' | 'advice' | 'history'>('stats');
+
   const selectedData = selected ? scores[selected.key] : null;
+
+  // Retrieve relevant vitals for the selected organ
+  const getOrganVitals = (key: string) => {
+    const v = lastVitals || {};
+    const p = profile || {};
+
+    switch (key) {
+      case 'brain':
+        return [
+          { label: 'Core Temp', value: v.core_temperature ? `${v.core_temperature.toFixed(1)} °C` : (p.biogears_resting_temp ? `${p.biogears_resting_temp} °C` : '37.0 °C'), range: '36.5 - 37.5 °C' },
+          { label: 'Mean Arterial Pressure', value: v.map ? `${Math.round(v.map)} mmHg` : '93 mmHg', range: '70 - 105 mmHg' },
+          { label: 'Cognitive Baseline', value: p.biogears_fitness_level ? (p.biogears_fitness_level === 'sedentary' ? 'Normal' : 'High') : 'Normal', range: 'Stable' },
+        ];
+      case 'heart':
+        return [
+          { label: 'Heart Rate', value: v.heart_rate ? `${v.heart_rate} bpm` : (p.biogears_resting_hr ? `${p.biogears_resting_hr} bpm` : '72 bpm'), range: '60 - 100 bpm' },
+          { label: 'Blood Pressure', value: v.blood_pressure || (p.biogears_systolic_bp ? `${p.biogears_systolic_bp}/${p.biogears_diastolic_bp}` : '120/80'), range: '120/80 mmHg' },
+          { label: 'Cardiac Output', value: v.cardiac_output ? `${v.cardiac_output.toFixed(1)} L/min` : '5.1 L/min', range: '4.5 - 6.0 L/min' },
+        ];
+      case 'lungs':
+        return [
+          { label: 'Oxygen Saturation (SpO₂)', value: v.spo2 ? `${v.spo2}%` : '98%', range: '95 - 100%' },
+          { label: 'Respiration Rate', value: v.respiration ? `${Math.round(v.respiration)} /min` : '14 /min', range: '12 - 20 /min' },
+          { label: 'Tidal Volume', value: v.tidal_volume ? `${Math.round(v.tidal_volume)} mL` : '500 mL', range: '400 - 600 mL' },
+        ];
+      case 'liver':
+        return [
+          { label: 'Blood Glucose', value: v.glucose ? `${Math.round(v.glucose)} mg/dL` : '95 mg/dL', range: '70 - 140 mg/dL' },
+          { label: 'VO₂ Max Baseline', value: p.biogears_vo2max ? `${p.biogears_vo2max} ml/kg/min` : '40 ml/kg/min', range: '>35 ml/kg/min' },
+          { label: 'Metabolic Output', value: v.exercise_level ? `${(v.exercise_level * 100).toFixed(0)}%` : 'Resting', range: 'Variable' },
+        ];
+      case 'gut':
+        return [
+          { label: 'Blood Glucose (Post-Meal)', value: v.glucose ? `${Math.round(v.glucose)} mg/dL` : '95 mg/dL', range: '70 - 140 mg/dL' },
+          { label: 'Digestion Load', value: v.exercise_level && v.exercise_level > 0.3 ? 'Suppressed (Exercise)' : 'Standard', range: 'Optimal' },
+          { label: 'Thermal Balance', value: v.core_temperature ? `${v.core_temperature.toFixed(1)} °C` : '37.0 °C', range: '36.5 - 37.5 °C' },
+        ];
+      case 'legs':
+        return [
+          { label: 'Muscle Exercise Level', value: v.exercise_level ? `${(v.exercise_level * 100).toFixed(0)}%` : 'Resting', range: '0 - 100%' },
+          { label: 'Stroke Volume', value: v.stroke_volume ? `${Math.round(v.stroke_volume)} mL` : '72 mL', range: '60 - 100 mL' },
+          { label: 'Fitness Profile', value: p.biogears_fitness_level ? p.biogears_fitness_level.toUpperCase() : 'SEDENTARY', range: 'Active' },
+        ];
+      default:
+        return [];
+    }
+  };
+
+  // Recommendations based on organ score
+  const getOrganAdvice = (key: string, score: number) => {
+    if (score >= 80) {
+      switch (key) {
+        case 'brain': return 'Cognitive regulation and body temperature stability are optimal. Ensure you get 7-8 hours of sleep to protect your neurological baseline.';
+        case 'heart': return 'Your cardiovascular system is in excellent shape. Maintain your current active profile and hydration baseline.';
+        case 'lungs': return 'Oxygenation and breathing mechanics are highly efficient. Keep up the aerobic training or deep breathing habits.';
+        case 'liver': return 'Metabolic rate and glucose utilization show steady regulatory control. Limit simple carbohydrate consumption to keep it stable.';
+        case 'gut': return 'Thermal digestive stability is normal. Keep dietary fiber and hydration habits consistent.';
+        case 'legs': return 'Lower body venous return and vascular output are healthy. Keep moving regularly to maintain muscle tone.';
+        default: return 'Organ system is operating efficiently. Maintain healthy habits.';
+      }
+    } else {
+      switch (key) {
+        case 'brain': return 'Slight cognitive or temperature fluctuations detected. Limit screen time 1 hour before bed, avoid late-night caffeine, and focus on physical hydration.';
+        case 'heart': return 'Cardiovascular strain detected. Limit processed sodium, drink at least 3 liters of water, check resting heart rate values, and avoid extreme stimulants.';
+        case 'lungs': return 'Respiration rate or SpO₂ is slightly off. Dedicate 5-10 minutes to steady diaphragmatic breathing, monitor allergy levels, and ensure clean ventilation.';
+        case 'liver': return 'Elevated or fluctuating blood glucose detected. Space out meal carbohydrates, prioritize low-glycemic sources, and perform a light 15-minute walk post-meal.';
+        case 'gut': return 'Endocrine / core temp fluctuations indicate digestive stress. Rest your stomach, stay hydrated, and stick to light, nutrient-dense meals.';
+        case 'legs': return 'Circulatory pooling or low muscle activity. Break up long sitting sessions by walking for 2 minutes every hour, and execute calf stretches to trigger blood return.';
+        default: return 'Slight regulatory strain. Focus on hydration, healthy nutrition, and moderate daily movement.';
+      }
+    }
+  };
+
+  // Get historical values for relevant vitals across sessions
+  const getHistoryVitals = (key: string) => {
+    const validSessions = sessions
+      .filter(s => s.vitals_snapshot)
+      .slice(0, 5)
+      .reverse(); // oldest to newest for chronological flow
+
+    return validSessions.map(s => {
+      const snap = s.vitals_snapshot!;
+      const dateStr = new Date(s.timestamp).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
+      let val = '--';
+
+      switch (key) {
+        case 'brain':
+          val = snap.core_temperature ? `${snap.core_temperature.toFixed(1)} °C` : '--';
+          break;
+        case 'heart':
+          val = snap.heart_rate ? `${snap.heart_rate} bpm` : '--';
+          break;
+        case 'lungs':
+          val = snap.spo2 ? `${snap.spo2}%` : '--';
+          break;
+        case 'liver':
+          val = snap.glucose ? `${Math.round(snap.glucose)} mg` : '--';
+          break;
+        case 'gut':
+          val = snap.core_temperature ? `${snap.core_temperature.toFixed(1)} °C` : '--';
+          break;
+        case 'legs':
+          val = snap.stroke_volume ? `${Math.round(snap.stroke_volume)} mL` : '--';
+          break;
+      }
+      return { date: dateStr, value: val };
+    });
+  };
+
+  const currentAdvice = selected ? getOrganAdvice(selected.key, selectedData?.score ?? 100) : '';
+  const currentMetrics = selected ? getOrganVitals(selected.key) : [];
+  const currentHistory = selected ? getHistoryVitals(selected.key) : [];
+
+  const renderOrganCard = (organ: OrganPlacement, index: number) => {
+    const data = scores[organ.key];
+    if (!data) return null;
+    const color = statusColor(data.status);
+    const isSelected = selected?.key === organ.key;
+    const tops = [30, 140, 250];
+    return (
+      <TouchableOpacity
+        key={organ.key}
+        style={[
+          styles.organCard,
+          {
+            position: 'absolute',
+            top: tops[index],
+            left: 0,
+            right: 0,
+            height: 60,
+            borderColor: isSelected ? color : color + '35',
+            backgroundColor: color + '15',
+            transform: [{ scale: isSelected ? 1.05 : 1 }],
+          }
+        ]}
+        onPress={() => {
+          setSelected(organ);
+          setActiveTab('stats');
+        }}
+        activeOpacity={0.7}
+      >
+        <View style={{ alignItems: 'center', gap: 2 }}>
+          <Text style={styles.cardEmoji}>{organ.emoji}</Text>
+          <Text style={[styles.cardLabel, { color: c.text }]} numberOfLines={1}>{organ.label}</Text>
+        </View>
+        <View style={[styles.cardScoreBadge, { backgroundColor: color }]}>
+          <Text style={styles.cardScoreTxt}>{data.score}%</Text>
+        </View>
+      </TouchableOpacity>
+    );
+  };
 
   return (
     <View style={[styles.wrap, { backgroundColor: c.card, borderColor: c.border }]}>
-      <Text style={[styles.title, { color: c.text }]}>Organ Health Map</Text>
+      <View style={styles.header}>
+        <View style={{ flex: 1 }}>
+          <Text style={[styles.title, { color: c.text, marginBottom: 4 }]}>Anatomical Map</Text>
+          <Text style={{ color: c.sub, fontSize: 11 }}>Tap an organ system to run diagnostics</Text>
+        </View>
+        <Ionicons name="body-outline" size={20} color={c.accent} style={{ marginLeft: 8 }} />
+      </View>
 
-      {/* Body figure + organ markers */}
-      <View style={[styles.body, { width: BODY_W - 32 }]}>
-        {/* Silhouette figure using text/View shapes */}
-        <View style={styles.silhouetteWrap}>
-          {/* Head */}
-          <View style={[styles.head, { borderColor: c.border }]} />
-          {/* Torso */}
-          <View style={[styles.torso, { borderColor: c.border }]} />
-          {/* Arms */}
-          <View style={styles.armsRow}>
-            <View style={[styles.arm, { borderColor: c.border }]} />
-            <View style={{ width: 50 }} />
-            <View style={[styles.arm, { borderColor: c.border }]} />
-          </View>
-          {/* Legs */}
-          <View style={styles.legsRow}>
-            <View style={[styles.leg, { borderColor: c.border }]} />
-            <View style={[styles.leg, { borderColor: c.border }]} />
-          </View>
+      {/* Spaced out three-column Layout */}
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', height: BODY_H, width: '100%', marginVertical: 8 }}>
+        {/* Left Column */}
+        <View style={{ width: '28%', height: '100%', position: 'relative' }}>
+          {LEFT_ORGANS.map((organ, idx) => renderOrganCard(organ, idx))}
         </View>
 
-        {/* Organ markers — absolutely positioned */}
-        {ORGANS.map(organ => {
-          const data = scores[organ.key];
-          if (!data) return null;
-          const color = scoreColor(data.score);
-          const left = organ.x * (BODY_W - 80) - 18;
-          const top  = organ.y * BODY_H - 18;
-          return (
-            <TouchableOpacity
-              key={organ.key}
-              style={[styles.organDot, { left, top, borderColor: color, backgroundColor: color + '22' }]}
-              onPress={() => setSelected(organ)}
-              activeOpacity={0.7}
-            >
-              <Text style={styles.organEmoji}>{organ.emoji}</Text>
-              <View style={[styles.scoreBadge, { backgroundColor: color }]}>
-                <Text style={styles.scoreBadgeTxt}>{data.score}</Text>
-              </View>
-            </TouchableOpacity>
-          );
-        })}
+        {/* Center SVG Figure */}
+        <View style={{ width: '40%', height: '100%', justifyContent: 'center', alignItems: 'center', position: 'relative' }}>
+          <Svg width="100%" height="100%" viewBox="0 0 180 340" style={{ alignSelf: 'center' }}>
+            <Defs>
+              <LinearGradient id="bodyGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+                <Stop offset="0%" stopColor={c.accent} stopOpacity={0.25} />
+                <Stop offset="100%" stopColor={c.purple || '#8b5cf6'} stopOpacity={0.05} />
+              </LinearGradient>
+            </Defs>
+
+            {/* Futuristic hologram scan background elements */}
+            <Circle cx="90" cy="170" r="140" fill="none" stroke={c.accent + "09"} strokeWidth="1" strokeDasharray="3 6" />
+            <Circle cx="90" cy="170" r="110" fill="none" stroke={c.accent + "05"} strokeWidth="1.5" />
+            <Circle cx="90" cy="96" r="30" fill="none" stroke={c.accent + "0d"} strokeWidth="1" strokeDasharray="2 4" />
+
+            {/* Symmetrical Human Outline */}
+            <Path
+              d="M 90 12 A 20 20 0 0 0 90 52 L 84 52 L 84 62 Q 80 70 65 70 L 55 130 Q 55 136 60 136 L 65 136 L 71 95 L 74 150 L 71 190 L 65 305 Q 65 312 72 312 L 78 312 L 86 195 L 90 195 L 94 195 L 102 312 L 108 312 Q 115 312 115 305 L 109 190 L 106 150 L 109 95 L 115 136 L 120 136 Q 125 136 125 130 L 115 70 Q 100 70 96 62 L 96 52 L 90 52 A 20 20 0 0 0 90 12 Z"
+              fill="url(#bodyGrad)"
+              stroke={c.accent + "44"}
+              strokeWidth={1.5}
+            />
+
+            {/* Glowing guide lines from selected organ to respective card boundary */}
+            {selected && selectedData && (
+              <G>
+                <Circle cx={selected.x} cy={selected.y} r="7" fill="none" stroke={statusColor(selectedData.status)} strokeWidth="1.5" />
+                <Line
+                  x1={selected.x}
+                  y1={selected.y}
+                  x2={ORGAN_TARGETS[selected.key]?.x2 ?? (selected.x > 90 ? 180 : 0)}
+                  y2={ORGAN_TARGETS[selected.key]?.y2 ?? selected.y}
+                  stroke={statusColor(selectedData.status) + "99"}
+                  strokeWidth="1.5"
+                  strokeDasharray="3 3"
+                />
+              </G>
+            )}
+
+            {/* Indicator dots directly inside SVG so they scale exactly with the body path */}
+            {ORGANS.map(organ => {
+              const data = scores[organ.key];
+              if (!data) return null;
+              const color = statusColor(data.status);
+              const isCurrentSelected = selected?.key === organ.key;
+              return (
+                <G key={organ.key} onPress={() => {
+                  setSelected(organ);
+                  setActiveTab('stats');
+                }}>
+                  {/* Outer glowing halo ring */}
+                  <Circle
+                    cx={organ.x}
+                    cy={organ.y}
+                    r={isCurrentSelected ? 12 : 9}
+                    fill={color}
+                    fillOpacity={isCurrentSelected ? 0.45 : 0.25}
+                  />
+                  {/* Core radar dot */}
+                  <Circle
+                    cx={organ.x}
+                    cy={organ.y}
+                    r={isCurrentSelected ? 5.5 : 4}
+                    fill={color}
+                    stroke="#ffffff"
+                    strokeWidth={1.2}
+                  />
+                </G>
+              );
+            })}
+          </Svg>
+        </View>
+
+        {/* Right Column */}
+        <View style={{ width: '28%', height: '100%', position: 'relative' }}>
+          {RIGHT_ORGANS.map((organ, idx) => renderOrganCard(organ, idx))}
+        </View>
       </View>
 
       {/* Legend */}
@@ -107,69 +336,168 @@ export default function BodyMap({ scores, c }: Props) {
         ))}
       </View>
 
-      {/* Organ detail modal */}
+      {/* Organ detail modal (using Sibling Overlay Pattern) */}
       <Modal visible={!!selected} transparent animationType="slide" onRequestClose={() => setSelected(null)}>
-        <TouchableOpacity style={styles.modalBg} activeOpacity={1} onPress={() => setSelected(null)}>
-          <View style={[styles.sheet, { backgroundColor: c.card }]}>
+        <View style={styles.modalBg}>
+          <Pressable style={StyleSheet.absoluteFill} onPress={() => setSelected(null)} />
+          <View style={[styles.sheet, { backgroundColor: c.card, borderTopColor: c.border, borderTopWidth: 1, maxHeight: '80%', width: '100%' }]}>
             <View style={[styles.sheetHandle, { backgroundColor: c.border }]} />
+            
             {selected && selectedData && (
-              <>
-                <Text style={styles.sheetEmoji}>{selected.emoji}</Text>
-                <Text style={[styles.sheetTitle, { color: c.text }]}>{selected.label}</Text>
-                <Text style={[styles.sheetDetail, { color: c.sub }]}>{selected.detail}</Text>
-                <View style={[styles.sheetScore, { backgroundColor: scoreColor(selectedData.score) + '20', borderColor: scoreColor(selectedData.score) }]}>
-                  <Text style={[styles.sheetScoreNum, { color: scoreColor(selectedData.score) }]}>
-                    {selectedData.score}%
-                  </Text>
-                  <Text style={[styles.sheetScoreLabel, { color: c.sub }]}>
-                    {selectedData.status.charAt(0).toUpperCase() + selectedData.status.slice(1)}
-                  </Text>
+              <ScrollView showsVerticalScrollIndicator={false} style={{ width: '100%' }} contentContainerStyle={{ paddingBottom: 24 }}>
+                {/* Header */}
+                <View style={styles.sheetHeader}>
+                  <Text style={styles.sheetEmoji}>{selected.emoji}</Text>
+                  <View style={{ flex: 1, marginLeft: 12 }}>
+                    <Text style={[styles.sheetTitle, { color: c.text }]}>{selected.label} Diagnostics</Text>
+                    <Text style={{ color: c.sub, fontSize: 12 }}>System: {selected.detail}</Text>
+                  </View>
+                  <View style={[styles.sheetScoreBox, { backgroundColor: statusColor(selectedData.status) + '15', borderColor: statusColor(selectedData.status) }]}>
+                    <Text style={[styles.sheetScoreNum, { color: statusColor(selectedData.status) }]}>{selectedData.score}%</Text>
+                    <Text style={{ color: statusColor(selectedData.status), fontSize: 10, fontWeight: '700', textTransform: 'uppercase' }}>
+                      {selectedData.status}
+                    </Text>
+                  </View>
                 </View>
-                <Text style={[styles.sheetHint, { color: c.sub }]}>
-                  Score based on latest simulation vitals. Run a new simulation to update.
-                </Text>
-              </>
+
+                {/* Tabs */}
+                <View style={[styles.tabBar, { borderColor: c.border }]}>
+                  {[
+                    { key: 'stats', label: 'Vitals', icon: 'pulse' },
+                    { key: 'advice', label: 'Doctor Notes', icon: 'document-text' },
+                    { key: 'history', label: 'Trends', icon: 'trending-up' }
+                  ].map(tab => {
+                    const active = activeTab === tab.key;
+                    return (
+                      <TouchableOpacity
+                        key={tab.key}
+                        style={[styles.tabBtn, active && { borderBottomColor: c.accent }]}
+                        onPress={() => setActiveTab(tab.key as any)}
+                      >
+                        <Ionicons name={tab.icon as any} size={15} color={active ? c.accent : c.sub} />
+                        <Text style={[styles.tabText, { color: active ? c.accent : c.sub, fontWeight: active ? '700' : '500' }]}>
+                          {tab.label}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+
+                {/* Tab Content */}
+                {activeTab === 'stats' && (
+                  <View style={styles.tabContent}>
+                    <Text style={[styles.tabSectionTitle, { color: c.text }]}>Physiological Parameters</Text>
+                    {currentMetrics.length > 0 ? (
+                      currentMetrics.map((m, idx) => (
+                        <View key={idx} style={[styles.metricRow, { borderColor: c.border }]}>
+                          <View>
+                            <Text style={[styles.metricLabel, { color: c.text }]}>{m.label}</Text>
+                            <Text style={{ color: c.sub, fontSize: 11 }}>Normal: {m.range}</Text>
+                          </View>
+                          <Text style={[styles.metricValue, { color: c.accent }]}>{m.value}</Text>
+                        </View>
+                      ))
+                    ) : (
+                      <Text style={{ color: c.sub, fontSize: 12, paddingVertical: 12 }}>No baseline metrics available.</Text>
+                    )}
+                  </View>
+                )}
+
+                {activeTab === 'advice' && (
+                  <View style={styles.tabContent}>
+                    <Text style={[styles.tabSectionTitle, { color: c.text }]}>Clinical Guidance</Text>
+                    <View style={[styles.adviceCard, { backgroundColor: c.bg, borderColor: c.border }]}>
+                      <Ionicons name="medical" size={24} color={c.accent} style={{ marginBottom: 8 }} />
+                      <Text style={[styles.adviceText, { color: c.text }]}>{currentAdvice}</Text>
+                    </View>
+                    <Text style={{ color: c.sub, fontSize: 11, marginTop: 12, fontStyle: 'italic', textAlign: 'center' }}>
+                      Diagnostic scores are calculated by the BioGears engine based on current physical baselines and simulation history.
+                    </Text>
+                  </View>
+                )}
+
+                {activeTab === 'history' && (
+                  <View style={styles.tabContent}>
+                    <Text style={[styles.tabSectionTitle, { color: c.text }]}>Recent Simulation History</Text>
+                    {currentHistory.length > 0 ? (
+                      <View style={{ marginTop: 8 }}>
+                        {currentHistory.map((item, idx) => (
+                          <View key={idx} style={[styles.historyRow, { borderColor: c.border }]}>
+                            <View style={styles.historyDotWrap}>
+                              <View style={[styles.historyTimelineDot, { backgroundColor: c.accent }]} />
+                              {idx < currentHistory.length - 1 && <View style={[styles.historyTimelineLine, { backgroundColor: c.border }]} />}
+                            </View>
+                            <View style={styles.historyDetails}>
+                              <Text style={[styles.historyDate, { color: c.text }]}>{item.date}</Text>
+                              <Text style={{ color: c.sub, fontSize: 11 }}>Simulated Value</Text>
+                            </View>
+                            <Text style={[styles.historyVal, { color: c.text }]}>{item.value}</Text>
+                          </View>
+                        ))}
+                      </View>
+                    ) : (
+                      <View style={{ alignItems: 'center', paddingVertical: 24 }}>
+                        <Ionicons name="time-outline" size={32} color={c.sub} />
+                        <Text style={{ color: c.sub, fontSize: 12, marginTop: 8 }}>No past sessions found for this active twin.</Text>
+                      </View>
+                    )}
+                  </View>
+                )}
+              </ScrollView>
             )}
           </View>
-        </TouchableOpacity>
+        </View>
       </Modal>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  wrap: { borderRadius: 20, padding: 16, borderWidth: 1, marginBottom: 16 },
-  title: { fontWeight: '700', fontSize: 16, marginBottom: 12 },
-  body: { height: BODY_H, position: 'relative', alignSelf: 'center' },
-  silhouetteWrap: { position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, alignItems: 'center' },
-  head: { width: 44, height: 44, borderRadius: 22, borderWidth: 1.5, marginTop: 10, marginBottom: 4 },
-  torso: { width: 68, height: 100, borderRadius: 10, borderWidth: 1.5, marginBottom: 4 },
-  armsRow: { flexDirection: 'row', marginBottom: 4 },
-  arm: { width: 16, height: 80, borderRadius: 8, borderWidth: 1.5 },
-  legsRow: { flexDirection: 'row', gap: 10 },
-  leg: { width: 20, height: 90, borderRadius: 10, borderWidth: 1.5 },
-  organDot: {
-    position: 'absolute', width: 36, height: 36, borderRadius: 18,
-    borderWidth: 2, justifyContent: 'center', alignItems: 'center',
+  wrap: { borderRadius: 24, padding: 18, borderWidth: 1, marginBottom: 16 },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 },
+  title: { fontWeight: '800', fontSize: 17 },
+  body: { height: BODY_H, position: 'relative', alignSelf: 'center', marginVertical: 8 },
+  organCard: {
+    borderRadius: 14,
+    borderWidth: 1.5,
+    paddingVertical: 10,
+    paddingHorizontal: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    width: '100%',
   },
-  organEmoji: { fontSize: 16 },
-  scoreBadge: {
-    position: 'absolute', bottom: -4, right: -4, borderRadius: 8,
-    paddingHorizontal: 4, paddingVertical: 1, minWidth: 24, alignItems: 'center',
-  },
-  scoreBadgeTxt: { color: '#fff', fontSize: 8, fontWeight: '800' },
-  legend: { flexDirection: 'row', justifyContent: 'center', gap: 16, marginTop: 8 },
-  legendItem: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  legendDot: { width: 8, height: 8, borderRadius: 4 },
-  legendTxt: { fontSize: 10, fontWeight: '500' },
-  modalBg: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.5)' },
-  sheet: { borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, alignItems: 'center' },
-  sheetHandle: { width: 40, height: 4, borderRadius: 2, marginBottom: 20 },
-  sheetEmoji: { fontSize: 48, marginBottom: 8 },
-  sheetTitle: { fontSize: 22, fontWeight: '800', marginBottom: 4 },
-  sheetDetail: { fontSize: 13, marginBottom: 16, textAlign: 'center', lineHeight: 20 },
-  sheetScore: { borderRadius: 16, borderWidth: 1.5, paddingHorizontal: 32, paddingVertical: 12, alignItems: 'center', marginBottom: 16 },
-  sheetScoreNum: { fontSize: 40, fontWeight: '900' },
-  sheetScoreLabel: { fontSize: 13, marginTop: 2 },
-  sheetHint: { fontSize: 11, textAlign: 'center', lineHeight: 16 },
+  cardEmoji: { fontSize: 18 },
+  cardLabel: { fontSize: 11, fontWeight: '700', textAlign: 'center' },
+  cardScoreBadge: { borderRadius: 8, paddingHorizontal: 5, paddingVertical: 1.5, minWidth: 26, alignItems: 'center' },
+  cardScoreTxt: { color: '#fff', fontSize: 9, fontWeight: '900' },
+  legend: { flexDirection: 'row', justifyContent: 'center', gap: 16, marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.03)' },
+  legendItem: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  legendDot: { width: 9, height: 9, borderRadius: 4.5 },
+  legendTxt: { fontSize: 10, fontWeight: '600' },
+  modalBg: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.6)' },
+  sheet: { borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingHorizontal: 20, paddingTop: 14, alignItems: 'center' },
+  sheetHandle: { width: 44, height: 4, borderRadius: 2, marginBottom: 16 },
+  sheetHeader: { flexDirection: 'row', alignItems: 'center', width: '100%', marginBottom: 18 },
+  sheetEmoji: { fontSize: 42 },
+  sheetTitle: { fontSize: 19, fontWeight: '800' },
+  sheetScoreBox: { borderRadius: 14, borderWidth: 1.5, paddingHorizontal: 16, paddingVertical: 6, alignItems: 'center' },
+  sheetScoreNum: { fontSize: 22, fontWeight: '900' },
+  tabBar: { flexDirection: 'row', width: '100%', borderBottomWidth: 1, marginBottom: 16, gap: 12 },
+  tabBtn: { flex: 1, paddingVertical: 10, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6, borderBottomWidth: 2, borderBottomColor: 'transparent' },
+  tabText: { fontSize: 13 },
+  tabContent: { width: '100%', marginTop: 4 },
+  tabSectionTitle: { fontSize: 14, fontWeight: '700', marginBottom: 12 },
+  metricRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 11, borderBottomWidth: 1 },
+  metricLabel: { fontSize: 13, fontWeight: '600' },
+  metricValue: { fontSize: 14, fontWeight: '700' },
+  adviceCard: { borderRadius: 16, borderWidth: 1, padding: 16, marginTop: 4 },
+  adviceText: { fontSize: 13, lineHeight: 20 },
+  historyRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12, borderBottomWidth: 1 },
+  historyDotWrap: { width: 20, alignItems: 'center', position: 'relative', height: '100%', justifyContent: 'center' },
+  historyTimelineDot: { width: 10, height: 10, borderRadius: 5, zIndex: 2 },
+  historyTimelineLine: { position: 'absolute', top: 18, bottom: -18, width: 2, zIndex: 1 },
+  historyDetails: { flex: 1, marginLeft: 12 },
+  historyDate: { fontSize: 13, fontWeight: '600' },
+  historyVal: { fontSize: 14, fontWeight: '700' },
 });

@@ -59,21 +59,16 @@ try {
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const KEY_SERVER_IP    = "@hai_server_ip";
-const KEY_SERVER_PORT  = "@hai_server_port";
-const KEY_CHAT_HISTORY = "@hai_chat_history";
-const DEFAULT_PORT     = "8000";
-const DEFAULT_AI_URL   = "http://151.185.41.234/ai";
-const TOP_K            = 5;
+// ── Production server — hardcoded, no user config needed ─────────────────────
+const PRODUCTION_AI_URL = "http://151.185.41.234/ai";
+const KEY_CHAT_HISTORY  = "@hai_chat_history";
+const TOP_K             = 5;
 const MAX_SAVED_SESSIONS = 30;
 
 // ─── Utility Functions ────────────────────────────────────────────────────────
 
-const buildUrl = (ip: string, port: string) => {
-  const cleaned = ip.trim().replace(/\/$/, "");
-  if (cleaned.startsWith("http://") || cleaned.startsWith("https://")) return cleaned;
-  return `http://${cleaned}:${(port || "8000").trim()}`;
-};
+// Always resolves to the production AI server
+const getAiBaseUrl = (): string => PRODUCTION_AI_URL;
 
 const genId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 
@@ -490,15 +485,10 @@ export default function AIHealthScreen() {
   const { medicines }                      = useMedicine();
   const { activeSymptoms, historySymptoms } = useSymptoms();
 
-  // Server
-  const [serverIp, setServerIp]     = useState("");
-  const [serverPort, setServerPort] = useState(DEFAULT_PORT);
+  // Server — always production, no user config
   const [connected, setConnected]   = useState(false);
   const router                      = useRouter();
   const [modelLoading, setModelLoading] = useState(false);
-
-  // FIX: showConfig state was missing — used in doSend when serverIp is empty
-  const [showConfig, setShowConfig] = useState(false);
 
   // Documents
   const [docs, setDocs]                   = useState<Doc[]>([]);
@@ -636,15 +626,15 @@ export default function AIHealthScreen() {
 
   // ── Fetch greeting ──────────────────────────────────────────────────────────
 
-  const fetchGreeting = async (ip: string, port: string) => {
+  const fetchGreeting = async () => {
     try {
-      const res  = await fetch(`${buildUrl(ip, port)}/greeting`);
+      const res  = await fetch(`${getAiBaseUrl()}/greeting`);
       if (!res.ok) throw new Error();
       const data = await res.json();
       const text = data.message || "👋 Hello! I'm **Dr. Aria**, your personal health assistant. How may I help you today?";
       setMessages([{ id: "welcome", text, sender: "ai", timestamp: new Date() }]);
     } catch {
-      setMessages([{ id: "welcome", text: "👋 Hello! I'm **Dr. Aria**, your personal health assistant.\n\nConfigure the server IP (⚙️) to get started.", sender: "ai", timestamp: new Date() }]);
+      setMessages([{ id: "welcome", text: "👋 Hello! I'm **Dr. Aria**, your personal health assistant. How can I help you today?", sender: "ai", timestamp: new Date() }]);
     }
   };
 
@@ -662,23 +652,20 @@ export default function AIHealthScreen() {
     })();
   }, []);
 
-  // ── Focus: load config ───────────────────────────────────────────────────────
+  // ── Focus: auto-connect to production server ─────────────────────────────────
   useFocusEffect(
     React.useCallback(() => {
       (async () => {
         try {
-          const ip      = (await AsyncStorage.getItem(KEY_SERVER_IP))   || "";
-          const port    = (await AsyncStorage.getItem(KEY_SERVER_PORT)) || DEFAULT_PORT;
-
-          setServerIp(ip); setServerPort(port);
-
-          if (!ip) {
-            setConnected(false);
-          } else {
-            try { const r = await fetch(`${buildUrl(ip, port)}/health`); setConnected(r.ok); } catch { setConnected(false); }
-            if (messages.length <= 1) await fetchGreeting(ip, port);
-          }
-        } catch (e) { console.error(e); }
+          // Ping the production server silently
+          const r = await fetch(`${getAiBaseUrl()}/health`);
+          setConnected(r.ok);
+          if (r.ok && messages.length <= 1) await fetchGreeting();
+        } catch {
+          setConnected(false);
+          // Still show greeting — server may be temporarily unreachable
+          if (messages.length <= 1) await fetchGreeting();
+        }
       })();
     }, [messages.length])
   );
@@ -705,12 +692,12 @@ export default function AIHealthScreen() {
   // ── Auto-send symptom ───────────────────────────────────────────────────────
 
   useEffect(() => {
-    if (!symptom || autoSent || !serverIp) return;
+    if (!symptom || autoSent) return;
     const text = Array.isArray(symptom) ? symptom[0] : symptom;
     if (!text.trim()) return;
     const t = setTimeout(async () => { await doSend(text); setAutoSent(true); }, 800);
     return () => clearTimeout(t);
-  }, [symptom, serverIp]);
+  }, [symptom]);
 
   // ── Auto-scroll ─────────────────────────────────────────────────────────────
 
@@ -720,7 +707,7 @@ export default function AIHealthScreen() {
 
   const handleNewChat = async () => {
     setCurrentSessionId(genId()); historyRef.current = [];
-    await fetchGreeting(serverIp, serverPort);
+    await fetchGreeting();
   };
 
   const handleSelectSession = (session: ChatSession) => {
@@ -740,12 +727,11 @@ export default function AIHealthScreen() {
 
   const doSend = async (query: string) => {
     if (!query.trim() || loading) return;
-    if (!serverIp) { setShowConfig(true); return; }
 
     setMessages((prev) => [...prev, { id: genId(), text: query, sender: "user", timestamp: new Date() }]);
     setLoading(true);
 
-    const baseUrl = buildUrl(serverIp, serverPort);
+    const baseUrl = getAiBaseUrl();
     const history = [...historyRef.current];
 
     try {

@@ -124,8 +124,9 @@ async function sendSedentaryNotif(): Promise<void> {
   }
 }
 
-export function startAccelerometerTracking() {
+export async function startAccelerometerTracking() {
   if (_accelSub) return; // already running
+  await loadPersistedState();
 
   try {
     const { Accelerometer } = require("expo-sensors");
@@ -174,7 +175,7 @@ export function getInMemorySessionSecs() { return _sessionSecs; }
 TaskManager.defineTask(STEP_TASK_NAME, async () => {
   try {
     await loadPersistedState();
-    startAccelerometerTracking();
+    await startAccelerometerTracking();
     return BackgroundFetch.BackgroundFetchResult.NewData;
   } catch {
     return BackgroundFetch.BackgroundFetchResult.Failed;

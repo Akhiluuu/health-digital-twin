@@ -3,7 +3,7 @@
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as SecureStore from 'expo-secure-store';
-import { doc, setDoc, deleteDoc, writeBatch, collection, getDocs } from "firebase/firestore";
+import { doc, setDoc, deleteDoc, writeBatch, collection, getDocs, getDoc, serverTimestamp } from "firebase/firestore";
 import { db, auth } from "./firebase";
 
 // ─── Configuration ────────────────────────────────────────────────────────────
@@ -31,6 +31,10 @@ function sanitizeBiogearsUrl(raw: string): string {
 }
 
 export async function getBiogearsBaseUrl(): Promise<string> {
+  // In production builds, always use the hardcoded cloud server.
+  // In dev mode (__DEV__), honour any AsyncStorage override so developers
+  // can point the app at a local instance without rebuilding.
+  if (!__DEV__) return DEFAULT_BASE_URL;
   try {
     const stored = await AsyncStorage.getItem(BASE_URL_KEY);
     const raw = stored || DEFAULT_BASE_URL;
@@ -91,6 +95,8 @@ export async function setApiKey(key: string): Promise<void> {
   await SecureStore.setItemAsync(API_KEY_STORE, key);
 }
 export async function getApiKey(): Promise<string> {
+  // In production, always return the bundled fallback key — no user input needed.
+  if (!__DEV__) return FALLBACK_API_KEY;
   try {
     const stored = await SecureStore.getItemAsync(API_KEY_STORE);
     return stored && stored.trim().length > 0 ? stored.trim() : FALLBACK_API_KEY;
@@ -484,12 +490,32 @@ export async function getTwinProfile(userId: string): Promise<any> {
   return apiFetch(`/profiles/${userId}`, undefined, 10_000);
 }
 
+export interface CaloricBalanceResponse {
+  bmr_kcal_day: number;
+  estimated_burn_kcal: number;
+  meal_intake_kcal: number;
+  caloric_balance: number;
+  balance_status: string;
+  note: string;
+}
+
+/**
+ * Get BMR and caloric balance estimation based on events
+ */
+export async function getCaloricBalance(userId: string, events: BiogearsHealthEvent[]): Promise<CaloricBalanceResponse> {
+  return apiFetch(`/analytics/caloric-balance/${userId}`, {
+    method: 'POST',
+    body: JSON.stringify(events),
+  }, 10_000);
+}
+
 /**
  * Get the full substance library from BioGears
  */
 export async function getSubstances(): Promise<{ substances: Record<string, string[]>; total: number }> {
   return apiFetch('/substances', undefined, 10_000);
 }
+
 
 
 // ─── Session Metadata (local AsyncStorage) ───────────────────────────────────
@@ -632,11 +658,11 @@ export async function markRoutineUsed(userId: string, routineId: string, ownerUi
   }
 }
 
-export async function setDefaultRoutine(userId: string, routineId: string, ownerUid?: string): Promise<void> {
+export async function setDefaultRoutine(userId: string, routineId: string, ownerUid?: string, forceValue?: boolean): Promise<void> {
   const existing = await loadSavedRoutines(userId);
   const updated = existing.map(r => ({
     ...r,
-    isDefault: r.id === routineId ? !r.isDefault : false // toggle if clicked again, unset others
+    isDefault: r.id === routineId ? (forceValue !== undefined ? forceValue : !r.isDefault) : false
   }));
   await AsyncStorage.setItem(ROUTINES_KEY(userId), JSON.stringify(updated));
 
@@ -719,4 +745,38 @@ export async function syncDigitalTwinDataFromFirestore(userId: string, ownerUid?
   } catch (err) {
     console.warn("⚠️ Failed to sync Digital Twin data from Firestore:", err);
   }
+}
+
+export async function syncPendingEvents(userId: string, events: any[], ownerUid?: string): Promise<void> {
+  try {
+    const user = auth.currentUser;
+    const firestoreUid = ownerUid || user?.uid;
+    if (firestoreUid) {
+      await setDoc(doc(db, "users", firestoreUid, "biogears_pending", "today"), {
+        userId,
+        events,
+        updatedAt: serverTimestamp(),
+      });
+      console.log(`☁️ Pending events synced to Firestore for owner: ${firestoreUid}`);
+    }
+  } catch (err) {
+    console.warn("⚠️ Failed to sync pending events to Firestore:", err);
+  }
+}
+
+export async function fetchPendingEvents(userId: string, ownerUid?: string): Promise<any[] | null> {
+  try {
+    const user = auth.currentUser;
+    const firestoreUid = ownerUid || user?.uid;
+    if (firestoreUid) {
+      const snap = await getDoc(doc(db, "users", firestoreUid, "biogears_pending", "today"));
+      if (snap.exists()) {
+        const data = snap.data();
+        return data.events || [];
+      }
+    }
+  } catch (err) {
+    console.warn("⚠️ Failed to fetch pending events from Firestore:", err);
+  }
+  return null;
 }

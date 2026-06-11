@@ -8,6 +8,7 @@ module.exports = function (api) {
     plugins: [
       // Strip all console.log/warn/error in production APK builds
       ...(isProduction ? ["transform-remove-console"] : []),
+      "react-native-reanimated/plugin",
     ],
   };
 };

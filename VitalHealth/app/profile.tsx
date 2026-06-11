@@ -72,8 +72,8 @@ const HEIGHT_OPTIONS = Array.from({ length: 151 }, (_, i) => String(100 + i));
 const WEIGHT_OPTIONS = Array.from({ length: 171 }, (_, i) => String(30 + i));
 
 const MONTHS = [
-  "January","February","March","April","May","June",
-  "July","August","September","October","November","December",
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December",
 ];
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -225,9 +225,9 @@ function DatePickerModal({
   };
 
   const init = parseDMY(value);
-  const [day,   setDay]   = useState(init.day);
+  const [day, setDay] = useState(init.day);
   const [month, setMonth] = useState(init.month);
-  const [year,  setYear]  = useState(init.year);
+  const [year, setYear] = useState(init.year);
 
   useEffect(() => {
     if (visible) {
@@ -237,9 +237,9 @@ function DatePickerModal({
   }, [visible]);
 
   const daysInMonth = new Date(year, month, 0).getDate();
-  const days   = Array.from({ length: daysInMonth }, (_, i) => i + 1);
+  const days = Array.from({ length: daysInMonth }, (_, i) => i + 1);
   const months = MONTHS;
-  const years  = Array.from({ length: 100 }, (_, i) => new Date().getFullYear() - i);
+  const years = Array.from({ length: 100 }, (_, i) => new Date().getFullYear() - i);
 
   const ColPicker = ({
     items,
@@ -326,7 +326,7 @@ function DatePickerModal({
               style={{ flex: 1, paddingVertical: 12, borderRadius: 12, backgroundColor: colors.accent, alignItems: "center" }}
               onPress={() => {
                 const clampedDay = Math.min(day, new Date(year, month, 0).getDate());
-                onConfirm(`${String(clampedDay).padStart(2,"0")}/${String(month).padStart(2,"0")}/${year}`);
+                onConfirm(`${String(clampedDay).padStart(2, "0")}/${String(month).padStart(2, "0")}/${year}`);
                 onClose();
               }}
             >
@@ -347,22 +347,22 @@ export default function ProfileScreen() {
 
   const c = globalColors[theme];
   const colors = {
-    bg:             c.bg,
-    card:           c.card,
-    border:         c.border,
-    text:           c.text,
-    subText:        c.sub,
-    accent:         c.accent,
-    accentLight:    theme === "light" ? "#dbeafe" : "#1e3a8a",
-    success:        theme === "light" ? "#10b981" : "#22c55e",
-    warning:        "#f59e0b",
-    danger:         c.danger,
-    purple:         theme === "light" ? "#8b5cf6" : "#a78bfa",
-    modalOverlay:   theme === "light" ? "rgba(0,0,0,0.3)" : "rgba(0,0,0,0.6)",
-    gradientStart:  theme === "light" ? "#2563eb" : "#3b82f6",
-    gradientEnd:    theme === "light" ? "#7c3aed" : "#8b5cf6",
-    familyBg:       theme === "light" ? "#f0f9ff" : "#0c1929",
-    familyBorder:   theme === "light" ? "#bae6fd" : "#1e3a5f",
+    bg: c.bg,
+    card: c.card,
+    border: c.border,
+    text: c.text,
+    subText: c.sub,
+    accent: c.accent,
+    accentLight: theme === "light" ? "#dbeafe" : "#1e3a8a",
+    success: theme === "light" ? "#10b981" : "#22c55e",
+    warning: "#f59e0b",
+    danger: c.danger,
+    purple: theme === "light" ? "#8b5cf6" : "#a78bfa",
+    modalOverlay: theme === "light" ? "rgba(0,0,0,0.3)" : "rgba(0,0,0,0.6)",
+    gradientStart: theme === "light" ? "#2563eb" : "#3b82f6",
+    gradientEnd: theme === "light" ? "#7c3aed" : "#8b5cf6",
+    familyBg: theme === "light" ? "#f0f9ff" : "#0c1929",
+    familyBorder: theme === "light" ? "#bae6fd" : "#1e3a5f",
   };
 
   const { addMember, removeMember, members, activeMemberId, activeProfile, isSwitched, switchToMember, switchToSelf, updateActiveProfile, isSwitchLoading, refreshMembers } = useFamily();
@@ -435,36 +435,36 @@ export default function ProfileScreen() {
     language: "English",
   });
 
-  const [myInviteCode,    setMyInviteCode]    = useState<string>("");
-  const [addMemberModal,  setAddMemberModal]  = useState(false);
-  const [qrModalVisible,  setQrModalVisible]  = useState(false);
-  const [switchAnim]                          = useState(new Animated.Value(1));
+  const [myInviteCode, setMyInviteCode] = useState<string>("");
+  const [addMemberModal, setAddMemberModal] = useState(false);
+  const [qrModalVisible, setQrModalVisible] = useState(false);
+  const [switchAnim] = useState(new Animated.Value(1));
   // members comes directly from FamilyContext — no local copy needed
 
-  const [newMemberName,     setNewMemberName]     = useState("");
+  const [newMemberName, setNewMemberName] = useState("");
   const [newMemberRelation, setNewMemberRelation] = useState("");
   const [newMemberHealthId, setNewMemberHealthId] = useState("");
-  const [searchLoading,     setSearchLoading]     = useState(false);
-  const [searchError,       setSearchError]       = useState("");
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [searchError, setSearchError] = useState("");
 
   // ── Picker State ───────────────────────────────────────────────────────────
-  const [showGenderPicker,    setShowGenderPicker]    = useState(false);
-  const [showBloodPicker,     setShowBloodPicker]     = useState(false);
-  const [showDatePicker,      setShowDatePicker]      = useState(false);
-  const [showHeightPicker,    setShowHeightPicker]    = useState(false);
-  const [showWeightPicker,    setShowWeightPicker]    = useState(false);
+  const [showGenderPicker, setShowGenderPicker] = useState(false);
+  const [showBloodPicker, setShowBloodPicker] = useState(false);
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [showHeightPicker, setShowHeightPicker] = useState(false);
+  const [showWeightPicker, setShowWeightPicker] = useState(false);
 
   // ── Modal State ────────────────────────────────────────────────────────────
   const [editProfileModal, setEditProfileModal] = useState(false);
   const [editMedicalModal, setEditMedicalModal] = useState(false);
-  const [emergencyModal,   setEmergencyModal]   = useState(false);
+  const [emergencyModal, setEmergencyModal] = useState(false);
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
   // ── Delete Account State ───────────────────────────────────────────────────
   const [deletePasswordModal, setDeletePasswordModal] = useState(false);
-  const [deletePassword,      setDeletePassword]      = useState("");
-  const [deleteLoading,       setDeleteLoading]       = useState(false);
-  const [deleteError,         setDeleteError]         = useState("");
+  const [deletePassword, setDeletePassword] = useState("");
+  const [deleteLoading, setDeleteLoading] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
 
   useEffect(() => {
     loadSettings();
@@ -497,7 +497,7 @@ export default function ProfileScreen() {
 
       // 1️⃣ Try to read from Firestore first (most reliable)
       const docRef = doc(db, "users", user.uid);
-      const snap   = await getDoc(docRef);
+      const snap = await getDoc(docRef);
 
       if (snap.exists()) {
         const data = snap.data();
@@ -511,10 +511,10 @@ export default function ProfileScreen() {
 
       // 2️⃣ Fallback: generate a deterministic code from UID and save it
       // (This runs only once for brand-new accounts that never had a code)
-      const uid   = user.uid.replace(/-/g, "");
+      const uid = user.uid.replace(/-/g, "");
       const part1 = uid.substring(0, 4).toUpperCase();
       const part2 = uid.substring(uid.length - 4).toUpperCase();
-      const code  = `VT-${part1}-${part2}`;
+      const code = `VT-${part1}-${part2}`;
 
       setMyInviteCode(code);
       await AsyncStorage.setItem("myInviteCode", code);
@@ -533,8 +533,8 @@ export default function ProfileScreen() {
         await firebaseUpdateProfile({
           ...newProfile,
           emergencyContact: {
-            name:     newProfile.emergencyContact?.name     || "",
-            phone:    newProfile.emergencyContact?.phone    || "",
+            name: newProfile.emergencyContact?.name || "",
+            phone: newProfile.emergencyContact?.phone || "",
             relation: newProfile.emergencyContact?.relation || "",
           },
         }, activeMemberId);
@@ -543,8 +543,8 @@ export default function ProfileScreen() {
         await updateProfile({
           ...newProfile,
           emergencyContact: {
-            name:     newProfile.emergencyContact?.name     || "",
-            phone:    newProfile.emergencyContact?.phone    || "",
+            name: newProfile.emergencyContact?.name || "",
+            phone: newProfile.emergencyContact?.phone || "",
             relation: newProfile.emergencyContact?.relation || "",
           },
         });
@@ -568,7 +568,7 @@ export default function ProfileScreen() {
           });
           const twinId = getTwinId(newProfile);
           await BiogearsAPI.saveRoutine(twinId, routine, uid);
-          await BiogearsAPI.setDefaultRoutine(twinId, routine.id, uid);
+          await BiogearsAPI.setDefaultRoutine(twinId, routine.id, uid, true);
           console.log('[Profile] ✅ Recalculated and updated default routine for twin:', twinId);
         }
       }
@@ -659,7 +659,7 @@ export default function ProfileScreen() {
       if (!user) { setSearchError("You must be logged in."); return; }
 
       const rawSub = `${user.uid}-dep-${Date.now()}`;
-      const hash   = rawSub.replace(/[^a-zA-Z0-9]/g, "").substring(0, 20);
+      const hash = rawSub.replace(/[^a-zA-Z0-9]/g, "").substring(0, 20);
       const depUid = `dep_${hash}`;
 
       const part1 = hash.substring(0, 4).toUpperCase();
@@ -667,7 +667,7 @@ export default function ProfileScreen() {
       const depCode = `VT-${part1}-${part2}`;
 
       const firstName = newMemberName.trim().split(" ")[0];
-      const lastName  = newMemberName.trim().split(" ").slice(1).join(" ");
+      const lastName = newMemberName.trim().split(" ").slice(1).join(" ");
 
       await setDoc(doc(db, "users", depUid), {
         firstName,
@@ -780,11 +780,10 @@ export default function ProfileScreen() {
 
   const openModal = (setter: (v: boolean) => void) => {
     setter(true);
-    Animated.timing(fadeAnim, { toValue: 1, duration: 300, useNativeDriver: true }).start();
   };
 
   const closeModal = (setter: (v: boolean) => void) => {
-    Animated.timing(fadeAnim, { toValue: 0, duration: 200, useNativeDriver: true }).start(() => setter(false));
+    setter(false);
   };
 
   const pickImage = async () => {
@@ -873,12 +872,12 @@ export default function ProfileScreen() {
         </TouchableOpacity>
       </View>
       <View style={styles.infoGrid}>
-        <InfoRow label="Full Name"     value={`${safeProfile.firstName} ${safeProfile.lastName}`} icon="person-outline"      colors={colors} />
-        <InfoRow label="Email"         value={safeProfile.email}                                   icon="mail-outline"        colors={colors} />
-        <InfoRow label="Phone"         value={safeProfile.phone ? `+91 ${safeProfile.phone}` : "--"} icon="call-outline"     colors={colors} />
-        <InfoRow label="Date of Birth" value={safeProfile.dateOfBirth}                             icon="calendar-outline"    colors={colors} />
-        <InfoRow label="Gender"        value={safeProfile.gender}                                  icon="male-female-outline" colors={colors} />
-        <InfoRow label="Blood Group"   value={safeProfile.bloodGroup}                              icon="water-outline"       colors={colors} />
+        <InfoRow label="Full Name" value={`${safeProfile.firstName} ${safeProfile.lastName}`} icon="person-outline" colors={colors} />
+        <InfoRow label="Email" value={safeProfile.email} icon="mail-outline" colors={colors} />
+        <InfoRow label="Phone" value={safeProfile.phone ? `+91 ${safeProfile.phone}` : "--"} icon="call-outline" colors={colors} />
+        <InfoRow label="Date of Birth" value={safeProfile.dateOfBirth} icon="calendar-outline" colors={colors} />
+        <InfoRow label="Gender" value={safeProfile.gender} icon="male-female-outline" colors={colors} />
+        <InfoRow label="Blood Group" value={safeProfile.bloodGroup} icon="water-outline" colors={colors} />
       </View>
     </View>
   );
@@ -887,7 +886,7 @@ export default function ProfileScreen() {
     if (!dob) return 30;
     const parts = dob.split("/");
     if (parts.length === 3) {
-      const year   = parts[2].length === 2 ? parseInt("20" + parts[2]) : parseInt(parts[2]);
+      const year = parts[2].length === 2 ? parseInt("20" + parts[2]) : parseInt(parts[2]);
       const dbDate = new Date(year, parseInt(parts[1]) - 1, parseInt(parts[0]));
       return Math.abs(new Date(Date.now() - dbDate.getTime()).getUTCFullYear() - 1970);
     }
@@ -908,12 +907,12 @@ export default function ProfileScreen() {
 
   const handleRegisterTwin = async () => {
     const missing: string[] = [];
-    if (!localProfile.firstName)           missing.push("First Name");
-    if (!localProfile.lastName)            missing.push("Last Name");
-    if (!localProfile.phone)               missing.push("Phone Number");
-    if (!localProfile.dateOfBirth)         missing.push("Date of Birth");
-    if (!localProfile.height)             missing.push("Height");
-    if (!localProfile.weight)             missing.push("Weight");
+    if (!localProfile.firstName) missing.push("First Name");
+    if (!localProfile.lastName) missing.push("Last Name");
+    if (!localProfile.phone) missing.push("Phone Number");
+    if (!localProfile.dateOfBirth) missing.push("Date of Birth");
+    if (!localProfile.height) missing.push("Height");
+    if (!localProfile.weight) missing.push("Weight");
     if (!localProfile.biogears_resting_hr) missing.push("Resting Heart Rate");
     if (!localProfile.biogears_systolic_bp) missing.push("Systolic BP");
     if (!localProfile.biogears_diastolic_bp) missing.push("Diastolic BP");
@@ -932,26 +931,26 @@ export default function ProfileScreen() {
         weight: parseKg(localProfile.weight),
         height: parseCm(localProfile.height),
         sex: localProfile.gender?.toLowerCase() === "female" ? "Female" : "Male",
-        body_fat:            localProfile.biogears_body_fat,
-        resting_hr:          localProfile.biogears_resting_hr,
-        systolic_bp:         localProfile.biogears_systolic_bp,
-        diastolic_bp:        localProfile.biogears_diastolic_bp,
-        is_smoker:           localProfile.biogears_is_smoker,
-        has_anemia:          localProfile.biogears_has_anemia,
-        has_type1_diabetes:  localProfile.biogears_has_type1_diabetes,
-        has_type2_diabetes:  localProfile.biogears_has_type2_diabetes,
-        hba1c:               localProfile.biogears_hba1c,
-        ethnicity:           localProfile.biogears_ethnicity,
-        fitness_level:       localProfile.biogears_fitness_level,
-        vo2max:              localProfile.biogears_vo2max,
+        body_fat: localProfile.biogears_body_fat,
+        resting_hr: localProfile.biogears_resting_hr,
+        systolic_bp: localProfile.biogears_systolic_bp,
+        diastolic_bp: localProfile.biogears_diastolic_bp,
+        is_smoker: localProfile.biogears_is_smoker,
+        has_anemia: localProfile.biogears_has_anemia,
+        has_type1_diabetes: localProfile.biogears_has_type1_diabetes,
+        has_type2_diabetes: localProfile.biogears_has_type2_diabetes,
+        hba1c: localProfile.biogears_hba1c,
+        ethnicity: localProfile.biogears_ethnicity,
+        fitness_level: localProfile.biogears_fitness_level,
+        vo2max: localProfile.biogears_vo2max,
         current_medications: localProfile.medications,
       };
-      
+
       registerTwin(payload).then(() => {
         // Persist calibration flag so status survives app restart
         const calibratedProfile = { ...localProfile, biogears_registered: true };
         saveProfileData(calibratedProfile).catch(console.error);
-        Alert.alert("✅ Calibration Successful", "Your Digital Twin has been calibrated and saved.");
+        Alert.alert("Calibration Successful", "Your Digital Twin has been calibrated and saved.");
       }).catch((err: any) => {
         Alert.alert("Calibration Failed", err.message || "Could not reach BioGears server.");
       });
@@ -985,8 +984,8 @@ export default function ProfileScreen() {
         {[
           { key: "biogears_has_type1_diabetes", label: "Type 1 Diabetes", color: colors.danger },
           { key: "biogears_has_type2_diabetes", label: "Type 2 Diabetes", color: colors.danger },
-          { key: "biogears_has_anemia",          label: "Chronic Anemia",  color: colors.warning },
-          { key: "biogears_is_smoker",           label: "Smoker (COPD)",   color: colors.warning },
+          { key: "biogears_has_anemia", label: "Chronic Anemia", color: colors.warning },
+          { key: "biogears_is_smoker", label: "Smoker (COPD)", color: colors.warning },
         ].map((cond) => {
           if (!safeProfile[cond.key as keyof UserProfile]) return null;
           return (
@@ -1017,7 +1016,7 @@ export default function ProfileScreen() {
         <View style={styles.twinStatusHeader}>
           <Ionicons name={twinStatus === 'ready' ? "checkmark-circle" : twinStatus === 'registering' ? "hourglass" : "warning"} size={20} color={twinStatus === 'ready' ? colors.success : twinStatus === 'registering' ? colors.warning : colors.danger} />
           <Text style={[styles.twinStatusText, { color: twinStatus === 'ready' ? colors.success : twinStatus === 'registering' ? colors.warning : colors.danger }]}>
-            {twinStatus === "registering" ? "Calibrating Twin Engine..." : twinStatus === "ready" ? "✅ Clinical Engine Calibrated" : "⚠️ Twin Profile Uncalibrated"}
+            {twinStatus === "registering" ? "Calibrating Twin Engine..." : twinStatus === "ready" ? "Clinical Engine Calibrated" : "⚠️ Twin Profile Uncalibrated"}
           </Text>
         </View>
         {twinStatusError ? (
@@ -1126,20 +1125,20 @@ export default function ProfileScreen() {
               onPress={async () => {
                 Alert.alert(
                   "Switch Profile",
-                  isCurrent 
+                  isCurrent
                     ? "Switch back to your main account profile?"
                     : `Switch to ${member.firstName || "Family Member"}'s profile view?`,
                   [
                     { text: "Cancel", style: "cancel" },
-                    { 
-                      text: "Switch", 
+                    {
+                      text: "Switch",
                       onPress: async () => {
                         if (isCurrent) {
                           await switchToSelf();
                         } else {
                           await switchToMember(targetId);
                         }
-                      } 
+                      }
                     }
                   ]
                 );
@@ -1205,7 +1204,7 @@ export default function ProfileScreen() {
           </View>
         </View>
       )}
-      
+
       {!isSwitched && (
         <Text style={[styles.familyHint, { color: colors.subText }]}>💡 Long press a member card to remove them</Text>
       )}
@@ -1229,13 +1228,15 @@ export default function ProfileScreen() {
       style={[styles.logoutButton, { backgroundColor: colors.card }]}
       onPress={() => Alert.alert("Logout", "Are you sure you want to logout?", [
         { text: "Cancel", style: "cancel" },
-        { text: "Logout", style: "destructive", onPress: async () => {
-          await clearAllSqliteTables();
-          await AsyncStorage.clear();
-          await resetProfile();
-          try { await signOut(auth); } catch (e) { console.log(e); }
-          router.replace("/welcome");
-        }},
+        {
+          text: "Logout", style: "destructive", onPress: async () => {
+            await clearAllSqliteTables();
+            await AsyncStorage.clear();
+            await resetProfile();
+            try { await signOut(auth); } catch (e) { console.log(e); }
+            router.replace("/welcome");
+          }
+        },
       ])}
     >
       <Ionicons name="log-out-outline" size={22} color={colors.danger} />
@@ -1267,59 +1268,61 @@ export default function ProfileScreen() {
         behavior={Platform.OS === "ios" ? "padding" : "height"}
         keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 20}
       >
-        <Pressable style={[styles.modalOverlay, { justifyContent: "flex-end" }]} onPress={() => { setDeletePasswordModal(false); setDeletePassword(""); setDeleteError(""); }}>
-          <Animated.View style={[styles.modalCard, styles.bottomSheet, { backgroundColor: colors.card, maxHeight: 320 }]}>
-            <Pressable style={{ flex: 1 }} onPress={(e) => e.stopPropagation()}>
-              <View style={styles.sheetHandle} />
-              <Text style={[styles.modalTitle, { color: colors.text }]}>Confirm Identity</Text>
+        <View style={[styles.modalOverlay, { justifyContent: "flex-end" }]}>
+          <Pressable
+            style={StyleSheet.absoluteFill}
+            onPress={() => { setDeletePasswordModal(false); setDeletePassword(""); setDeleteError(""); }}
+          />
+          <Animated.View style={[styles.modalCard, styles.bottomSheet, { backgroundColor: colors.card, maxHeight: 320, width: "100%" }]}>
+            <View style={styles.sheetHandle} />
+            <Text style={[styles.modalTitle, { color: colors.text }]}>Confirm Identity</Text>
 
-              <Text style={[styles.fieldLabel, { color: colors.subText, marginBottom: 8 }]}>
-                Please enter your password to confirm account deletion.
+            <Text style={[styles.fieldLabel, { color: colors.subText, marginBottom: 8 }]}>
+              Please enter your password to confirm account deletion.
+            </Text>
+            <TextInput
+              placeholder="Enter password"
+              placeholderTextColor={colors.subText}
+              style={[styles.input, { backgroundColor: colors.bg, color: colors.text }]}
+              value={deletePassword}
+              onChangeText={setDeletePassword}
+              secureTextEntry
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+
+            {deleteError ? (
+              <Text style={{ color: colors.danger, fontSize: 13, marginBottom: 8, marginLeft: 2 }}>
+                {deleteError}
               </Text>
-              <TextInput
-                placeholder="Enter password"
-                placeholderTextColor={colors.subText}
-                style={[styles.input, { backgroundColor: colors.bg, color: colors.text }]}
-                value={deletePassword}
-                onChangeText={setDeletePassword}
-                secureTextEntry
-                autoCapitalize="none"
-                autoCorrect={false}
-              />
+            ) : null}
 
-              {deleteError ? (
-                <Text style={{ color: colors.danger, fontSize: 13, marginBottom: 8, marginLeft: 2 }}>
-                  {deleteError}
-                </Text>
-              ) : null}
-
-              <View style={styles.modalButtons}>
-                <TouchableOpacity
-                  style={[styles.modalButton, { backgroundColor: colors.border }]}
-                  onPress={() => {
-                    setDeletePasswordModal(false);
-                    setDeletePassword("");
-                    setDeleteError("");
-                  }}
-                  disabled={deleteLoading}
-                >
-                  <Text style={[styles.modalButtonText, { color: colors.text }]}>Cancel</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.modalButton, { backgroundColor: colors.danger }]}
-                  onPress={() => handleDeleteAccount(deletePassword)}
-                  disabled={deleteLoading}
-                >
-                  {deleteLoading ? (
-                    <ActivityIndicator size="small" color="#fff" />
-                  ) : (
-                    <Text style={styles.modalButtonText}>Confirm Delete</Text>
-                  )}
-                </TouchableOpacity>
-              </View>
-            </Pressable>
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={[styles.modalButton, { backgroundColor: colors.border }]}
+                onPress={() => {
+                  setDeletePasswordModal(false);
+                  setDeletePassword("");
+                  setDeleteError("");
+                }}
+                disabled={deleteLoading}
+              >
+                <Text style={[styles.modalButtonText, { color: colors.text }]}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalButton, { backgroundColor: colors.danger }]}
+                onPress={() => handleDeleteAccount(deletePassword)}
+                disabled={deleteLoading}
+              >
+                {deleteLoading ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <Text style={styles.modalButtonText}>Confirm Delete</Text>
+                )}
+              </TouchableOpacity>
+            </View>
           </Animated.View>
-        </Pressable>
+        </View>
       </KeyboardAvoidingView>
     </Modal>
   );
@@ -1393,125 +1396,124 @@ export default function ProfileScreen() {
           behavior={Platform.OS === "ios" ? "padding" : "height"}
           keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 20}
         >
-          <Pressable style={[styles.modalOverlay, { justifyContent: "flex-end" }]} onPress={() => { setLocalProfile(safeProfile); closeModal(setEditProfileModal); }}>
-            <Animated.View style={[styles.modalCard, styles.bottomSheet, { backgroundColor: colors.card }]}>
-              <Pressable style={{ flex: 1 }} onPress={(e) => e.stopPropagation()}>
-                {/* Header */}
-                <View style={styles.sheetHandle} />
-                <Text style={[styles.modalTitle, { color: colors.text }]}>Edit Profile</Text>
+          <View style={[styles.modalOverlay, { justifyContent: "flex-end" }]}>
+            <Pressable
+              style={StyleSheet.absoluteFill}
+              onPress={() => { setLocalProfile(safeProfile); closeModal(setEditProfileModal); }}
+            />
+            <Animated.View style={[styles.modalCard, styles.bottomSheet, { backgroundColor: colors.card, width: "100%" }]}>
+              {/* Header */}
+              <View style={styles.sheetHandle} />
+              <Text style={[styles.modalTitle, { color: colors.text }]}>Edit Profile</Text>
 
-                {/* ✅ Scrollable form — keyboard never covers fields */}
-                <ScrollView
-                  showsVerticalScrollIndicator={false}
-                  keyboardShouldPersistTaps="handled"
-                  contentContainerStyle={{ paddingBottom: 20 }}
-                >
-                  {/* First Name */}
-                  <Text style={[styles.fieldLabel, { color: colors.subText }]}>First Name</Text>
-                  <TextInput
-                    placeholder="First Name"
-                    placeholderTextColor={colors.subText}
-                    style={[styles.input, { backgroundColor: colors.bg, color: colors.text }]}
-                    value={localProfile.firstName}
-                    onChangeText={(t) => setLocalProfile({ ...localProfile, firstName: t })}
-                  />
+              {/* ✅ Scrollable form — keyboard never covers fields */}
+              <ScrollView
+                showsVerticalScrollIndicator={false}
+                keyboardShouldPersistTaps="handled"
+                contentContainerStyle={{ paddingBottom: 20 }}
+              >
+                {/* First Name */}
+                <Text style={[styles.fieldLabel, { color: colors.subText }]}>First Name</Text>
+                <TextInput
+                  placeholder="First Name"
+                  placeholderTextColor={colors.subText}
+                  style={[styles.input, { backgroundColor: colors.bg, color: colors.text }]}
+                  value={localProfile.firstName}
+                  onChangeText={(t) => setLocalProfile({ ...localProfile, firstName: t })}
+                />
 
-                  {/* Last Name */}
-                  <Text style={[styles.fieldLabel, { color: colors.subText }]}>Last Name</Text>
-                  <TextInput
-                    placeholder="Last Name"
-                    placeholderTextColor={colors.subText}
-                    style={[styles.input, { backgroundColor: colors.bg, color: colors.text }]}
-                    value={localProfile.lastName}
-                    onChangeText={(t) => setLocalProfile({ ...localProfile, lastName: t })}
-                  />
+                {/* Last Name */}
+                <Text style={[styles.fieldLabel, { color: colors.subText }]}>Last Name</Text>
+                <TextInput
+                  placeholder="Last Name"
+                  placeholderTextColor={colors.subText}
+                  style={[styles.input, { backgroundColor: colors.bg, color: colors.text }]}
+                  value={localProfile.lastName}
+                  onChangeText={(t) => setLocalProfile({ ...localProfile, lastName: t })}
+                />
 
-                  {/* Email */}
-                  <Text style={[styles.fieldLabel, { color: colors.subText }]}>Email</Text>
-                  <TextInput
-                    placeholder="Email"
-                    placeholderTextColor={colors.subText}
-                    style={[styles.input, { backgroundColor: colors.bg, color: colors.text }]}
-                    value={localProfile.email}
-                    onChangeText={(t) => setLocalProfile({ ...localProfile, email: t })}
-                    keyboardType="email-address"
-                    autoCapitalize="none"
-                  />
-
-                  {/* ✅ Phone with +91 prefix */}
-                  <Text style={[styles.fieldLabel, { color: colors.subText }]}>Phone</Text>
-                  <View style={[styles.phoneRow, { backgroundColor: colors.bg, borderColor: colors.border }]}>
-                    <View style={[styles.phonePrefixBox, { borderRightColor: colors.border }]}>
-                      <Text style={[styles.phonePrefix, { color: colors.subText }]}>🇮🇳 +91</Text>
-                    </View>
-                    <TextInput
-                      placeholder="9876543210"
-                      placeholderTextColor={colors.subText}
-                      style={[styles.phoneInput, { color: colors.text }]}
-                      value={localProfile.phone?.replace(/^\+91\s?/, "") || ""}
-                      onChangeText={(t) => {
-                        const digits = t.replace(/\D/g, "").slice(0, 10);
-                        setLocalProfile({ ...localProfile, phone: digits });
-                      }}
-                      keyboardType="number-pad"
-                      maxLength={10}
-                    />
-                  </View>
-
-                  {/* ✅ Date of Birth — calendar picker */}
-                  <Text style={[styles.fieldLabel, { color: colors.subText }]}>Date of Birth</Text>
-                  <TouchableOpacity
-                    style={[styles.input, styles.pickerRow, { backgroundColor: colors.bg }]}
-                    onPress={() => setShowDatePicker(true)}
-                  >
-                    <Text style={{ color: localProfile.dateOfBirth ? colors.text : colors.subText, fontSize: 14 }}>
-                      {localProfile.dateOfBirth || "DD/MM/YYYY"}
-                    </Text>
-                    <Ionicons name="calendar-outline" size={18} color={colors.subText} />
-                  </TouchableOpacity>
-
-                  {/* ✅ Gender — dropdown */}
-                  <Text style={[styles.fieldLabel, { color: colors.subText }]}>Gender</Text>
-                  <TouchableOpacity
-                    style={[styles.input, styles.pickerRow, { backgroundColor: colors.bg }]}
-                    onPress={() => setShowGenderPicker(true)}
-                  >
-                    <Text style={{ color: localProfile.gender ? colors.text : colors.subText, fontSize: 14 }}>
-                      {localProfile.gender || "Select Gender"}
-                    </Text>
-                    <Ionicons name="chevron-down" size={18} color={colors.subText} />
-                  </TouchableOpacity>
-
-                  {/* ✅ Blood Group — dropdown */}
-                  <Text style={[styles.fieldLabel, { color: colors.subText }]}>Blood Group</Text>
-                  <TouchableOpacity
-                    style={[styles.input, styles.pickerRow, { backgroundColor: colors.bg }]}
-                    onPress={() => setShowBloodPicker(true)}
-                  >
-                    <Text style={{ color: localProfile.bloodGroup ? colors.text : colors.subText, fontSize: 14 }}>
-                      {localProfile.bloodGroup || "Select Blood Group"}
-                    </Text>
-                    <Ionicons name="chevron-down" size={18} color={colors.subText} />
-                  </TouchableOpacity>
-                </ScrollView>
-
-                <View style={styles.modalButtons}>
-                  <TouchableOpacity
-                    style={[styles.modalButton, { backgroundColor: colors.border }]}
-                    onPress={() => { setLocalProfile(safeProfile); closeModal(setEditProfileModal); }}
-                  >
-                    <Text style={[styles.modalButtonText, { color: colors.text }]}>Cancel</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[styles.modalButton, { backgroundColor: colors.accent }]}
-                    onPress={() => { saveProfileData(localProfile); closeModal(setEditProfileModal); }}
-                  >
-                    <Text style={styles.modalButtonText}>Save</Text>
-                  </TouchableOpacity>
+                {/* Email (Read-only / Locked) */}
+                <Text style={[styles.fieldLabel, { color: colors.subText }]}>Email (Linked Account ID)</Text>
+                <View style={[styles.input, styles.pickerRow, { backgroundColor: colors.bg, opacity: 0.7, borderColor: colors.border, borderWidth: 1 }]}>
+                  <Text style={{ color: colors.subText, fontSize: 14 }}>
+                    {localProfile.email}
+                  </Text>
+                  <Ionicons name="lock-closed" size={16} color={colors.subText} />
                 </View>
-              </Pressable>
+
+                {/* ✅ Phone with +91 prefix */}
+                <Text style={[styles.fieldLabel, { color: colors.subText }]}>Phone</Text>
+                <View style={[styles.phoneRow, { backgroundColor: colors.bg, borderColor: colors.border }]}>
+                  <View style={[styles.phonePrefixBox, { borderRightColor: colors.border }]}>
+                    <Text style={[styles.phonePrefix, { color: colors.subText }]}>🇮🇳 +91</Text>
+                  </View>
+                  <TextInput
+                    placeholder="9876543210"
+                    placeholderTextColor={colors.subText}
+                    style={[styles.phoneInput, { color: colors.text }]}
+                    value={localProfile.phone?.replace(/^\+91\s?/, "") || ""}
+                    onChangeText={(t) => {
+                      const digits = t.replace(/\D/g, "").slice(0, 10);
+                      setLocalProfile({ ...localProfile, phone: digits });
+                    }}
+                    keyboardType="number-pad"
+                    maxLength={10}
+                  />
+                </View>
+
+                {/* ✅ Date of Birth — calendar picker */}
+                <Text style={[styles.fieldLabel, { color: colors.subText }]}>Date of Birth</Text>
+                <TouchableOpacity
+                  style={[styles.input, styles.pickerRow, { backgroundColor: colors.bg }]}
+                  onPress={() => setShowDatePicker(true)}
+                >
+                  <Text style={{ color: localProfile.dateOfBirth ? colors.text : colors.subText, fontSize: 14 }}>
+                    {localProfile.dateOfBirth || "DD/MM/YYYY"}
+                  </Text>
+                  <Ionicons name="calendar-outline" size={18} color={colors.subText} />
+                </TouchableOpacity>
+
+                {/* ✅ Gender — dropdown */}
+                <Text style={[styles.fieldLabel, { color: colors.subText }]}>Gender</Text>
+                <TouchableOpacity
+                  style={[styles.input, styles.pickerRow, { backgroundColor: colors.bg }]}
+                  onPress={() => setShowGenderPicker(true)}
+                >
+                  <Text style={{ color: localProfile.gender ? colors.text : colors.subText, fontSize: 14 }}>
+                    {localProfile.gender || "Select Gender"}
+                  </Text>
+                  <Ionicons name="chevron-down" size={18} color={colors.subText} />
+                </TouchableOpacity>
+
+                {/* ✅ Blood Group — dropdown */}
+                <Text style={[styles.fieldLabel, { color: colors.subText }]}>Blood Group</Text>
+                <TouchableOpacity
+                  style={[styles.input, styles.pickerRow, { backgroundColor: colors.bg }]}
+                  onPress={() => setShowBloodPicker(true)}
+                >
+                  <Text style={{ color: localProfile.bloodGroup ? colors.text : colors.subText, fontSize: 14 }}>
+                    {localProfile.bloodGroup || "Select Blood Group"}
+                  </Text>
+                  <Ionicons name="chevron-down" size={18} color={colors.subText} />
+                </TouchableOpacity>
+              </ScrollView>
+
+              <View style={styles.modalButtons}>
+                <TouchableOpacity
+                  style={[styles.modalButton, { backgroundColor: colors.border }]}
+                  onPress={() => { setLocalProfile(safeProfile); closeModal(setEditProfileModal); }}
+                >
+                  <Text style={[styles.modalButtonText, { color: colors.text }]}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.modalButton, { backgroundColor: colors.accent }]}
+                  onPress={() => { saveProfileData(localProfile); closeModal(setEditProfileModal); }}
+                >
+                  <Text style={styles.modalButtonText}>Save</Text>
+                </TouchableOpacity>
+              </View>
             </Animated.View>
-          </Pressable>
+          </View>
         </KeyboardAvoidingView>
       </Modal>
 
@@ -1521,49 +1523,51 @@ export default function ProfileScreen() {
           style={{ flex: 1 }}
           behavior={Platform.OS === "ios" ? "padding" : "height"}
         >
-          <Pressable style={[styles.modalOverlay, { justifyContent: "flex-end" }]} onPress={() => { setLocalProfile(safeProfile); closeModal(setEmergencyModal); }}>
-            <Animated.View style={[styles.modalCard, styles.bottomSheet, { backgroundColor: colors.card }]}>
-              <Pressable style={{ flex: 1 }} onPress={(e) => e.stopPropagation()}>
-                <View style={styles.sheetHandle} />
-                <Text style={[styles.modalTitle, { color: colors.text }]}>Emergency Contact</Text>
-                <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: 20 }}>
-                  <Text style={[styles.fieldLabel, { color: colors.subText }]}>Contact Name</Text>
-                  <TextInput
-                    placeholder="Contact Name"
-                    placeholderTextColor={colors.subText}
-                    style={[styles.input, { backgroundColor: colors.bg, color: colors.text }]}
-                    value={localProfile?.emergencyContact?.name || ""}
-                    onChangeText={(t) => setLocalProfile({ ...localProfile, emergencyContact: { ...(localProfile.emergencyContact || {}), name: t } })}
-                  />
-                  <Text style={[styles.fieldLabel, { color: colors.subText }]}>Phone Number</Text>
-                  <TextInput
-                    placeholder="Phone Number"
-                    placeholderTextColor={colors.subText}
-                    style={[styles.input, { backgroundColor: colors.bg, color: colors.text }]}
-                    value={localProfile?.emergencyContact?.phone || ""}
-                    keyboardType="phone-pad"
-                    onChangeText={(t) => setLocalProfile({ ...localProfile, emergencyContact: { ...(localProfile.emergencyContact || {}), phone: t } })}
-                  />
-                  <Text style={[styles.fieldLabel, { color: colors.subText }]}>Relation</Text>
-                  <TextInput
-                    placeholder="Relation"
-                    placeholderTextColor={colors.subText}
-                    style={[styles.input, { backgroundColor: colors.bg, color: colors.text }]}
-                    value={localProfile?.emergencyContact?.relation || ""}
-                    onChangeText={(t) => setLocalProfile({ ...localProfile, emergencyContact: { ...(localProfile.emergencyContact || {}), relation: t } })}
-                  />
-                </ScrollView>
-                <View style={styles.modalButtons}>
-                  <TouchableOpacity style={[styles.modalButton, { backgroundColor: colors.border }]} onPress={() => { setLocalProfile(safeProfile); closeModal(setEmergencyModal); }}>
-                    <Text style={[styles.modalButtonText, { color: colors.text }]}>Cancel</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity style={[styles.modalButton, { backgroundColor: colors.accent }]} onPress={() => { saveProfileData(localProfile); closeModal(setEmergencyModal); }}>
-                    <Text style={styles.modalButtonText}>Save</Text>
-                  </TouchableOpacity>
-                </View>
-              </Pressable>
+          <View style={[styles.modalOverlay, { justifyContent: "flex-end" }]}>
+            <Pressable
+              style={StyleSheet.absoluteFill}
+              onPress={() => { setLocalProfile(safeProfile); closeModal(setEmergencyModal); }}
+            />
+            <Animated.View style={[styles.modalCard, styles.bottomSheet, { backgroundColor: colors.card, width: "100%" }]}>
+              <View style={styles.sheetHandle} />
+              <Text style={[styles.modalTitle, { color: colors.text }]}>Emergency Contact</Text>
+              <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: 20 }}>
+                <Text style={[styles.fieldLabel, { color: colors.subText }]}>Contact Name</Text>
+                <TextInput
+                  placeholder="Contact Name"
+                  placeholderTextColor={colors.subText}
+                  style={[styles.input, { backgroundColor: colors.bg, color: colors.text }]}
+                  value={localProfile?.emergencyContact?.name || ""}
+                  onChangeText={(t) => setLocalProfile({ ...localProfile, emergencyContact: { ...(localProfile.emergencyContact || {}), name: t } })}
+                />
+                <Text style={[styles.fieldLabel, { color: colors.subText }]}>Phone Number</Text>
+                <TextInput
+                  placeholder="Phone Number"
+                  placeholderTextColor={colors.subText}
+                  style={[styles.input, { backgroundColor: colors.bg, color: colors.text }]}
+                  value={localProfile?.emergencyContact?.phone || ""}
+                  keyboardType="phone-pad"
+                  onChangeText={(t) => setLocalProfile({ ...localProfile, emergencyContact: { ...(localProfile.emergencyContact || {}), phone: t } })}
+                />
+                <Text style={[styles.fieldLabel, { color: colors.subText }]}>Relation</Text>
+                <TextInput
+                  placeholder="Relation"
+                  placeholderTextColor={colors.subText}
+                  style={[styles.input, { backgroundColor: colors.bg, color: colors.text }]}
+                  value={localProfile?.emergencyContact?.relation || ""}
+                  onChangeText={(t) => setLocalProfile({ ...localProfile, emergencyContact: { ...(localProfile.emergencyContact || {}), relation: t } })}
+                />
+              </ScrollView>
+              <View style={styles.modalButtons}>
+                <TouchableOpacity style={[styles.modalButton, { backgroundColor: colors.border }]} onPress={() => { setLocalProfile(safeProfile); closeModal(setEmergencyModal); }}>
+                  <Text style={[styles.modalButtonText, { color: colors.text }]}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={[styles.modalButton, { backgroundColor: colors.accent }]} onPress={() => { saveProfileData(localProfile); closeModal(setEmergencyModal); }}>
+                  <Text style={styles.modalButtonText}>Save</Text>
+                </TouchableOpacity>
+              </View>
             </Animated.View>
-          </Pressable>
+          </View>
         </KeyboardAvoidingView>
       </Modal>
 
@@ -1573,160 +1577,188 @@ export default function ProfileScreen() {
           style={{ flex: 1 }}
           behavior={Platform.OS === "ios" ? "padding" : "height"}
         >
-          <Pressable style={[styles.modalOverlay, { justifyContent: "flex-end" }]} onPress={() => { setLocalProfile(safeProfile); closeModal(setEditMedicalModal); }}>
-            <Animated.View style={[styles.modalCard, styles.bottomSheet, { backgroundColor: colors.card, maxHeight: "90%" }]}>
-              <Pressable style={{ flex: 1 }} onPress={(e) => e.stopPropagation()}>
-                <View style={styles.sheetHandle} />
-                <Text style={[styles.modalTitle, { color: colors.text }]}>Clinical Profile</Text>
+          <View style={[styles.modalOverlay, { justifyContent: "flex-end" }]}>
+            <Pressable
+              style={StyleSheet.absoluteFill}
+              onPress={() => { setLocalProfile(safeProfile); closeModal(setEditMedicalModal); }}
+            />
+            <Animated.View style={[styles.modalCard, styles.bottomSheet, { backgroundColor: colors.card, maxHeight: "90%", width: "100%" }]}>
+              <View style={styles.sheetHandle} />
+              <Text style={[styles.modalTitle, { color: colors.text }]}>Clinical Profile</Text>
 
-                <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" style={{ marginBottom: 16 }}>
-                  <Text style={{ color: colors.subText, fontSize: 12, marginBottom: 8 }}>Basic Vitals</Text>
-                  <Text style={{ color: colors.subText, fontSize: 10, marginTop: -6, marginBottom: 10, fontStyle: "italic" }}>Physical measurements used to scale the Digital Twin engine.</Text>
-                  <View style={{ flexDirection: "row", gap: 10, marginBottom: 12 }}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={{ color: colors.subText, fontSize: 11, marginBottom: 4, marginLeft: 4 }}>Height (cm)</Text>
-                      <SelectInput
-                        placeholder="Select Height"
-                        value={localProfile.height || ""}
-                        onPress={() => setShowHeightPicker(true)}
-                        colors={colors}
-                      />
-                      <DropdownPicker
-                        visible={showHeightPicker}
-                        options={HEIGHT_OPTIONS}
-                        selected={localProfile.height || ""}
-                        onSelect={(v) => setLocalProfile({ ...localProfile, height: v })}
-                        onClose={() => setShowHeightPicker(false)}
-                        colors={colors}
-                        title="Select Height (cm)"
-                      />
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={{ color: colors.subText, fontSize: 11, marginBottom: 4, marginLeft: 4 }}>Weight (kg)</Text>
-                      <SelectInput
-                        placeholder="Select Weight"
-                        value={localProfile.weight || ""}
-                        onPress={() => setShowWeightPicker(true)}
-                        colors={colors}
-                      />
-                      <DropdownPicker
-                        visible={showWeightPicker}
-                        options={WEIGHT_OPTIONS}
-                        selected={localProfile.weight || ""}
-                        onSelect={(v) => setLocalProfile({ ...localProfile, weight: v })}
-                        onClose={() => setShowWeightPicker(false)}
-                        colors={colors}
-                        title="Select Weight (kg)"
-                      />
-                    </View>
-                  </View>
+              <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" style={{ marginBottom: 16 }}>
+                <Text style={{ color: colors.subText, fontSize: 12, marginBottom: 8 }}>Basic Vitals</Text>
+                <Text style={{ color: colors.subText, fontSize: 10, marginTop: -6, marginBottom: 10, fontStyle: "italic" }}>Physical measurements used to scale the Digital Twin engine.</Text>
 
-                  <Text style={{ color: colors.subText, fontSize: 12, marginBottom: 8 }}>Cardiovascular Baseline</Text>
-                  <Text style={{ color: colors.subText, fontSize: 10, marginTop: -6, marginBottom: 10, fontStyle: "italic" }}>Your baseline heart and blood pressure markers (Normal: ~72 bpm, 120/80 mmHg).</Text>
-                  <View style={{ flexDirection: "row", gap: 10, marginBottom: 12 }}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={{ color: colors.subText, fontSize: 11, marginBottom: 4, marginLeft: 4 }}>Resting HR</Text>
-                      <TextInput placeholder="72" placeholderTextColor={colors.subText} style={[styles.input, { backgroundColor: colors.bg, color: colors.text, marginBottom: 0 }]} value={localProfile.biogears_resting_hr?.toString() || "72"} onChangeText={(t) => setLocalProfile({ ...localProfile, biogears_resting_hr: parseInt(t) || 72 })} keyboardType="numeric" />
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={{ color: colors.subText, fontSize: 11, marginBottom: 4, marginLeft: 4 }}>Systolic BP</Text>
-                      <TextInput placeholder="114" placeholderTextColor={colors.subText} style={[styles.input, { backgroundColor: colors.bg, color: colors.text, marginBottom: 0 }]} value={localProfile.biogears_systolic_bp?.toString() || "114"} onChangeText={(t) => setLocalProfile({ ...localProfile, biogears_systolic_bp: parseInt(t) || 114 })} keyboardType="numeric" />
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={{ color: colors.subText, fontSize: 11, marginBottom: 4, marginLeft: 4 }}>Diastolic BP</Text>
-                      <TextInput placeholder="73" placeholderTextColor={colors.subText} style={[styles.input, { backgroundColor: colors.bg, color: colors.text, marginBottom: 0 }]} value={localProfile.biogears_diastolic_bp?.toString() || "73"} onChangeText={(t) => setLocalProfile({ ...localProfile, biogears_diastolic_bp: parseInt(t) || 73 })} keyboardType="numeric" />
-                    </View>
-                  </View>
-
-                  <Text style={{ color: colors.subText, fontSize: 12, marginBottom: 8 }}>Body Composition</Text>
-                  <Text style={{ color: colors.subText, fontSize: 10, marginTop: -6, marginBottom: 10, fontStyle: "italic" }}>Used for determining metabolic rate and glucose storage capacity.</Text>
-                  <View style={{ backgroundColor: colors.bg, padding: 14, borderRadius: 12, marginBottom: 16 }}>
-                    <View style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 8 }}>
-                      <Text style={{ color: colors.text, fontSize: 14, fontWeight: "500" }}>Body Fat %</Text>
-                      <Text style={{ color: colors.accent, fontSize: 14, fontWeight: "700" }}>{Math.round((localProfile.biogears_body_fat || 0.2) * 100)}%</Text>
-                    </View>
-                    <Slider style={{ width: "100%", height: 40 }} minimumValue={0.05} maximumValue={0.4} step={0.01} value={localProfile.biogears_body_fat || 0.2} onValueChange={(v) => setLocalProfile({ ...localProfile, biogears_body_fat: v })} minimumTrackTintColor={colors.accent} maximumTrackTintColor={colors.border} thumbTintColor={colors.accent} />
-                    <View style={{ flexDirection: "row", justifyContent: "space-between", paddingHorizontal: 4 }}>
-                      <Text style={{ color: colors.subText, fontSize: 11 }}>Lean</Text>
-                      <Text style={{ color: colors.subText, fontSize: 11 }}>Average</Text>
-                      <Text style={{ color: colors.subText, fontSize: 11 }}>Obese</Text>
-                    </View>
-                  </View>
-
-                  <Text style={{ color: colors.subText, fontSize: 12, marginBottom: 8 }}>Advanced Metrics</Text>
-                  <Text style={{ color: colors.subText, fontSize: 10, marginTop: -6, marginBottom: 10, fontStyle: "italic" }}>HbA1c is your 3-month sugar average (Standard: {"<"}5.7%). VO2 Max is your peak aerobic capacity.</Text>
-                  <View style={{ flexDirection: "row", gap: 10, marginBottom: 12 }}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={{ color: colors.subText, fontSize: 11, marginBottom: 4, marginLeft: 4 }}>HbA1c (%)</Text>
-                      <TextInput placeholder="5.4" placeholderTextColor={colors.subText} style={[styles.input, { backgroundColor: colors.bg, color: colors.text, marginBottom: 0 }]} value={localProfile.biogears_hba1c?.toString() || ""} onChangeText={(t) => setLocalProfile({ ...localProfile, biogears_hba1c: parseFloat(t) || null })} keyboardType="numeric" />
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={{ color: colors.subText, fontSize: 11, marginBottom: 4, marginLeft: 4 }}>VO2 Max</Text>
-                      <TextInput placeholder="40" placeholderTextColor={colors.subText} style={[styles.input, { backgroundColor: colors.bg, color: colors.text, marginBottom: 0 }]} value={localProfile.biogears_vo2max?.toString() || ""} onChangeText={(t) => setLocalProfile({ ...localProfile, biogears_vo2max: parseFloat(t) || null })} keyboardType="numeric" />
-                    </View>
-                  </View>
-
-                  <Text style={{ color: colors.subText, fontSize: 12, marginBottom: 8 }}>Ethnicity</Text>
-                  <View style={{ flexDirection: "row", gap: 8, marginBottom: 16 }}>
-                    {["South Asian", "Other"].map((eth) => {
-                      const isActive = (localProfile.biogears_ethnicity || "Other") === eth;
-                      return (
-                        <TouchableOpacity key={eth} style={{ flex: 1, paddingVertical: 10, alignItems: "center", borderRadius: 10, backgroundColor: isActive ? colors.accent : colors.bg, borderWidth: 1, borderColor: isActive ? colors.accent : colors.border }} onPress={() => setLocalProfile({ ...localProfile, biogears_ethnicity: eth })}>
-                          <Text style={{ color: isActive ? "#fff" : colors.subText, fontSize: 12, fontWeight: isActive ? "700" : "500" }}>{eth}</Text>
-                        </TouchableOpacity>
-                      );
-                    })}
-                  </View>
-
-                  <Text style={{ color: colors.subText, fontSize: 12, marginBottom: 8 }}>Fitness Level</Text>
-                  <Text style={{ color: colors.subText, fontSize: 10, marginTop: -6, marginBottom: 10, fontStyle: "italic" }}>Your baseline activity profile helps calibrate your cardiovascular ceiling.</Text>
-                  <View style={{ flexDirection: "row", gap: 8, marginBottom: 16 }}>
-                    {["sedentary", "active", "athlete"].map((level) => {
-                      const isActive = (localProfile.biogears_fitness_level || "sedentary") === level;
-                      return (
-                        <TouchableOpacity key={level} style={{ flex: 1, paddingVertical: 10, alignItems: "center", borderRadius: 10, backgroundColor: isActive ? colors.accent : colors.bg, borderWidth: 1, borderColor: isActive ? colors.accent : colors.border }} onPress={() => setLocalProfile({ ...localProfile, biogears_fitness_level: level })}>
-                          <Text style={{ color: isActive ? "#fff" : colors.subText, fontSize: 12, fontWeight: isActive ? "700" : "500", textTransform: "capitalize" }}>{level}</Text>
-                        </TouchableOpacity>
-                      );
-                    })}
-                  </View>
-
-                  <Text style={{ color: colors.subText, fontSize: 12, marginBottom: 8 }}>General Health</Text>
-                  <TextInput placeholder="Allergies (comma separated)" placeholderTextColor={colors.subText} style={[styles.input, { backgroundColor: colors.bg, color: colors.text }]} value={(localProfile.allergies || []).join(", ")} onChangeText={(t) => setLocalProfile({ ...localProfile, allergies: t.split(",").map((a) => a.trim()).filter(Boolean) })} />
-                  <TextInput placeholder="Medications (comma separated)" placeholderTextColor={colors.subText} style={[styles.input, { backgroundColor: colors.bg, color: colors.text }]} value={(localProfile.medications || []).join(", ")} onChangeText={(t) => setLocalProfile({ ...localProfile, medications: t.split(",").map((m) => m.trim()).filter(Boolean) })} />
-
-                  <Text style={{ color: colors.subText, fontSize: 12, marginBottom: 8, marginTop: 8 }}>Clinical Conditions</Text>
-                  <Text style={{ color: colors.subText, fontSize: 10, marginTop: -6, marginBottom: 10, fontStyle: "italic" }}>These conditions modify fundamental physiological parameters in the engine.</Text>
-                  <View style={{ backgroundColor: colors.bg, borderRadius: 12, paddingHorizontal: 16, marginBottom: 8 }}>
-                    {[
-                      { key: "biogears_has_type1_diabetes", label: "Type 1 Diabetes" },
-                      { key: "biogears_has_type2_diabetes", label: "Type 2 Diabetes" },
-                      { key: "biogears_has_anemia",          label: "Chronic Anemia" },
-                      { key: "biogears_is_smoker",           label: "Smoker / COPD" },
-                    ].map((item, idx) => (
-                      <View key={item.key} style={[styles.settingRow, { borderColor: colors.border, borderBottomWidth: idx === 3 ? 0 : 1 }]}>
-                        <Text style={{ color: colors.text, fontSize: 14 }}>{item.label}</Text>
-                        <Switch
-                          value={(localProfile as any)[item.key] || false}
-                          onValueChange={(v) => setLocalProfile({ ...localProfile, [item.key]: v } as any)}
-                          trackColor={{ false: colors.border, true: colors.accent }}
-                        />
-                      </View>
-                    ))}
-                  </View>
+                {/* Height Input & Chips */}
+                <Text style={[styles.fieldLabel, { color: colors.subText }]}>Height (cm)</Text>
+                <TextInput
+                  placeholder="Height e.g. 170"
+                  placeholderTextColor={colors.subText}
+                  style={[styles.input, { backgroundColor: colors.bg, color: colors.text }]}
+                  value={localProfile.height || ""}
+                  onChangeText={(v) => setLocalProfile({ ...localProfile, height: v.replace(/[^0-9.]/g, "") })}
+                  keyboardType="numeric"
+                />
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, marginBottom: 16 }}>
+                  {[150, 160, 165, 170, 175, 180, 185].map((h) => {
+                    const isSelected = localProfile.height === String(h);
+                    return (
+                      <TouchableOpacity
+                        key={h}
+                        style={{
+                          paddingHorizontal: 12,
+                          paddingVertical: 6,
+                          borderRadius: 12,
+                          backgroundColor: isSelected ? colors.accent : colors.bg,
+                          borderWidth: 1,
+                          borderColor: isSelected ? colors.accent : colors.border,
+                        }}
+                        onPress={() => setLocalProfile({ ...localProfile, height: String(h) })}
+                      >
+                        <Text style={{ color: isSelected ? "#fff" : colors.subText, fontSize: 12, fontWeight: "500" }}>{h} cm</Text>
+                      </TouchableOpacity>
+                    );
+                  })}
                 </ScrollView>
 
-                <View style={styles.modalButtons}>
-                  <TouchableOpacity style={[styles.modalButton, { backgroundColor: colors.border }]} disabled={twinStatus === "registering"} onPress={() => { setLocalProfile(safeProfile); closeModal(setEditMedicalModal); }}>
-                    <Text style={[styles.modalButtonText, { color: colors.text }]}>Cancel</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity style={[styles.modalButton, { backgroundColor: colors.accent, flex: 2 }]} disabled={twinStatus === "registering"} onPress={handleRegisterTwin}>
-                    {twinStatus === "registering" ? <ActivityIndicator size="small" color="#fff" /> : <Text style={styles.modalButtonText}>Save & Calibrate Twin</Text>}
-                  </TouchableOpacity>
+                {/* Weight Input & Chips */}
+                <Text style={[styles.fieldLabel, { color: colors.subText }]}>Weight (kg)</Text>
+                <TextInput
+                  placeholder="Weight e.g. 70"
+                  placeholderTextColor={colors.subText}
+                  style={[styles.input, { backgroundColor: colors.bg, color: colors.text }]}
+                  value={localProfile.weight || ""}
+                  onChangeText={(v) => setLocalProfile({ ...localProfile, weight: v.replace(/[^0-9.]/g, "") })}
+                  keyboardType="numeric"
+                />
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, marginBottom: 16 }}>
+                  {[50, 60, 65, 70, 75, 80, 85, 90, 95].map((w) => {
+                    const isSelected = localProfile.weight === String(w);
+                    return (
+                      <TouchableOpacity
+                        key={w}
+                        style={{
+                          paddingHorizontal: 12,
+                          paddingVertical: 6,
+                          borderRadius: 12,
+                          backgroundColor: isSelected ? colors.accent : colors.bg,
+                          borderWidth: 1,
+                          borderColor: isSelected ? colors.accent : colors.border,
+                        }}
+                        onPress={() => setLocalProfile({ ...localProfile, weight: String(w) })}
+                      >
+                        <Text style={{ color: isSelected ? "#fff" : colors.subText, fontSize: 12, fontWeight: "500" }}>{w} kg</Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </ScrollView>
+
+                <Text style={{ color: colors.subText, fontSize: 12, marginBottom: 8 }}>Cardiovascular Baseline</Text>
+                <Text style={{ color: colors.subText, fontSize: 10, marginTop: -6, marginBottom: 10, fontStyle: "italic" }}>Your baseline heart and blood pressure markers (Normal: ~72 bpm, 120/80 mmHg).</Text>
+                <View style={{ flexDirection: "row", gap: 10, marginBottom: 12 }}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ color: colors.subText, fontSize: 11, marginBottom: 4, marginLeft: 4 }}>Resting HR</Text>
+                    <TextInput placeholder="72" placeholderTextColor={colors.subText} style={[styles.input, { backgroundColor: colors.bg, color: colors.text, marginBottom: 0 }]} value={localProfile.biogears_resting_hr?.toString() || "72"} onChangeText={(t) => setLocalProfile({ ...localProfile, biogears_resting_hr: parseInt(t) || 72 })} keyboardType="numeric" />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ color: colors.subText, fontSize: 11, marginBottom: 4, marginLeft: 4 }}>Systolic BP</Text>
+                    <TextInput placeholder="114" placeholderTextColor={colors.subText} style={[styles.input, { backgroundColor: colors.bg, color: colors.text, marginBottom: 0 }]} value={localProfile.biogears_systolic_bp?.toString() || "114"} onChangeText={(t) => setLocalProfile({ ...localProfile, biogears_systolic_bp: parseInt(t) || 114 })} keyboardType="numeric" />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ color: colors.subText, fontSize: 11, marginBottom: 4, marginLeft: 4 }}>Diastolic BP</Text>
+                    <TextInput placeholder="73" placeholderTextColor={colors.subText} style={[styles.input, { backgroundColor: colors.bg, color: colors.text, marginBottom: 0 }]} value={localProfile.biogears_diastolic_bp?.toString() || "73"} onChangeText={(t) => setLocalProfile({ ...localProfile, biogears_diastolic_bp: parseInt(t) || 73 })} keyboardType="numeric" />
+                  </View>
                 </View>
-              </Pressable>
+
+                <Text style={{ color: colors.subText, fontSize: 12, marginBottom: 8 }}>Body Composition</Text>
+                <Text style={{ color: colors.subText, fontSize: 10, marginTop: -6, marginBottom: 10, fontStyle: "italic" }}>Used for determining metabolic rate and glucose storage capacity.</Text>
+                <View style={{ backgroundColor: colors.bg, padding: 14, borderRadius: 12, marginBottom: 16 }}>
+                  <View style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 8 }}>
+                    <Text style={{ color: colors.text, fontSize: 14, fontWeight: "500" }}>Body Fat %</Text>
+                    <Text style={{ color: colors.accent, fontSize: 14, fontWeight: "700" }}>{Math.round((localProfile.biogears_body_fat || 0.2) * 100)}%</Text>
+                  </View>
+                  <Slider style={{ width: "100%", height: 40 }} minimumValue={0.05} maximumValue={0.4} step={0.01} value={localProfile.biogears_body_fat || 0.2} onValueChange={(v) => setLocalProfile({ ...localProfile, biogears_body_fat: v })} minimumTrackTintColor={colors.accent} maximumTrackTintColor={colors.border} thumbTintColor={colors.accent} />
+                  <View style={{ flexDirection: "row", justifyContent: "space-between", paddingHorizontal: 4 }}>
+                    <Text style={{ color: colors.subText, fontSize: 11 }}>Lean</Text>
+                    <Text style={{ color: colors.subText, fontSize: 11 }}>Average</Text>
+                    <Text style={{ color: colors.subText, fontSize: 11 }}>Obese</Text>
+                  </View>
+                </View>
+
+                <Text style={{ color: colors.subText, fontSize: 12, marginBottom: 8 }}>Advanced Metrics</Text>
+                <Text style={{ color: colors.subText, fontSize: 10, marginTop: -6, marginBottom: 10, fontStyle: "italic" }}>HbA1c is your 3-month sugar average (Standard: {"<"}5.7%). VO2 Max is your peak aerobic capacity.</Text>
+                <View style={{ flexDirection: "row", gap: 10, marginBottom: 12 }}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ color: colors.subText, fontSize: 11, marginBottom: 4, marginLeft: 4 }}>HbA1c (%)</Text>
+                    <TextInput placeholder="5.4" placeholderTextColor={colors.subText} style={[styles.input, { backgroundColor: colors.bg, color: colors.text, marginBottom: 0 }]} value={localProfile.biogears_hba1c?.toString() || ""} onChangeText={(t) => setLocalProfile({ ...localProfile, biogears_hba1c: parseFloat(t) || null })} keyboardType="numeric" />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ color: colors.subText, fontSize: 11, marginBottom: 4, marginLeft: 4 }}>VO2 Max</Text>
+                    <TextInput placeholder="40" placeholderTextColor={colors.subText} style={[styles.input, { backgroundColor: colors.bg, color: colors.text, marginBottom: 0 }]} value={localProfile.biogears_vo2max?.toString() || ""} onChangeText={(t) => setLocalProfile({ ...localProfile, biogears_vo2max: parseFloat(t) || null })} keyboardType="numeric" />
+                  </View>
+                </View>
+
+                <Text style={{ color: colors.subText, fontSize: 12, marginBottom: 8 }}>Ethnicity</Text>
+                <View style={{ flexDirection: "row", gap: 8, marginBottom: 16 }}>
+                  {["South Asian", "Other"].map((eth) => {
+                    const isActive = (localProfile.biogears_ethnicity || "Other") === eth;
+                    return (
+                      <TouchableOpacity key={eth} style={{ flex: 1, paddingVertical: 10, alignItems: "center", borderRadius: 10, backgroundColor: isActive ? colors.accent : colors.bg, borderWidth: 1, borderColor: isActive ? colors.accent : colors.border }} onPress={() => setLocalProfile({ ...localProfile, biogears_ethnicity: eth })}>
+                        <Text style={{ color: isActive ? "#fff" : colors.subText, fontSize: 12, fontWeight: isActive ? "700" : "500" }}>{eth}</Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+
+                <Text style={{ color: colors.subText, fontSize: 12, marginBottom: 8 }}>Fitness Level</Text>
+                <Text style={{ color: colors.subText, fontSize: 10, marginTop: -6, marginBottom: 10, fontStyle: "italic" }}>Your baseline activity profile helps calibrate your cardiovascular ceiling.</Text>
+                <View style={{ flexDirection: "row", gap: 8, marginBottom: 16 }}>
+                  {["sedentary", "active", "athlete"].map((level) => {
+                    const isActive = (localProfile.biogears_fitness_level || "sedentary") === level;
+                    return (
+                      <TouchableOpacity key={level} style={{ flex: 1, paddingVertical: 10, alignItems: "center", borderRadius: 10, backgroundColor: isActive ? colors.accent : colors.bg, borderWidth: 1, borderColor: isActive ? colors.accent : colors.border }} onPress={() => setLocalProfile({ ...localProfile, biogears_fitness_level: level })}>
+                        <Text style={{ color: isActive ? "#fff" : colors.subText, fontSize: 12, fontWeight: isActive ? "700" : "500", textTransform: "capitalize" }}>{level}</Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+
+                <Text style={{ color: colors.subText, fontSize: 12, marginBottom: 8 }}>General Health</Text>
+                <TextInput placeholder="Allergies (comma separated)" placeholderTextColor={colors.subText} style={[styles.input, { backgroundColor: colors.bg, color: colors.text }]} value={(localProfile.allergies || []).join(", ")} onChangeText={(t) => setLocalProfile({ ...localProfile, allergies: t.split(",").map((a) => a.trim()).filter(Boolean) })} />
+                <TextInput placeholder="Medications (comma separated)" placeholderTextColor={colors.subText} style={[styles.input, { backgroundColor: colors.bg, color: colors.text }]} value={(localProfile.medications || []).join(", ")} onChangeText={(t) => setLocalProfile({ ...localProfile, medications: t.split(",").map((m) => m.trim()).filter(Boolean) })} />
+
+                <Text style={{ color: colors.subText, fontSize: 12, marginBottom: 8, marginTop: 8 }}>Clinical Conditions</Text>
+                <Text style={{ color: colors.subText, fontSize: 10, marginTop: -6, marginBottom: 10, fontStyle: "italic" }}>These conditions modify fundamental physiological parameters in the engine.</Text>
+                <View style={{ backgroundColor: colors.bg, borderRadius: 12, paddingHorizontal: 16, marginBottom: 8 }}>
+                  {[
+                    { key: "biogears_has_type1_diabetes", label: "Type 1 Diabetes" },
+                    { key: "biogears_has_type2_diabetes", label: "Type 2 Diabetes" },
+                    { key: "biogears_has_anemia", label: "Chronic Anemia" },
+                    { key: "biogears_is_smoker", label: "Smoker / COPD" },
+                  ].map((item, idx) => (
+                    <View key={item.key} style={[styles.settingRow, { borderColor: colors.border, borderBottomWidth: idx === 3 ? 0 : 1 }]}>
+                      <Text style={{ color: colors.text, fontSize: 14 }}>{item.label}</Text>
+                      <Switch
+                        value={(localProfile as any)[item.key] || false}
+                        onValueChange={(v) => setLocalProfile({ ...localProfile, [item.key]: v } as any)}
+                        trackColor={{ false: colors.border, true: colors.accent }}
+                      />
+                    </View>
+                  ))}
+                </View>
+              </ScrollView>
+
+              <View style={styles.modalButtons}>
+                <TouchableOpacity style={[styles.modalButton, { backgroundColor: colors.border }]} disabled={twinStatus === "registering"} onPress={() => { setLocalProfile(safeProfile); closeModal(setEditMedicalModal); }}>
+                  <Text style={[styles.modalButtonText, { color: colors.text }]}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={[styles.modalButton, { backgroundColor: colors.accent, flex: 2 }]} disabled={twinStatus === "registering"} onPress={handleRegisterTwin}>
+                  {twinStatus === "registering" ? <ActivityIndicator size="small" color="#fff" /> : <Text style={styles.modalButtonText}>Save & Calibrate Twin</Text>}
+                </TouchableOpacity>
+              </View>
             </Animated.View>
-          </Pressable>
+          </View>
         </KeyboardAvoidingView>
       </Modal>
 
@@ -1764,46 +1796,48 @@ export default function ProfileScreen() {
       {/* ── Add Family Member Modal ─────────────────────────────────────── */}
       <Modal transparent visible={addMemberModal} animationType="slide" onRequestClose={() => { setAddMemberModal(false); setNewMemberName(""); setNewMemberHealthId(""); setNewMemberRelation(""); setSearchError(""); }}>
         <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : "height"}>
-          <Pressable style={[styles.modalOverlay, { justifyContent: "flex-end" }]} onPress={() => { setAddMemberModal(false); setNewMemberName(""); setNewMemberHealthId(""); setNewMemberRelation(""); setSearchError(""); }}>
-            <View style={[styles.modalCard, styles.bottomSheet, { backgroundColor: colors.card }]}>
-              <Pressable style={{ flex: 1 }} onPress={(e) => e.stopPropagation()}>
-                <View style={styles.sheetHandle} />
-                <View style={styles.addMemberHeader}>
-                  <View style={[styles.addMemberIconBox, { backgroundColor: colors.purple + "20" }]}>
-                    <Ionicons name="people" size={24} color={colors.purple} />
-                  </View>
-                  <Text style={[styles.modalTitle, { color: colors.text, marginBottom: 0 }]}>Add Family Member</Text>
+          <View style={[styles.modalOverlay, { justifyContent: "flex-end" }]}>
+            <Pressable
+              style={StyleSheet.absoluteFill}
+              onPress={() => { setAddMemberModal(false); setNewMemberName(""); setNewMemberHealthId(""); setNewMemberRelation(""); setSearchError(""); }}
+            />
+            <View style={[styles.modalCard, styles.bottomSheet, { backgroundColor: colors.card, width: "100%" }]}>
+              <View style={styles.sheetHandle} />
+              <View style={styles.addMemberHeader}>
+                <View style={[styles.addMemberIconBox, { backgroundColor: colors.purple + "20" }]}>
+                  <Ionicons name="people" size={24} color={colors.purple} />
                 </View>
-                <Text style={[styles.addMemberSubtitle, { color: colors.subText }]}>Enter their name and Health ID to link — or leave Health ID blank to create a new profile (perfect for children without a phone).</Text>
+                <Text style={[styles.modalTitle, { color: colors.text, marginBottom: 0 }]}>Add Family Member</Text>
+              </View>
+              <Text style={[styles.addMemberSubtitle, { color: colors.subText }]}>Enter their name and Health ID to link — or leave Health ID blank to create a new profile (perfect for children without a phone).</Text>
 
-                <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: 16 }}>
-                  <TextInput placeholder="Member Name (e.g., Rahul)" placeholderTextColor={colors.subText} style={[styles.input, { backgroundColor: colors.bg, color: colors.text }]} value={newMemberName} onChangeText={setNewMemberName} />
-                  <TextInput placeholder="Health ID — leave blank to create new profile" placeholderTextColor={colors.subText} style={[styles.input, { backgroundColor: colors.bg, color: colors.text }]} value={newMemberHealthId} onChangeText={(t) => { setNewMemberHealthId(t.toUpperCase().replace(/\s/g, "-")); setSearchError(""); }} autoCapitalize="characters" />
-                  <TextInput placeholder="Relation (e.g., Son, Daughter, Father)" placeholderTextColor={colors.subText} style={[styles.input, { backgroundColor: colors.bg, color: colors.text }]} value={newMemberRelation} onChangeText={setNewMemberRelation} />
+              <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: 16 }}>
+                <TextInput placeholder="Member Name (e.g., Rahul)" placeholderTextColor={colors.subText} style={[styles.input, { backgroundColor: colors.bg, color: colors.text }]} value={newMemberName} onChangeText={setNewMemberName} />
+                <TextInput placeholder="Health ID — leave blank to create new profile" placeholderTextColor={colors.subText} style={[styles.input, { backgroundColor: colors.bg, color: colors.text }]} value={newMemberHealthId} onChangeText={(t) => { setNewMemberHealthId(t.toUpperCase().replace(/\s/g, "-")); setSearchError(""); }} autoCapitalize="characters" />
+                <TextInput placeholder="Relation (e.g., Son, Daughter, Father)" placeholderTextColor={colors.subText} style={[styles.input, { backgroundColor: colors.bg, color: colors.text }]} value={newMemberRelation} onChangeText={setNewMemberRelation} />
 
-                  {searchError ? <Text style={[styles.searchError, { color: colors.danger }]}>⚠️ {searchError}</Text> : null}
+                {searchError ? <Text style={[styles.searchError, { color: colors.danger }]}>⚠️ {searchError}</Text> : null}
 
-                  <View style={[styles.howItWorks, { backgroundColor: colors.familyBg, borderColor: colors.familyBorder }]}>
-                    <Text style={[styles.howItWorksTitle, { color: colors.text }]}>Two ways to add</Text>
-                    {[
-                      "📱 They have VitalHealth: Enter their Health ID above.",
-                      "👶 Child / no phone: Leave Health ID blank — we'll create a profile you can manage.",
-                      "✅ Tap their card any time to view & manage their health data.",
-                    ].map((step, i) => <Text key={i} style={[styles.howItWorksStep, { color: colors.subText }]}>{step}</Text>)}
-                  </View>
-                </ScrollView>
-
-                <View style={styles.modalButtons}>
-                  <TouchableOpacity style={[styles.modalButton, { backgroundColor: colors.border }]} onPress={() => { setAddMemberModal(false); setNewMemberName(""); setNewMemberHealthId(""); setNewMemberRelation(""); setSearchError(""); }}>
-                    <Text style={[styles.modalButtonText, { color: colors.text }]}>Cancel</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity style={[styles.modalButton, { backgroundColor: colors.purple, opacity: searchLoading ? 0.7 : 1 }]} onPress={addFamilyMember} disabled={searchLoading}>
-                    <Text style={styles.modalButtonText}>{searchLoading ? "Searching..." : "Add Member"}</Text>
-                  </TouchableOpacity>
+                <View style={[styles.howItWorks, { backgroundColor: colors.familyBg, borderColor: colors.familyBorder }]}>
+                  <Text style={[styles.howItWorksTitle, { color: colors.text }]}>Two ways to add</Text>
+                  {[
+                    "📱 They have VitalHealth: Enter their Health ID above.",
+                    "👶 Child / no phone: Leave Health ID blank — we'll create a profile you can manage.",
+                    "✅ Tap their card any time to view & manage their health data.",
+                  ].map((step, i) => <Text key={i} style={[styles.howItWorksStep, { color: colors.subText }]}>{step}</Text>)}
                 </View>
-              </Pressable>
+              </ScrollView>
+
+              <View style={styles.modalButtons}>
+                <TouchableOpacity style={[styles.modalButton, { backgroundColor: colors.border }]} onPress={() => { setAddMemberModal(false); setNewMemberName(""); setNewMemberHealthId(""); setNewMemberRelation(""); setSearchError(""); }}>
+                  <Text style={[styles.modalButtonText, { color: colors.text }]}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={[styles.modalButton, { backgroundColor: colors.purple, opacity: searchLoading ? 0.7 : 1 }]} onPress={addFamilyMember} disabled={searchLoading}>
+                  <Text style={styles.modalButtonText}>{searchLoading ? "Searching..." : "Add Member"}</Text>
+                </TouchableOpacity>
+              </View>
             </View>
-          </Pressable>
+          </View>
         </KeyboardAvoidingView>
       </Modal>
 
@@ -1814,8 +1848,9 @@ export default function ProfileScreen() {
         animationType="fade"
         onRequestClose={() => setCustomAlert(null)}
       >
-        <Pressable style={[styles.modalOverlay, { justifyContent: "center", alignItems: "center" }]} onPress={() => setCustomAlert(null)}>
-          <Pressable style={[styles.modalCard, { backgroundColor: colors.card, width: '85%', maxWidth: 320, borderWidth: 1, borderColor: colors.border }]} onPress={(e) => e.stopPropagation()}>
+        <View style={[styles.modalOverlay, { justifyContent: "center", alignItems: "center" }]}>
+          <Pressable style={StyleSheet.absoluteFill} onPress={() => setCustomAlert(null)} />
+          <View style={[styles.modalCard, { backgroundColor: colors.card, width: '85%', maxWidth: 320, borderWidth: 1, borderColor: colors.border }]}>
             <Text style={[styles.modalTitle, { color: colors.text, textAlign: 'center', marginBottom: 8 }]}>{customAlert?.title}</Text>
             {customAlert?.message ? (
               <Text style={{ color: colors.subText, fontSize: 14, textAlign: 'center', marginBottom: 16 }}>{customAlert.message}</Text>
@@ -1838,8 +1873,8 @@ export default function ProfileScreen() {
                       isDestructive
                         ? { backgroundColor: '#ef4444' }
                         : isCancel
-                        ? { backgroundColor: colors.border }
-                        : { backgroundColor: colors.accent },
+                          ? { backgroundColor: colors.border }
+                          : { backgroundColor: colors.accent },
                       isStack && { width: '100%', justifyContent: 'center' },
                       !isStack && { flex: 1 }
                     ]}
@@ -1855,8 +1890,8 @@ export default function ProfileScreen() {
                 );
               })}
             </View>
-          </Pressable>
-        </Pressable>
+          </View>
+        </View>
       </Modal>
     </View>
   );

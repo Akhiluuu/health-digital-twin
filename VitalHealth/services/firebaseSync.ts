@@ -40,6 +40,25 @@ auth.onAuthStateChanged((user) => {
   }
 });
 
+// ── Data Sharing Permission Checks ──────────────────────────────────
+export const isVitalsSyncEnabled = async (): Promise<boolean> => {
+  try {
+    const val = await AsyncStorage.getItem("@data_share_vitals");
+    return val === null ? true : val === "true"; // Default to true
+  } catch {
+    return true;
+  }
+};
+
+export const isBiometricSyncEnabled = async (): Promise<boolean> => {
+  try {
+    const val = await AsyncStorage.getItem("@data_share_biometric");
+    return val === null ? false : val === "true"; // Default to false
+  } catch {
+    return false;
+  }
+};
+
 // ── Helper — get current user ID ────────────────────────────────
 // Checks auth.currentUser first, then waits for auth state,
 // then falls back to AsyncStorage cache
@@ -104,6 +123,7 @@ export async function syncAddMedicine(
   },
   targetUid?: string
 ): Promise<void> {
+  if (!(await isVitalsSyncEnabled())) return;
   try {
     const uid = targetUid || await getUserId();
     if (!uid) { console.log("⚠️ No auth user for syncAddMedicine"); return; }
@@ -162,6 +182,7 @@ export async function syncDeleteAllMedicines(targetUid?: string): Promise<void> 
  * Mark medicine as taken in Firebase.
  */
 export async function syncMarkMedicineTaken(id: number, targetUid?: string): Promise<void> {
+  if (!(await isVitalsSyncEnabled())) return;
   try {
     const uid = targetUid || await getUserId();
     if (!uid) return;
@@ -216,6 +237,7 @@ export async function syncAddMedicineHistory(entry: {
   date:         string;
   takenAt:      string;
 }): Promise<void> {
+  if (!(await isVitalsSyncEnabled())) return;
   try {
     const uid = await getUserId();
     if (!uid) return;
@@ -270,6 +292,7 @@ export async function syncAddSymptom(
   },
   targetUid?: string
 ): Promise<void> {
+  if (!(await isVitalsSyncEnabled())) return;
   console.log("🔄 syncAddSymptom called:", symptom.name, "id:", symptom.id, "target:", targetUid);
   try {
     const uid = targetUid || await getUserId();
@@ -307,6 +330,7 @@ export async function syncResolveSymptom(
   duration: number,
   targetUid?: string
 ): Promise<void> {
+  if (!(await isVitalsSyncEnabled())) return;
   try {
     const uid = targetUid || await getUserId();
 
@@ -381,6 +405,7 @@ export async function syncUpdateSymptom(
   updates: Record<string, any>,
   targetUid?: string
 ): Promise<void> {
+  if (!(await isVitalsSyncEnabled())) return;
   try {
     const uid = targetUid || await getUserId();
     if (!uid) return;
@@ -417,6 +442,7 @@ export async function syncAddSymptomHistory(
   },
   targetUid?: string
 ): Promise<void> {
+  if (!(await isVitalsSyncEnabled())) return;
   try {
     const uid = targetUid || await getUserId();
     if (!uid) return;
@@ -510,6 +536,7 @@ export async function syncAddHydration(
   },
   targetUid?: string
 ): Promise<void> {
+  if (!(await isVitalsSyncEnabled())) return;
   try {
     const uid = targetUid || await getUserId();
     if (!uid) return;
@@ -571,6 +598,7 @@ export async function syncAddFoodEntry(
   },
   targetUid?: string
 ): Promise<void> {
+  if (!(await isVitalsSyncEnabled())) return;
   try {
     const uid = targetUid || await getUserId();
     if (!uid) return;
@@ -639,6 +667,7 @@ export async function syncAddActivityEntry(
   },
   targetUid?: string
 ): Promise<void> {
+  if (!(await isVitalsSyncEnabled())) return;
   try {
     const uid = targetUid || await getUserId();
     if (!uid) return;
@@ -704,6 +733,7 @@ export async function syncStepsData(
   },
   targetUid?: string
 ): Promise<void> {
+  if (!(await isVitalsSyncEnabled())) return;
   try {
     const uid = targetUid || await getUserId();
     if (!uid) return;
@@ -735,6 +765,7 @@ export async function fetchStepsDataFromFirebase(date: string, uid?: string): Pr
 const biogearsCol = (uid: string) => collection(db, "users", uid, "biogears_analytics");
 
 export async function syncBiogearsAnalytics(analytics: any, targetUid?: string): Promise<void> {
+  if (!(await isBiometricSyncEnabled())) return;
   try {
     const uid = targetUid || await getUserId();
     if (!uid) return;

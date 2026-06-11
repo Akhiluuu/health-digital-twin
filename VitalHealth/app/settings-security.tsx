@@ -108,7 +108,7 @@ export default function Security() {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.bg }]}>
-      <Header />
+      <Header title="Security" showBack={true} showProfile={false} />
 
       <View style={styles.content}>
         <Item label="Change Password" type="change" />

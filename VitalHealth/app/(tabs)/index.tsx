@@ -15,6 +15,7 @@ import { useFamily } from "../../context/FamilyContext";
 import { useHydration } from "../../context/HydrationContext";
 import { useMedicine } from "../../context/MedicineContext";
 import { useSteps } from "../../context/StepContext";
+import { useBiogearsTwin } from "../../context/BiogearsTwinContext";
 import { useSymptoms } from "../../context/SymptomContext";
 import { useTheme } from "../../context/ThemeContext";
 import { colors } from "../../theme/colors";
@@ -98,6 +99,7 @@ export default function HomeScreen() {
   const { theme }                                          = useTheme();
   const c = colors[theme];
   const { steps, calories, goal, isTracking }              = useSteps();
+  const { caloricBalance } = useBiogearsTwin();
 
   // ✅ Active member context
   const { activeMemberId, isSwitched, activeProfile } = useFamily();
@@ -191,7 +193,7 @@ export default function HomeScreen() {
             onPress={() => router.push("/spo2")} accent="#4cc9f0" theme={theme}
           />
           <TelemetryCard
-            title="DAILY BURN" value={calories} unit=" KCAL" icon="🔥"
+            title="DAILY BURN" value={caloricBalance ? caloricBalance.estimated_burn_kcal.toLocaleString("en-IN") : calories} unit=" KCAL" icon="🔥"
             accent="#f59e0b" theme={theme} live={isTracking}
             onPress={() => router.push("/calorie-intelligence")}
           />

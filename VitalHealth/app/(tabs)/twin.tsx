@@ -18,12 +18,14 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useBiogearsTwin } from '../../context/BiogearsTwinContext';
 import { useTheme } from '../../context/ThemeContext';
+import { useFamily } from '../../context/FamilyContext';
 import { colors as themeColors } from '../../theme/colors';
 import Header from '../components/Header';
-import CircadianClock    from '../../components/twin/CircadianClock';
-import QuickAddRow       from '../../components/twin/QuickAddRow';
-import BodyMap           from '../../components/twin/BodyMap';
+import CircadianClock from '../../components/twin/CircadianClock';
+import QuickAddRow from '../../components/twin/QuickAddRow';
+import BodyMap from '../../components/twin/BodyMap';
 import { CSV_FOOD_DB, CsvFoodItem, parseDisplayAmount, scaleNutrients, getQuickQuantities } from '../nutrition';
+import { ConflictResolutionSheet } from '../components/ConflictResolutionSheet';
 
 const CSV_CATEGORIES = [
   { id: 'all', label: 'All', emoji: '🍽️' },
@@ -73,16 +75,16 @@ function clamp(val: number, min: number, max: number) {
 // ─── Event tab definitions ────────────────────────────────────────────────────
 
 type EventTab = 'meal' | 'exercise' | 'sleep' | 'water' | 'substance' | 'stress' | 'other';
-type DashTab  = 'overview' | 'organs' | 'trends';
+type DashTab = 'overview' | 'organs' | 'trends';
 
 const EVENT_TABS: { id: EventTab; label: string; icon: string; accent: string }[] = [
-  { id: 'meal',      label: 'Meal',      icon: '🍽️', accent: '#f59e0b' },
-  { id: 'exercise',  label: 'Exercise',  icon: '🏃', accent: '#10b981' },
-  { id: 'sleep',     label: 'Sleep',     icon: '😴', accent: '#6366f1' },
-  { id: 'water',     label: 'Water',     icon: '💧', accent: '#0ea5e9' },
+  { id: 'meal', label: 'Meal', icon: '🍽️', accent: '#f59e0b' },
+  { id: 'exercise', label: 'Exercise', icon: '🏃', accent: '#10b981' },
+  { id: 'sleep', label: 'Sleep', icon: '😴', accent: '#6366f1' },
+  { id: 'water', label: 'Water', icon: '💧', accent: '#0ea5e9' },
   { id: 'substance', label: 'Substance', icon: '💊', accent: '#8b5cf6' },
-  { id: 'stress',    label: 'Stress',    icon: '🧘', accent: '#ef4444' },
-  { id: 'other',     label: 'Other',     icon: '⚡', accent: '#ec4899' },
+  { id: 'stress', label: 'Stress', icon: '🧘', accent: '#ef4444' },
+  { id: 'other', label: 'Other', icon: '⚡', accent: '#ec4899' },
 ];
 
 // ─── Simulation stepper ───────────────────────────────────────────────────────
@@ -92,10 +94,10 @@ const SIM_STEPS = ['Queue', 'Engine', 'Analyzing', 'Done'];
 function SimStepper({ progress, status }: { progress: string; status: string }) {
   const stepIdx =
     status === 'queued' ? 0
-    : status === 'running' && progress.toLowerCase().includes('analy') ? 2
-    : status === 'running' ? 1
-    : status === 'done' ? 3
-    : 0;
+      : status === 'running' && progress.toLowerCase().includes('analy') ? 2
+        : status === 'running' ? 1
+          : status === 'done' ? 3
+            : 0;
   return (
     <View style={ss.stepperRow}>
       {SIM_STEPS.map((s, i) => (
@@ -230,7 +232,7 @@ function VitalCard({ label, value, unit, icon, color, normal, c: themeC }: any) 
 
 function OrganCard({ name, score, status, c: themeC }: any) {
   const clr = status === 'critical' ? '#ef4444' : status === 'warning' ? '#f59e0b' : '#10b981';
-  const icons: Record<string, string> = { heart: '🫀', lungs: '🫁', gut: '🦠', brain: '🧠', liver: '🫀', legs: '🦵' };
+  const icons: Record<string, string> = { heart: '🫀', lungs: '🫁', gut: '🦠', brain: '🧠', liver: '🟤', legs: '🦵' };
   return (
     <View style={[ss.organCard, { backgroundColor: themeC?.card ?? '#0f172a', borderColor: themeC?.border ?? '#1e293b' }]}>
       <Text style={{ fontSize: 24 }}>{icons[name] ?? '🔬'}</Text>
@@ -255,8 +257,8 @@ export default function TwinScreen() {
   const {
     twinStatus, simulationStatus, simulationProgress, simulationError,
     lastVitals, lastAnomalies, lastInteractionWarnings, lastAiInsights,
-    todayEvents, addEvent, removeEvent, clearToday,
-    savedRoutines, saveCurrentRoutine, loadRoutine, deleteRoutine,
+    todayEvents, addEvent, addEventAndSimulate, removeEvent, clearToday, fillBaselineEvents,
+    savedRoutines, saveCurrentRoutine, loadRoutine, loadRoutineWithConflictCheck, renameRoutine, deleteRoutine,
     editingRoutineId, setEditingRoutineId, setDefaultRoutine, restoreDefaultRoutine,
     sessions, refreshSessions,
     simulationName, setSimulationName,
@@ -268,7 +270,68 @@ export default function TwinScreen() {
     refreshAnalytics,
     todayMacros,
     twinUserId,
+    pendingConflicts,
+    pendingConflictResolver,
+    dismissConflicts,
   } = useBiogearsTwin();
+  const { activeProfile: profile } = useFamily();
+
+  const handleFillBaseline = async () => {
+    if (sessions.length > 0 && savedRoutines.length > 0) {
+      const lastSimTime = new Date(sessions[0].timestamp).getTime();
+      const hoursSinceLastSim = (Date.now() - lastSimTime) / (1000 * 60 * 60);
+
+      if (hoursSinceLastSim > 28) {
+        const daysMissed = Math.floor(hoursSinceLastSim / 24);
+        if (daysMissed >= 1) {
+          const defaultRoutine = savedRoutines.find(r => r.isDefault) || savedRoutines[0];
+          if (defaultRoutine) {
+            const lastSimDate = new Date(sessions[0].timestamp);
+            const fromLabel = lastSimDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+            const toLabel = new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+
+            Alert.alert(
+              'Sync Digital Twin',
+              `Your digital twin is behind by ${daysMissed} day(s) (last sim: ${fromLabel} → today: ${toLabel}).\n\nWould you like to run a catch-up simulation using "${defaultRoutine.name}" or just fill today's hourly baseline gaps?`,
+              [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                  text: 'Fill Today Gaps',
+                  onPress: async () => {
+                    try {
+                      setConflictSheetMode('baseline');
+                      await fillBaselineEvents();
+                    } catch (e: any) {
+                      Alert.alert('Fill Failed', e.message);
+                    }
+                  }
+                },
+                {
+                  text: `Simulate ${daysMissed} Days`,
+                  onPress: async () => {
+                    try {
+                      await runMultiDayCatchup(daysMissed);
+                      Alert.alert('Success', 'Digital Twin caught up successfully!');
+                    } catch (e: any) {
+                      Alert.alert('Catch-up Failed', e.message);
+                    }
+                  }
+                }
+              ]
+            );
+            return;
+          }
+        }
+      }
+    }
+
+    try {
+      setConflictSheetMode('baseline');
+      await fillBaselineEvents();
+    } catch (e: any) {
+      Alert.alert('Fill Failed', e.message);
+    }
+  };
 
   // ── Custom Alert State ──────────────────────────────────────────────────────
   const [customAlert, setCustomAlert] = useState<{
@@ -293,6 +356,9 @@ export default function TwinScreen() {
     }
   };
 
+  // ── Conflict Sheet Mode ─────────────────────────────────────────────────────
+  const [conflictSheetMode, setConflictSheetMode] = useState<'routine' | 'baseline'>('routine');
+
   // ── Mode ──────────────────────────────────────────────────────────────────
   const [mode, setMode] = useState<'dashboard' | 'routine'>((params.mode as any) || 'dashboard');
   const [dashTab, setDashTab] = useState<DashTab>('overview');  // dashboard inner tab
@@ -315,41 +381,7 @@ export default function TwinScreen() {
     }
   }, [simulationStatus]);
 
-  // ── Auto-Catchup Detection ──────────────────────────────────────────────────
-  const [hasCheckedCatchup, setHasCheckedCatchup] = useState(false);
 
-  useEffect(() => {
-    if (hasCheckedCatchup || sessions.length === 0 || savedRoutines.length === 0) return;
-    if (simulationStatus === 'running' || simulationStatus === 'queued' || todayEvents.length > 0) return;
-    
-    const lastSimTime = new Date(sessions[0].timestamp).getTime();
-    const hoursSinceLastSim = (Date.now() - lastSimTime) / (1000 * 60 * 60);
-    
-    if (hoursSinceLastSim > 28) {
-      const daysMissed = Math.floor(hoursSinceLastSim / 24);
-      if (daysMissed >= 1) {
-        const defaultRoutine = savedRoutines.find(r => r.isDefault) || savedRoutines[0];
-        if (defaultRoutine) {
-          Alert.alert(
-            'Sync Digital Twin',
-            `Your digital twin is behind by ${daysMissed} day(s). We can run a background catch-up simulation using your default routine "${defaultRoutine.name}" to keep the twin's physiological parameters continuously active.`,
-            [
-              { text: 'Skip', style: 'cancel' },
-              { text: `Simulate ${daysMissed} Days`, onPress: async () => {
-                  try {
-                    await runMultiDayCatchup(daysMissed);
-                    Alert.alert('Success', 'Digital Twin caught up successfully!');
-                  } catch (e: any) {
-                    Alert.alert('Catch-up Failed', e.message);
-                  }
-              }}
-            ]
-          );
-        }
-      }
-    }
-    setHasCheckedCatchup(true);
-  }, [hasCheckedCatchup, sessions, savedRoutines, todayEvents.length, simulationStatus, runMultiDayCatchup]);
 
   const fmtElapsed = (s: number) => {
     const m = Math.floor(s / 60); const sec = s % 60;
@@ -357,17 +389,17 @@ export default function TwinScreen() {
   };
 
   const switchMode = (next: 'dashboard' | 'routine') => {
-    Animated.spring(fabAnim, { 
-      toValue: next === 'routine' ? 1 : 0, 
+    Animated.spring(fabAnim, {
+      toValue: next === 'routine' ? 1 : 0,
       useNativeDriver: true,
       tension: 120,
       friction: 14
     }).start();
-    
+
     // Defer the heavy re-render to allow the animation to start smoothly
     setTimeout(() => {
       setMode(next);
-    }, 0);
+    }, 50);
   };
 
   // ── Active Tab ────────────────────────────────────────────────────────────
@@ -387,13 +419,13 @@ export default function TwinScreen() {
   }, [params.mode, params.tab]);
 
   // ── Shared time per tab ───────────────────────────────────────────────────
-  const [mealTime,      setMealTime]      = useState(currentTime());
-  const [exerciseTime,  setExerciseTime]  = useState(currentTime());
-  const [sleepTime,     setSleepTime]     = useState(currentTime());
-  const [waterTime,     setWaterTime]     = useState(currentTime());
-  const [subTime,       setSubTime]       = useState(currentTime());
-  const [stressTime,    setStressTime]    = useState(currentTime());
-  const [otherTime,     setOtherTime]     = useState(currentTime());
+  const [mealTime, setMealTime] = useState(currentTime());
+  const [exerciseTime, setExerciseTime] = useState(currentTime());
+  const [sleepTime, setSleepTime] = useState(currentTime());
+  const [waterTime, setWaterTime] = useState(currentTime());
+  const [subTime, setSubTime] = useState(currentTime());
+  const [stressTime, setStressTime] = useState(currentTime());
+  const [otherTime, setOtherTime] = useState(currentTime());
 
   // ── Meal state ────────────────────────────────────────────────────────────
   const MEAL_TYPES = [
@@ -404,23 +436,31 @@ export default function TwinScreen() {
     { label: 'Ketogenic', value: 'ketogenic' },
     { label: 'Custom', value: 'custom' },
   ];
-  const [mealType, setMealType]     = useState<'balanced' | 'high_carb' | 'high_protein' | 'fast_food' | 'ketogenic' | 'custom'>('balanced');
-  const [mealKcal, setMealKcal]     = useState('500');
-  const [mealCarb, setMealCarb]     = useState('');
-  const [mealFat,  setMealFat]      = useState('');
-  const [mealProt, setMealProt]     = useState('');
+  const [mealType, setMealType] = useState<'balanced' | 'high_carb' | 'high_protein' | 'fast_food' | 'ketogenic' | 'custom'>('balanced');
+  const [mealKcal, setMealKcal] = useState('500');
+  const [mealCarb, setMealCarb] = useState('');
+  const [mealFat, setMealFat] = useState('');
+  const [mealProt, setMealProt] = useState('');
   // Meal tab mode: 'pick' = food-list picker | 'quick' = calories-only | 'custom' = full macros
   type MealPickerMode = 'pick' | 'quick' | 'custom';
   const [mealPickerMode, setMealPickerMode] = useState<MealPickerMode>('pick');
-  const [mealSearch,     setMealSearch]     = useState('');
-  const [mealCategory,   setMealCategory]   = useState('all');
+  const [mealSearch, setMealSearch] = useState('');
+  const [mealCategory, setMealCategory] = useState('all');
   const [selectedCsvFood, setSelectedCsvFood] = useState<CsvFoodItem | null>(null);
-  const [csvFoodAmount,   setCsvFoodAmount]   = useState(1);
+  const [csvFoodAmount, setCsvFoodAmount] = useState(1);
   const [foodRenderLimit, setFoodRenderLimit] = useState(20);
 
   useEffect(() => {
     setFoodRenderLimit(20);
   }, [mealSearch, mealCategory]);
+
+  const filteredRecipes = React.useMemo(() => {
+    return CSV_FOOD_DB.filter(r => {
+      const matchCat = mealCategory === 'all' || r.category === mealCategory;
+      const matchQ = !mealSearch || r.food.toLowerCase().includes(mealSearch.toLowerCase());
+      return matchCat && matchQ;
+    });
+  }, [mealCategory, mealSearch]);
 
   // ── Exercise state ────────────────────────────────────────────────────────
   const EXERCISE_PRESETS = [
@@ -431,7 +471,7 @@ export default function TwinScreen() {
     { label: 'Max', value: '0.95' },
   ];
   const [exIntensity, setExIntensity] = useState(0.5);
-  const [exDuration,  setExDuration]  = useState('30');  // minutes
+  const [exDuration, setExDuration] = useState('30');  // minutes
 
   // ── Sleep state ───────────────────────────────────────────────────────────
   const [sleepHours, setSleepHours] = useState(7.5);
@@ -498,9 +538,9 @@ export default function TwinScreen() {
     'Urea',
     'Vasopressin'
   ];
-  const [subName,   setSubName]   = useState('Caffeine');
+  const [subName, setSubName] = useState('Caffeine');
   const [subSearch, setSubSearch] = useState('');
-  const [subDose,   setSubDose]   = useState('200');
+  const [subDose, setSubDose] = useState('200');
   const [showSubPicker, setShowSubPicker] = useState(false);
 
   const allSubNames = React.useMemo(() => {
@@ -509,9 +549,11 @@ export default function TwinScreen() {
     return combined.sort();
   }, [substances]);
 
-  const filteredSubs = subSearch.trim()
-    ? allSubNames.filter(s => s.toLowerCase().includes(subSearch.toLowerCase()))
-    : allSubNames;
+  const filteredSubs = React.useMemo(() => {
+    return subSearch.trim()
+      ? allSubNames.filter(s => s.toLowerCase().includes(subSearch.toLowerCase()))
+      : allSubNames;
+  }, [allSubNames, subSearch]);
 
   // ── Stress state ──────────────────────────────────────────────────────────
   const STRESS_PRESETS = [
@@ -521,18 +563,22 @@ export default function TwinScreen() {
     { label: 'Severe', value: 1.0 },
   ];
   const [stressLevel, setStressLevel] = useState(0.3);
-  const [stressDur,   setStressDur]   = useState('15'); // minutes
+  const [stressDur, setStressDur] = useState('15'); // minutes
 
   // ── Other (Alcohol + Fast) ────────────────────────────────────────────────
-  const [otherMode, setOtherMode]     = useState<'alcohol' | 'fast'>('alcohol');
-  const [alcoholDrinks, setAlcohol]   = useState('1');
-  const [fastHours, setFastHours]     = useState(16);
+  const [otherMode, setOtherMode] = useState<'alcohol' | 'fast'>('alcohol');
+  const [alcoholDrinks, setAlcohol] = useState('1');
+  const [fastHours, setFastHours] = useState(16);
 
   // ── UI modals ─────────────────────────────────────────────────────────────
   const [saveRoutineModal, setSaveRoutineModal] = useState(false);
-  const [routineName, setRoutineName]           = useState('');
-  const [simNameModal, setSimNameModal]          = useState(false);
-  const [pendingSimName, setPendingSimName]       = useState('');
+  const [routineName, setRoutineName] = useState('');
+  const [lastLoadedRoutineName, setLastLoadedRoutineName] = useState<string | null>(null);
+
+  // ── Rename routine state ──────────────────────────────────────────────────
+  const [renameRoutineModal, setRenameRoutineModal] = useState(false);
+  const [renamingRoutineId, setRenamingRoutineId] = useState<string | null>(null);
+  const [renamingNewName, setRenamingNewName] = useState('');
 
   useEffect(() => {
     refreshSubstances();
@@ -555,20 +601,20 @@ export default function TwinScreen() {
     let mealMacros: { carb_g: number; fat_g: number; protein_g: number } | null = null;
 
     if (mealType === 'custom') {
-      const carbVal  = parseFloat(mealCarb);
-      const fatVal   = parseFloat(mealFat);
-      const protVal  = parseFloat(mealProt);
+      const carbVal = parseFloat(mealCarb);
+      const fatVal = parseFloat(mealFat);
+      const protVal = parseFloat(mealProt);
       const hasAllMacros = !isNaN(carbVal) && carbVal >= 0
-                        && !isNaN(fatVal)  && fatVal  >= 0
-                        && !isNaN(protVal) && protVal >= 0;
+        && !isNaN(fatVal) && fatVal >= 0
+        && !isNaN(protVal) && protVal >= 0;
       if (hasAllMacros) {
         // User provided explicit macros — send as custom
         mealMacros = { carb_g: carbVal, fat_g: fatVal, protein_g: protVal };
       } else {
         // Estimate macros from balanced preset so the validator passes
         mealMacros = {
-          carb_g:    Math.round(kcal * 0.40 / 4),
-          fat_g:     Math.round(kcal * 0.30 / 9),
+          carb_g: Math.round(kcal * 0.40 / 4),
+          fat_g: Math.round(kcal * 0.30 / 9),
           protein_g: Math.round(kcal * 0.30 / 4),
         };
         // Keep 'custom' type so BioGears uses our explicit values
@@ -662,16 +708,17 @@ export default function TwinScreen() {
 
   // ── Simulate ──────────────────────────────────────────────────────────────
 
-  const handleSimulate = () => {
+  const handleSimulate = async () => {
     if (todayEvents.length === 0)
       return Alert.alert('No Events', 'Log at least one event before simulating.');
     if (twinStatus !== 'ready')
       return Alert.alert('Twin Not Ready', 'Complete your clinical profile first (Profile → Calibrate Twin).');
-    setSimNameModal(true);
-  };
 
-  const startSimulation = async () => {
-    const baseName = pendingSimName.trim() || `Sim ${new Date().toLocaleDateString('en-IN')}`;
+    // Auto-generate name based on loaded routine or date
+    const baseName = lastLoadedRoutineName
+      ? `${lastLoadedRoutineName} Sim`
+      : `Sim ${new Date().toLocaleDateString('en-IN')}`;
+
     let finalName = baseName;
     let counter = 1;
     while (sessions.some(s => s.name === finalName)) {
@@ -680,30 +727,74 @@ export default function TwinScreen() {
     }
 
     setSimulationName(finalName);
-    setPendingSimName('');
-    setSimNameModal(false);
     switchMode('dashboard');
     setDashTab('overview'); // jump to overview so user sees the progress overlay
-    try { await runSimulation(); }
-    catch (e: any) {
+    try {
+      await runSimulation();
+    } catch (e: any) {
       // Error is already stored in simulationError state (shown in-page).
-      // Do NOT show an Alert — the SimProgressOverlay handles the failed state.
       console.warn('[Twin] Simulation error:', e.message);
     }
   };
 
   const handleLoadRoutine = (routineId: string, name: string) => {
-    Alert.alert(`Load "${name}"`, 'Adds saved events to today\'s timeline.', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Load', onPress: () => { loadRoutine(routineId); switchMode('routine'); } },
-    ]);
+    // If there are no events today, load directly without conflict check
+    if (todayEvents.length === 0) {
+      Alert.alert(`Load "${name}"`, 'Adds saved events to today\'s timeline.', [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Load', onPress: () => { loadRoutine(routineId); setLastLoadedRoutineName(name); switchMode('routine'); } },
+      ]);
+      return;
+    }
+
+    // There are existing events — use smart merge with conflict detection
+    Alert.alert(
+      `Load "${name}"`,
+      `You already have ${todayEvents.length} event(s) logged today. The smart merge will check for overlapping events before adding routine events.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Smart Merge',
+          onPress: () => {
+            setConflictSheetMode('routine');
+            setLastLoadedRoutineName(name);
+            loadRoutineWithConflictCheck(routineId, (_conflicts, resolve) => {
+              // onConflicts callback: context stores the conflicts in pendingConflicts
+              // The ConflictResolutionSheet will pick it up automatically
+            });
+            switchMode('routine');
+          },
+        },
+      ]
+    );
   };
 
   const handleEditRoutine = (routineId: string, name: string) => {
     loadRoutine(routineId);
     setEditingRoutineId(routineId);
     setRoutineName(name);
+    setLastLoadedRoutineName(name);
     switchMode('routine');
+  };
+
+  // Open rename modal for a routine — does NOT load events, just renames.
+  const handleOpenRename = (routineId: string, currentName: string) => {
+    setRenamingRoutineId(routineId);
+    setRenamingNewName(currentName);
+    setRenameRoutineModal(true);
+  };
+
+  const handleConfirmRename = async () => {
+    if (!renamingRoutineId || !renamingNewName.trim()) return;
+    try {
+      await renameRoutine(renamingRoutineId, renamingNewName.trim());
+      setRenameRoutineModal(false);
+      setRenamingRoutineId(null);
+      setRenamingNewName('');
+      Alert.alert('Renamed', `Routine renamed to "${renamingNewName.trim()}".`);
+    } catch (e: any) {
+      Alert.alert('Cannot Rename', e.message);
+    }
   };
 
   const handleSaveRoutine = async () => {
@@ -711,10 +802,10 @@ export default function TwinScreen() {
     if (!trimmedName) return;
 
     let finalName = trimmedName;
-    
+
     // If NOT editing, or they changed the name while editing, check for duplicates
     const isOverwritingCurrent = editingRoutineId && savedRoutines.find(r => r.id === editingRoutineId)?.name === finalName;
-    
+
     if (!isOverwritingCurrent) {
       let counter = 1;
       while (savedRoutines.some(r => r.name === finalName)) {
@@ -736,10 +827,12 @@ export default function TwinScreen() {
   const handleUndo = () => {
     Alert.alert('Undo Last Simulation', 'Revert twin engine to previous state?', [
       { text: 'Cancel', style: 'cancel' },
-      { text: 'Undo', style: 'destructive', onPress: async () => {
-        try { await undoLastSimulation(); Alert.alert('Reverted', 'Engine state restored.'); }
-        catch (e: any) { Alert.alert('Error', e.message); }
-      }},
+      {
+        text: 'Undo', style: 'destructive', onPress: async () => {
+          try { await undoLastSimulation(); Alert.alert('Reverted', 'Engine state restored.'); }
+          catch (e: any) { Alert.alert('Error', e.message); }
+        }
+      },
     ]);
   };
 
@@ -780,30 +873,23 @@ export default function TwinScreen() {
     setSelectedCsvFood(null);
   };
 
-  const MACRO_PRESETS: Record<string, {carb: number; fat: number; protein: number}> = {
-    balanced:     {carb: 0.40, fat: 0.30, protein: 0.30},
-    high_carb:    {carb: 0.60, fat: 0.20, protein: 0.20},
-    high_protein: {carb: 0.30, fat: 0.20, protein: 0.50},
-    fast_food:    {carb: 0.45, fat: 0.40, protein: 0.15},
-    ketogenic:    {carb: 0.05, fat: 0.75, protein: 0.20},
+  const MACRO_PRESETS: Record<string, { carb: number; fat: number; protein: number }> = {
+    balanced: { carb: 0.40, fat: 0.30, protein: 0.30 },
+    high_carb: { carb: 0.60, fat: 0.20, protein: 0.20 },
+    high_protein: { carb: 0.30, fat: 0.20, protein: 0.50 },
+    fast_food: { carb: 0.45, fat: 0.40, protein: 0.15 },
+    ketogenic: { carb: 0.05, fat: 0.75, protein: 0.20 },
   };
 
   const renderMealTab = () => {
-    // Filtered food list
-    const filteredRecipes = CSV_FOOD_DB.filter(r => {
-      const matchCat = mealCategory === 'all' || r.category === mealCategory;
-      const matchQ   = !mealSearch || r.food.toLowerCase().includes(mealSearch.toLowerCase());
-      return matchCat && matchQ;
-    });
-
     return (
       <View>
         {/* ── Mode selector ─────────────────────────────── */}
         <View style={[ss.modeRow, { backgroundColor: c.card, borderColor: c.border }]}>
           {([
-            { id: 'pick',   label: '🍽️ Food List', icon: 'list' },
-            { id: 'quick',  label: '⚡ Quick',     icon: 'flash' },
-            { id: 'custom', label: '✏️ Custom',    icon: 'create' },
+            { id: 'pick', label: '🍽️ Food List', icon: 'list' },
+            { id: 'quick', label: '⚡ Quick', icon: 'flash' },
+            { id: 'custom', label: '✏️ Custom', icon: 'create' },
           ] as { id: 'pick' | 'quick' | 'custom'; label: string; icon: any }[]).map(m => (
             <TouchableOpacity
               key={m.id}
@@ -883,9 +969,9 @@ export default function TwinScreen() {
                 >
                   <View style={ss.foodGrid}>
                     {filteredRecipes.slice(0, foodRenderLimit).map((recipe, idx) => {
-                      const carbG   = recipe.carbs_g;
-                      const fatG    = recipe.fat_g;
-                      const protG   = recipe.protein_g;
+                      const carbG = recipe.carbs_g;
+                      const fatG = recipe.fat_g;
+                      const protG = recipe.protein_g;
                       return (
                         <TouchableOpacity
                           key={`csv_${idx}`}
@@ -950,9 +1036,9 @@ export default function TwinScreen() {
                   const kcal = parseFloat(mealKcal) || 0;
                   const p = MACRO_PRESETS[mealType] || MACRO_PRESETS['balanced'];
                   return [
-                    { label: 'Carbs',   g: Math.round(kcal * p.carb    / 4), color: '#f59e0b' },
+                    { label: 'Carbs', g: Math.round(kcal * p.carb / 4), color: '#f59e0b' },
                     { label: 'Protein', g: Math.round(kcal * p.protein / 4), color: '#10b981' },
-                    { label: 'Fat',     g: Math.round(kcal * p.fat     / 9), color: '#ef4444' },
+                    { label: 'Fat', g: Math.round(kcal * p.fat / 9), color: '#ef4444' },
                   ].map(item => (
                     <View key={item.label} style={{ flex: 1, alignItems: 'center' }}>
                       <Text style={[ss.macroG, { color: item.color }]}>{item.g}g</Text>
@@ -1363,14 +1449,14 @@ export default function TwinScreen() {
 
   const renderTabContent = () => {
     switch (activeTab) {
-      case 'meal':      return renderMealTab();
-      case 'exercise':  return renderExerciseTab();
-      case 'sleep':     return renderSleepTab();
-      case 'water':     return renderWaterTab();
+      case 'meal': return renderMealTab();
+      case 'exercise': return renderExerciseTab();
+      case 'sleep': return renderSleepTab();
+      case 'water': return renderWaterTab();
       case 'substance': return renderSubstanceTab();
-      case 'stress':    return renderStressTab();
-      case 'other':     return renderOtherTab();
-      default:          return null;
+      case 'stress': return renderStressTab();
+      case 'other': return renderOtherTab();
+      default: return null;
     }
   };
 
@@ -1416,14 +1502,14 @@ export default function TwinScreen() {
               {['Engine init', 'Running physics', 'Computing vitals', 'Finalising'].map((label, i) => {
                 // Realistic BioGears timing: init ~30s, physics bulk ~2min, vitals ~8min, done ~15min
                 const thresholds = [30, 120, 480, 900];
-                const done   = simulationStatus === 'running' && elapsedSecs > thresholds[i];
+                const done = simulationStatus === 'running' && elapsedSecs > thresholds[i];
                 const active = simulationStatus === 'running' && !done &&
-                               elapsedSecs > (i === 0 ? 0 : thresholds[i - 1]);
+                  elapsedSecs > (i === 0 ? 0 : thresholds[i - 1]);
                 return (
                   <View key={label} style={ss.simDotWrap}>
                     <View style={[
                       ss.simDotCircle,
-                      done   && { backgroundColor: '#38bdf8', borderColor: '#38bdf8' },
+                      done && { backgroundColor: '#38bdf8', borderColor: '#38bdf8' },
                       active && { borderColor: '#38bdf8' },
                       !done && !active && { borderColor: c.border },
                     ]}>
@@ -1462,7 +1548,7 @@ export default function TwinScreen() {
         {/* Health Score */}
         {healthScore && (
           <LinearGradient
-            colors={healthScore.grade === 'A' ? ['#10b981','#059669'] : healthScore.grade === 'B' ? ['#38bdf8','#0284c7'] : healthScore.grade === 'C' ? ['#f59e0b','#d97706'] : ['#ef4444','#dc2626']}
+            colors={healthScore.grade === 'A' ? ['#10b981', '#059669'] : healthScore.grade === 'B' ? ['#38bdf8', '#0284c7'] : healthScore.grade === 'C' ? ['#f59e0b', '#d97706'] : ['#ef4444', '#dc2626']}
             style={ss.scoreBadge} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}>
             <View>
               <Text style={ss.scoreLetter}>{healthScore.grade}</Text>
@@ -1476,7 +1562,7 @@ export default function TwinScreen() {
         )}
 
         {/* Quick Add row */}
-        <QuickAddRow addEvent={addEvent} />
+        <QuickAddRow addEventAndSimulate={addEventAndSimulate} twinStatus={twinStatus} />
 
         {/* Saved Routines (Moved here for immediate access on Clinical Twin page) */}
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 15, marginBottom: 8, paddingHorizontal: 4 }}>
@@ -1492,11 +1578,24 @@ export default function TwinScreen() {
               onPress={() => handleLoadRoutine(r.id, r.name)}
               onLongPress={() => Alert.alert('Routine Options', `"${r.name}"`, [
                 { text: r.isDefault ? 'Remove Default' : 'Set as Default', onPress: () => setDefaultRoutine(r.id) },
+                { text: 'Rename', onPress: () => handleOpenRename(r.id, r.name) },
                 { text: 'Edit Events', onPress: () => handleEditRoutine(r.id, r.name) },
-                { text: 'Delete Routine', style: 'destructive', onPress: () => Alert.alert('Delete Routine', `Delete "${r.name}"? This cannot be undone.`, [
-                  { text: 'Cancel', style: 'cancel' },
-                  { text: 'Delete', style: 'destructive', onPress: () => deleteRoutine(r.id) },
-                ])},
+                {
+                  text: 'Delete Routine', style: 'destructive', onPress: () => {
+                    if (r.isDefault) {
+                      Alert.alert('Cannot Delete Default State', 'This routine is currently marked as your active Default Catch-up routine. Please select/set another routine as the default first before deleting this one.');
+                      return;
+                    }
+                    if (savedRoutines.length <= 1) {
+                      Alert.alert('Cannot Delete State', 'You must keep at least one saved routine/state to represent your baseline schedule.');
+                      return;
+                    }
+                    Alert.alert('Delete Routine', `Delete "${r.name}"? This cannot be undone.`, [
+                      { text: 'Cancel', style: 'cancel' },
+                      { text: 'Delete', style: 'destructive', onPress: () => deleteRoutine(r.id) },
+                    ]);
+                  }
+                },
                 { text: 'Cancel', style: 'cancel' },
               ])}>
               <View style={ss.routineIcon}><Text style={{ fontSize: 20 }}>{r.isDefault ? '⭐' : '📋'}</Text></View>
@@ -1524,13 +1623,13 @@ export default function TwinScreen() {
         {v ? (
           <View style={ss.vitalsGrid}>
             {[
-              { label: 'Heart Rate',   val: v.heart_rate   ? Math.round(v.heart_rate)   : null, unit: 'bpm',    icon: '🫀', color: '#ef4444', lo: 60, hi: 100 },
-              { label: 'Systolic BP',  val: bp.sys          ? Math.round(bp.sys!)         : null, unit: 'mmHg',   icon: '🩸', color: '#f59e0b', lo: 90, hi: 120 },
-              { label: 'Diastolic BP', val: bp.dia          ? Math.round(bp.dia!)         : null, unit: 'mmHg',   icon: '🩸', color: '#f97316', lo: 60, hi: 80  },
-              { label: 'Glucose',      val: v.glucose       ? Math.round(v.glucose)       : null, unit: 'mg/dL',  icon: '🍬', color: '#6366f1', lo: 70, hi: 140 },
-              { label: 'SpO₂',         val: v.spo2          ? Math.round(v.spo2)          : null, unit: '%',      icon: '🫁', color: '#38bdf8', lo: 94, hi: 100 },
-              { label: 'Resp. Rate',   val: v.respiration   ? Math.round(v.respiration)   : null, unit: 'br/min', icon: '💨', color: '#10b981', lo: 12, hi: 20  },
-              ...(v.map            != null ? [{ label: 'MAP',       val: Math.round(v.map!),                unit: 'mmHg', icon: '📈', color: '#a78bfa', lo: 70, hi: 100 }] : []),
+              { label: 'Heart Rate', val: v.heart_rate ? Math.round(v.heart_rate) : null, unit: 'bpm', icon: '🫀', color: '#ef4444', lo: 60, hi: 100 },
+              { label: 'Systolic BP', val: bp.sys ? Math.round(bp.sys!) : null, unit: 'mmHg', icon: '🩸', color: '#f59e0b', lo: 90, hi: 120 },
+              { label: 'Diastolic BP', val: bp.dia ? Math.round(bp.dia!) : null, unit: 'mmHg', icon: '🩸', color: '#f97316', lo: 60, hi: 80 },
+              { label: 'Glucose', val: v.glucose ? Math.round(v.glucose) : null, unit: 'mg/dL', icon: '🍬', color: '#6366f1', lo: 70, hi: 140 },
+              { label: 'SpO₂', val: v.spo2 ? Math.round(v.spo2) : null, unit: '%', icon: '🫁', color: '#38bdf8', lo: 94, hi: 100 },
+              { label: 'Resp. Rate', val: v.respiration ? Math.round(v.respiration) : null, unit: 'br/min', icon: '💨', color: '#10b981', lo: 12, hi: 20 },
+              ...(v.map != null ? [{ label: 'MAP', val: Math.round(v.map!), unit: 'mmHg', icon: '📈', color: '#a78bfa', lo: 70, hi: 100 }] : []),
               ...(v.core_temperature != null ? [{ label: 'Core Temp', val: Number((v.core_temperature!).toFixed(1)), unit: '°C', icon: '🌡️', color: '#fb923c', lo: 36.5, hi: 37.5 }] : []),
             ].map(({ label, val, unit, icon, color, lo, hi }) => {
               const dot = vStatus(val, lo, hi);
@@ -1541,7 +1640,7 @@ export default function TwinScreen() {
                     {dot && <View style={[ss.statusDot, { backgroundColor: dot }]} />}
                   </View>
                   <Text style={[ss.vitalValue, { color }]}>{val ?? '—'}</Text>
-                  <Text style={[ss.vitalUnit,  { color: c.sub }]}>{unit}</Text>
+                  <Text style={[ss.vitalUnit, { color: c.sub }]}>{unit}</Text>
                   <Text style={[ss.vitalLabel, { color: c.sub }]}>{label}</Text>
                 </View>
               );
@@ -1551,7 +1650,7 @@ export default function TwinScreen() {
           <View style={[ss.emptyCard, { backgroundColor: c.card }]}>
             <Text style={{ fontSize: 40 }}>🔬</Text>
             <Text style={[ss.emptyTitle, { color: c.text }]}>No Simulation Yet</Text>
-            <Text style={[ss.emptySub,  { color: c.sub }]}>Tap + to log your routine and run a simulation</Text>
+            <Text style={[ss.emptySub, { color: c.sub }]}>Tap + to log your routine and run a simulation</Text>
           </View>
         )}
 
@@ -1584,9 +1683,9 @@ export default function TwinScreen() {
               </View>
               {/* Mini rings */}
               {[
-                { label: 'Carbs',   val: todayMacros.carbs,   color: '#f59e0b', target: 250 },
-                { label: 'Protein', val: todayMacros.protein, color: '#10b981', target: 60  },
-                { label: 'Fat',     val: todayMacros.fat,     color: '#ef4444', target: 65  },
+                { label: 'Carbs', val: todayMacros.carbs, color: '#f59e0b', target: 250 },
+                { label: 'Protein', val: todayMacros.protein, color: '#10b981', target: 60 },
+                { label: 'Fat', val: todayMacros.fat, color: '#ef4444', target: 65 },
               ].map(m => {
                 const pct = Math.min(m.val / m.target, 1);
                 return (
@@ -1634,13 +1733,14 @@ export default function TwinScreen() {
     <>
       {organScores?.scores ? (
         <>
-          <BodyMap scores={organScores.scores} c={c} />
+          <BodyMap scores={organScores.scores} c={c} lastVitals={lastVitals} sessions={sessions} profile={profile} />
           {/* Horizontal scrollable organ cards below the map */}
           <Text style={[ss.section, { color: c.text }]}>Scores Breakdown</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false}>
             {(Object.keys(organScores.scores) as string[]).map(name => {
               const data = organScores.scores[name];
-              const clr  = data.status === 'critical' ? '#ef4444' : data.status === 'warning' ? '#f59e0b' : '#10b981';
+              const normStatus = (data.status || '').toLowerCase();
+              const clr = (normStatus === 'critical' || normStatus === 'poor') ? '#ef4444' : ((normStatus === 'warning' || normStatus === 'fair') ? '#f59e0b' : '#10b981');
               const icons: Record<string, string> = { heart: '🫀', lungs: '🫁', gut: '🦠', brain: '🧠', liver: '🟤', legs: '🦵' };
               return (
                 <View key={name} style={[ss.organCard, { backgroundColor: c.card, borderColor: c.border }]}>
@@ -1659,7 +1759,7 @@ export default function TwinScreen() {
         <View style={[ss.emptyCard, { backgroundColor: c.card }]}>
           <Text style={{ fontSize: 40 }}>🏥</Text>
           <Text style={[ss.emptyTitle, { color: c.text }]}>No Organ Data Yet</Text>
-          <Text style={[ss.emptySub,  { color: c.sub }]}>Run a simulation to see organ health scores</Text>
+          <Text style={[ss.emptySub, { color: c.sub }]}>Run a simulation to see organ health scores</Text>
         </View>
       )}
     </>
@@ -1700,7 +1800,7 @@ export default function TwinScreen() {
         <View style={[ss.emptyCard, { backgroundColor: c.card }]}>
           <Text style={{ fontSize: 40 }}>📈</Text>
           <Text style={[ss.emptyTitle, { color: c.text }]}>No History Yet</Text>
-          <Text style={[ss.emptySub,  { color: c.sub }]}>Completed simulations will appear here</Text>
+          <Text style={[ss.emptySub, { color: c.sub }]}>Completed simulations will appear here</Text>
         </View>
       )}
     </>
@@ -1709,8 +1809,8 @@ export default function TwinScreen() {
   const renderDashboard = () => {
     const DASH_TABS: { id: DashTab; label: string; icon: string }[] = [
       { id: 'overview', label: 'Overview', icon: '📊' },
-      { id: 'organs',   label: 'Organs',   icon: '🏥' },
-      { id: 'trends',   label: 'Trends',   icon: '📈' },
+      { id: 'organs', label: 'Organs', icon: '🏥' },
+      { id: 'trends', label: 'Trends', icon: '📈' },
     ];
 
     return (
@@ -1734,8 +1834,8 @@ export default function TwinScreen() {
         </View>
 
         {dashTab === 'overview' && renderOverviewTab()}
-        {dashTab === 'organs'   && renderOrgansTab()}
-        {dashTab === 'trends'   && renderTrendsTab()}
+        {dashTab === 'organs' && renderOrgansTab()}
+        {dashTab === 'trends' && renderTrendsTab()}
 
       </ScrollView>
     );
@@ -1763,6 +1863,23 @@ export default function TwinScreen() {
           </View>
         )}
 
+        {/* Empty state card with Fill Baseline option */}
+        {todayEvents.length === 0 && (
+          <View style={[ss.emptyStateCard, { backgroundColor: c.card, borderColor: c.border }]}>
+            <Text style={[ss.emptyStateTitle, { color: c.text }]}>No Events Logged Today</Text>
+            <Text style={[ss.emptyStateDesc, { color: c.sub }]}>
+              You haven't logged any daily habits yet. Fill in missing baseline events for the past hours of today to synchronize your twin.
+            </Text>
+            <TouchableOpacity
+              style={[ss.fillBaselineBtn, { backgroundColor: c.active + '15', borderColor: c.active }]}
+              onPress={handleFillBaseline}
+            >
+              <Ionicons name="flash-outline" size={14} color={c.active} />
+              <Text style={[ss.fillBaselineBtnTxt, { color: c.active }]}>Fill Baseline Gaps</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
         {/* ── Today's Timeline (Moved to Top) ── */}
         {todayEvents.length > 0 && (
           <View style={{ paddingHorizontal: 12, marginBottom: 16 }}>
@@ -1770,12 +1887,41 @@ export default function TwinScreen() {
               <Text style={[ss.section, { color: c.text, marginTop: 0 }]}>
                 Today's Queue ({todayEvents.length})
               </Text>
-              <TouchableOpacity onPress={() => Alert.alert('Clear All', 'Remove all queued events?', [
-                { text: 'Cancel', style: 'cancel' },
-                { text: 'Clear', style: 'destructive', onPress: clearToday },
-              ])}>
-                <Text style={{ color: '#ef4444', fontSize: 12 }}>Clear All</Text>
-              </TouchableOpacity>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                <TouchableOpacity
+                  onPress={handleFillBaseline}
+                  style={{
+                    backgroundColor: c.active + '15',
+                    borderColor: c.active,
+                    borderWidth: 1,
+                    borderRadius: 12,
+                    paddingVertical: 5,
+                    paddingHorizontal: 10,
+                  }}
+                >
+                  <Text style={{ color: c.active, fontSize: 11, fontWeight: '700' }}>⚡ Fill Baseline</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={() => Alert.alert('Clear All', 'Remove all queued events?', [
+                    { text: 'Cancel', style: 'cancel' },
+                    { text: 'Clear', style: 'destructive', onPress: () => { clearToday(); setLastLoadedRoutineName(null); } },
+                  ])}
+                  style={{
+                    backgroundColor: 'rgba(239, 68, 68, 0.08)',
+                    borderColor: 'rgba(239, 68, 68, 0.4)',
+                    borderWidth: 1,
+                    borderRadius: 12,
+                    paddingVertical: 5,
+                    paddingHorizontal: 10,
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    gap: 4,
+                  }}
+                >
+                  <Ionicons name="trash-outline" size={12} color="#ef4444" />
+                  <Text style={{ color: '#ef4444', fontSize: 11, fontWeight: '700' }}>Clear All</Text>
+                </TouchableOpacity>
+              </View>
             </View>
 
             {todayEvents.map((ev, i) => {
@@ -1789,7 +1935,47 @@ export default function TwinScreen() {
                   </View>
                   <View style={{ flex: 1, marginLeft: 10 }}>
                     <Text style={[ss.eventLabel, { color: c.text }]} numberOfLines={1}>{ev.displayLabel}</Text>
-                    <Text style={[ss.eventTime, { color: c.sub }]}>{wallTimeToLabel(ev.wallTime)}</Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2 }}>
+                      <Text style={[ss.eventTime, { color: c.sub }]}>
+                        {ev.timestamp
+                          ? (() => {
+                            const evDate = new Date(ev.timestamp * 1000);
+                            const today = new Date();
+                            const isToday = evDate.toDateString() === today.toDateString();
+                            if (isToday) {
+                              // Same day — just show time like before
+                              return wallTimeToLabel(ev.wallTime);
+                            }
+                            // Past date (pulled from saved state / catch-up) — show full date+time
+                            return evDate.toLocaleString('en-IN', {
+                              day: 'numeric', month: 'short',
+                              hour: '2-digit', minute: '2-digit',
+                            });
+                          })()
+                          : wallTimeToLabel(ev.wallTime)}
+                      </Text>
+                      {/* Source badge */}
+                      {(() => {
+                        const src = ev.source || 'manual';
+                        const badgeColor = src === 'baseline' ? '#10b981' : src === 'routine' ? '#f59e0b' : '#3b82f6';
+                        const badgeBg = src === 'baseline' ? '#10b98115' : src === 'routine' ? '#f59e0b15' : '#3b82f615';
+                        const badgeLabel = src === 'baseline' ? 'Baseline' : src === 'routine' ? 'Routine' : 'Manual';
+                        return (
+                          <View style={{
+                            backgroundColor: badgeBg,
+                            borderColor: badgeColor,
+                            borderWidth: 0.5,
+                            borderRadius: 4,
+                            paddingHorizontal: 5,
+                            paddingVertical: 1,
+                          }}>
+                            <Text style={{ color: badgeColor, fontSize: 8, fontWeight: '700', textTransform: 'uppercase' }}>
+                              {badgeLabel}
+                            </Text>
+                          </View>
+                        );
+                      })()}
+                    </View>
                   </View>
                   <TouchableOpacity onPress={() => removeEvent(ev.id)} style={ss.deleteBtn}>
                     <Ionicons name="trash-outline" size={16} color="#ef4444" />
@@ -1900,11 +2086,11 @@ export default function TwinScreen() {
               <Text style={[ss.modalSub, { color: c.sub }]}>
                 {selectedCsvFood.calories} kcal per {selectedCsvFood.display_amount}
               </Text>
-              
+
               <Text style={{ color: c.text, marginBottom: 8, fontWeight: '600' }}>
                 Quantity ({parseDisplayAmount(selectedCsvFood.display_amount).unitLabel})
               </Text>
-              
+
               <View style={[ss.rowBetween, { flexWrap: 'wrap', justifyContent: 'flex-start', gap: 8, marginBottom: 12 }]}>
                 {getQuickQuantities(parseDisplayAmount(selectedCsvFood.display_amount).base, parseDisplayAmount(selectedCsvFood.display_amount).unit).map(q => (
                   <TouchableOpacity
@@ -1916,14 +2102,14 @@ export default function TwinScreen() {
                   </TouchableOpacity>
                 ))}
               </View>
-              
-              <NumericInput 
-                value={String(csvFoodAmount)} 
-                onChange={(v) => setCsvFoodAmount(parseFloat(v) || 0)} 
-                placeholder="Amount" 
-                c={c} 
+
+              <NumericInput
+                value={String(csvFoodAmount)}
+                onChange={(v) => setCsvFoodAmount(parseFloat(v) || 0)}
+                placeholder="Amount"
+                c={c}
               />
-              
+
               <View style={{ marginTop: 12 }}>
                 <TouchableOpacity style={[ss.modalBtn, { backgroundColor: '#f59e0b', justifyContent: 'center' }]} onPress={confirmCsvFoodAdd}>
                   <Text style={{ color: '#fff', fontWeight: 'bold' }}>Add Meal</Text>
@@ -1955,27 +2141,44 @@ export default function TwinScreen() {
         </Pressable>
       </Modal>
 
-      {/* Sim Name */}
-      <Modal visible={simNameModal} transparent animationType="fade" onRequestClose={() => setSimNameModal(false)}>
-        <Pressable style={ss.modalOverlay} onPress={() => setSimNameModal(false)}>
+      {/* Rename Routine */}
+      <Modal visible={renameRoutineModal} transparent animationType="fade" onRequestClose={() => setRenameRoutineModal(false)}>
+        <Pressable style={ss.modalOverlay} onPress={() => setRenameRoutineModal(false)}>
           <Pressable style={[ss.modalCard, { backgroundColor: c.card }]} onPress={(e) => e.stopPropagation()}>
-            <Text style={[ss.modalTitle, { color: c.text }]}>Name This Simulation</Text>
-            <Text style={[ss.modalSub, { color: c.sub }]}>{todayEvents.length} events will be sent to BioGears.</Text>
-            <TextInput style={[ss.input, { backgroundColor: c.bg, color: c.text, borderColor: c.border }]}
-              placeholder="e.g. 'Monday Gym'" placeholderTextColor={c.sub}
-              value={pendingSimName} onChangeText={setPendingSimName} />
+            <Text style={[ss.modalTitle, { color: c.text }]}>✏️ Rename Routine</Text>
+            <Text style={[ss.modalSub, { color: c.sub }]}>Enter a new name for this routine. Events are not affected.</Text>
+            <TextInput
+              style={[ss.input, { backgroundColor: c.bg, color: c.text, borderColor: c.border }]}
+              placeholder="Routine name..."
+              placeholderTextColor={c.sub}
+              value={renamingNewName}
+              onChangeText={setRenamingNewName}
+              autoFocus
+              returnKeyType="done"
+              onSubmitEditing={handleConfirmRename}
+            />
             <View style={ss.rowBetween}>
-              <TouchableOpacity style={[ss.modalBtn, { borderColor: c.border, borderWidth: 1 }]} onPress={() => setSimNameModal(false)}>
+              <TouchableOpacity style={[ss.modalBtn, { borderColor: c.border, borderWidth: 1 }]} onPress={() => setRenameRoutineModal(false)}>
                 <Text style={{ color: c.sub }}>Cancel</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={[ss.modalBtn, { backgroundColor: tabAccent }]} onPress={startSimulation}>
-                <Ionicons name="flash" size={16} color="#fff" />
-                <Text style={{ color: '#fff', marginLeft: 4, fontWeight: '700' }}>Run Simulation</Text>
+              <TouchableOpacity style={[ss.modalBtn, { backgroundColor: c.active }]} onPress={handleConfirmRename}>
+                <Ionicons name="checkmark" size={16} color="#fff" />
+                <Text style={{ color: '#fff', marginLeft: 4, fontWeight: '700' }}>Rename</Text>
               </TouchableOpacity>
             </View>
           </Pressable>
         </Pressable>
       </Modal>
+
+
+
+      <ConflictResolutionSheet
+        conflicts={pendingConflicts}
+        visible={pendingConflicts.length > 0}
+        onResolve={pendingConflictResolver || (() => {})}
+        onDismiss={dismissConflicts}
+        mode={conflictSheetMode}
+      />
 
       {/* Themed Custom Alert Modal */}
       <Modal
@@ -2009,8 +2212,8 @@ export default function TwinScreen() {
                       isDestructive
                         ? { backgroundColor: '#ef4444' }
                         : isCancel
-                        ? { borderColor: c.border, borderWidth: 1 }
-                        : { backgroundColor: c.active },
+                          ? { borderColor: c.border, borderWidth: 1 }
+                          : { backgroundColor: c.active },
                       isStack && { width: '100%', justifyContent: 'center' }
                     ]}
                     onPress={() => {
@@ -2050,7 +2253,12 @@ export default function TwinScreen() {
         </View>
       )}
 
-      {mode === 'dashboard' ? renderDashboard() : renderRoutinePanel()}
+      <View style={{ flex: 1, display: mode === 'dashboard' ? 'flex' : 'none' }}>
+        {renderDashboard()}
+      </View>
+      <View style={{ flex: 1, display: mode === 'routine' ? 'flex' : 'none' }}>
+        {renderRoutinePanel()}
+      </View>
 
       {/* FAB */}
       <TouchableOpacity
@@ -2183,7 +2391,7 @@ const ss = StyleSheet.create({
   addBtnTxt: { color: '#fff', fontWeight: '700', fontSize: 15 },
   timeRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10 },
   timeLbl: { fontSize: 12, fontWeight: '500' },
-  
+
 
   // Slider
   sliderLabel: { fontSize: 12 },
@@ -2291,17 +2499,54 @@ const ss = StyleSheet.create({
     padding: 12, marginBottom: 10,
     alignItems: 'flex-start',
   },
-  foodEmoji:    { fontSize: 28, marginBottom: 4 },
-  foodName:     { fontSize: 13, fontWeight: '700', lineHeight: 17, marginBottom: 2 },
-  foodCal:      { fontSize: 14, fontWeight: '900', marginBottom: 4 },
+  foodEmoji: { fontSize: 28, marginBottom: 4 },
+  foodName: { fontSize: 13, fontWeight: '700', lineHeight: 17, marginBottom: 2 },
+  foodCal: { fontSize: 14, fontWeight: '900', marginBottom: 4 },
   foodMacroRow: { flexDirection: 'row', gap: 4, flexWrap: 'wrap' },
-  foodMacro:    { fontSize: 10, fontWeight: '700' },
+  foodMacro: { fontSize: 10, fontWeight: '700' },
 
   // Activity Lab card
-  actLabCard:  { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderRadius: 18, borderWidth: 1.5, padding: 16, marginBottom: 14 },
-  actLabLeft:  { flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 },
-  actLabIcon:  { fontSize: 28 },
+  actLabCard: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderRadius: 18, borderWidth: 1.5, padding: 16, marginBottom: 14 },
+  actLabLeft: { flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 },
+  actLabIcon: { fontSize: 28 },
   actLabTitle: { fontWeight: '800', fontSize: 15, marginBottom: 2 },
-  actLabSub:   { fontSize: 11 },
-  actLabBtn:   { borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8 },
+  actLabSub: { fontSize: 11 },
+  actLabBtn: { borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8 },
+  emptyStateCard: {
+    marginHorizontal: 12,
+    marginTop: 10,
+    marginBottom: 16,
+    padding: 16,
+    borderRadius: 16,
+    borderWidth: 1,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOpacity: 0.02,
+    shadowRadius: 4,
+    elevation: 1,
+  },
+  emptyStateTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    marginBottom: 6,
+  },
+  emptyStateDesc: {
+    fontSize: 11,
+    textAlign: 'center',
+    lineHeight: 16,
+    marginBottom: 14,
+  },
+  fillBaselineBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 20,
+    borderWidth: 1,
+  },
+  fillBaselineBtnTxt: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
 });

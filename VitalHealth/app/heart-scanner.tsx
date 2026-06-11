@@ -40,6 +40,10 @@ import { LinearGradient } from "expo-linear-gradient";
 import { useTheme } from "../context/ThemeContext";
 import { colors } from "../theme/colors";
 import { getHeartRateBaseUrl } from "../services/biogears";
+import { useFamily } from "../context/FamilyContext";
+import { db } from "../services/firebase";
+import { getUserId } from "../services/firebaseSync";
+import { doc, setDoc, collection, addDoc, serverTimestamp } from "firebase/firestore";
 
 // ─── CONFIG ───────────────────────────────────────────────────────────────────
 const SAMPLE_INTERVAL_MS   = 100;   // 10 fps — no shutter, fast enough for rPPG
@@ -99,6 +103,7 @@ export default function HeartScannerScreen() {
   const router = useRouter();
   const { theme } = useTheme();
   const c = colors[theme];
+  const { activeMemberId } = useFamily();
 
   const apiBaseUrlRef = useRef("http://151.185.41.234:5000");
 
@@ -284,13 +289,47 @@ export default function HeartScannerScreen() {
     setTorchOn(false);
     const sid = sessionIdRef.current;
     if (!sid) return;
+    
+    let finalRes: HRResult | null = null;
     try {
       const res  = await fetch(`${apiBaseUrlRef.current}/stop/${sid}`, { method: "POST" });
       const data = await res.json();
-      setResult(data.final_result ?? null);
-    } catch { setResult(liveResult); }
+      finalRes = data.final_result ?? null;
+      setResult(finalRes);
+    } catch { 
+      finalRes = liveResult;
+      setResult(finalRes); 
+    }
+    
     setStatus("done");
     Vibration.vibrate([0, 80, 80, 80]);
+
+    const uid = activeMemberId === "self" ? await getUserId() : activeMemberId;
+    if (uid && finalRes) {
+      try {
+        // Save to heartRate subcollection
+        await addDoc(collection(db, "users", uid, "heartRate"), {
+          bpm: finalRes.bpm,
+          confidence: finalRes.confidence,
+          hrv_ms: finalRes.hrv_ms,
+          spo2: finalRes.spo2,
+          timestamp: serverTimestamp(),
+        });
+
+        // Update main user profile document
+        await setDoc(doc(db, "users", uid), {
+          heartRate: finalRes.bpm,
+          heartRateTimestamp: new Date().toISOString(),
+          spo2: finalRes.spo2,
+          spo2Timestamp: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        }, { merge: true });
+        
+        console.log("✅ Saved heart rate and SpO2 scanner readings to Firebase for:", uid);
+      } catch (err) {
+        console.log("⚠️ Error saving heart scan to Firebase:", err);
+      }
+    }
   };
 
   const stopLoop = () => {

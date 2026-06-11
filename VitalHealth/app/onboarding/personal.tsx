@@ -3,6 +3,7 @@ import { doc, updateDoc } from "firebase/firestore";
 import { useEffect, useRef, useState } from "react";
 import {
   Animated,
+  Dimensions,
   Easing,
   KeyboardAvoidingView,
   Modal,
@@ -18,6 +19,11 @@ import Svg, { Path, Rect, Circle, Line } from "react-native-svg";
 import { useTheme } from "../../context/ThemeContext";
 import { colors as globalColors } from "../../theme/colors";
 import { auth, db } from "../../services/firebase";
+
+const { width: SCREEN_W } = Dimensions.get('window');
+// Calendar modal inner padding (20 on each side in calStyles.overlay + 20 inside the sheet)
+const CAL_INNER_W = SCREEN_W - 40 - 40; // screen - overlay padding*2 - sheet padding*2
+const CAL_CELL_W  = Math.floor(CAL_INNER_W / 7);
 
 // ─── Icons ──────────────────────────────────────────────────────────────────
 
@@ -214,7 +220,9 @@ function CalendarPicker({
               {/* Day labels */}
               <View style={calStyles.dayLabels}>
                 {DAYS.map(d => (
-                  <Text key={d} style={[calStyles.dayLabel, { color: colors.subText }]}>{d}</Text>
+                  <View key={d} style={{ width: CAL_CELL_W, alignItems: 'center' }}>
+                    <Text style={[calStyles.dayLabel, { color: colors.subText }]}>{d}</Text>
+                  </View>
                 ))}
               </View>
 
@@ -231,8 +239,9 @@ function CalendarPicker({
                       key={i}
                       style={[
                         calStyles.cell,
-                        selected  && { backgroundColor: colors.accent, borderRadius: 10 },
-                        !selected && todayCell && { borderWidth: 1.5, borderColor: colors.accent, borderRadius: 10 },
+                        { width: CAL_CELL_W, height: CAL_CELL_W },
+                        selected  && { backgroundColor: colors.accent, borderRadius: CAL_CELL_W / 2 },
+                        !selected && todayCell && { borderWidth: 1.5, borderColor: colors.accent, borderRadius: CAL_CELL_W / 2 },
                       ]}
                       onPress={() => valid && selectDay(day)}
                       activeOpacity={valid ? 0.7 : 1}
@@ -669,10 +678,12 @@ const calStyles = StyleSheet.create({
   navCenter:    { flexDirection: "row", gap: 8 },
   navChip:      { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8 },
   navChipText:  { fontSize: 14, fontWeight: "700" },
-  dayLabels:    { flexDirection: "row", justifyContent: "space-around", marginBottom: 4 },
-  dayLabel:     { width: 36, textAlign: "center", fontSize: 12, fontWeight: "600" },
-  grid:         { flexDirection: "row", flexWrap: "wrap", justifyContent: "space-around", gap: 2 },
-  cell:         { width: 36, height: 36, alignItems: "center", justifyContent: "center" },
+  // Day label row — fixed-width cells matching the grid cells exactly
+  dayLabels:    { flexDirection: "row", marginBottom: 4, marginTop: 2 },
+  dayLabel:     { textAlign: "center", fontSize: 12, fontWeight: "700", opacity: 0.7 },
+  // Grid — 7 fixed-width columns, wraps to rows
+  grid:         { flexDirection: "row", flexWrap: "wrap" },
+  cell:         { alignItems: "center", justifyContent: "center" },
   cellText:     { fontSize: 14, fontWeight: "500" },
   selectedBar:  { flexDirection: "row", alignItems: "center", justifyContent: "center", padding: 10, borderRadius: 10, marginTop: 4 },
   selectedText: { fontSize: 14, fontWeight: "600" },

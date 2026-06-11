@@ -20,6 +20,15 @@ import React, {
 import { AppState, AppStateStatus, Platform } from "react-native";
 import { useFamily } from "./FamilyContext";
 import { syncStepsData, fetchStepsDataFromFirebase } from "../services/firebaseSync";
+import * as BackgroundFetch from "expo-background-fetch";
+import * as TaskManager from "expo-task-manager";
+import {
+  startForegroundStepService,
+  stopForegroundStepService,
+  updateForegroundNotification,
+  registerStopTrackingCallback,
+  listenForegroundServiceEvents,
+} from "../services/foregroundStepService";
 
 // ── Storage Keys Generator ───────────────────────────────────────────────────
 const getKeysForUser = (uid: string) => ({
@@ -32,6 +41,57 @@ const getKeysForUser = (uid: string) => ({
 });
 
 const todayString = () => new Date().toISOString().slice(0, 10);
+
+const BACKGROUND_STEP_SYNC_TASK = "BACKGROUND_STEP_SYNC_TASK";
+
+TaskManager.defineTask(BACKGROUND_STEP_SYNC_TASK, async () => {
+  try {
+    if (Platform.OS === "android") {
+      return BackgroundFetch.BackgroundFetchResult.NoData;
+    }
+    console.log("[BACKGROUND_STEP_SYNC_TASK] Syncing steps from native history database...");
+    
+    // Read the active profile member UID
+    const activeUid = await AsyncStorage.getItem("vitalhealth_active_member_id") || "self";
+    const keys = getKeysForUser(activeUid);
+    const trackingState = await AsyncStorage.getItem(keys.isTracking);
+    
+    // Only run if active tracking is on
+    if (trackingState === "1") {
+      const available = await Pedometer.isAvailableAsync();
+      if (available) {
+        const start = new Date();
+        start.setHours(0, 0, 0, 0);
+        const end = new Date();
+        const response = await Pedometer.getStepCountAsync(start, end);
+        if (response && typeof response.steps === "number") {
+          const rawToday = await AsyncStorage.getItem(keys.totalToday);
+          const currentSteps = parseInt(rawToday ?? "0", 10);
+          
+          if (response.steps > currentSteps) {
+            await AsyncStorage.setItem(keys.totalToday, String(response.steps));
+            
+            const rawGoal = await AsyncStorage.getItem(keys.goal);
+            const goal = parseInt(rawGoal ?? "10000", 10);
+            
+            await syncStepsData({
+              steps: response.steps,
+              goal: goal,
+              isTracking: true,
+              lastMoveTs: Date.now(),
+              date: todayString(),
+            }, activeUid !== "self" ? activeUid : undefined);
+            console.log(`[BACKGROUND_STEP_SYNC_TASK] Successfully updated background steps to: ${response.steps}`);
+          }
+        }
+      }
+    }
+    return BackgroundFetch.BackgroundFetchResult.NewData;
+  } catch (err) {
+    console.error("[BACKGROUND_STEP_SYNC_TASK] Error running task:", err);
+    return BackgroundFetch.BackgroundFetchResult.Failed;
+  }
+});
 
 const ARM_THRESH  = 2.3;   // g-force to arm the detector
 const FIRE_THRESH = 1.05;  // g-force to fire (must fall this low after arming)
@@ -141,11 +201,64 @@ export const StepProvider: React.FC<{
     stepsRef.current += delta;
     dirtyRef.current  = true;
     setSteps(stepsRef.current);
-  }, []);
+
+    if (isTrackingRef.current && Platform.OS === "android") {
+      const kcal = Math.round(stepsRef.current * 0.04 * (weightKg / 70));
+      updateForegroundNotification(stepsRef.current, kcal).catch(() => {});
+    }
+  }, [weightKg]);
 
   const setStepsAbsolute = useCallback((n: number) => {
     stepsRef.current = Math.max(0, n);
     setSteps(stepsRef.current);
+
+    if (isTrackingRef.current && Platform.OS === "android") {
+      const kcal = Math.round(stepsRef.current * 0.04 * (weightKg / 70));
+      updateForegroundNotification(stepsRef.current, kcal).catch(() => {});
+    }
+  }, [weightKg]);
+
+  // ── Native Hardware Pedometer Sync Helper ───────────────────────────────────
+  const syncWithHardwarePedometer = useCallback(async (currentVal: number) => {
+    if (Platform.OS === "android") {
+      return currentVal;
+    }
+    try {
+      const available = await Pedometer.isAvailableAsync();
+      if (!available) {
+        console.log("[StepContext] Native pedometer history not available on this device.");
+        return currentVal;
+      }
+      const start = new Date();
+      start.setHours(0, 0, 0, 0);
+      const end = new Date();
+      const response = await Pedometer.getStepCountAsync(start, end);
+      if (response && typeof response.steps === "number") {
+        console.log(`[StepContext] Fetched steps from native OS pedometer database: ${response.steps}`);
+        if (response.steps > currentVal) {
+          return response.steps;
+        }
+      }
+    } catch (err) {
+      console.warn("[StepContext] Error querying native pedometer history:", err);
+    }
+    return currentVal;
+  }, []);
+
+  const registerBgTask = useCallback(async () => {
+    try {
+      const isReg = await TaskManager.isTaskRegisteredAsync(BACKGROUND_STEP_SYNC_TASK);
+      if (!isReg) {
+        await BackgroundFetch.registerTaskAsync(BACKGROUND_STEP_SYNC_TASK, {
+          minimumInterval: 15 * 60, // 15 minutes
+          stopOnTerminate: false,
+          startOnBoot: true,
+        });
+        console.log("[StepContext] Registered BACKGROUND_STEP_SYNC_TASK successfully.");
+      }
+    } catch (err) {
+      console.warn("[StepContext] Failed to register background step task:", err);
+    }
   }, []);
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -339,11 +452,19 @@ export const StepProvider: React.FC<{
     await notifee.requestPermission();
     const now = Date.now();
 
+    // Query hardware pedometer before starting to set baseline correctly
+    let currentSteps = stepsRef.current;
+    const freshSteps = await syncWithHardwarePedometer(currentSteps);
+    if (freshSteps > currentSteps) {
+      currentSteps = freshSteps;
+      setStepsAbsolute(freshSteps);
+    }
+
     await AsyncStorage.multiSet([
       [userKeys.isTracking,   "1"],
       [userKeys.date,         todayString()],
       [userKeys.sessionStart, String(now)],
-      [userKeys.totalToday,   String(stepsRef.current)],
+      [userKeys.totalToday,   String(currentSteps)],
       [userKeys.lastMoveTs,   String(now)],
     ]);
 
@@ -355,12 +476,25 @@ export const StepProvider: React.FC<{
     startClock(0);
     startSedTimer();
     startFlushLoop();
-  }, [startBestSensor, startClock, startSedTimer, startFlushLoop, userKeys]);
+
+    if (Platform.OS === "android") {
+      await startForegroundStepService();
+      const kcal = Math.round(currentSteps * 0.04 * (weightKg / 70));
+      await updateForegroundNotification(currentSteps, kcal);
+    }
+  }, [startBestSensor, startClock, startSedTimer, startFlushLoop, userKeys, syncWithHardwarePedometer, setStepsAbsolute, weightKg]);
 
   // ─────────────────────────────────────────────────────────────────────────
   // STOP TRACKING
   // ─────────────────────────────────────────────────────────────────────────
   const stopTracking = useCallback(async () => {
+    // Query native pedometer one final time to catch up on everything
+    let currentSteps = stepsRef.current;
+    const freshSteps = await syncWithHardwarePedometer(currentSteps);
+    if (freshSteps > currentSteps) {
+      setStepsAbsolute(freshSteps);
+    }
+
     stopSensors();
     stopClock();
     stopSedTimer();
@@ -371,7 +505,11 @@ export const StepProvider: React.FC<{
 
     isTrackingRef.current = false;
     setIsTracking(false);
-  }, [stopSensors, stopClock, stopSedTimer, stopFlushLoop, flushNow, userKeys]);
+
+    if (Platform.OS === "android") {
+      await stopForegroundStepService();
+    }
+  }, [stopSensors, stopClock, stopSedTimer, stopFlushLoop, flushNow, userKeys, syncWithHardwarePedometer, setStepsAbsolute]);
 
   // ─────────────────────────────────────────────────────────────────────────
   // RESET TODAY
@@ -404,6 +542,10 @@ export const StepProvider: React.FC<{
       lastMoveTs: Date.now(),
       date: todayString(),
     }, isSwitched ? activeMemberId : undefined);
+
+    if (Platform.OS === "android") {
+      await stopForegroundStepService();
+    }
   }, [stopSensors, stopClock, stopSedTimer, stopFlushLoop, userKeys, isSwitched, activeMemberId]);
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -485,6 +627,23 @@ export const StepProvider: React.FC<{
         ]);
       }
 
+      // Register the background fetch task on mount / profile change
+      registerBgTask().catch(() => {});
+
+      // Query native hardware pedometer to recover/sync steps taken while app was closed
+      let finalSteps = await syncWithHardwarePedometer(savedSteps);
+      if (finalSteps > savedSteps) {
+        savedSteps = finalSteps;
+        await AsyncStorage.setItem(userKeys.totalToday, String(savedSteps));
+        await syncStepsData({
+          steps: savedSteps,
+          goal: savedGoal,
+          isTracking: savedIsTracking,
+          lastMoveTs: Date.now(),
+          date: today,
+        }, isSwitched ? activeMemberId : undefined);
+      }
+
       setStepsAbsolute(savedSteps);
       setIsTracking(savedIsTracking);
       isTrackingRef.current = savedIsTracking;
@@ -503,7 +662,7 @@ export const StepProvider: React.FC<{
     return () => {
       alive = false;
     };
-  }, [userUid, userKeys, isSwitched, activeMemberId, startClock, startBestSensor, startSedTimer, startFlushLoop, setStepsAbsolute]);
+  }, [userUid, userKeys, isSwitched, activeMemberId, startClock, startBestSensor, startSedTimer, startFlushLoop, setStepsAbsolute, syncWithHardwarePedometer, registerBgTask]);
 
   // ─────────────────────────────────────────────────────────────────────────
   // APP STATE
@@ -518,7 +677,35 @@ export const StepProvider: React.FC<{
         await flushNow();
       }
 
-      if (comingForeground && isTrackingRef.current) {
+      if (comingForeground) {
+        // First check if tracking was disabled in background via notification
+        const rawTracking = await AsyncStorage.getItem(userKeys.isTracking);
+        if (rawTracking === "0" && isTrackingRef.current) {
+          console.log("[StepContext] Detected tracking stopped in background");
+          stopSensors();
+          stopClock();
+          stopSedTimer();
+          stopFlushLoop();
+          isTrackingRef.current = false;
+          setIsTracking(false);
+          return;
+        }
+
+        // Query hardware pedometer first to catch up on steps taken in background
+        const currentSteps = stepsRef.current;
+        const freshSteps = await syncWithHardwarePedometer(currentSteps);
+        if (freshSteps > currentSteps) {
+          setStepsAbsolute(freshSteps);
+          await AsyncStorage.setItem(userKeys.totalToday, String(freshSteps));
+          await syncStepsData({
+            steps: freshSteps,
+            goal: goalRef.current,
+            isTracking: true,
+            lastMoveTs: Date.now(),
+            date: todayString(),
+          }, isSwitched ? activeMemberId : undefined);
+        }
+
         const raw    = await AsyncStorage.getItem(userKeys.totalToday);
         const saved  = parseInt(raw ?? "0", 10);
         if (saved > stepsRef.current) {
@@ -532,7 +719,24 @@ export const StepProvider: React.FC<{
     });
 
     return () => sub.remove();
-  }, [userKeys, startBestSensor, startFlushLoop, flushNow, setStepsAbsolute]);
+  }, [userKeys, startBestSensor, startFlushLoop, flushNow, setStepsAbsolute, syncWithHardwarePedometer, isSwitched, activeMemberId, stopSensors, stopClock, stopSedTimer]);
+
+  useEffect(() => {
+    if (Platform.OS !== "android") return;
+
+    registerStopTrackingCallback(() => {
+      stopTracking();
+    });
+
+    const unsubForeground = listenForegroundServiceEvents(() => {
+      stopTracking();
+    });
+
+    return () => {
+      registerStopTrackingCallback(() => {});
+      unsubForeground();
+    };
+  }, [stopTracking]);
 
   return (
     <StepContext.Provider value={{
