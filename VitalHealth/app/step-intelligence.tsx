@@ -103,11 +103,13 @@ export default function StepIntelligenceScreen() {
 
   /* 🔹 Sync Steps Data with Firebase */
   useEffect(() => {
+    let active = true;
     let unsubscribe: (() => void) | undefined;
 
     const syncStepsWithFirebase = async () => {
       try {
         const uid = await getUserId();
+        if (!active) return;
         if (!uid) return;
 
         const userRef = doc(db, "users", uid);
@@ -127,12 +129,25 @@ export default function StepIntelligenceScreen() {
           { merge: true }
         );
 
-        // 🔹 Real-time listener (optional but recommended)
-        unsubscribe = onSnapshot(userRef, (snapshot) => {
-          if (snapshot.exists()) {
-            console.log("🔥 Step data synced:", snapshot.data());
+        if (!active) return;
+
+        const unsub = onSnapshot(
+          userRef,
+          (snapshot) => {
+            if (active && snapshot.exists()) {
+              console.log("🔥 Step data synced:", snapshot.data());
+            }
+          },
+          (err) => {
+            console.log("⚠️ Step onSnapshot error:", err);
           }
-        });
+        );
+
+        if (!active) {
+          unsub();
+        } else {
+          unsubscribe = unsub;
+        }
       } catch (error) {
         console.error("❌ Error syncing steps:", error);
       }
@@ -141,6 +156,7 @@ export default function StepIntelligenceScreen() {
     syncStepsWithFirebase();
 
     return () => {
+      active = false;
       if (unsubscribe) unsubscribe();
     };
   }, [steps, calories, distanceKm, goal, sessionSecs, isTracking]);

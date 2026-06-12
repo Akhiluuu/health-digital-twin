@@ -1399,17 +1399,7 @@ export default function ProfileScreen() {
         <View style={{ height: 20 }} />
       </ScrollView>
 
-      {/* ── Profile-switch loading overlay ───────────────────────────── */}
-      {isSwitchLoading && (
-        <View style={styles.switchLoadingOverlay}>
-          <View style={[styles.switchLoadingCard, { backgroundColor: colors.card }]}>
-            <ActivityIndicator size="large" color={colors.accent} />
-            <Text style={[styles.switchLoadingText, { color: colors.text }]}>
-              Loading profile…
-            </Text>
-          </View>
-        </View>
-      )}
+
 
 
       {renderDeletePasswordModal()}

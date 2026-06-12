@@ -72,6 +72,7 @@ export interface BiogearsTwinContextValue {
 
   // Twin identity
   twinUserId: string | null;
+  isTwinLoading: boolean;
 
   // Last simulation vitals
   lastVitals: BiogearsVitals | null;
@@ -358,6 +359,7 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
   const firestoreOwnerUid = isSwitched ? activeMemberId : undefined;
 
   const [twinStatus, setTwinStatus] = useState<TwinStatus>('checking');
+  const [isTwinLoading, setIsTwinLoading] = useState(false);
   const [twinStatusError, setTwinStatusError] = useState<string | null>(null);
   const [simulationStatus, setSimulationStatus] = useState<SimulationStatus>('idle');
   const [simulationProgress, setSimulationProgress] = useState('');
@@ -458,6 +460,8 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
     //   the real Firebase profile loads. We'll fire again with the real ID.
     if (!twinUserId || twinUserId === 'temp_user') return;
 
+    let active = true;
+
     // Debounce: ProfileContext fires twice in quick succession —
     // first from AsyncStorage (temp_user), then from Firebase (real id).
     // The 200ms debounce collapses the second rapid update into one call.
@@ -467,7 +471,7 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
       const isNewUser = prevTwinUserIdRef.current !== null && prevTwinUserIdRef.current !== twinUserId;
       prevTwinUserIdRef.current = twinUserId;
 
-      if (isNewUser) {
+      if (isNewUser && active) {
         setLastVitals(null);
         setLastAnomalies([]);
         setLastInteractionWarnings([]);
@@ -488,31 +492,42 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
         setSimulationError(null);
       }
 
-      recheckTwinStatus();
-      loadTodayFromStorage();
+      if (active) {
+        recheckTwinStatus();
+        loadTodayFromStorage();
+        setIsTwinLoading(true);
+      }
 
       (async () => {
         try {
           await BiogearsAPI.syncDigitalTwinDataFromFirestore(twinUserId, firestoreOwnerUid);
+          if (!active) return;
           
           const remotePending = await BiogearsAPI.fetchPendingEvents(twinUserId, firestoreOwnerUid);
+          if (!active) return;
           if (remotePending && remotePending.length > 0) {
             const todayStr = new Date().toDateString();
             const fresh = remotePending.filter(e => {
               if (!e.timestamp) return false;
               return new Date(e.timestamp * 1000).toDateString() === todayStr;
             });
-            setTodayEvents(fresh);
-            await AsyncStorage.setItem(TODAY_EVENTS_KEY(twinUserId), JSON.stringify(fresh));
+            if (active) {
+              setTodayEvents(fresh);
+              await AsyncStorage.setItem(TODAY_EVENTS_KEY(twinUserId), JSON.stringify(fresh));
+            }
           }
 
+          if (!active) return;
           await loadRoutinesFromStorage();
+          if (!active) return;
           const syncedSessions = await refreshSessions();
+          if (!active) return;
 
           // Self-heal SQLite simulation_history table from synced sessions
           if (syncedSessions && syncedSessions.length > 0) {
             console.log(`[BiogearsTwin] Self-healing SQLite simulation_history with ${syncedSessions.length} sessions`);
             for (const s of syncedSessions) {
+              if (!active) return;
               if (s.vitals_snapshot) {
                 const anomaliesList = s.has_anomaly ? [{ label: 'Anomaly' }] : [];
                 await saveSimulationResult(twinUserId, s.session_id, s.vitals_snapshot, anomaliesList).catch(() => {});
@@ -520,13 +535,15 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
             }
           }
 
+          if (!active) return;
           const record = await getLastSimulation(twinUserId);
+          if (!active) return;
           if (record) {
             setLastVitals(recordToVitals(record));
             if (record.anomaly_labels) {
               try {
                 const labels: string[] = JSON.parse(record.anomaly_labels);
-                setLastAnomalies(labels.map(l => ({ label: l, severity: 'warning', value: 0, normal_range: '' })));
+                if (active) setLastAnomalies(labels.map(l => ({ label: l, severity: 'warning', value: 0, normal_range: '' })));
               } catch { /* ignore */ }
             }
             console.log('[BiogearsTwin] Loaded cached vitals from local DB (offline fallback)');
@@ -535,17 +552,25 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
             setLastAnomalies([]);
           }
 
-          await refreshAnalytics();
+          if (!active) return;
+          await refreshAnalytics(true);
         } catch (e) {
           console.error('[BiogearsTwin] Sync & load error:', e);
+        } finally {
+          if (active) setIsTwinLoading(false);
         }
       })();
 
-      resumeActiveJob();
+      if (active) resumeActiveJob();
     }, 200);
 
     return () => {
+      active = false;
       if (initDebounceRef.current) clearTimeout(initDebounceRef.current);
+      if (progressTickRef.current) {
+        clearInterval(progressTickRef.current);
+        progressTickRef.current = null;
+      }
     };
   }, [
     twinUserId,
@@ -933,9 +958,10 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
     };
   }, []);
 
-  const refreshAnalytics = useCallback(async () => {
+  const refreshAnalytics = useCallback(async (force = false) => {
     // Don't hammer the server when the twin isn't registered yet
-    if (!twinUserId || twinStatus === 'unregistered' || twinStatus === 'checking') return;
+    if (!twinUserId) return;
+    if (!force && (twinStatus === 'unregistered' || twinStatus === 'checking')) return;
     try {
       // Prepare events for caloric balance
       const eventsForBurn: BiogearsHealthEvent[] = todayEvents.map(e => ({
@@ -1876,6 +1902,7 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
     simulationProgress,
     simulationError,
     twinUserId,
+    isTwinLoading,
     lastVitals,
     lastAnomalies,
     lastInteractionWarnings,

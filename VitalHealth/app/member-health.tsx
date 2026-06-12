@@ -41,6 +41,7 @@ export default function MemberHealthScreen() {
   useEffect(() => {
     if (!userId) return;
 
+    let active = true;
     let unsubscribe: (() => void) | undefined;
 
     const loadFirebaseData = async () => {
@@ -48,23 +49,31 @@ export default function MemberHealthScreen() {
         setLoadingFirebase(true);
 
         const data = await fetchMemberHealthData(userId);
+        if (!active) return;
         if (data) setFirebaseData(data);
 
-        unsubscribe = subscribeToMemberHealth(userId, (updatedData) => {
-          if (updatedData) {
+        const unsub = subscribeToMemberHealth(userId, (updatedData) => {
+          if (active && updatedData) {
             setFirebaseData(updatedData);
           }
         });
+
+        if (!active) {
+          unsub();
+        } else {
+          unsubscribe = unsub;
+        }
       } catch (error) {
         console.error("❌ Error syncing Firebase data:", error);
       } finally {
-        setLoadingFirebase(false);
+        if (active) setLoadingFirebase(false);
       }
     };
 
     loadFirebaseData();
 
     return () => {
+      active = false;
       if (unsubscribe) unsubscribe();
     };
   }, [userId]);

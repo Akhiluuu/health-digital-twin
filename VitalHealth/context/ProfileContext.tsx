@@ -3,7 +3,7 @@
 // then syncs from Firebase in background (when auth is ready)
 
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import React, { createContext, useCallback, useContext, useEffect, useState } from "react";
+import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import { auth } from "../services/firebase";
 import {
   EMPTY_PROFILE,
@@ -55,12 +55,16 @@ function parseAge(dob: string): number {
 export function ProfileProvider({ children }: { children: React.ReactNode }) {
   const [profile,  setProfile]  = useState<UserProfile>(EMPTY_PROFILE);
   const [isLoaded, setIsLoaded] = useState(false);
+  const isMountedRef = useRef(true);
+  useEffect(() => {
+    return () => { isMountedRef.current = false; };
+  }, []);
 
   const reloadProfile = useCallback(async () => {
     try {
       // ✅ STEP 1: Load from AsyncStorage instantly (no auth needed)
       const raw = await AsyncStorage.getItem("userProfile");
-      if (raw) {
+      if (raw && isMountedRef.current) {
         let local: UserProfile | null = null;
         try { local = JSON.parse(raw) as UserProfile; } catch { console.log('[ProfileContext] Corrupted profile cache, ignoring'); }
         if (local && typeof local === 'object' && local.email !== undefined) {
@@ -68,13 +72,13 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
           console.log("✅ Profile loaded from AsyncStorage:", local.firstName, local.email);
         }
       }
-      setIsLoaded(true);
+      if (isMountedRef.current) setIsLoaded(true);
 
       // ✅ STEP 2: Try to sync from Firebase in background
-      // Wait for auth to be ready first
       const user = auth.currentUser;
       if (user) {
         const firebaseProfile = await fetchProfile();
+        if (!isMountedRef.current) return;
         if (firebaseProfile && firebaseProfile.firstName) {
           // Sync onboarding habits to AsyncStorage if present in Firestore profile
           if ((firebaseProfile as any).habits) {
@@ -84,40 +88,53 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
             );
             console.log("✅ Onboarding habits synced from Firebase for user:", user.uid);
           }
+          if (!isMountedRef.current) return;
           setProfile(firebaseProfile);
           // Update local cache
           await AsyncStorage.setItem("userProfile", JSON.stringify(firebaseProfile));
           console.log("✅ Profile synced from Firebase:", firebaseProfile.firstName);
         }
-      } else {
-        // Listen for auth state once
-        const unsub = auth.onAuthStateChanged(async (u) => {
-          unsub();
-          if (u) {
-            const firebaseProfile = await fetchProfile();
-            if (firebaseProfile && firebaseProfile.firstName) {
-              if ((firebaseProfile as any).habits) {
-                await AsyncStorage.setItem(
-                  `@onboarding_habits_${u.uid}`,
-                  JSON.stringify((firebaseProfile as any).habits)
-                );
-                console.log("✅ Onboarding habits synced from Firebase after auth for user:", u.uid);
-              }
-              setProfile(firebaseProfile);
-              await AsyncStorage.setItem("userProfile", JSON.stringify(firebaseProfile));
-              console.log("✅ Profile synced from Firebase after auth:", firebaseProfile.firstName);
-            }
-          }
-        });
       }
+      // If no currentUser, the auth state effect below will handle it when auth resolves
     } catch (e) {
       console.log("❌ reloadProfile error:", e);
-      setIsLoaded(true);
+      if (isMountedRef.current) setIsLoaded(true);
     }
   }, []);
 
   // Load on mount
   useEffect(() => { reloadProfile(); }, []);
+
+  // ✅ Listen for auth state to sync profile when auth resolves (handles cold-start race)
+  // This effect is separate so the listener is always cleaned up on unmount.
+  useEffect(() => {
+    let hasFiredForUid: string | null = null;
+    const unsub = auth.onAuthStateChanged(async (u) => {
+      if (!u || u.uid === hasFiredForUid) return;
+      hasFiredForUid = u.uid;
+      // Only sync if we don't already have a profile loaded with real data
+      try {
+        const firebaseProfile = await fetchProfile();
+        if (!isMountedRef.current) return;
+        if (firebaseProfile && firebaseProfile.firstName) {
+          if ((firebaseProfile as any).habits) {
+            await AsyncStorage.setItem(
+              `@onboarding_habits_${u.uid}`,
+              JSON.stringify((firebaseProfile as any).habits)
+            );
+            console.log("✅ Onboarding habits synced from Firebase after auth for user:", u.uid);
+          }
+          if (!isMountedRef.current) return;
+          setProfile(firebaseProfile);
+          await AsyncStorage.setItem("userProfile", JSON.stringify(firebaseProfile));
+          console.log("✅ Profile synced from Firebase after auth:", firebaseProfile.firstName);
+        }
+      } catch (e) {
+        console.log("❌ auth state profile sync error:", e);
+      }
+    });
+    return () => unsub();
+  }, []);
 
   const saveProfileFn = useCallback(async (p: UserProfile) => {
     setProfile(p);

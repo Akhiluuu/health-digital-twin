@@ -178,20 +178,43 @@ export default function MemberDetailsScreen() {
   }, [memberUid]);
 
   useEffect(() => {
+    let active = true;
     setLoading(true);
-    loadHealthData();
 
-    // Subscribe to real-time changes
-    if (memberUid) {
-      unsubRef.current = subscribeToMemberHealth(memberUid, (update) => {
-        if (update) {
-          setLiveData((prev) => ({ ...(prev ?? {}), ...update }));
+    const loadDataAndSubscribe = async () => {
+      try {
+        const data = await fetchMemberHealthData(memberUid);
+        if (!active) return;
+        setLiveData(data);
+      } catch (e) {
+        console.log("❌ MemberDetails fetchMemberHealthData error:", e);
+      } finally {
+        if (active) setLoading(false);
+      }
+
+      if (memberUid && active) {
+        const unsub = subscribeToMemberHealth(memberUid, (update) => {
+          if (active && update) {
+            setLiveData((prev) => ({ ...(prev ?? {}), ...update }));
+          }
+        });
+        if (!active) {
+          unsub();
+        } else {
+          unsubRef.current = unsub;
         }
-      });
+      }
+    };
+
+    if (memberUid) {
+      loadDataAndSubscribe();
+    } else {
+      setLoading(false);
     }
 
     return () => {
-      unsubRef.current?.();
+      active = false;
+      if (unsubRef.current) unsubRef.current();
     };
   }, [memberUid]);
 

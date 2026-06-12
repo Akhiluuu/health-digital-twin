@@ -238,6 +238,7 @@ type State = {
   activityEntries: ActivityEntry[];
   mealReminders: MealReminder[];
   selectedProfileId: HealthProfileId;
+  customCalorieTarget: number | null;
   loaded: boolean;
 };
 
@@ -248,9 +249,11 @@ type Action =
   | { type: "ADD_ACTIVITY"; payload: ActivityEntry }
   | { type: "REMOVE_ACTIVITY"; payload: string }
   | { type: "SET_PROFILE"; payload: HealthProfileId }
+  | { type: "SET_CUSTOM_CALORIE_TARGET"; payload: number | null }
   | { type: "TOGGLE_REMINDER"; payload: string }
   | { type: "UPDATE_REMINDER_TIME"; payload: { id: string; time: string } }
-  | { type: "RESET_TODAY" };
+  | { type: "RESET_TODAY" }
+  | { type: "RESET_LOADED" };
 
 const defaultReminders: MealReminder[] = mealTypes.map((m) => ({
   id: `reminder_${m.id}`,
@@ -265,11 +268,15 @@ const initialState: State = {
   activityEntries: [],
   mealReminders: defaultReminders,
   selectedProfileId: "standard",
+  customCalorieTarget: null,
   loaded: false,
 };
 
 function reducer(state: State, action: Action): State {
   switch (action.type) {
+    case "RESET_LOADED":
+      return { ...state, loaded: false };
+
     case "LOAD":
       return { ...state, ...action.payload, loaded: true };
 
@@ -287,6 +294,9 @@ function reducer(state: State, action: Action): State {
 
     case "SET_PROFILE":
       return { ...state, selectedProfileId: action.payload };
+
+    case "SET_CUSTOM_CALORIE_TARGET":
+      return { ...state, customCalorieTarget: action.payload };
 
     case "TOGGLE_REMINDER":
       return {
@@ -319,6 +329,7 @@ type NutritionContextType = {
   activityEntries: ActivityEntry[];
   mealReminders: MealReminder[];
   selectedProfile: HealthProfile;
+  customCalorieTarget: number | null;
   totals: NutritionTotals;
   totalActivityCalories: number;
   netCalories: number;
@@ -330,6 +341,7 @@ type NutritionContextType = {
   addActivityEntry: (entry: Omit<ActivityEntry, "id" | "timestamp">) => void;
   removeActivityEntry: (id: string) => void;
   setProfile: (id: HealthProfileId) => void;
+  setCustomCalorieTarget: (target: number | null) => void;
   toggleReminder: (reminderId: string) => void;
   updateReminderTime: (reminderId: string, time: string) => void;
   getMealEntries: (mealId: string) => FoodEntry[];
@@ -346,6 +358,7 @@ export function NutritionProvider({ children }: { children: React.ReactNode }) {
 
   // Sync / Load with Firebase
   const syncNutritionWithFirebase = useCallback(async () => {
+    dispatch({ type: "RESET_LOADED" });
     if (isSwitched && activeMemberId && activeMemberId !== "self") {
       try {
         const [foodFirebase, activityFirebase, configDoc] = await Promise.all([
@@ -364,11 +377,13 @@ export function NutritionProvider({ children }: { children: React.ReactNode }) {
         );
 
         let selectedProfileId: HealthProfileId = "standard";
+        let customCalorieTarget: number | null = null;
         let mealReminders = defaultReminders;
 
         if (configDoc.exists()) {
           const cfg = configDoc.data();
           if (cfg.selectedProfileId) selectedProfileId = cfg.selectedProfileId;
+          if (cfg.customCalorieTarget !== undefined) customCalorieTarget = cfg.customCalorieTarget;
           if (cfg.mealReminders) mealReminders = cfg.mealReminders;
         }
 
@@ -379,6 +394,7 @@ export function NutritionProvider({ children }: { children: React.ReactNode }) {
             activityEntries: todayActivity,
             mealReminders,
             selectedProfileId,
+            customCalorieTarget,
           },
         });
         console.log(`🍽️ Switched nutrition loaded for ${activeMemberId}`);
@@ -390,10 +406,15 @@ export function NutritionProvider({ children }: { children: React.ReactNode }) {
 
     // Self
     try {
+      const currentUser = auth.currentUser;
+      const configDocRef = currentUser
+        ? doc(db, "users", currentUser.uid, "nutrition_config", "latest")
+        : null;
+
       const [foodFirebase, activityFirebase, configDoc] = await Promise.all([
         fetchFoodEntriesFromFirebase(),
         fetchActivityEntriesFromFirebase(),
-        getDoc(doc(db, "users", "self", "nutrition_config", "latest")).catch(() => null),
+        configDocRef ? getDoc(configDocRef).catch(() => null) : Promise.resolve(null),
       ]);
 
       const todayStr = new Date().toDateString();
@@ -414,12 +435,14 @@ export function NutritionProvider({ children }: { children: React.ReactNode }) {
       let localFood: FoodEntry[] = [];
       let localActivity: ActivityEntry[] = [];
       let selectedProfileId: HealthProfileId = "standard";
+      let customCalorieTarget: number | null = null;
       let mealReminders = defaultReminders;
 
       if (dataRaw) {
-        const data = safeJsonParse(dataRaw, { foodEntries: [], selectedProfileId: 'standard' });
+        const data = safeJsonParse(dataRaw, { foodEntries: [], selectedProfileId: 'standard', customCalorieTarget: null });
         localFood = safeArray<FoodEntry>(data.foodEntries);
         selectedProfileId = (data.selectedProfileId ?? "standard") as HealthProfileId;
+        customCalorieTarget = data.customCalorieTarget !== undefined ? data.customCalorieTarget : null;
       }
       if (remindersRaw) {
         const parsed = safeJsonParse<MealReminder[]>(remindersRaw, defaultReminders);
@@ -474,12 +497,14 @@ export function NutritionProvider({ children }: { children: React.ReactNode }) {
       if (configDoc && configDoc.exists()) {
         const cfg = configDoc.data();
         if (cfg.selectedProfileId) selectedProfileId = cfg.selectedProfileId;
+        if (cfg.customCalorieTarget !== undefined) customCalorieTarget = cfg.customCalorieTarget;
         if (cfg.mealReminders) mealReminders = cfg.mealReminders;
       } else {
         const user = auth.currentUser;
         if (user) {
           await setDoc(doc(db, "users", user.uid, "nutrition_config", "latest"), {
             selectedProfileId,
+            customCalorieTarget,
             mealReminders,
           }).catch(() => {});
         }
@@ -492,6 +517,7 @@ export function NutritionProvider({ children }: { children: React.ReactNode }) {
           activityEntries: localActivity,
           mealReminders,
           selectedProfileId,
+          customCalorieTarget,
         },
       });
 
@@ -499,7 +525,7 @@ export function NutritionProvider({ children }: { children: React.ReactNode }) {
       await Promise.all([
         AsyncStorage.setItem(
           NUTRITION_DATA_KEY,
-          JSON.stringify({ foodEntries: localFood, selectedProfileId })
+          JSON.stringify({ foodEntries: localFood, selectedProfileId, customCalorieTarget })
         ),
         AsyncStorage.setItem(MEAL_REMINDER_KEY, JSON.stringify(mealReminders)),
         AsyncStorage.setItem(ACTIVITY_LOG_KEY, JSON.stringify(localActivity)),
@@ -604,9 +630,13 @@ export function NutritionProvider({ children }: { children: React.ReactNode }) {
     if (!state.loaded || isSwitched) return;
     AsyncStorage.setItem(
       NUTRITION_DATA_KEY,
-      JSON.stringify({ foodEntries: state.foodEntries, selectedProfileId: state.selectedProfileId })
+      JSON.stringify({
+        foodEntries: state.foodEntries,
+        selectedProfileId: state.selectedProfileId,
+        customCalorieTarget: state.customCalorieTarget,
+      })
     ).catch(console.error);
-  }, [state.foodEntries, state.selectedProfileId, state.loaded, isSwitched]);
+  }, [state.foodEntries, state.selectedProfileId, state.customCalorieTarget, state.loaded, isSwitched]);
 
   useEffect(() => {
     if (!state.loaded || isSwitched) return;
@@ -624,14 +654,24 @@ export function NutritionProvider({ children }: { children: React.ReactNode }) {
     setDoc(doc(db, "users", activeMemberId, "nutrition_config", "latest"), {
       selectedProfileId: state.selectedProfileId,
       mealReminders: state.mealReminders,
+      customCalorieTarget: state.customCalorieTarget,
     }, { merge: true }).catch(() => {});
-  }, [state.selectedProfileId, state.mealReminders, state.loaded, isSwitched, activeMemberId]);
+  }, [state.selectedProfileId, state.mealReminders, state.customCalorieTarget, state.loaded, isSwitched, activeMemberId]);
 
   // ── Derived ─────────────────────────────────────────────────────────────────
-  const selectedProfile = useMemo(
-    () => healthProfiles.find((p) => p.id === state.selectedProfileId) ?? healthProfiles[0],
-    [state.selectedProfileId]
-  );
+  const selectedProfile = useMemo(() => {
+    const baseProfile = healthProfiles.find((p) => p.id === state.selectedProfileId) ?? healthProfiles[0];
+    if (state.customCalorieTarget !== null) {
+      return {
+        ...baseProfile,
+        recommendations: {
+          ...baseProfile.recommendations,
+          calories: state.customCalorieTarget,
+        },
+      };
+    }
+    return baseProfile;
+  }, [state.selectedProfileId, state.customCalorieTarget]);
 
   const totals = useMemo<NutritionTotals>(() => {
     return state.foodEntries.reduce(
@@ -720,6 +760,19 @@ export function NutritionProvider({ children }: { children: React.ReactNode }) {
     }
   }, [isSwitched, activeMemberId]);
 
+  const setCustomCalorieTarget = useCallback(async (target: number | null) => {
+    dispatch({ type: "SET_CUSTOM_CALORIE_TARGET", payload: target });
+
+    const uid = isSwitched ? activeMemberId : auth.currentUser?.uid;
+    if (uid) {
+      await setDoc(
+        doc(db, "users", uid, "nutrition_config", "latest"),
+        { customCalorieTarget: target },
+        { merge: true }
+      ).catch(() => {});
+    }
+  }, [isSwitched, activeMemberId]);
+
   const toggleReminder = useCallback((reminderId: string) => {
     dispatch({ type: "TOGGLE_REMINDER", payload: reminderId });
   }, []);
@@ -751,6 +804,7 @@ export function NutritionProvider({ children }: { children: React.ReactNode }) {
       activityEntries: state.activityEntries,
       mealReminders: state.mealReminders,
       selectedProfile,
+      customCalorieTarget: state.customCalorieTarget,
       totals,
       totalActivityCalories,
       netCalories,
@@ -760,12 +814,13 @@ export function NutritionProvider({ children }: { children: React.ReactNode }) {
       addActivityEntry,
       removeActivityEntry,
       setProfile,
+      setCustomCalorieTarget,
       toggleReminder,
       updateReminderTime,
       getMealEntries,
       resetToday,
     }),
-    [state, selectedProfile, totals, totalActivityCalories, netCalories, addFoodEntry, removeFoodEntry, addActivityEntry, removeActivityEntry, setProfile, toggleReminder, updateReminderTime, getMealEntries, resetToday]
+    [state, selectedProfile, totals, totalActivityCalories, netCalories, addFoodEntry, removeFoodEntry, addActivityEntry, removeActivityEntry, setProfile, setCustomCalorieTarget, toggleReminder, updateReminderTime, getMealEntries, resetToday]
   );
 
   return <NutritionContext.Provider value={value}>{children}</NutritionContext.Provider>;

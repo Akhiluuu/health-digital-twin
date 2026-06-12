@@ -95,11 +95,53 @@ export default function Spo2Screen() {
 
   // 🔹 Updated useEffect with Firebase subscription
   useEffect(() => {
+    let active = true;
+    let unsubscribe: (() => void) | undefined;
+
     loadData();
-    let unsub: (() => void) | undefined;
-    subscribeToSpo2().then(fn => { unsub = fn; });
+
+    const startSubscription = async () => {
+      try {
+        const uid = activeMemberId === "self" ? await getUserId() : activeMemberId;
+        if (!active) return;
+        if (!uid) return;
+
+        const ref = doc(db, "users", uid);
+        const unsub = onSnapshot(
+          ref,
+          (snapshot: any) => {
+            if (!active) return;
+            if (!snapshot.exists()) return;
+
+            const data = snapshot.data();
+            const health = data.healthData || data;
+            if (health.spo2 !== undefined) {
+              setLatestReading({
+                value: health.spo2,
+                timestamp: health.spo2Timestamp || new Date().toISOString(),
+              });
+            }
+          },
+          (err: any) => {
+            console.log("⚠️ SpO₂ page onSnapshot error:", err);
+          }
+        );
+
+        if (!active) {
+          unsub();
+        } else {
+          unsubscribe = unsub;
+        }
+      } catch (error) {
+        console.error("❌ SpO₂ screen subscription error:", error);
+      }
+    };
+
+    startSubscription();
+
     return () => {
-      unsub?.();
+      active = false;
+      if (unsubscribe) unsubscribe();
     };
   }, [activeMemberId]);
 
@@ -146,27 +188,6 @@ export default function Spo2Screen() {
       }
       else setHistory([]);
     } catch {}
-  };
-
-  // 🔹 Firebase subscription function
-  const subscribeToSpo2 = async () => {
-    const uid = activeMemberId === "self" ? await getUserId() : activeMemberId;
-    if (!uid) return;
-
-    const ref = doc(db, "users", uid);
-
-    return onSnapshot(ref, (snapshot) => {
-      if (!snapshot.exists()) return;
-
-      const data = snapshot.data();
-      const health = data.healthData || data;
-      if (health.spo2 !== undefined) {
-        setLatestReading({
-          value: health.spo2,
-          timestamp: health.spo2Timestamp || new Date().toISOString(),
-        });
-      }
-    });
   };
 
   const saveSpo2 = async () => {

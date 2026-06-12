@@ -8,7 +8,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
-import React, { useMemo, useEffect } from "react";
+import React, { useMemo, useEffect, useState } from "react";
 import {
   Dimensions,
   ScrollView,
@@ -16,6 +16,8 @@ import {
   Text,
   TouchableOpacity,
   View,
+  Modal,
+  TextInput,
 } from "react-native";
 import Svg, { Circle, Defs, Stop, LinearGradient as SvgGrad } from "react-native-svg";
 
@@ -226,8 +228,11 @@ export default function CalorieIntelligenceScreen() {
   const { caloricBalance, refreshAnalytics } = useBiogearsTwin();
 
   // ── Nutrition sync ────────────────────────────────────────────────────────
-  const { totals, selectedProfile } = useNutrition();
+  const { totals, selectedProfile, customCalorieTarget, setCustomCalorieTarget } = useNutrition();
   const rec = selectedProfile.recommendations;
+
+  const [editModalOpen, setEditModalOpen] = useState(false);
+  const [inputValue, setInputValue] = useState("");
 
   useEffect(() => {
     refreshAnalytics().catch((err) => console.log("Error refreshing BioGears analytics:", err));
@@ -291,11 +296,13 @@ export default function CalorieIntelligenceScreen() {
 
   /* 🔹 Sync Calorie Data with Firebase */
   useEffect(() => {
+    let active = true;
     let unsubscribe: (() => void) | undefined;
 
     const syncCaloriesWithFirebase = async () => {
       try {
         const uid = isSwitched && activeMemberId && activeMemberId !== "self" ? activeMemberId : await getUserId();
+        if (!active) return;
         if (!uid) return;
 
         const userRef = doc(db, "users", uid);
@@ -320,12 +327,26 @@ export default function CalorieIntelligenceScreen() {
           { merge: true }
         );
 
+        if (!active) return;
+
         // 🔹 Real-time listener
-        unsubscribe = onSnapshot(userRef, (snapshot) => {
-          if (snapshot.exists()) {
-            console.log("🔥 Calorie data synced:", snapshot.data());
+        const unsub = onSnapshot(
+          userRef,
+          (snapshot) => {
+            if (active && snapshot.exists()) {
+              console.log("🔥 Calorie data synced:", snapshot.data());
+            }
+          },
+          (err) => {
+            console.log("⚠️ Calorie onSnapshot error:", err);
           }
-        });
+        );
+
+        if (!active) {
+          unsub();
+        } else {
+          unsubscribe = unsub;
+        }
       } catch (error) {
         console.error("❌ Error syncing calorie data:", error);
       }
@@ -334,6 +355,7 @@ export default function CalorieIntelligenceScreen() {
     syncCaloriesWithFirebase();
 
     return () => {
+      active = false;
       if (unsubscribe) unsubscribe();
     };
   }, [stepCal, totals.calories, tdee, bmr, steps, activeMemberId, isSwitched]);
@@ -469,6 +491,35 @@ export default function CalorieIntelligenceScreen() {
           </Text>
           <Text style={[s.profileBannerEdit, { color: colors.sub }]}>Edit ›</Text>
         </TouchableOpacity>
+
+        {/* 🎯 Calorie Target Card */}
+        <View style={[s.targetCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 10, flex: 1 }}>
+              <View style={[s.targetIconWrap, { backgroundColor: colors.border }]}>
+                <Ionicons name="compass" size={20} color="#eab308" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[s.targetLabel, { color: colors.sub }]}>DAILY CALORIE TARGET</Text>
+                <Text style={[s.targetValue, { color: colors.text }]}>
+                  {rec.calories} <Text style={{ fontSize: 12, color: colors.sub }}>kcal/day</Text>
+                </Text>
+                <Text style={[s.targetSubText, { color: colors.sub }]} numberOfLines={1}>
+                  {customCalorieTarget ? "Custom goal set by you" : `Using standard recommendation`}
+                </Text>
+              </View>
+            </View>
+            <TouchableOpacity
+              style={[s.targetEditBtn, { backgroundColor: colors.border }]}
+              onPress={() => {
+                setInputValue(customCalorieTarget ? String(customCalorieTarget) : String(rec.calories));
+                setEditModalOpen(true);
+              }}
+            >
+              <Text style={[s.targetEditBtnText, { color: colors.text }]}>Adjust Goal</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
 
         {/* Sync banner */}
         <View style={[s.syncBanner, { backgroundColor: colors.card, borderColor: colors.border }]}>
@@ -831,6 +882,49 @@ export default function CalorieIntelligenceScreen() {
 
         <View style={{ height: 40 }} />
       </ScrollView>
+
+      {/* ── Goal Adjustment Modal ───────────────────────────── */}
+      <Modal visible={editModalOpen} transparent animationType="fade" onRequestClose={() => setEditModalOpen(false)}>
+        <View style={s.modalOverlay}>
+          <View style={[s.modalCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <Text style={[s.modalTitle, { color: colors.text }]}>Adjust Calorie Goal</Text>
+            <Text style={[s.modalSub, { color: colors.sub }]}>
+              Set a custom daily calorie target. Leave empty to use recommendation.
+            </Text>
+            <TextInput
+              style={[s.modalInput, { color: colors.text, borderColor: colors.border, backgroundColor: colors.bg }]}
+              keyboardType="number-pad"
+              value={inputValue}
+              onChangeText={setInputValue}
+              placeholder="e.g. 2000"
+              placeholderTextColor={colors.sub + "60"}
+              autoFocus
+            />
+            <View style={s.modalActions}>
+              <TouchableOpacity
+                style={[s.modalBtn, { backgroundColor: colors.border }]}
+                onPress={() => setEditModalOpen(false)}
+              >
+                <Text style={[s.modalBtnText, { color: colors.text }]}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[s.modalBtn, { backgroundColor: "#ef476f" }]}
+                onPress={() => {
+                  const val = parseInt(inputValue, 10);
+                  if (isNaN(val) || val <= 0) {
+                    setCustomCalorieTarget(null);
+                  } else {
+                    setCustomCalorieTarget(val);
+                  }
+                  setEditModalOpen(false);
+                }}
+              >
+                <Text style={[s.modalBtnText, { color: "#fff" }]}>Save</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -944,4 +1038,22 @@ const s = StyleSheet.create({
   profileCard:     { borderRadius: 18, padding: 16, flexDirection: "row", alignItems: "center", gap: 14, borderWidth: 1 },
   profileCardTitle:{ fontWeight: "700", fontSize: 14 },
   profileCardSub:  { fontSize: 11, marginTop: 2 },
+
+  // Custom Target Goal & Modal Styles
+  targetCard: { borderRadius: 16, padding: 14, marginBottom: 10, borderWidth: 1 },
+  targetIconWrap: { width: 36, height: 36, borderRadius: 18, justifyContent: "center", alignItems: "center" },
+  targetLabel: { fontSize: 9, letterSpacing: 1.5, fontWeight: "700" },
+  targetValue: { fontSize: 24, fontWeight: "900" },
+  targetSubText: { fontSize: 10, marginTop: 2 },
+  targetEditBtn: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10 },
+  targetEditBtnText: { fontSize: 11, fontWeight: "800" },
+
+  modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.6)", justifyContent: "center", alignItems: "center", padding: 20 },
+  modalCard: { width: "100%", maxWidth: 340, borderRadius: 24, padding: 24, borderWidth: 1 },
+  modalTitle: { fontSize: 18, fontWeight: "800", marginBottom: 8, textAlign: "center" },
+  modalSub: { fontSize: 12, marginBottom: 20, textAlign: "center" },
+  modalInput: { height: 50, borderRadius: 12, borderWidth: 1, paddingHorizontal: 16, fontSize: 18, fontWeight: "700", textAlign: "center", marginBottom: 20 },
+  modalActions: { flexDirection: "row", gap: 12 },
+  modalBtn: { flex: 1, height: 46, borderRadius: 12, justifyContent: "center", alignItems: "center" },
+  modalBtnText: { fontSize: 14, fontWeight: "800" },
 });

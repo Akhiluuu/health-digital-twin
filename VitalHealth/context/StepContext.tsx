@@ -661,8 +661,12 @@ export const StepProvider: React.FC<{
 
     return () => {
       alive = false;
+      stopSensors();
+      stopClock();
+      stopSedTimer();
+      stopFlushLoop();
     };
-  }, [userUid, userKeys, isSwitched, activeMemberId, startClock, startBestSensor, startSedTimer, startFlushLoop, setStepsAbsolute, syncWithHardwarePedometer, registerBgTask]);
+  }, [userUid, userKeys, isSwitched, activeMemberId, startClock, startBestSensor, startSedTimer, startFlushLoop, setStepsAbsolute, syncWithHardwarePedometer, registerBgTask, stopSensors, stopClock, stopSedTimer, stopFlushLoop]);
 
   // ─────────────────────────────────────────────────────────────────────────
   // APP STATE
@@ -711,8 +715,10 @@ export const StepProvider: React.FC<{
         if (saved > stepsRef.current) {
           setStepsAbsolute(saved);
         }
-        await startBestSensor();
-        startFlushLoop();
+        if (isTrackingRef.current) {
+          await startBestSensor();
+          startFlushLoop();
+        }
       }
 
       appStateRef.current = next;

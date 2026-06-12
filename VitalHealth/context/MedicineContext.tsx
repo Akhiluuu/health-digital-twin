@@ -138,14 +138,10 @@ export const MedicineProvider = ({
   const [isLoadingMemberMedicines, setIsLoadingMember]  = useState(false);
 
   // ── Get active profile context ────────────────────────
-  // Safe: if FamilyContext isn't ready yet, fall back to self behaviour
-  let isSwitched     = false;
-  let activeMemberId = "self";
-  try {
-    const family   = useFamily();
-    isSwitched     = family.isSwitched;
-    activeMemberId = family.activeMemberId;
-  } catch (_) {}
+  // MedicineProvider is always rendered inside FamilyProvider (see _layout.tsx),
+  // so useFamily() is safe to call unconditionally at the top level.
+  // Calling hooks inside try/catch is a React Rules of Hooks violation.
+  const { isSwitched, activeMemberId } = useFamily();
 
   ///////////////////////////////////////////////////////////
   // LOAD MEDICINES
@@ -153,24 +149,31 @@ export const MedicineProvider = ({
   // When on self  → read from local SQLite as normal
   ///////////////////////////////////////////////////////////
 
-  const loadMedicines = async () => {
+  const isMountedRef = React.useRef(true);
+  React.useEffect(() => {
+    return () => { isMountedRef.current = false; };
+  }, []);
+
+  const loadMedicines = React.useCallback(async () => {
+    setIsLoadingMember(true);
     try {
       if (isSwitched && activeMemberId && activeMemberId !== "self") {
-        // ── Switched: load from member's Firebase doc ──────
-        setIsLoadingMember(true);
         console.log("💊 Loading medicines from Firebase for member:", activeMemberId);
         const memberMeds = await fetchMemberMedicinesFromFirebase(activeMemberId);
+        if (!isMountedRef.current) return;
         setMedicines(memberMeds);
         console.log(`💊 Loaded ${memberMeds.length} medicines for member:`, activeMemberId);
       } else {
         // ── Self: load from local SQLite ───────────────────
         const data = getMedicines() as Medicine[];
+        if (!isMountedRef.current) return;
         setMedicines([...data]);
 
         // Background bidirectional sync/merge with Firebase
         (async () => {
           try {
             const firebaseMeds = await fetchMedicinesFromFirebase();
+            if (!isMountedRef.current) return;
             if (firebaseMeds && firebaseMeds.length > 0) {
               let didChange = false;
 
@@ -219,7 +222,7 @@ export const MedicineProvider = ({
                 }
               }
 
-              if (didChange) {
+              if (didChange && isMountedRef.current) {
                 const updated = getMedicines() as Medicine[];
                 setMedicines([...updated]);
               }
@@ -250,34 +253,25 @@ export const MedicineProvider = ({
     } catch (err) {
       console.log("💊 Load medicines error:", err);
     } finally {
-      setIsLoadingMember(false);
+      if (isMountedRef.current) setIsLoadingMember(false);
     }
-  };
-
-  ///////////////////////////////////////////////////////////
-  // Re-load whenever active member changes
-  ///////////////////////////////////////////////////////////
-
-  useEffect(() => {
-    loadMedicines();
   }, [isSwitched, activeMemberId]);
 
   ///////////////////////////////////////////////////////////
-  // Initial load + file sync
+  // Re-load whenever active member changes (covers initial mount too)
   ///////////////////////////////////////////////////////////
 
   useEffect(() => {
-    const initialize = async () => {
-      try {
-        await loadMedicines();
-        if (!isSwitched) await syncMedicineFile();
+    const run = async () => {
+      await loadMedicines();
+      // File sync only for self on first mount
+      if (!isSwitched) {
+        syncMedicineFile().catch((err) => console.log("💊 File sync error:", err));
         console.log("💊 Medicine system ready");
-      } catch (err) {
-        console.log("💊 Init error:", err);
       }
     };
-    initialize();
-  }, []);
+    run();
+  }, [loadMedicines, isSwitched]);
 
   ///////////////////////////////////////////////////////////
   // Event bus — medicine taken in foreground notification
@@ -297,11 +291,11 @@ export const MedicineProvider = ({
   ///////////////////////////////////////////////////////////
 
   useEffect(() => {
-    const sub = AppState.addEventListener("change", (state) => {
-      if (state === "active") loadMedicines();
+    const sub = AppState.addEventListener("change", (appState) => {
+      if (appState === "active" && isMountedRef.current) loadMedicines();
     });
     return () => sub.remove();
-  }, [isSwitched, activeMemberId]);
+  }, [loadMedicines]);
 
   ///////////////////////////////////////////////////////////
   // ADD — when switched: directly to Firestore; when self: local SQLite + sync
@@ -445,7 +439,7 @@ export const MedicineProvider = ({
     }
   }, [isSwitched, activeMemberId, medicines]);
 
-  const reloadMedicines = async () => { await loadMedicines(); };
+  const reloadMedicines = React.useCallback(async () => { await loadMedicines(); }, [loadMedicines]);
 
   ///////////////////////////////////////////////////////////
 

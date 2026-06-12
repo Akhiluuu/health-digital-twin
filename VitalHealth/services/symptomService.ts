@@ -86,6 +86,8 @@ export const subscribeSymptoms = (
     }));
 
     callback(data);
+  }, (error) => {
+    console.log("⚠️ Symptom onSnapshot error:", error);
   });
 };
 

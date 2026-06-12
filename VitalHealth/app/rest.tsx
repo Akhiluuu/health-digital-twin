@@ -17,6 +17,7 @@ import { useRouter } from "expo-router";
 
 import { useTheme } from "../context/ThemeContext";
 import { useBiogearsTwin } from "../context/BiogearsTwinContext";
+import { scheduleRoutineReminder, cancelRoutineReminder } from "../services/notifeeService";
 
 const STORAGE_KEY = "vt_rest_reminders";
 
@@ -66,6 +67,8 @@ export default function RestScreen() {
   const [tempTime, setTempTime] = useState("10:30 PM");
   const [tempEnabled, setTempEnabled] = useState(true);
 
+  const hasLoadedRef = React.useRef(false);
+
   useEffect(() => {
     loadData();
   }, []);
@@ -73,7 +76,10 @@ export default function RestScreen() {
   const loadData = async () => {
     try {
       const saved = await AsyncStorage.getItem(STORAGE_KEY);
-      if (!saved) return;
+      if (!saved) {
+        hasLoadedRef.current = true;
+        return;
+      }
 
       const data = JSON.parse(saved);
       if (data && typeof data === "object") {
@@ -86,10 +92,13 @@ export default function RestScreen() {
       }
     } catch (e) {
       console.warn("Failed to parse sleep/wake alarm data:", e);
+    } finally {
+      hasLoadedRef.current = true;
     }
   };
 
   const saveData = async () => {
+    if (!hasLoadedRef.current) return; // ✅ Don't save before initial load completes
     await AsyncStorage.setItem(
       STORAGE_KEY,
       JSON.stringify({
@@ -111,7 +120,7 @@ export default function RestScreen() {
     setModalType(type);
   };
 
-  const confirmCalibration = () => {
+  const confirmCalibration = async () => {
     if (!modalType) return;
 
     const alarm = {
@@ -119,9 +128,44 @@ export default function RestScreen() {
       time: tempTime,
     };
 
-    modalType === "sleep"
-      ? setSleepAlarm(alarm)
-      : setWakeAlarm(alarm);
+    if (modalType === "sleep") {
+      setSleepAlarm(alarm);
+    } else {
+      setWakeAlarm(alarm);
+    }
+
+    // ✅ FIX: Actually schedule (or cancel) the notifee alarm
+    const notifId = modalType === "sleep" ? "sleep_alarm_rest" : "wake_alarm_rest";
+    try {
+      await cancelRoutineReminder(notifId);
+      if (tempEnabled) {
+        // Parse time string — supports "10:30 PM" or "06:30 AM" formats
+        const cleaned = tempTime.trim().toUpperCase();
+        const isPM = cleaned.includes("PM");
+        const isAM = cleaned.includes("AM");
+        const timePart = cleaned.replace(/(AM|PM)/g, "").trim();
+        const [hStr, mStr] = timePart.split(":");
+        let h = parseInt(hStr, 10) || 0;
+        const m = parseInt(mStr, 10) || 0;
+        if (isPM && h < 12) h += 12;
+        if (isAM && h === 12) h = 0;
+
+        const label  = modalType === "sleep" ? "Rest Signal"  : "Wake Signal";
+        const emoji  = modalType === "sleep" ? "🌙"           : "🌅";
+        await scheduleRoutineReminder(
+          notifId,
+          `${emoji} ${label} Alarm`,
+          modalType === "sleep"
+            ? "Time to wind down and prepare for rest."
+            : "Good morning! Time to start your day.",
+          h, m,
+          "sleep"
+        );
+        console.log(`🔔 ${label} alarm scheduled at ${h}:${m}`);
+      }
+    } catch (e) {
+      console.log("⚠️ Error scheduling rest alarm:", e);
+    }
 
     setModalType(null);
   };

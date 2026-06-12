@@ -42,6 +42,7 @@ import { saveWaterToStorage } from "../utils/hydrationStorage";
 type HydrationType = {
   water: number;
   history: HydrationEntry[];
+  isLoadingHydration: boolean;
   addWater: (ml: number, source?: "manual" | "notification") => void;
   reset: () => void;
   reloadHistory: () => void;
@@ -74,7 +75,13 @@ export const HydrationProvider = ({
 }) => {
   const [water, setWater] = useState<number>(0);
   const [history, setHistory] = useState<HydrationEntry[]>([]);
+  const [isLoadingHydration, setIsLoadingHydration] = useState<boolean>(false);
   const { isSwitched, activeMemberId } = useFamily();
+
+  const isMountedRef = React.useRef(true);
+  useEffect(() => {
+    return () => { isMountedRef.current = false; };
+  }, []);
 
   const appState = useRef<AppStateStatus>(AppState.currentState);
   const lastStoredValue = useRef<number>(0);
@@ -86,6 +93,7 @@ export const HydrationProvider = ({
   /////////////////////////////////////////////////////////
 
   const syncHydrationWithFirebase = useCallback(async () => {
+    setIsLoadingHydration(true);
     if (isSwitched && activeMemberId && activeMemberId !== "self") {
       try {
         const firebaseEntries = await fetchHydrationFromFirebase(activeMemberId);
@@ -98,11 +106,14 @@ export const HydrationProvider = ({
           .sort((a, b) => b.timestamp - a.timestamp);
 
         const total = todayEntries.reduce((sum, e) => sum + e.amount, 0);
+        if (!isMountedRef.current) return;
         setWater(total);
         setHistory(todayEntries);
         console.log(`💧 Switched hydration synced from Firestore for ${activeMemberId}: ${total}ml`);
       } catch (err) {
         console.log("❌ Switched hydration sync error:", err);
+      } finally {
+        setIsLoadingHydration(false);
       }
       return;
     }
@@ -140,28 +151,35 @@ export const HydrationProvider = ({
         const updatedLocal = getTodayHydrationHistory();
         const total = updatedLocal.length > 0 ? updatedLocal[0].total : 0;
         await AsyncStorage.setItem(getTodayKey(), String(total));
+        if (!isMountedRef.current) return;
         setWater(total);
         setHistory(updatedLocal);
       } else {
         const localWater = await AsyncStorage.getItem(getTodayKey());
+        if (!isMountedRef.current) return;
         setWater(localWater ? Number(localWater) : 0);
         setHistory(todayLocal);
       }
       console.log(`💧 Self hydration synced and loaded`);
     } catch (err) {
       console.log("❌ Self hydration sync error:", err);
+    } finally {
+      setIsLoadingHydration(false);
     }
   }, [isSwitched, activeMemberId]);
 
-  const reloadHistory = useCallback(() => {
+  const reloadHistory = useCallback(async () => {
+    setIsLoadingHydration(true);
     if (isSwitched) {
-      syncHydrationWithFirebase();
+      await syncHydrationWithFirebase();
     } else {
       try {
         const entries = getTodayHydrationHistory();
         setHistory(entries);
       } catch (err) {
         console.log("❌ History reload error:", err);
+      } finally {
+        setIsLoadingHydration(false);
       }
     }
   }, [isSwitched, syncHydrationWithFirebase]);
@@ -210,6 +228,7 @@ export const HydrationProvider = ({
 
           addHydrationEntry(ml, newValue, source)
             .then(() => {
+              if (!isMountedRef.current) return;
               const entries = getTodayHydrationHistory();
               setHistory(entries);
               const lastEntry = entries[0];
@@ -260,19 +279,24 @@ export const HydrationProvider = ({
   // Initial Load & Profile Switch Trigger
   /////////////////////////////////////////////////////////
 
+  // ── One-time DB initialization on mount ─────────────────────────────
+  // initHydrationHistoryDB must only run once — not on every profile switch.
   useEffect(() => {
-    const init = async () => {
-      await initHydrationHistoryDB();
-      lastSyncTimeRef.current = Date.now();
-      await syncHydrationWithFirebase();
+    initHydrationHistoryDB().catch((err: unknown) => {
+      console.log("❌ HydrationHistoryDB init error:", err);
+    });
+  }, []);
 
-      if (!isSwitched) {
-        setTimeout(() => {
-          initializeHydrationReminder();
-        }, 800);
-      }
-    };
-    init();
+  // ── Sync + Reminder on profile switch ─────────────────────────────────
+  useEffect(() => {
+    lastSyncTimeRef.current = Date.now();
+    syncHydrationWithFirebase();
+
+    if (!isSwitched) {
+      setTimeout(() => {
+        initializeHydrationReminder();
+      }, 800);
+    }
   }, [isSwitched, activeMemberId, syncHydrationWithFirebase, initializeHydrationReminder]);
 
   /////////////////////////////////////////////////////////
@@ -334,7 +358,7 @@ export const HydrationProvider = ({
   /////////////////////////////////////////////////////////
 
   return (
-    <HydrationContext.Provider value={{ water, history, addWater, reset, reloadHistory }}>
+    <HydrationContext.Provider value={{ water, history, isLoadingHydration, addWater, reset, reloadHistory }}>
       {children}
     </HydrationContext.Provider>
   );

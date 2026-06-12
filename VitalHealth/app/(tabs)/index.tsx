@@ -8,7 +8,7 @@ import { useFocusEffect, useRouter } from "expo-router";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   Animated, Dimensions, Easing, Modal,
-  ScrollView, StyleSheet, Text, TouchableOpacity, View, ActivityIndicator
+  ScrollView, StyleSheet, Text, TouchableOpacity, View, ActivityIndicator, Alert
 } from "react-native";
 import Svg, { Polyline } from "react-native-svg";
 import { useFamily } from "../../context/FamilyContext";
@@ -70,8 +70,14 @@ const TelemetryCard = ({ title, value, unit, icon, accent, progress, theme, chil
         <Text style={styles.teleIcon}>{icon}</Text>
       </View>
       <View style={{ flexDirection: "row", alignItems: "flex-end" }}>
-        <Text style={[styles.teleValue, { color: accent }]}>{value}</Text>
-        {unit && <Text style={styles.teleUnit}>{unit}</Text>}
+        <Text style={[
+          styles.teleValue,
+          { color: accent },
+          value === "Under Construction" && { fontSize: 13, fontWeight: "800", textTransform: "uppercase", lineHeight: 22 }
+        ]}>
+          {value}
+        </Text>
+        {unit ? <Text style={styles.teleUnit}>{unit}</Text> : null}
       </View>
       {progress !== undefined && (
         <View style={styles.barBg}>
@@ -99,14 +105,15 @@ export default function HomeScreen() {
   const { theme }                                          = useTheme();
   const c = colors[theme];
   const { steps, calories, goal, isTracking }              = useSteps();
-  const { caloricBalance } = useBiogearsTwin();
+  const { caloricBalance, lastVitals }                     = useBiogearsTwin();
 
   // ✅ Active member context
   const { activeMemberId, isSwitched, activeProfile } = useFamily();
 
-  const [spo2, setSpo2]           = useState<number>(0);
-  const [sensorOpen, setSensorOpen] = useState(false);
-  const isFocused = useRef(false);
+  const [spo2, setSpo2]                     = useState<number>(0);
+  const [sensorOpen, setSensorOpen]         = useState(false);
+  const [heartModalOpen, setHeartModalOpen] = useState(false);
+  const isFocused                           = useRef(false);
 
   useFocusEffect(useCallback(() => {
     if (isFocused.current) return;
@@ -118,6 +125,7 @@ export default function HomeScreen() {
 
   // ✅ SpO₂ — re-subscribes when active member changes
   useEffect(() => {
+    let active = true;
     let unsubscribe: (() => void) | undefined;
 
     const subscribeToSpo2 = async () => {
@@ -128,23 +136,39 @@ export default function HomeScreen() {
         } else {
           uid = await getUserId();
         }
+        if (!active) return;
         if (!uid) return;
 
         setSpo2(0);
         const ref = doc(db, "users", uid);
-        unsubscribe = onSnapshot(ref, (snapshot) => {
-          if (snapshot.exists()) {
-            const data = snapshot.data();
-            setSpo2(data.spo2 !== undefined ? data.spo2 : 0);
+        const unsub = onSnapshot(
+          ref,
+          (snapshot: any) => {
+            if (active && snapshot.exists()) {
+              const data = snapshot.data();
+              setSpo2(data.spo2 !== undefined ? data.spo2 : 0);
+            }
+          },
+          (err: any) => {
+            console.log("⚠️ Dashboard SpO₂ onSnapshot error:", err);
           }
-        });
+        );
+
+        if (!active) {
+          unsub();
+        } else {
+          unsubscribe = unsub;
+        }
       } catch (error) {
         console.error("❌ SpO₂ subscription error:", error);
       }
     };
 
     subscribeToSpo2();
-    return () => { if (unsubscribe) unsubscribe(); };
+    return () => {
+      active = false;
+      if (unsubscribe) unsubscribe();
+    };
   }, [activeMemberId, isSwitched]);
 
   const heart = 78;
@@ -183,10 +207,15 @@ export default function HomeScreen() {
             onPress={() => router.push("/step-intelligence")}
           />
           <TelemetryCard
-            title="HEART RATE" value={heart} unit=" BPM" icon="❤️"
-            accent="#ef476f" theme={theme} onPress={() => setSensorOpen(true)}
+            title="HEART RATE"
+            value={lastVitals?.heart_rate ? Math.round(lastVitals.heart_rate).toString() : "78"}
+            unit="BPM"
+            icon="❤️"
+            accent="#ef4444"
+            theme={theme}
+            onPress={() => setHeartModalOpen(true)}
           >
-            <ECGLine accent="#ef476f" />
+            <ECGLine accent="#ef4444" />
           </TelemetryCard>
           <TelemetryCard
             title="OXYGEN SAT." value={spo2 || "--"} unit="%" icon="🩸"
@@ -338,6 +367,33 @@ export default function HomeScreen() {
           </TouchableOpacity>
         </View>
       </Modal>
+
+      {/* Heart Rate Under Construction Modal */}
+      <Modal visible={heartModalOpen} transparent animationType="slide" onRequestClose={() => setHeartModalOpen(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalCard, { backgroundColor: c.card, borderColor: c.border }]}>
+            <View style={{ alignItems: "center", marginBottom: 14 }}>
+              <Text style={{ fontSize: 48 }}>🚧</Text>
+            </View>
+            <Text style={[styles.modalTitle, { color: c.text, textAlign: "center" }]}>
+              Optical Heart Link
+            </Text>
+            <Text style={{ color: c.sub, fontSize: 13, textAlign: "center", lineHeight: 19, marginVertical: 8 }}>
+              The camera-based Optical PPG Pulse detection system is currently undergoing hardware integration and fine-tuning.
+            </Text>
+            <Text style={{ color: c.sub, fontSize: 12, fontStyle: "italic", textAlign: "center", marginBottom: 18 }}>
+              This feature will be enabled in the next production build.
+            </Text>
+            
+            <TouchableOpacity
+              style={[styles.modalBtn, { backgroundColor: "#ef4444" }]}
+              onPress={() => setHeartModalOpen(false)}
+            >
+              <Text style={styles.modalBtnText}>Got It</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -397,4 +453,11 @@ const styles = StyleSheet.create({
   brainCard:         { borderRadius: 40, padding: 24, flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
   sensorScreen:      { flex: 1, justifyContent: "center", alignItems: "center", padding: 30 },
   sensorBtn:         { padding: 18, borderRadius: 40, width: "100%", alignItems: "center" },
+
+  // Heart Rate Modal Styles (matching security settings overlay/modal)
+  modalOverlay:      { flex: 1, backgroundColor: "#00000088", justifyContent: "center", padding: 24 },
+  modalCard:         { borderRadius: 24, padding: 24, borderWidth: 1, gap: 10 },
+  modalTitle:        { fontSize: 20, fontWeight: "900", marginBottom: 8 },
+  modalBtn:          { padding: 14, borderRadius: 16, alignItems: "center", marginTop: 4 },
+  modalBtnText:      { color: "#fff", fontWeight: "bold", fontSize: 15 },
 });

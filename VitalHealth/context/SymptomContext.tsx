@@ -12,6 +12,7 @@ import React, {
   useCallback,
   useContext,
   useEffect,
+  useRef,
   useState,
 } from "react";
 
@@ -170,6 +171,12 @@ export function SymptomsProvider({ children }: { children: React.ReactNode }) {
   const [isLoaded,        setIsLoaded]        = useState(false);
   const [isLoadingMemberSymptoms, setIsLoadingMember] = useState(false);
 
+  // Prevent setState after unmount (random crash guard)
+  const isMountedRef = useRef(true);
+  useEffect(() => {
+    return () => { isMountedRef.current = false; };
+  }, []);
+
   // ── Get active profile context ─────────────────────────
   // NOTE: SymptomsProvider is always rendered inside FamilyProvider (see _layout.tsx).
   // useFamily() is safe to call unconditionally here. The previous try/catch pattern
@@ -183,14 +190,14 @@ export function SymptomsProvider({ children }: { children: React.ReactNode }) {
   //////////////////////////////////////////////////////////
 
   const refreshSymptoms = useCallback(async () => {
+    setIsLoadingMember(true);
     try {
       if (isSwitched && activeMemberId && activeMemberId !== "self") {
-        // ── Switched: load member's symptoms from Firebase ──
-        setIsLoadingMember(true);
         console.log("🩺 Loading symptoms from Firebase for member:", activeMemberId);
 
         const firebaseActive  = await fetchSymptomsFromFirebase(activeMemberId);
         const firebaseHistory = await fetchSymptomHistoryFromFirebase(activeMemberId);
+        if (!isMountedRef.current) return;
 
         const normalizedActive  = normalizeActiveSymptoms(firebaseActive   || []);
         const normalizedHistory = normalizeHistorySymptoms(firebaseHistory || []);
@@ -212,6 +219,7 @@ export function SymptomsProvider({ children }: { children: React.ReactNode }) {
 
         const activeRaw  = await AsyncStorage.getItem(ACTIVE_KEY);
         const historyRaw = await AsyncStorage.getItem(HISTORY_KEY);
+        if (!isMountedRef.current) return;
 
         let localActive: Symptom[] = [];
         let localHistory: HistorySymptom[] = [];
@@ -222,6 +230,7 @@ export function SymptomsProvider({ children }: { children: React.ReactNode }) {
 
         const firebaseActive  = await fetchSymptomsFromFirebase();
         const firebaseHistory = await fetchSymptomHistoryFromFirebase();
+        if (!isMountedRef.current) return;
 
         const normalizedActive  = normalizeActiveSymptoms(firebaseActive   || []);
         const normalizedHistory = normalizeHistorySymptoms(firebaseHistory || []);
@@ -245,29 +254,21 @@ export function SymptomsProvider({ children }: { children: React.ReactNode }) {
     } catch (error) {
       console.log("❌ refreshSymptoms error:", error);
     } finally {
-      setIsLoadingMember(false);
+      if (isMountedRef.current) setIsLoadingMember(false);
     }
   }, [isSwitched, activeMemberId]);
 
   //////////////////////////////////////////////////////////
-  // Re-load whenever active member changes
+  // Re-load whenever active member changes (also covers initial mount)
   //////////////////////////////////////////////////////////
 
   useEffect(() => {
-    refreshSymptoms();
-  }, [isSwitched, activeMemberId]);
-
-  //////////////////////////////////////////////////////////
-  // Initial load
-  //////////////////////////////////////////////////////////
-
-  useEffect(() => {
-    const initialize = async () => {
+    const run = async () => {
       await refreshSymptoms();
-      setIsLoaded(true);
+      if (isMountedRef.current) setIsLoaded(true);
     };
-    initialize();
-  }, []);
+    run();
+  }, [isSwitched, activeMemberId]);
 
   //////////////////////////////////////////////////////////
   // Auto-save OWN symptoms to AsyncStorage (only when on self)

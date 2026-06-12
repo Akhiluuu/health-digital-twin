@@ -33,12 +33,13 @@ interface State {
   hasError: boolean;
   error: Error | null;
   errorInfo: string;
+  tapCount: number;
 }
 
 export class ErrorBoundary extends React.Component<Props, State> {
   constructor(props: Props) {
     super(props);
-    this.state = { hasError: false, error: null, errorInfo: "" };
+    this.state = { hasError: false, error: null, errorInfo: "", tapCount: 0 };
   }
 
   static getDerivedStateFromError(error: Error): Partial<State> {
@@ -54,7 +55,11 @@ export class ErrorBoundary extends React.Component<Props, State> {
   }
 
   handleReset = () => {
-    this.setState({ hasError: false, error: null, errorInfo: "" });
+    this.setState({ hasError: false, error: null, errorInfo: "", tapCount: 0 });
+  };
+
+  handleTapError = () => {
+    this.setState(prev => ({ tapCount: prev.tapCount + 1 }));
   };
 
   render() {
@@ -63,17 +68,21 @@ export class ErrorBoundary extends React.Component<Props, State> {
         return <>{this.props.fallback}</>;
       }
 
+      const showDetails = __DEV__ || this.state.tapCount >= 3;
+
       return (
         <View style={styles.container}>
           <View style={styles.card}>
-            <Text style={styles.emoji}>⚠️</Text>
+            <TouchableOpacity onPress={this.handleTapError} activeOpacity={1}>
+              <Text style={styles.emoji}>⚠️</Text>
+            </TouchableOpacity>
             <Text style={styles.title}>Something went wrong</Text>
             <Text style={styles.subtitle}>
               VitalHealth encountered an unexpected error. Your health data is safe.
             </Text>
 
-            {/* Show error message in dev builds */}
-            {__DEV__ && this.state.error && (
+            {/* Show error message — in DEV always, in prod after 3 taps on the emoji */}
+            {showDetails && this.state.error && (
               <ScrollView style={styles.devBox} contentContainerStyle={{ padding: 12 }}>
                 <Text style={styles.devTitle}>Error: {this.state.error.message}</Text>
                 <Text style={styles.devStack}>{this.state.errorInfo}</Text>

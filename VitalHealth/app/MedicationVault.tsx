@@ -1,10 +1,11 @@
 // app/MedicationVault.tsx
 
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import {
   Alert,
   FlatList,
   StyleSheet,
+  Switch,
   Text,
   TouchableOpacity,
   View,
@@ -22,9 +23,115 @@ import Header from "./components/Header";
 
 import { deleteMedicine } from "../database/medicineDB";
 import { cancelMedicineNotification } from "../services/notificationService";
+import { cancelRoutineReminder, scheduleRoutineReminder } from "../services/notifeeService";
+import TimePicker from "../components/twin/TimePicker";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import { log } from "../utils/logger";
 import { addToMedicineHistory } from "../utils/medicineHistory";
+
+///////////////////////////////////////////////////////////
+// Vault Alarm Settings Card
+// Lets users set a "global" daily medication reminder from
+// within the MedicationVault page itself.
+///////////////////////////////////////////////////////////
+
+const VAULT_ALARM_KEY = "@vault_global_alarm";
+
+function VaultAlarmCard({ c, accent }: { c: any; accent: string }) {
+  const [expanded, setExpanded] = useState(false);
+  const [enabled, setEnabled]   = useState(false);
+  const [time, setTime]         = useState("08:00");
+  const NOTIF_ID = "vault_global_med_alarm";
+
+  useEffect(() => {
+    AsyncStorage.getItem(VAULT_ALARM_KEY)
+      .then((raw) => {
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          setEnabled(parsed.enabled ?? false);
+          setTime(parsed.time ?? "08:00");
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  const save = async (newEnabled: boolean, newTime: string) => {
+    await AsyncStorage.setItem(VAULT_ALARM_KEY, JSON.stringify({ enabled: newEnabled, time: newTime }));
+    await cancelRoutineReminder(NOTIF_ID);
+    if (newEnabled) {
+      const [h, m] = newTime.split(":").map(Number);
+      await scheduleRoutineReminder(
+        NOTIF_ID,
+        "💊 Medication Reminder",
+        "Time to take your daily medicines.",
+        h, m,
+        "medicine"
+      );
+    }
+  };
+
+  const toggle = async (val: boolean) => {
+    setEnabled(val);
+    await save(val, time);
+  };
+
+  const changeTime = async (newTime: string) => {
+    setTime(newTime);
+    if (enabled) await save(enabled, newTime);
+  };
+
+  return (
+    <View style={[va.card, { backgroundColor: c.card, borderColor: expanded ? accent + "70" : c.border }]}>
+      <TouchableOpacity style={va.row} onPress={() => setExpanded(!expanded)} activeOpacity={0.8}>
+        <View style={[va.iconBox, { backgroundColor: accent + "20" }]}>
+          <Ionicons name="alarm-outline" size={18} color={accent} />
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={[va.title, { color: c.text }]}>Daily Medication Alarm</Text>
+          <Text style={[va.sub, { color: c.sub }]}>
+            {enabled ? `Active · every day at ${time}` : "No global alarm set"}
+          </Text>
+        </View>
+        <Ionicons name={expanded ? "chevron-up" : "chevron-down"} size={20} color={c.sub} />
+      </TouchableOpacity>
+
+      {expanded && (
+        <View style={[va.body, { borderTopColor: c.border }]}>
+          <Text style={[va.hint, { color: c.sub }]}>
+            This alarm fires daily as a general reminder to take your medicines.
+            Individual medicine alarms are set per-medicine when you add them.
+          </Text>
+          <View style={va.controlRow}>
+            <Text style={[va.label, { color: c.text }]}>Reminder Time</Text>
+            <TimePicker value={time} onChange={changeTime} accent={accent} />
+          </View>
+          <View style={va.controlRow}>
+            <Text style={[va.label, { color: c.text }]}>Enable Daily Alarm</Text>
+            <Switch
+              value={enabled}
+              onValueChange={toggle}
+              trackColor={{ false: c.border, true: accent }}
+              thumbColor="#fff"
+            />
+          </View>
+        </View>
+      )}
+    </View>
+  );
+}
+
+const va = StyleSheet.create({
+  card:    { borderRadius: 16, borderWidth: 1, padding: 14, marginBottom: 14 },
+  row:     { flexDirection: "row", alignItems: "center", gap: 12 },
+  iconBox: { width: 36, height: 36, borderRadius: 9, justifyContent: "center", alignItems: "center" },
+  title:   { fontSize: 14, fontWeight: "700" },
+  sub:     { fontSize: 11, marginTop: 2 },
+  body:    { marginTop: 12, paddingTop: 12, borderTopWidth: 1 },
+  hint:    { fontSize: 11, lineHeight: 16, marginBottom: 12, fontStyle: "italic" },
+  controlRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 12 },
+  label:   { fontSize: 13, fontWeight: "600" },
+});
 
 ///////////////////////////////////////////////////////////
 // Only show taken indicator if takenDate is TODAY.
@@ -275,6 +382,9 @@ export default function MedicationVault() {
             </TouchableOpacity>
           </View>
         </View>
+
+        {/* ✅ Alarm Settings Card */}
+        <VaultAlarmCard c={c} accent={c.accent} />
 
         <View style={[styles.filterBar, { backgroundColor: c.card }]}>
           {(["all", "regular", "once"] as const).map((type) => (

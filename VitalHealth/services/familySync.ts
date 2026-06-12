@@ -127,8 +127,8 @@ export async function fetchMemberHealthData(
     const snap = await getDoc(userRef);
     if (!snap.exists()) return null;
 
-    const data = snap.data();
-    const health = data.healthData || data;
+    const data = snap.data() || {};
+    const health = data.healthData || data || {};
 
     /* 🔹 Fetch medicines */
     let medicines: any[] = [];
@@ -163,15 +163,15 @@ export async function fetchMemberHealthData(
       lastName: data.lastName || "",
       dateOfBirth: data.dateOfBirth || data.dob,
       dob: data.dob || data.dateOfBirth,
-      gender: health.gender,
-      bloodGroup: health.bloodGroup,
-      height: health.height,
-      weight: health.weight,
+      gender: health?.gender,
+      bloodGroup: health?.bloodGroup,
+      height: health?.height,
+      weight: health?.weight,
       heartRate,
-      spo2: health.spo2,
-      hydration: health.hydration,
-      steps: health.steps,
-      calories: health.calories || 0,
+      spo2: health?.spo2,
+      hydration: health?.hydration,
+      steps: health?.steps,
+      calories: health?.calories || 0,
       medicines: normalizeMedicines(medicines),
       symptoms: Array.isArray(symptoms) ? symptoms : [],
       profileImage: data.profileImage,
@@ -204,8 +204,8 @@ export function subscribeToMemberHealth(
           return;
         }
 
-        const data = snapshot.data();
-        const health = data.healthData || data;
+        const data = snapshot.data() || {};
+        const health = data.healthData || data || {};
 
         let medicines: any[] = [];
         let symptoms: any[] = [];
@@ -238,15 +238,15 @@ export function subscribeToMemberHealth(
           lastName: data.lastName || "",
           dateOfBirth: data.dateOfBirth || data.dob,
           dob: data.dob || data.dateOfBirth,
-          gender: health.gender,
-          bloodGroup: health.bloodGroup,
-          height: health.height,
-          weight: health.weight,
+          gender: health?.gender,
+          bloodGroup: health?.bloodGroup,
+          height: health?.height,
+          weight: health?.weight,
           heartRate,
-          spo2: health.spo2,
-          hydration: health.hydration,
-          steps: health.steps,
-          calories: health.calories || 0,
+          spo2: health?.spo2,
+          hydration: health?.hydration,
+          steps: health?.steps,
+          calories: health?.calories || 0,
           medicines: normalizeMedicines(medicines),
           symptoms: Array.isArray(symptoms) ? symptoms : [],
           profileImage: data.profileImage,

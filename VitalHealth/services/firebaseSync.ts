@@ -68,11 +68,16 @@ export const getUserId = async (): Promise<string | null> => {
 
   // 2. Wait up to 8 seconds for Firebase Auth to restore session
   const uid = await new Promise<string | null>((resolve) => {
+    let timer: any = null;
     const unsub = auth.onAuthStateChanged((user) => {
+      if (timer) clearTimeout(timer);
       unsub();
       resolve(user?.uid ?? null);
     });
-    setTimeout(() => resolve(null), 8000);
+    timer = setTimeout(() => {
+      unsub();
+      resolve(null);
+    }, 8000);
   });
 
   if (uid) return uid;

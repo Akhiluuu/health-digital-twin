@@ -320,6 +320,7 @@ export const FamilyProvider = ({
     }
 
     setIsSwitchLoading(true);
+    const start = Date.now();
     try {
       console.log("🔄 Switching profile to UID:", memberUid);
 
@@ -344,16 +345,33 @@ export const FamilyProvider = ({
     } catch (e) {
       console.error("❌ switchToMember error:", e);
     } finally {
-      setIsSwitchLoading(false);
+      // Enforce a minimum transition time of 1500ms so data contexts have time to register & fetch
+      const elapsed = Date.now() - start;
+      const delay = Math.max(0, 1500 - elapsed);
+      setTimeout(() => {
+        setIsSwitchLoading(false);
+      }, delay);
     }
   }, [activeMemberId, members]);
 
   /* ── SWITCH BACK TO SELF ─────────────────────────────────── */
   const switchToSelf = useCallback(async () => {
     console.log("🔄 Switching back to self");
-    setActiveMemberId("self");
-    setActiveProfile(selfProfileRef.current);
-    await AsyncStorage.setItem(ACTIVE_MEMBER_KEY, "self");
+    setIsSwitchLoading(true);
+    const start = Date.now();
+    try {
+      setActiveMemberId("self");
+      setActiveProfile(selfProfileRef.current);
+      await AsyncStorage.setItem(ACTIVE_MEMBER_KEY, "self");
+    } catch (e) {
+      console.error("❌ switchToSelf error:", e);
+    } finally {
+      const elapsed = Date.now() - start;
+      const delay = Math.max(0, 1500 - elapsed);
+      setTimeout(() => {
+        setIsSwitchLoading(false);
+      }, delay);
+    }
   }, []);
 
   /* ── UPDATE ACTIVE PROFILE ────────────────────────────────── */

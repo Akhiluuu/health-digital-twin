@@ -11,15 +11,33 @@ export default function Startup() {
   const router = useRouter();
 
   useEffect(() => {
+    let isMounted = true;
     const checkApp = async () => {
-      // 1. Wait a moment for Firebase Auth to initialize and restore session
+      // 1. Wait for Firebase Auth to initialize and restore session.
+      // We give auth up to 2 seconds to resolve before falling back to
+      // auth.currentUser. This prevents false-null returns from a race.
       const user = await new Promise<any>((resolve) => {
+        let settled = false;
+        const timer = setTimeout(() => {
+          if (!settled) {
+            settled = true;
+            unsubscribe();
+            // Fallback: read synchronous currentUser (may be null on cold start)
+            resolve(auth.currentUser);
+          }
+        }, 2000);
+
         const unsubscribe = auth.onAuthStateChanged((u) => {
-          unsubscribe();
-          resolve(u);
+          if (!settled) {
+            settled = true;
+            clearTimeout(timer);
+            unsubscribe();
+            resolve(u);
+          }
         });
-        setTimeout(() => resolve(auth.currentUser), 1500);
       });
+
+      if (!isMounted) return;
 
       // 2. If not logged in, go to welcome screen
       const localLoggedIn = await isLoggedIn();
@@ -44,6 +62,8 @@ export default function Startup() {
         }
       }
 
+      if (!isMounted) return;
+
       // 5. Route based on profile completion status
       if (!profile || !profile.firstName) {
         router.replace("/onboarding/personal");
@@ -53,6 +73,7 @@ export default function Startup() {
     };
 
     checkApp();
+    return () => { isMounted = false; };
   }, []);
 
   return (
