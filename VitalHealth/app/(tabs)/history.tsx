@@ -3,7 +3,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Switch, RefreshControl, Platform, Alert, TextInput, Modal, KeyboardAvoidingView } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useBiogearsTwin } from '../../context/BiogearsTwinContext';
@@ -19,6 +19,7 @@ import TimePicker from '../../components/twin/TimePicker';
 import { auth } from '../../services/firebase';
 import { updateProfile as firebaseUpdateProfile } from '../../services/profileService';
 import { scheduleRoutineReminder, cancelRoutineReminder } from '../../services/notifeeService';
+import { getMedicines } from '../../database/medicineDB';
 
 type LogTab = 'nutrition' | 'exercise' | 'sleep' | 'hydration' | 'symptoms';
 const TABS: { id: LogTab; label: string; icon: string; accent: string }[] = [
@@ -114,11 +115,28 @@ function getPrepopulatedReminders(tab: LogTab, habits: any): RoutineReminder[] {
         { id: `hyd_w_${Date.now()}_3`, label: '💧 Drink Water', time: `${String((wH + step * 3) % 24).padStart(2, '0')}:00`, enabled: true },
       ];
     }
-    case 'symptoms':
+    case 'symptoms': {
+      try {
+        const meds = getMedicines();
+        if (meds && meds.length > 0) {
+          const uniqueTimes = Array.from(new Set(meds.map(m => m.time).filter(Boolean))).sort();
+          if (uniqueTimes.length > 0) {
+            return uniqueTimes.map((t, idx) => ({
+              id: `sym_med_${idx}_${Date.now()}`,
+              label: '🩺 Symptom Check',
+              time: t,
+              enabled: true,
+            }));
+          }
+        }
+      } catch (err) {
+        console.log('Error reading medicines for symptom reminders prepopulation:', err);
+      }
       return [
         { id: `sym_am_${Date.now()}_1`, label: '🩺 Symptom Check', time: '10:00', enabled: true },
         { id: `sym_pm_${Date.now()}_2`, label: '🩺 Symptom Check', time: '19:00', enabled: true },
       ];
+    }
   }
 }
 
@@ -161,41 +179,82 @@ function ReminderCard({ tab, accent, c }: { tab: LogTab; accent: string; c: any 
     const loadReminders = async () => {
       try {
         const raw = await AsyncStorage.getItem(REMINDERS_LIST_KEY(tab));
+        let loadedList: RoutineReminder[] = [];
+        let needsSave = false;
+
         if (raw) {
           try {
             const parsedR = JSON.parse(raw);
-            if (Array.isArray(parsedR)) setReminders(parsedR);
-          } catch { /* corrupted — fall through to defaults */ }
-        } else {
-          // Check for legacy single reminder migration
-          const oldRaw = await AsyncStorage.getItem(OLD_REMINDER_KEY(tab));
-          if (oldRaw) {
-            let oldData: any = null;
-            try { oldData = JSON.parse(oldRaw); } catch { /* ignore corrupted legacy */ }
-            if (!oldData) oldData = {};
-            const migrated: RoutineReminder[] = [
-              {
-                id: `legacy_${Date.now()}`,
-                label: '⏰ Daily Reminder',
-                time: oldData.time || '08:00',
-                enabled: oldData.enabled ?? false,
+            if (Array.isArray(parsedR)) loadedList = parsedR;
+          } catch { /* corrupted */ }
+        }
+
+        if (tab === 'symptoms') {
+          try {
+            const meds = getMedicines();
+            if (meds && meds.length > 0) {
+              const medTimes = Array.from(new Set(meds.map(m => m.time).filter(Boolean))).sort();
+              const existingTimes = loadedList.map(r => r.time).sort();
+              const timesMatch = JSON.stringify(medTimes) === JSON.stringify(existingTimes);
+
+              if (!timesMatch) {
+                console.log(`[SymptomReminders] Syncing symptom alarms to medicine times: ${medTimes.join(', ')}`);
+                loadedList = medTimes.map((t, idx) => {
+                  const existing = loadedList.find(r => r.time === t);
+                  return {
+                    id: existing?.id || `sym_med_${idx}_${Date.now()}`,
+                    label: '🩺 Symptom Check',
+                    time: t,
+                    enabled: existing ? existing.enabled : true,
+                  };
+                });
+                needsSave = true;
               }
-            ];
-            setReminders(migrated);
-            await AsyncStorage.setItem(REMINDERS_LIST_KEY(tab), JSON.stringify(migrated));
-            await syncNotificationsForReminders(tab, migrated);
-          } else {
-            // Load onboarding habits for pre-population
-            let habits = null;
-            if (user) {
-              const habitsRaw = await AsyncStorage.getItem(`@onboarding_habits_${user.uid}`);
-              if (habitsRaw) { try { habits = JSON.parse(habitsRaw); } catch { habits = null; } }
+            } else {
+              if (loadedList.length === 0) {
+                loadedList = [
+                  { id: `sym_am_${Date.now()}_1`, label: '🩺 Symptom Check', time: '10:00', enabled: true },
+                  { id: `sym_pm_${Date.now()}_2`, label: '🩺 Symptom Check', time: '19:00', enabled: true },
+                ];
+                needsSave = true;
+              }
             }
-            const prepopulated = getPrepopulatedReminders(tab, habits);
-            setReminders(prepopulated);
-            await AsyncStorage.setItem(REMINDERS_LIST_KEY(tab), JSON.stringify(prepopulated));
-            await syncNotificationsForReminders(tab, prepopulated);
+          } catch (err) {
+            console.warn('Failed to sync symptom reminders with medicine timings:', err);
           }
+        } else {
+          if (loadedList.length === 0) {
+            // Check for legacy single reminder migration
+            const oldRaw = await AsyncStorage.getItem(OLD_REMINDER_KEY(tab));
+            if (oldRaw) {
+              let oldData: any = null;
+              try { oldData = JSON.parse(oldRaw); } catch { /* ignore corrupted legacy */ }
+              if (!oldData) oldData = {};
+              loadedList = [
+                {
+                  id: `legacy_${Date.now()}`,
+                  label: '⏰ Daily Reminder',
+                  time: oldData.time || '08:00',
+                  enabled: oldData.enabled ?? false,
+                }
+              ];
+            } else {
+              // Load onboarding habits for pre-population
+              let habits = null;
+              if (user) {
+                const habitsRaw = await AsyncStorage.getItem(`@onboarding_habits_${user.uid}`);
+                if (habitsRaw) { try { habits = JSON.parse(habitsRaw); } catch { habits = null; } }
+              }
+              loadedList = getPrepopulatedReminders(tab, habits);
+            }
+            needsSave = true;
+          }
+        }
+
+        setReminders(loadedList);
+        if (needsSave) {
+          await AsyncStorage.setItem(REMINDERS_LIST_KEY(tab), JSON.stringify(loadedList));
+          await syncNotificationsForReminders(tab, loadedList);
         }
       } catch (e) {
         console.error("Error loading reminders list:", e);
@@ -554,7 +613,7 @@ export default function LogRoutineScreen() {
   const headerH = Math.max(insets.top, Platform.OS === 'android' ? 24 : 20) + 52;
 
   const { todayEvents, refreshSessions } = useBiogearsTwin();
-  const { water, history: hydHist } = useHydration();
+  const { water, history: hydHist, reloadHistory } = useHydration();
   const { totals, foodEntries, activityEntries, totalActivityCalories, mealReminders } = useNutrition();
   const { activeSymptoms, historySymptoms, refreshSymptoms } = useSymptoms();
 
@@ -601,6 +660,21 @@ export default function LogRoutineScreen() {
       setTab(params.tab as LogTab);
     }
   }, [params.tab]);
+
+  // Reload hydration data whenever the screen gains focus or the hydration tab is opened
+  useFocusEffect(
+    useCallback(() => {
+      reloadHistory();
+    }, [reloadHistory])
+  );
+
+  // Also reload when user switches to the hydration tab explicitly
+  useEffect(() => {
+    if (tab === 'hydration') {
+      reloadHistory();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab]);
 
   const [refreshing, setRefresh] = useState(false);
 
@@ -795,12 +869,10 @@ export default function LogRoutineScreen() {
     );
   };
 
-  // ── SYMPTOMS ────────────────────────────────────────────────────────────────
   const renderSymptoms = () => {
     const sev = (v: string) => v === 'emergency' ? '#ef4444' : v === 'severe' ? '#f97316' : v === 'moderate' ? '#f59e0b' : '#10b981';
     return (
       <>
-        <ReminderCard tab="symptoms" accent={accent} c={c} />
         {activeSymptoms.length === 0 && historySymptoms.length === 0 ? (
           <Empty icon="🩺" text={'No symptoms logged.\nTrack how you feel over time.'} btn="Log Symptom" onPress={goSym} accent={accent} c={c} />
         ) : (

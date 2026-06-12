@@ -584,6 +584,50 @@ export const scheduleDailyLogReminder = async () => {
 };
 
 ///////////////////////////////////////////////////////////
+// ⏳ 24h INACTIVITY REMINDER
+// Schedules a reminder to fire exactly 24 hours from the last input.
+// This is a sliding window; any new input cancels the old and schedules a new one.
+///////////////////////////////////////////////////////////
+
+export const scheduleInactivityReminder = async () => {
+  try {
+    const id = "inactivity_reminder";
+    await notifee.cancelNotification(id).catch(() => {});
+
+    const now = Date.now();
+    await AsyncStorage.setItem("@last_input_time", String(now));
+
+    const triggerTime = now + 24 * 60 * 60 * 1000;
+
+    await notifee.createTriggerNotification(
+      {
+        id,
+        title: "⏰ 24h Inactivity Reminder",
+        body: "You haven't logged any health data or updated your Digital Twin in 24 hours. Keep your twin synchronized!",
+        data: {
+          type: "twin_reminder",
+        },
+        android: {
+          channelId: CHANNEL_ID,
+          pressAction: { id: "default" },
+        },
+      },
+      {
+        type: TriggerType.TIMESTAMP,
+        timestamp: triggerTime,
+        alarmManager: {
+          allowWhileIdle: true,
+          type: AlarmType.SET_EXACT_AND_ALLOW_WHILE_IDLE,
+        },
+      }
+    );
+    console.log("📅 24h inactivity reminder scheduled for:", new Date(triggerTime).toISOString());
+  } catch (err) {
+    console.log("❌ Error scheduling inactivity reminder:", err);
+  }
+};
+
+///////////////////////////////////////////////////////////
 // FOREGROUND HANDLER
 ///////////////////////////////////////////////////////////
 
@@ -632,18 +676,18 @@ export function registerNotifeeForegroundHandler() {
 
     // ── Medicine: Taken ──────────────────────────────────────────
     if (action === ACTION_MEDICINE_TAKEN) {
-      // ✅ Pass medicineId from notification data as fallback for snooze case
       await handleMedicineTaken(notifId, medicineId);
+      await scheduleInactivityReminder().catch(() => {});
       return;
     }
 
     // ── Medicine: Snooze ─────────────────────────────────────────
     if (action === ACTION_MEDICINE_SNOOZE) {
       await snoozeMedicine(
-        detail.notification?.body || "Medicine reminder",
-        medicineId,
-        String(data.frequency ?? "daily"),
-        5
+         detail.notification?.body || "Medicine reminder",
+         medicineId,
+         String(data.frequency ?? "daily"),
+         5
       );
       await notifee.cancelDisplayedNotification(notifId);
       return;
@@ -667,6 +711,7 @@ export function registerNotifeeForegroundHandler() {
         console.log("💧 HydrationContext not ready — AsyncStorage updated");
       }
       await scheduleHydrationReminder();
+      await scheduleInactivityReminder().catch(() => {});
       await notifee.cancelDisplayedNotification(notifId);
       return;
     }
@@ -680,6 +725,7 @@ export function registerNotifeeForegroundHandler() {
     // ── Symptom ──────────────────────────────────────────────────
     if (action === ACTION_SYMPTOM_DONE) {
       await cancelSymptomNotification();
+      await scheduleInactivityReminder().catch(() => {});
       await notifee.cancelDisplayedNotification(notifId);
       return;
     }

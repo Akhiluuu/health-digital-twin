@@ -312,7 +312,7 @@ export default function HomeScreen() {
         <Text style={[styles.sectionTitle, { color: c.text }]}>GOAL CONVERGENCE</Text>
         <TouchableOpacity
           style={[styles.goalCard, { backgroundColor: c.card }]}
-          onPress={() => router.push("/hydration")}
+          onPress={() => router.push({ pathname: "/(tabs)/history", params: { tab: "hydration" } } as any)}
           activeOpacity={0.7}
         >
           <View style={{ flexDirection: "row", alignItems: "center", flex: 1 }}>

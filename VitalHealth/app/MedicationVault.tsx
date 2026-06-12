@@ -21,8 +21,7 @@ import { useTheme } from "../context/ThemeContext";
 import { colors } from "../theme/colors";
 import Header from "./components/Header";
 
-import { deleteMedicine } from "../database/medicineDB";
-import { cancelMedicineNotification } from "../services/notificationService";
+// deleteMedicine + cancelMedicineNotification now handled via context.removeMedicine
 import { cancelRoutineReminder, scheduleRoutineReminder } from "../services/notifeeService";
 import TimePicker from "../components/twin/TimePicker";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -134,6 +133,27 @@ const va = StyleSheet.create({
 });
 
 ///////////////////////////////////////////////////////////
+function formatDateString(val: string): string {
+  if (!val) return '';
+  if (val === 'ongoing') return 'Ongoing';
+  let cleanVal = val;
+  if (val.includes('T')) {
+    cleanVal = val.split('T')[0];
+  }
+  const parts = cleanVal.split('-');
+  if (parts.length === 3) {
+    const y = parseInt(parts[0], 10);
+    const m = parseInt(parts[1], 10) - 1;
+    const d = parseInt(parts[2], 10);
+    if (!isNaN(y) && !isNaN(m) && !isNaN(d)) {
+      const date = new Date(y, m, d);
+      return date.toLocaleDateString('en-US', { day: '2-digit', month: 'short', year: 'numeric' });
+    }
+  }
+  return val;
+}
+
+///////////////////////////////////////////////////////////
 // Only show taken indicator if takenDate is TODAY.
 // Daily medicines from yesterday are never shown as ticked.
 ///////////////////////////////////////////////////////////
@@ -151,8 +171,9 @@ export default function MedicationVault() {
   const { theme } = useTheme();
   const c = colors[theme];
 
-  const { medicines, reloadMedicines, clearAllMedicines } = useMedicine();
+  const { medicines, removeMedicine, reloadMedicines, clearAllMedicines } = useMedicine();
   const [filter, setFilter] = useState<"all" | "regular" | "once">("all");
+  const [statusFilter, setStatusFilter] = useState<"active" | "completed">("active");
 
   /////////////////////////////////////////////////////////
   // REFRESH on screen focus
@@ -169,6 +190,13 @@ export default function MedicationVault() {
   /////////////////////////////////////////////////////////
 
   const filteredMedicines = medicines.filter((med: Medicine) => {
+    // 1. Status Filter
+    const today = new Date().toISOString().split("T")[0];
+    const isActive = med.endDate === "ongoing" || med.endDate >= today;
+    if (statusFilter === "active" && !isActive) return false;
+    if (statusFilter === "completed" && isActive) return false;
+
+    // 2. Schedule Filter
     if (filter === "regular") return med.frequency === "daily";
     if (filter === "once") return med.frequency === "once";
     return true;
@@ -189,6 +217,7 @@ export default function MedicationVault() {
           style: "destructive",
           onPress: async () => {
             try {
+              // Log to history first
               await addToMedicineHistory({
                 medicineId: medicine.id,
                 medicineName: medicine.name,
@@ -197,12 +226,11 @@ export default function MedicationVault() {
                 status: "deleted",
               });
 
-              if (medicine.notificationId) {
-                await cancelMedicineNotification(medicine.notificationId);
-              }
-
-              deleteMedicine(medicine.id);
-              reloadMedicines();
+              // ✅ Use context removeMedicine — cancels notification, deletes
+              // from SQLite, syncs delete to Firebase, and reloads state.
+              // Previously used raw deleteMedicine() which skipped Firebase
+              // sync, causing the medicine to reappear after next login.
+              await removeMedicine(medicine.id);
 
               log("✅ Deleted + history saved");
             } catch (err) {
@@ -279,6 +307,13 @@ export default function MedicationVault() {
             <Text style={[styles.medDose, { color: c.sub }]}>
               {item.dose}
             </Text>
+
+            <View style={styles.dateRangeRow}>
+              <Ionicons name="calendar-outline" size={12} color={c.sub} />
+              <Text style={[styles.dateRangeText, { color: c.sub }]}>
+                {formatDateString(item.startDate)} — {formatDateString(item.endDate)}
+              </Text>
+            </View>
 
             <View style={styles.medFooter}>
               <View
@@ -385,6 +420,33 @@ export default function MedicationVault() {
 
         {/* ✅ Alarm Settings Card */}
         <VaultAlarmCard c={c} accent={c.accent} />
+
+        {/* ✅ Status Switcher (Active / Completed) */}
+        <View style={[styles.statusToggleContainer, { backgroundColor: c.card }]}>
+          <TouchableOpacity
+            style={[
+              styles.statusTab,
+              statusFilter === "active" && { backgroundColor: c.accent }
+            ]}
+            onPress={() => setStatusFilter("active")}
+          >
+            <Text style={[styles.statusTabTxt, { color: statusFilter === "active" ? "#fff" : c.sub }]}>
+              ACTIVE MEDICATIONS
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[
+              styles.statusTab,
+              statusFilter === "completed" && { backgroundColor: c.accent }
+            ]}
+            onPress={() => setStatusFilter("completed")}
+          >
+            <Text style={[styles.statusTabTxt, { color: statusFilter === "completed" ? "#fff" : c.sub }]}>
+              COMPLETED
+            </Text>
+          </TouchableOpacity>
+        </View>
 
         <View style={[styles.filterBar, { backgroundColor: c.card }]}>
           {(["all", "regular", "once"] as const).map((type) => (
@@ -590,5 +652,32 @@ const styles = StyleSheet.create({
   emptyButtonText: {
     color: "#fff",
     fontWeight: "600",
+  },
+
+  dateRangeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 10,
+  },
+  dateRangeText: {
+    fontSize: 11,
+    fontWeight: '500',
+  },
+  statusToggleContainer: {
+    flexDirection: "row",
+    borderRadius: 14,
+    padding: 4,
+    marginBottom: 12,
+  },
+  statusTab: {
+    flex: 1,
+    paddingVertical: 10,
+    alignItems: "center",
+    borderRadius: 10,
+  },
+  statusTabTxt: {
+    fontWeight: "700",
+    fontSize: 12,
   },
 });

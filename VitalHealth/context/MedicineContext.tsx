@@ -167,6 +167,16 @@ export const MedicineProvider = ({
         // ── Self: load from local SQLite ───────────────────
         const data = getMedicines() as Medicine[];
         if (!isMountedRef.current) return;
+
+        // Auto-clean notifications for expired medicines
+        const todayStr = new Date().toISOString().split('T')[0];
+        for (const med of data) {
+          if (med.endDate && med.endDate !== 'ongoing' && med.endDate < todayStr && med.notificationId) {
+            console.log(`[MedicineContext] Cancelling notification ${med.notificationId} for expired medicine: ${med.name}`);
+            cancelMedicineNotification(med.notificationId).catch(() => {});
+          }
+        }
+
         setMedicines([...data]);
 
         // Background bidirectional sync/merge with Firebase

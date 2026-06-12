@@ -21,7 +21,7 @@ import {
   fetchBiogearsAnalyticsFromFirebase,
 } from '../services/firebaseSync';
 import { getTwinId } from '../utils/twinUtils';
-import { scheduleDailyLogReminder } from '../services/notifeeService';
+import { scheduleDailyLogReminder, scheduleInactivityReminder } from '../services/notifeeService';
 import { useMedicine } from './MedicineContext';
 import { useSteps } from './StepContext';
 import type {
@@ -40,6 +40,7 @@ import {
   saveSimulationResult,
   getLastSimulation,
   recordToVitals,
+  getSimulationHistory,
 } from '../database/simulationHistoryDB';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -718,6 +719,7 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
 
     await refreshSessions();
     await refreshAnalytics();
+    await scheduleInactivityReminder().catch(() => {});
   };
 
   const loadTodayFromStorage = async () => {
@@ -742,6 +744,7 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
     try {
       await AsyncStorage.setItem(TODAY_EVENTS_KEY(twinUserId), JSON.stringify(events));
       await BiogearsAPI.syncPendingEvents(twinUserId, events, firestoreOwnerUid);
+      await scheduleInactivityReminder().catch(() => {});
     } catch { /* ignore */ }
   };
 
@@ -892,9 +895,134 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
 
   const refreshSessions = useCallback(async () => {
     if (!twinUserId) return [];
-    const s = await BiogearsAPI.loadSessionsMeta(twinUserId);
-    setSessions(s);
-    return s;
+    try {
+      const s = await BiogearsAPI.loadSessionsMeta(twinUserId);
+      const localHistory = await getSimulationHistory(twinUserId, 30).catch(() => []);
+
+      const mergedMap = new Map<string, LocalSessionMeta>();
+
+      // Populate using SQLite history records
+      for (const rec of localHistory) {
+        const name = `Sim ${new Date(rec.run_at).toLocaleDateString('en-IN')}`;
+        let ai_insights: string[] = [];
+        try {
+          if (rec.anomaly_labels) ai_insights = JSON.parse(rec.anomaly_labels);
+        } catch {}
+
+        mergedMap.set(rec.session_id, {
+          session_id: rec.session_id,
+          name,
+          timestamp: rec.run_at,
+          vitals_snapshot: {
+            heart_rate: rec.heart_rate ?? undefined,
+            blood_pressure: rec.blood_pressure ?? undefined,
+            glucose: rec.glucose ?? undefined,
+            respiration: rec.respiration ?? undefined,
+            spo2: rec.spo2 ?? undefined,
+            core_temperature: rec.core_temperature ?? undefined,
+            cardiac_output: rec.cardiac_output ?? undefined,
+          },
+          has_anomaly: rec.has_anomaly === 1,
+          event_count: 0,
+          ai_insights,
+        });
+      }
+
+      // Add/overwrite from server metadata
+      for (const meta of s) {
+        const existing = mergedMap.get(meta.session_id);
+        mergedMap.set(meta.session_id, {
+          ...existing,
+          ...meta,
+        });
+      }
+
+      const mergedList = Array.from(mergedMap.values()).sort(
+        (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+      );
+
+      setSessions(mergedList);
+      return mergedList;
+    } catch (err) {
+      console.warn('[BiogearsTwin] refreshSessions error:', err);
+      return [];
+    }
+  }, [twinUserId]);
+
+  const getOrganScoresFallback = useCallback((v: any, p: any): OrganScoresResponse => {
+    const hr = v?.heart_rate ?? p?.biogears_resting_hr ?? 72;
+    const sys = p?.biogears_systolic_bp ?? 120;
+    const dia = p?.biogears_diastolic_bp ?? 80;
+    const spo2Val = v?.spo2 ?? 98;
+    const resp = v?.respiration ?? 14;
+    const temp = v?.core_temperature ?? p?.biogears_resting_temp ?? 37.0;
+    const glucoseVal = v?.glucose ?? 95;
+    const sv = v?.stroke_volume ?? 72;
+
+    // Brain score (MAP and Temperature)
+    const mapVal = dia + (sys - dia) / 3;
+    let brainScore = 100;
+    if (temp < 36.5) brainScore -= (36.5 - temp) * 15;
+    if (temp > 37.5) brainScore -= (temp - 37.5) * 15;
+    if (mapVal < 70) brainScore -= (70 - mapVal) * 1.5;
+    if (mapVal > 105) brainScore -= (mapVal - 105) * 1.5;
+    brainScore = Math.max(50, Math.min(100, Math.round(brainScore)));
+
+    // Heart score (HR and BP)
+    let heartScore = 100;
+    if (hr < 60) heartScore -= (60 - hr) * 1.0;
+    if (hr > 100) heartScore -= (hr - 100) * 1.0;
+    if (sys > 130) heartScore -= (sys - 130) * 0.8;
+    if (sys < 110) heartScore -= (110 - sys) * 0.8;
+    if (dia > 90) heartScore -= (dia - 90) * 0.8;
+    if (dia < 70) heartScore -= (70 - dia) * 0.8;
+    heartScore = Math.max(50, Math.min(100, Math.round(heartScore)));
+
+    // Lungs score (SpO2 and Resp Rate)
+    let lungsScore = 100;
+    if (spo2Val < 95) lungsScore -= (95 - spo2Val) * 12;
+    if (resp < 12) lungsScore -= (12 - resp) * 3;
+    if (resp > 20) lungsScore -= (resp - 20) * 3;
+    lungsScore = Math.max(50, Math.min(100, Math.round(lungsScore)));
+
+    // Liver score (Glucose)
+    let liverScore = 100;
+    if (glucoseVal < 70) liverScore -= (70 - glucoseVal) * 0.8;
+    if (glucoseVal > 140) liverScore -= (glucoseVal - 140) * 0.5;
+    liverScore = Math.max(50, Math.min(100, Math.round(liverScore)));
+
+    // Gut score (Glucose and Core Temp)
+    let gutScore = 100;
+    if (glucoseVal < 70) gutScore -= (70 - glucoseVal) * 0.5;
+    if (glucoseVal > 140) gutScore -= (glucoseVal - 140) * 0.3;
+    if (temp < 36.5) gutScore -= (36.5 - temp) * 8;
+    if (temp > 37.5) gutScore -= (temp - 37.5) * 8;
+    gutScore = Math.max(50, Math.min(100, Math.round(gutScore)));
+
+    // Legs score (Stroke volume)
+    let legsScore = 100;
+    if (sv < 60) legsScore -= (60 - sv) * 0.8;
+    if (sv > 100) legsScore -= (sv - 100) * 0.5;
+    legsScore = Math.max(50, Math.min(100, Math.round(legsScore)));
+
+    const scores: Record<string, { score: number; status: string }> = {
+      brain: { score: brainScore, status: brainScore >= 80 ? 'good' : brainScore >= 60 ? 'fair' : 'poor' },
+      heart: { score: heartScore, status: heartScore >= 80 ? 'good' : heartScore >= 60 ? 'fair' : 'poor' },
+      lungs: { score: lungsScore, status: lungsScore >= 80 ? 'good' : lungsScore >= 60 ? 'fair' : 'poor' },
+      liver: { score: liverScore, status: liverScore >= 80 ? 'good' : liverScore >= 60 ? 'fair' : 'poor' },
+      gut: { score: gutScore, status: gutScore >= 80 ? 'good' : gutScore >= 60 ? 'fair' : 'poor' },
+      legs: { score: legsScore, status: legsScore >= 80 ? 'good' : legsScore >= 60 ? 'fair' : 'poor' },
+    };
+
+    const overall = Math.round(
+      (brainScore + heartScore + lungsScore + liverScore + gutScore + legsScore) / 6
+    );
+
+    return {
+      user_id: twinUserId ?? 'unknown',
+      scores,
+      overall_health_score: overall,
+    };
   }, [twinUserId]);
 
   const getVitalsTrendsFallback = useCallback((sessionsList: LocalSessionMeta[]): VitalsTrendResponse => {
@@ -923,8 +1051,8 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
         respiration_rate: v?.respiration ?? undefined,
         systolic_bp,
         diastolic_bp,
-        oxygen_saturation: v?.spo2 ?? undefined,
-        temperature: v?.core_temperature ?? undefined,
+        oxygen_saturation: (v as any)?.oxygen_saturation ?? v?.spo2 ?? undefined,
+        temperature: (v as any)?.temperature ?? v?.core_temperature ?? undefined,
         glucose: v?.glucose ?? undefined,
       };
     });
@@ -986,6 +1114,11 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
         eventsForBurn.push(stepEvent);
       }
 
+      // Pre-fetch last simulation vitals from SQLite for the fallback generator
+      const lastRecord = await getLastSimulation(twinUserId).catch(() => null);
+      const vitalsForFallback = lastRecord ? recordToVitals(lastRecord) : null;
+      const fallbackOrgans = getOrganScoresFallback(vitalsForFallback, profile);
+
       const results = await Promise.allSettled([
         BiogearsAPI.getOrganScores(twinUserId),
         BiogearsAPI.getVitalsTrends(twinUserId),
@@ -1006,7 +1139,12 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
         activeTrends = getVitalsTrendsFallback(sessions);
       }
 
-      if (organs.status === 'fulfilled') setOrganScores(organs.value);
+      if (organs.status === 'fulfilled') {
+        setOrganScores(organs.value);
+      } else {
+        setOrganScores(fallbackOrgans);
+      }
+
       if (activeTrends) setVitalsTrends(activeTrends);
       if (cvd.status === 'fulfilled') setCvdRisk(cvd.value);
       if (recovery.status === 'fulfilled') setRecoveryReadiness(recovery.value);
@@ -1022,7 +1160,7 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
 
       // Cache all resolved analytics to Firestore
       const cacheObj = {
-        organScores: organs.status === 'fulfilled' ? organs.value : organScores,
+        organScores: organs.status === 'fulfilled' ? organs.value : fallbackOrgans,
         vitalsTrends: activeTrends,
         cvdRisk: cvd.status === 'fulfilled' ? cvd.value : cvdRisk,
         recoveryReadiness: recovery.status === 'fulfilled' ? recovery.value : recoveryReadiness,
@@ -1035,10 +1173,14 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
     } catch (err) {
       console.error('Failed to fetch analytics:', err);
 
+      const lastRecordOffline = await getLastSimulation(twinUserId).catch(() => null);
+      const vitalsForFallbackOffline = lastRecordOffline ? recordToVitals(lastRecordOffline) : null;
+      const fallbackOrganScores = getOrganScoresFallback(vitalsForFallbackOffline, profile);
+
       // Offline/failure fallback: load from Firestore cache
       const cached = await fetchBiogearsAnalyticsFromFirebase(firestoreOwnerUid);
       if (cached) {
-        if (cached.organScores) setOrganScores(cached.organScores);
+        setOrganScores(cached.organScores || fallbackOrganScores);
         if (cached.vitalsTrends) setVitalsTrends(cached.vitalsTrends);
         if (cached.cvdRisk) setCvdRisk(cached.cvdRisk);
         if (cached.recoveryReadiness) setRecoveryReadiness(cached.recoveryReadiness);
@@ -1048,6 +1190,7 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
         if (cached.caloricBalance) setCaloricBalance(cached.caloricBalance);
       } else {
         // Construct fallback trends as a last resort
+        setOrganScores(fallbackOrganScores);
         setVitalsTrends(getVitalsTrendsFallback(sessions));
         const localEst = computeLocalCaloricBalanceFallback(profile, todayEvents, steps);
         setCaloricBalance(localEst);

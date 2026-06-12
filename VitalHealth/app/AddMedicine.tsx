@@ -15,6 +15,7 @@ import {
 
 import { Ionicons } from "@expo/vector-icons";
 import TimePicker from "../components/twin/TimePicker";
+import DatePicker from "../components/twin/DatePicker";
 import { useRouter } from "expo-router";
 
 import { useMedicine } from "../context/MedicineContext";
@@ -38,6 +39,17 @@ export default function AddMedicine() {
   const [time, setTime] = useState(new Date());
   const [saving, setSaving] = useState(false);
 
+  const [startDate, setStartDate] = useState(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  });
+  const [endDateMode, setEndDateMode] = useState<"ongoing" | "specific">("ongoing");
+  const [endDate, setEndDate] = useState(() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 7); // Default to 7 days from now
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  });
+
   const formatted = time.toLocaleTimeString([], {
     hour: "2-digit",
     minute: "2-digit",
@@ -57,19 +69,21 @@ export default function AddMedicine() {
       return;
     }
 
+    if (schedule === "regular" && endDateMode === "specific") {
+      if (endDate < startDate) {
+        Alert.alert("Invalid Dates", "End date cannot be before start date.");
+        return;
+      }
+    }
+
     try {
       setSaving(true);
       
-      /////////////////////////////////////////////////
-      // BUILD TIMESTAMP FROM SELECTED TIME
-      /////////////////////////////////////////////////
-
-      const now = new Date();
-
+      const [sY, sM, sD] = startDate.split('-').map(Number);
       const selectedDate = new Date(
-        now.getFullYear(),
-        now.getMonth(),
-        now.getDate(),
+        sY,
+        sM - 1,
+        sD,
         time.getHours(),
         time.getMinutes(),
         0,
@@ -78,19 +92,16 @@ export default function AddMedicine() {
 
       const timestamp = selectedDate.getTime();
 
-      /////////////////////////////////////////////////
-      // DERIVED DATABASE FIELDS
-      /////////////////////////////////////////////////
-
       const type = "tablet"; // default (future: dropdown)
       const frequency = schedule === "regular" ? "daily" : "once";
 
-      const startDate = now.toISOString();
-
-      const endDate =
+      const finalStartDate = startDate;
+      const finalEndDate =
         schedule === "once"
-          ? selectedDate.toISOString()
-          : "ongoing";
+          ? startDate
+          : endDateMode === "ongoing"
+          ? "ongoing"
+          : endDate;
 
       /////////////////////////////////////////////////
       // SAVE INTO DATABASE VIA CONTEXT
@@ -106,8 +117,8 @@ export default function AddMedicine() {
         timestamp,
         meal,
         frequency,
-        startDate,
-        endDate,
+        finalStartDate,
+        finalEndDate,
         reminder ? 1 : 0
       );
 
@@ -324,6 +335,58 @@ export default function AddMedicine() {
             }}
             accent={c.accent}
           />
+        </View>
+
+        {/* DURATION / DATE RANGE */}
+        <Text style={[styles.label, { color: c.sub }]}>
+          DURATION / DATE RANGE
+        </Text>
+
+        <View style={[styles.dateRangeContainer, { backgroundColor: c.card }]}>
+          <View style={styles.datePickerRow}>
+            <Text style={[styles.datePickerLabel, { color: c.text }]}>Start Date</Text>
+            <DatePicker value={startDate} onChange={setStartDate} accent={c.accent} />
+          </View>
+
+          {schedule === "regular" && (
+            <>
+              <View style={[styles.dividerStyle, { backgroundColor: c.border }]} />
+              
+              <View style={styles.modeRow}>
+                <Text style={[styles.datePickerLabel, { color: c.text }]}>End Date Mode</Text>
+                <View style={styles.tabContainer}>
+                  <TouchableOpacity
+                    style={[
+                      styles.smallTab,
+                      endDateMode === "ongoing" && { backgroundColor: c.accent }
+                    ]}
+                    onPress={() => setEndDateMode("ongoing")}
+                  >
+                    <Text style={[styles.smallTabTxt, { color: endDateMode === "ongoing" ? "#fff" : c.sub }]}>Ongoing</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[
+                      styles.smallTab,
+                      endDateMode === "specific" && { backgroundColor: c.accent }
+                    ]}
+                    onPress={() => setEndDateMode("specific")}
+                  >
+                    <Text style={[styles.smallTabTxt, { color: endDateMode === "specific" ? "#fff" : c.sub }]}>Set Date</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              {endDateMode === "specific" && (
+                <>
+                  <View style={[styles.dividerStyle, { backgroundColor: c.border }]} />
+                  <View style={styles.datePickerRow}>
+                    <Text style={[styles.datePickerLabel, { color: c.text }]}>End Date</Text>
+                    <DatePicker value={endDate} onChange={setEndDate} accent={c.accent} />
+                  </View>
+                </>
+              )}
+            </>
+          )}
         </View>
 
         {/* MEAL TIMING */}
@@ -596,4 +659,43 @@ const styles = StyleSheet.create({
   },
 
   saveText: { color: "#fff", fontWeight: "700", letterSpacing: 3 },
+
+  dateRangeContainer: {
+    marginHorizontal: 20,
+    borderRadius: 24,
+    padding: 16,
+    gap: 12,
+  },
+  datePickerRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  datePickerLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  dividerStyle: {
+    height: 1,
+  },
+  modeRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  tabContainer: {
+    flexDirection: 'row',
+    borderRadius: 10,
+    backgroundColor: 'rgba(0,0,0,0.05)',
+    padding: 3,
+  },
+  smallTab: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  smallTabTxt: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
 });
