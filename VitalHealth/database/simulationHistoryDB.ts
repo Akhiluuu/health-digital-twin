@@ -17,6 +17,11 @@ export interface SimulationRecord {
   spo2: number | null;
   core_temperature: number | null;
   cardiac_output: number | null;
+  map: number | null;
+  stroke_volume: number | null;
+  tidal_volume: number | null;
+  arterial_ph: number | null;
+  exercise_level: number | null;
   has_anomaly: number;
   anomaly_labels: string | null;   // JSON array of label strings
   run_at: string;                  // ISO timestamp
@@ -38,8 +43,9 @@ export async function saveSimulationResult(
     await db.runAsync(
       `INSERT INTO simulation_history
         (uid, session_id, heart_rate, blood_pressure, glucose, respiration,
-         spo2, core_temperature, cardiac_output, has_anomaly, anomaly_labels, run_at)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+         spo2, core_temperature, cardiac_output, map, stroke_volume, tidal_volume,
+         arterial_ph, exercise_level, has_anomaly, anomaly_labels, run_at)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
        ON CONFLICT(session_id) DO NOTHING`,
       [
         uid,
@@ -51,6 +57,11 @@ export async function saveSimulationResult(
         vitals.spo2 ?? null,
         vitals.core_temperature ?? null,
         vitals.cardiac_output ?? null,
+        vitals.map ?? null,
+        vitals.stroke_volume ?? null,
+        vitals.tidal_volume ?? null,
+        vitals.arterial_ph ?? null,
+        vitals.exercise_level ?? null,
         anomalies.length > 0 ? 1 : 0,
         anomalyLabels,
         new Date().toISOString(),
@@ -111,5 +122,10 @@ export function recordToVitals(record: SimulationRecord): BiogearsVitals {
     spo2: record.spo2,
     core_temperature: record.core_temperature,
     cardiac_output: record.cardiac_output,
+    map: record.map,
+    stroke_volume: record.stroke_volume,
+    tidal_volume: record.tidal_volume,
+    arterial_ph: record.arterial_ph,
+    exercise_level: record.exercise_level,
   };
 }

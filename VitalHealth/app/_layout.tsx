@@ -222,7 +222,7 @@ export default function RootLayout() {
               params: { tab: data.tab }
             } as any);
           } else if (data.type === "twin_reminder") {
-            router.push("/(tabs)/twin" as any);
+            router.push("/(tabs)/twin?triggerReminderPopup=true" as any);
           } else if (data.type === "medicine") {
             router.push("/MedicationVault" as any);
           } else if (data.type === "hydration") {

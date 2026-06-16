@@ -336,6 +336,48 @@ export default function BodyMap({ scores, c, lastVitals, sessions = [], profile 
         ))}
       </View>
 
+      {/* Horizontal scrollable breakdown cards */}
+      <Text style={[styles.sectionTitle, { color: c.text, marginTop: 22, marginBottom: 10, fontWeight: '800', fontSize: 15 }]}>
+        Organ Health Diagnostics
+      </Text>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 6 }}>
+        {ORGANS.map(organ => {
+          const data = scores[organ.key];
+          if (!data) return null;
+          const clr = statusColor(data.status);
+          const isCurrentSelected = selected?.key === organ.key;
+          return (
+            <TouchableOpacity
+              key={organ.key}
+              style={[
+                styles.horizontalOrganCard,
+                {
+                  backgroundColor: c.card,
+                  borderColor: isCurrentSelected ? clr : c.border,
+                  borderWidth: isCurrentSelected ? 1.5 : 1,
+                  shadowColor: isCurrentSelected ? clr : '#000',
+                  shadowOpacity: isCurrentSelected ? 0.15 : 0.05,
+                  shadowRadius: isCurrentSelected ? 4 : 2,
+                  elevation: isCurrentSelected ? 3 : 1,
+                }
+              ]}
+              onPress={() => {
+                setSelected(organ);
+                setActiveTab('stats');
+              }}
+              activeOpacity={0.7}
+            >
+              <Text style={{ fontSize: 22 }}>{organ.emoji}</Text>
+              <Text style={[styles.horizontalOrganScore, { color: clr }]}>{data.score}%</Text>
+              <Text style={[styles.horizontalOrganName, { color: c.text }]}>{organ.label}</Text>
+              <View style={[styles.horizontalOrganBar, { backgroundColor: c.border }]}>
+                <View style={[styles.horizontalOrganBarFill, { width: `${data.score}%`, backgroundColor: clr }]} />
+              </View>
+            </TouchableOpacity>
+          );
+        })}
+      </ScrollView>
+
       {/* Organ detail modal (using Sibling Overlay Pattern) */}
       <Modal visible={!!selected} transparent animationType="slide" onRequestClose={() => setSelected(null)}>
         <View style={styles.modalBg}>
@@ -500,4 +542,35 @@ const styles = StyleSheet.create({
   historyDetails: { flex: 1, marginLeft: 12 },
   historyDate: { fontSize: 13, fontWeight: '600' },
   historyVal: { fontSize: 14, fontWeight: '700' },
+  sectionTitle: { fontSize: 15, fontWeight: '800' },
+  horizontalOrganCard: {
+    width: 100,
+    alignItems: 'center',
+    borderRadius: 16,
+    padding: 12,
+    marginRight: 10,
+    borderWidth: 1,
+    justifyContent: 'center',
+  },
+  horizontalOrganScore: {
+    fontSize: 22,
+    fontWeight: '800',
+    marginTop: 4,
+  },
+  horizontalOrganName: {
+    fontSize: 11,
+    marginTop: 2,
+    fontWeight: '600',
+  },
+  horizontalOrganBar: {
+    width: '100%',
+    height: 4,
+    borderRadius: 2,
+    marginTop: 6,
+    overflow: 'hidden',
+  },
+  horizontalOrganBarFill: {
+    height: 4,
+    borderRadius: 2,
+  },
 });

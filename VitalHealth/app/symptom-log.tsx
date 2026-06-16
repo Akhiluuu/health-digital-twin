@@ -13,7 +13,7 @@ import {
   Alert,
 } from "react-native";
 
-import { Ionicons } from "@expo/vector-icons";
+import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { useTheme } from "../context/ThemeContext";
 
@@ -41,21 +41,22 @@ interface SymptomItem {
   label: string;
   icon: string;
   type: SymptomType;
+  color: string;
 }
 
 const symptoms: SymptomItem[] = [
-  { label: "HEADACHE", icon: "🧠", type: "headache" },
-  { label: "HEART/CHEST", icon: "❤️", type: "heart" },
-  { label: "BREATHING", icon: "🫁", type: "breathing" },
-  { label: "STOMACH", icon: "🍱", type: "stomach" },
-  { label: "EAR/NOSE/THROAT", icon: "👂", type: "ent" },
-  { label: "VISION/EYES", icon: "👁️", type: "vision" },
-  { label: "DENTAL/ORAL", icon: "🦷", type: "dental" },
-  { label: "SLEEP/ENERGY", icon: "😴", type: "sleep" },
-  { label: "URINARY", icon: "💧", type: "urinary" },
-  { label: "MUSCLE/JOINT", icon: "🦴", type: "muscle" },
-  { label: "SKIN/DERMA", icon: "🧴", type: "skin" },
-  { label: "OTHERS", icon: "➕", type: "other" },
+  { label: "HEADACHE", icon: "brain", type: "headache", color: "#a78bfa" },
+  { label: "HEART/CHEST", icon: "heart-pulse", type: "heart", color: "#f43f5e" },
+  { label: "BREATHING", icon: "lungs", type: "breathing", color: "#22c55e" },
+  { label: "STOMACH", icon: "stomach", type: "stomach", color: "#eab308" },
+  { label: "EAR/NOSE/THROAT", icon: "ear-hearing", type: "ent", color: "#14b8a6" },
+  { label: "VISION/EYES", icon: "eye", type: "vision", color: "#06b6d4" },
+  { label: "DENTAL/ORAL", icon: "tooth", type: "dental", color: "#f472b6" },
+  { label: "SLEEP/ENERGY", icon: "sleep", type: "sleep", color: "#6366f1" },
+  { label: "URINARY", icon: "water", type: "urinary", color: "#3b82f6" },
+  { label: "MUSCLE/JOINT", icon: "arm-flex", type: "muscle", color: "#f97316" },
+  { label: "SKIN/DERMA", icon: "bandage", type: "skin", color: "#fb923c" },
+  { label: "OTHERS", icon: "plus", type: "other", color: "#64748b" },
 ];
 
 export default function SymptomLogScreen() {
@@ -168,12 +169,16 @@ export default function SymptomLogScreen() {
                 {
                   backgroundColor: colors.card,
                   borderColor: colors.border,
+                  borderLeftColor: item.color,
+                  borderLeftWidth: 4,
                 },
               ]}
               onPress={() => openSymptom(item.type)}
               activeOpacity={0.85}
             >
-              <Text style={styles.icon}>{item.icon}</Text>
+              <View style={[styles.iconContainer, { backgroundColor: item.color + "15" }]}>
+                <MaterialCommunityIcons name={item.icon as any} size={26} color={item.color} />
+              </View>
               <Text style={[styles.label, { color: colors.text }]}>
                 {item.label}
               </Text>
@@ -322,9 +327,14 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
 
-  icon: {
-    fontSize: 34,
-    marginBottom: 6,
+  iconContainer: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    backgroundColor: "rgba(56, 189, 248, 0.08)",
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 8,
   },
 
   label: {

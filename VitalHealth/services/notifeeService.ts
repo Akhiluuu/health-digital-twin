@@ -615,6 +615,7 @@ export const scheduleInactivityReminder = async () => {
       {
         type: TriggerType.TIMESTAMP,
         timestamp: triggerTime,
+        repeatFrequency: RepeatFrequency.DAILY,
         alarmManager: {
           allowWhileIdle: true,
           type: AlarmType.SET_EXACT_AND_ALLOW_WHILE_IDLE,
@@ -646,7 +647,7 @@ export function registerNotifeeForegroundHandler() {
           params: { tab: data.tab }
         } as any);
       } else if (data.type === "twin_reminder") {
-        router.push("/(tabs)/twin" as any);
+        router.push("/(tabs)/twin?triggerReminderPopup=true" as any);
       } else if (data.type === "medicine") {
         router.push("/MedicationVault" as any);
       } else if (data.type === "hydration") {

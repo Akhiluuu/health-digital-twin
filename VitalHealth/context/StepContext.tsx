@@ -46,9 +46,6 @@ const BACKGROUND_STEP_SYNC_TASK = "BACKGROUND_STEP_SYNC_TASK";
 
 TaskManager.defineTask(BACKGROUND_STEP_SYNC_TASK, async () => {
   try {
-    if (Platform.OS === "android") {
-      return BackgroundFetch.BackgroundFetchResult.NoData;
-    }
     console.log("[BACKGROUND_STEP_SYNC_TASK] Syncing steps from native history database...");
     
     // Read the active profile member UID
@@ -58,37 +55,64 @@ TaskManager.defineTask(BACKGROUND_STEP_SYNC_TASK, async () => {
     
     // Only run if active tracking is on
     if (trackingState === "1") {
-      const available = await Pedometer.isAvailableAsync();
-      if (available) {
-        const start = new Date();
-        start.setHours(0, 0, 0, 0);
-        const end = new Date();
-        const response = await Pedometer.getStepCountAsync(start, end);
-        if (response && typeof response.steps === "number") {
-          const rawToday = await AsyncStorage.getItem(keys.totalToday);
-          const currentSteps = parseInt(rawToday ?? "0", 10);
-          
-          if (response.steps > currentSteps) {
-            await AsyncStorage.setItem(keys.totalToday, String(response.steps));
-            
-            const rawGoal = await AsyncStorage.getItem(keys.goal);
-            const goal = parseInt(rawGoal ?? "10000", 10);
-            
-            await syncStepsData({
-              steps: response.steps,
-              goal: goal,
-              isTracking: true,
-              lastMoveTs: Date.now(),
-              date: todayString(),
-            }, activeUid !== "self" ? activeUid : undefined);
-            console.log(`[BACKGROUND_STEP_SYNC_TASK] Successfully updated background steps to: ${response.steps}`);
+      let stepsToSync = 0;
+      
+      if (Platform.OS === "ios") {
+        const available = await Pedometer.isAvailableAsync();
+        if (available) {
+          const start = new Date();
+          start.setHours(0, 0, 0, 0);
+          const end = new Date();
+          const response = await Pedometer.getStepCountAsync(start, end);
+          if (response && typeof response.steps === "number") {
+            stepsToSync = response.steps;
           }
         }
+      } else {
+        // Android: Read the last known accumulated step count from AsyncStorage
+        const rawToday = await AsyncStorage.getItem(keys.totalToday);
+        stepsToSync = parseInt(rawToday ?? "0", 10);
+      }
+
+      if (stepsToSync > 0) {
+        // If iOS and response.steps is greater than local storage
+        if (Platform.OS === "ios") {
+          const rawToday = await AsyncStorage.getItem(keys.totalToday);
+          const currentSteps = parseInt(rawToday ?? "0", 10);
+          if (stepsToSync > currentSteps) {
+            await AsyncStorage.setItem(keys.totalToday, String(stepsToSync));
+          } else {
+            // If native iOS count is less, use what we have in local storage
+            stepsToSync = currentSteps;
+          }
+        }
+
+        const rawGoal = await AsyncStorage.getItem(keys.goal);
+        const goal = parseInt(rawGoal ?? "10000", 10);
+        
+        // Read weight to compute calories
+        const rawWeight = await AsyncStorage.getItem(`profile_weight_${activeUid}`) || "70";
+        const weightVal = parseFloat(rawWeight.replace(/[^0-9.]/g, "")) || 70;
+        const kcal = Math.round(stepsToSync * 0.04 * (weightVal / 70));
+        
+        // Update Android foreground notification if active
+        if (Platform.OS === "android") {
+          await updateForegroundNotification(stepsToSync, kcal).catch(() => {});
+        }
+
+        await syncStepsData({
+          steps: stepsToSync,
+          goal: goal,
+          isTracking: true,
+          lastMoveTs: Date.now(),
+          date: todayString(),
+        }, activeUid !== "self" ? activeUid : undefined);
+        console.log(`[BACKGROUND_STEP_SYNC_TASK] Successfully updated background steps to: ${stepsToSync}`);
       }
     }
     return BackgroundFetch.BackgroundFetchResult.NewData;
   } catch (err) {
-    console.error("[BACKGROUND_STEP_SYNC_TASK] Error running task:", err);
+    console.error("[BACKGROUND_STEP_SYNC_TASK] Error running background step task:", err);
     return BackgroundFetch.BackgroundFetchResult.Failed;
   }
 });

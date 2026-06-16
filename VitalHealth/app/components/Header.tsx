@@ -40,8 +40,8 @@ export default function Header({
 
   const c = globalColors[theme];
   const colors = {
-    bg: c.card,
-    border: c.border,
+    bg: theme === "dark" ? "rgba(17, 29, 58, 0.96)" : "rgba(255, 255, 255, 0.96)",
+    border: theme === "dark" ? "rgba(255, 255, 255, 0.06)" : "rgba(0, 0, 0, 0.05)",
     text: c.text,
     accent: c.accent,
   };
@@ -66,7 +66,7 @@ export default function Header({
           backgroundColor: colors.bg,
           borderBottomColor: colors.border,
           paddingTop: insets.top,
-          height: 60 + insets.top,
+          height: 56 + insets.top,
         },
       ]}
     >
@@ -76,11 +76,12 @@ export default function Header({
           <TouchableOpacity
             onPress={onBack || (() => router.back())}
             activeOpacity={0.7}
+            style={styles.backBtn}
           >
             <Ionicons
               name="chevron-back"
-              size={28}
-              color={colors.accent}
+              size={24}
+              color={colors.text}
             />
           </TouchableOpacity>
         ) : showProfile ? (
@@ -95,15 +96,15 @@ export default function Header({
                 onError={() => setImageError(true)}
               />
             ) : (activeProfile?.firstName || activeProfile?.lastName) ? (
-              <View style={[styles.avatarInitials, { backgroundColor: colors.accent + "15", borderColor: colors.accent }]}>
+              <View style={[styles.avatarInitials, { backgroundColor: colors.accent + "10", borderColor: colors.accent + "40" }]}>
                 <Text style={[styles.avatarInitialsText, { color: colors.accent }]}>
                   {activeProfile?.firstName?.charAt(0)?.toUpperCase() || ""}
                   {activeProfile?.lastName?.charAt(0)?.toUpperCase() || ""}
                 </Text>
               </View>
             ) : (
-              <View style={[styles.avatarInitials, { backgroundColor: colors.accent + "15", borderColor: colors.accent }]}>
-                <Ionicons name="person" size={16} color={colors.accent} />
+              <View style={[styles.avatarInitials, { backgroundColor: colors.accent + "10", borderColor: colors.accent + "40" }]}>
+                <Ionicons name="person" size={14} color={colors.accent} />
               </View>
             )}
           </TouchableOpacity>
@@ -112,21 +113,23 @@ export default function Header({
         )}
 
         {/* TITLE */}
-        <Text
-          style={[
-            styles.title,
-            { color: colors.text },
-          ]}
-          numberOfLines={1}
-        >
-          {title}
-        </Text>
+        <View style={styles.titleContainer}>
+          <Text
+            style={[
+              styles.title,
+              { color: colors.text },
+            ]}
+            numberOfLines={1}
+          >
+            {title}
+          </Text>
+        </View>
 
         {/* RIGHT: SOS Button */}
         {showSOS ? (
           <TouchableOpacity
             style={styles.sosButton}
-            activeOpacity={0.85}
+            activeOpacity={0.8}
             onPress={() => router.push("/sos")}
           >
             <Text style={styles.sosText}>SOS</Text>
@@ -157,49 +160,61 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
   },
 
+  backBtn: {
+    padding: 4,
+    marginLeft: -4,
+  },
+
+  titleContainer: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    marginHorizontal: 8,
+  },
+
   title: {
-    fontSize: 18,
-    fontWeight: "bold",
-    letterSpacing: 1,
+    fontSize: 17,
+    fontWeight: "700",
+    letterSpacing: 0.2,
     textAlign: "center",
   },
 
   sosButton: {
-    backgroundColor: "#ef4444",
-    paddingHorizontal: 16,
-    paddingVertical: 7,
-    borderRadius: 22,
-    shadowColor: "#ef4444",
-    shadowOpacity: 0.6,
-    shadowRadius: 6,
-    elevation: 4,
+    borderColor: "#ef4444",
+    borderWidth: 1.5,
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 14,
+    justifyContent: "center",
+    alignItems: "center",
   },
 
   sosText: {
-    color: "white",
-    fontWeight: "bold",
-    letterSpacing: 1,
+    color: "#ef4444",
+    fontWeight: "800",
+    fontSize: 11,
+    letterSpacing: 0.5,
   },
 
   placeholder: {
-    width: 34,
+    width: 36,
   },
 
   avatarImage: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
   },
   avatarInitials: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    borderWidth: 1.5,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    borderWidth: 1,
     alignItems: "center",
     justifyContent: "center",
   },
   avatarInitialsText: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: "700",
   },
 });

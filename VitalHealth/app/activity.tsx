@@ -4,7 +4,7 @@
 // NutritionContext so Calorie Intelligence shows the real net balance.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { Ionicons } from "@expo/vector-icons";
+import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import Slider from "@react-native-community/slider";
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router"; 
@@ -80,52 +80,52 @@ type ActivityMap  = Record<string, ActivityItem[]>;
 
 const activities: ActivityMap = {
   Popular: [
-    { name: "Running",       icon: "🏃‍♂️" },
-    { name: "Walking",       icon: "🚶"  },
-    { name: "Cycling",       icon: "🚴‍♀️" },
-    { name: "Swimming",      icon: "🏊‍♂️" },
-    { name: "Weightlifting", icon: "🏋️‍♂️" },
-    { name: "Yoga",          icon: "🧘"  },
+    { name: "Running",       icon: "run" },
+    { name: "Walking",       icon: "walk"  },
+    { name: "Cycling",       icon: "bicycle" },
+    { name: "Swimming",      icon: "swim" },
+    { name: "Weightlifting", icon: "weight-lifter" },
+    { name: "Yoga",          icon: "yoga"  },
   ],
   Sports: [
-    { name: "Football",      icon: "⚽"  },
-    { name: "Basketball",    icon: "🏀"  },
-    { name: "Tennis",        icon: "🎾"  },
-    { name: "Badminton",     icon: "🏸"  },
-    { name: "Cricket",       icon: "🏏"  },
-    { name: "Golf",          icon: "⛳"  },
-    { name: "Padel",         icon: "🎾"  },
-    { name: "Volleyball",    icon: "🏐"  },
-    { name: "Table Tennis",  icon: "🏓"  },
-    { name: "Baseball",      icon: "⚾"  },
-    { name: "Rugby",         icon: "🏉"  },
-    { name: "Boxing",        icon: "🥊"  },
-    { name: "Martial Arts",  icon: "🥋"  },
-    { name: "Ice Skating",   icon: "⛸️"  },
-    { name: "Skiing",        icon: "⛷️"  },
-    { name: "Surfing",       icon: "🏄‍♂️" },
+    { name: "Football",      icon: "soccer"  },
+    { name: "Basketball",    icon: "basketball"  },
+    { name: "Tennis",        icon: "tennis"  },
+    { name: "Badminton",     icon: "badminton"  },
+    { name: "Cricket",       icon: "cricket"  },
+    { name: "Golf",          icon: "golf"  },
+    { name: "Padel",         icon: "tennis"  },
+    { name: "Volleyball",    icon: "volleyball"  },
+    { name: "Table Tennis",  icon: "table-tennis"  },
+    { name: "Baseball",      icon: "baseball"  },
+    { name: "Rugby",         icon: "rugby"  },
+    { name: "Boxing",        icon: "boxing-glove"  },
+    { name: "Martial Arts",  icon: "karate"  },
+    { name: "Ice Skating",   icon: "ice-skating"  },
+    { name: "Skiing",        icon: "skiing"  },
+    { name: "Surfing",       icon: "surfing" },
   ],
   Fitness: [
-    { name: "HIIT",          icon: "🔥"  },
-    { name: "Crossfit",      icon: "⚙️"  },
-    { name: "Pilates",       icon: "🤸"  },
-    { name: "Rowing",        icon: "🚣"  },
-    { name: "Dance",         icon: "💃"  },
-    { name: "Climbing",      icon: "🧗"  },
-    { name: "Jump Rope",     icon: "➰"  },
-    { name: "Elliptical",    icon: "🎿"  },
+    { name: "HIIT",          icon: "lightning-bolt"  },
+    { name: "Crossfit",      icon: "weight"  },
+    { name: "Pilates",       icon: "yoga"  },
+    { name: "Rowing",        icon: "rowing"  },
+    { name: "Dance",         icon: "music"  },
+    { name: "Climbing",      icon: "climbing"  },
+    { name: "Jump Rope",     icon: "jump-rope"  },
+    { name: "Elliptical",    icon: "walk"  },
   ],
   Recovery: [
-    { name: "Meditation",    icon: "🧠"  },
-    { name: "Stretching",    icon: "🙆"  },
-    { name: "Tai Chi",       icon: "☯️"  },
+    { name: "Meditation",    icon: "brain"  },
+    { name: "Stretching",    icon: "walk"  },
+    { name: "Tai Chi",       icon: "yin-yang"  },
   ],
   Outdoor: [
-    { name: "Hiking",        icon: "🥾"  },
-    { name: "Trekking",      icon: "🏔️"  },
-    { name: "Rock Climb",    icon: "🧗"  },
-    { name: "Trail Run",     icon: "🌲"  },
-    { name: "Skating",       icon: "🛼"  },
+    { name: "Hiking",        icon: "hiking"  },
+    { name: "Trekking",      icon: "mountain"  },
+    { name: "Rock Climb",    icon: "climbing"  },
+    { name: "Trail Run",     icon: "pine-tree"  },
+    { name: "Skating",       icon: "roller-skate"  },
   ],
 };
 
@@ -143,6 +143,51 @@ const intensities = [
   { name: "High",     color: "#f97316", description: "Hard effort, difficult to talk"       },
   { name: "Max",      color: "#ef4444", description: "All-out, cannot sustain long"         },
 ];
+
+const ACTIVITY_COLORS: Record<string, string> = {
+  Running:       "#ef4444",
+  Walking:       "#38bdf8",
+  Cycling:       "#f97316",
+  Swimming:      "#06b6d4",
+  Weightlifting: "#a78bfa",
+  Yoga:          "#10b981",
+
+  Football:      "#22c55e",
+  Basketball:    "#f59e0b",
+  Tennis:        "#84cc16",
+  Badminton:     "#14b8a6",
+  Cricket:       "#eab308",
+  Golf:          "#a855f7",
+  Padel:         "#6366f1",
+  Volleyball:    "#ec4899",
+  "Table Tennis":"#f43f5e",
+  Baseball:      "#fb7185",
+  Rugby:         "#9a3412",
+  Boxing:        "#dc2626",
+  "Martial Arts":"#b91c1c",
+  "Ice Skating": "#22d3ee",
+  Skiing:        "#38bdf8",
+  Surfing:       "#0284c7",
+
+  HIIT:          "#f43f5e",
+  Crossfit:      "#8b5cf6",
+  Pilates:       "#10b981",
+  Rowing:        "#0ea5e9",
+  Dance:         "#ec4899",
+  Climbing:      "#b45309",
+  "Jump Rope":   "#f97316",
+  Elliptical:    "#64748b",
+
+  Meditation:    "#6366f1",
+  Stretching:    "#059669",
+  "Tai Chi":     "#14b8a6",
+
+  Hiking:        "#15803d",
+  Trekking:      "#047857",
+  "Rock Climb":  "#7c2d12",
+  "Trail Run":   "#b45309",
+  Skating:       "#6366f1",
+};
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 export default function ActivityLab() {
@@ -184,7 +229,7 @@ export default function ActivityLab() {
       const found = list.find((a) => a.name === selected);
       if (found) return found.icon;
     }
-    return "🏃";
+    return "run";
   }, [selected]);
 
   // Live calorie preview
@@ -317,7 +362,13 @@ export default function ActivityLab() {
             ) : (
               activityEntries.map((entry) => (
                 <View key={entry.id} style={[styles.logRow, { borderBottomColor: colors.border }]}>
-                  <Text style={styles.logRowIcon}>{entry.activityIcon}</Text>
+                  <View style={styles.logIconContainer}>
+                    {entry.activityIcon.length > 2 ? (
+                      <MaterialCommunityIcons name={entry.activityIcon as any} size={22} color={colors.accent} />
+                    ) : (
+                      <Text style={{ fontSize: 22 }}>{entry.activityIcon}</Text>
+                    )}
+                  </View>
                   <View style={{ flex: 1 }}>
                     <Text style={[styles.logRowName, { color: colors.text }]}>
                       {entry.activityName}
@@ -373,22 +424,26 @@ export default function ActivityLab() {
             <View style={styles.grid}>
               {list.map((a) => {
                 const active = selected === a.name;
+                const actColor = ACTIVITY_COLORS[a.name] ?? colors.accent;
                 return (
                   <TouchableOpacity
                     key={a.name}
                     style={[
                       styles.card,
                       {
-                        backgroundColor: active ? colors.accent + "18" : colors.card,
-                        borderColor:     active ? colors.active : "transparent",
+                        backgroundColor: colors.card,
+                        borderColor:     active ? actColor : colors.border,
+                        borderWidth:     1.5,
                       },
                     ]}
                     onPress={() => setSelected(a.name)}
                   >
-                    <Text style={{ fontSize: 32 }}>{a.icon}</Text>
+                    <View style={[styles.gridIconContainer, { backgroundColor: active ? actColor + "25" : actColor + "10" }]}>
+                      <MaterialCommunityIcons name={a.icon as any} size={26} color={actColor} />
+                    </View>
                     <Text style={[styles.cardText, { color: colors.text }]}>{a.name}</Text>
                     {active && (
-                      <Text style={[styles.cardMet, { color: colors.accent }]}>
+                      <Text style={[styles.cardMet, { color: actColor }]}>
                         MET {MET_TABLE[a.name]?.[intensity]?.toFixed(1) ?? "?"}
                       </Text>
                     )}
@@ -474,7 +529,13 @@ export default function ActivityLab() {
         >
           {/* Selected activity + burn */}
           <View style={styles.previewTop}>
-            <Text style={styles.previewIcon}>{selectedIcon}</Text>
+            <View style={styles.previewIconContainer}>
+              {selectedIcon.length > 2 ? (
+                <MaterialCommunityIcons name={selectedIcon as any} size={32} color="#fff" />
+              ) : (
+                <Text style={{ fontSize: 32 }}>{selectedIcon}</Text>
+              )}
+            </View>
             <View style={{ flex: 1 }}>
               <Text style={styles.previewActivity}>{selected}</Text>
               <Text style={[styles.previewSub, { color: selectedIntensity.color }]}>
@@ -602,7 +663,7 @@ const styles = StyleSheet.create({
   logTitle: { fontSize: 16, fontWeight: "700", marginBottom: 12 },
   logEmpty: { fontSize: 13, textAlign: "center", paddingVertical: 12 },
   logRow:   { flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 12, borderBottomWidth: 1 },
-  logRowIcon: { fontSize: 28 },
+  logIconContainer: { width: 36, height: 36, borderRadius: 18, backgroundColor: "rgba(56, 189, 248, 0.08)", justifyContent: "center", alignItems: "center" },
   logRowName: { fontSize: 14, fontWeight: "600" },
   logRowIntensity: { fontSize: 12, fontWeight: "500" },
   logRowDetail: { fontSize: 11, marginTop: 2 },
@@ -627,6 +688,7 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     gap: 2,
   },
+  gridIconContainer: { width: 38, height: 38, borderRadius: 19, backgroundColor: "rgba(56, 189, 248, 0.06)", justifyContent: "center", alignItems: "center", marginBottom: 4 },
   cardText: { fontSize: 11, textAlign: "center" },
   cardMet:  { fontSize: 9, fontWeight: "700" },
 
@@ -653,7 +715,7 @@ const styles = StyleSheet.create({
     borderColor: "rgba(34,197,94,0.2)",
   },
   previewTop:      { flexDirection: "row", alignItems: "center", gap: 12, marginBottom: 16 },
-  previewIcon:     { fontSize: 40 },
+  previewIconContainer: { width: 48, height: 48, borderRadius: 24, backgroundColor: "rgba(255,255,255,0.1)", justifyContent: "center", alignItems: "center" },
   previewActivity: { color: "#fff", fontSize: 18, fontWeight: "800" },
   previewSub:      { fontSize: 12, marginTop: 2, fontWeight: "600" },
   previewBurnBox:  { alignItems: "center", backgroundColor: "rgba(34,197,94,0.15)", borderRadius: 16, padding: 10 },

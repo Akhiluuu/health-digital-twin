@@ -1,6 +1,7 @@
 import React from "react";
 import { Tabs } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
+import { View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useTheme } from "../../context/ThemeContext";
@@ -15,8 +16,31 @@ export default function TabLayout() {
     bg: c.card,
     active: c.active,
     inactive: c.sub,
-    border: c.border,
+    border: theme === "dark" ? "rgba(255, 255, 255, 0.05)" : "rgba(0, 0, 0, 0.04)",
   };
+
+  const renderTabIcon = (focused: boolean, color: string, filledName: any, outlineName: any) => (
+    <View style={{ alignItems: "center", width: "100%", height: "100%", justifyContent: "center" }}>
+      {focused && (
+        <View
+          style={{
+            position: "absolute",
+            top: 0,
+            width: 20,
+            height: 3,
+            borderRadius: 1.5,
+            backgroundColor: colors.active,
+          }}
+        />
+      )}
+      <Ionicons
+        name={focused ? filledName : outlineName}
+        size={focused ? 24 : 22}
+        color={color}
+        style={{ marginTop: focused ? 6 : 4 }}
+      />
+    </View>
+  );
 
   return (
     <Tabs
@@ -24,17 +48,27 @@ export default function TabLayout() {
         headerShown: false,
         tabBarStyle: {
           backgroundColor: colors.bg,
-          height: 60 + insets.bottom,
+          height: 56 + insets.bottom,
           paddingBottom: insets.bottom,
           borderTopWidth: 1,
           borderTopColor: colors.border,
+          shadowColor: "#000",
+          shadowOffset: { width: 0, height: -3 },
+          shadowOpacity: theme === "dark" ? 0.25 : 0.03,
+          shadowRadius: 8,
+          elevation: 6,
+        },
+        tabBarItemStyle: {
+          height: 56,
         },
         tabBarActiveTintColor: colors.active,
         tabBarInactiveTintColor: colors.inactive,
         tabBarLabelStyle: {
-          fontSize: 10,
-          marginBottom: 4,
-          fontWeight: "600",
+          fontSize: 9,
+          fontWeight: "700",
+          textTransform: "uppercase",
+          letterSpacing: 0.3,
+          marginBottom: 6,
         },
       }}
     >
@@ -43,42 +77,38 @@ export default function TabLayout() {
         name="index"
         options={{
           title: "Home",
-          tabBarIcon: ({ color }) => (
-            <Ionicons name="home" size={24} color={color} />
-          ),
+          tabBarIcon: ({ color, focused }) =>
+            renderTabIcon(focused, color, "home", "home-outline"),
         }}
       />
 
-      {/* HISTORY — combined app + BioGears timeline */}
+      {/* HISTORY */}
       <Tabs.Screen
         name="history"
         options={{
           title: "History",
-          tabBarIcon: ({ color }) => (
-            <Ionicons name="time" size={24} color={color} />
-          ),
+          tabBarIcon: ({ color, focused }) =>
+            renderTabIcon(focused, color, "time", "time-outline"),
         }}
       />
 
-      {/* DIGITAL TWIN — simulation command center */}
+      {/* DIGITAL TWIN */}
       <Tabs.Screen
         name="twin"
         options={{
           title: "Twin",
-          tabBarIcon: ({ color }) => (
-            <Ionicons name="pulse" size={26} color={color} />
-          ),
+          tabBarIcon: ({ color, focused }) =>
+            renderTabIcon(focused, color, "pulse", "pulse-outline"),
         }}
       />
 
-      {/* DOCUMENTS — medical reports and records */}
+      {/* DOCUMENTS */}
       <Tabs.Screen
         name="documents"
         options={{
           title: "Documents",
-          tabBarIcon: ({ color }) => (
-            <Ionicons name="document-text" size={24} color={color} />
-          ),
+          tabBarIcon: ({ color, focused }) =>
+            renderTabIcon(focused, color, "document-text", "document-text-outline"),
         }}
       />
 
@@ -87,13 +117,8 @@ export default function TabLayout() {
         name="ai-health"
         options={{
           title: "AI Health",
-          tabBarIcon: ({ color }) => (
-            <Ionicons
-              name="chatbubble-ellipses"
-              size={24}
-              color={color}
-            />
-          ),
+          tabBarIcon: ({ color, focused }) =>
+            renderTabIcon(focused, color, "chatbubble-ellipses", "chatbubble-ellipses-outline"),
         }}
       />
 
@@ -101,7 +126,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="insights"
         options={{
-          href: null, // 🚫 Removes it from the bottom navigation
+          href: null,
         }}
       />
     </Tabs>

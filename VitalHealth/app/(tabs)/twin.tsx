@@ -28,19 +28,19 @@ import { CSV_FOOD_DB, CsvFoodItem, parseDisplayAmount, scaleNutrients, getQuickQ
 import { ConflictResolutionSheet } from '../components/ConflictResolutionSheet';
 
 const CSV_CATEGORIES = [
-  { id: 'all', label: 'All', emoji: '🍽️' },
-  { id: 'breakfast', label: 'Breakfast', emoji: '🥞' },
-  { id: 'meal', label: 'Meal', emoji: '🍛' },
-  { id: 'snack', label: 'Snacks', emoji: '🥨' },
-  { id: 'beverage', label: 'Drinks', emoji: '🥤' },
-  { id: 'fruit', label: 'Fruits', emoji: '🍎' },
-  { id: 'protein', label: 'Protein', emoji: '🥩' },
-  { id: 'vegetable', label: 'Veggies', emoji: '🥦' },
+  { id: 'all', label: 'All', icon: 'restaurant' },
+  { id: 'breakfast', label: 'Breakfast', icon: 'cafe' },
+  { id: 'meal', label: 'Meal', icon: 'pizza' },
+  { id: 'snack', label: 'Snacks', icon: 'fast-food' },
+  { id: 'beverage', label: 'Drinks', icon: 'pint' },
+  { id: 'fruit', label: 'Fruits', icon: 'nutrition' },
+  { id: 'protein', label: 'Protein', icon: 'egg' },
+  { id: 'vegetable', label: 'Veggies', icon: 'leaf' },
 ];
 
-function getCategoryEmoji(cat: string) {
+function getCategoryIcon(cat: string) {
   const f = CSV_CATEGORIES.find(c => c.id === cat);
-  return f ? f.emoji : '🍲';
+  return f ? f.icon : 'restaurant';
 }
 
 const { width: W } = Dimensions.get('window');
@@ -77,14 +77,14 @@ function clamp(val: number, min: number, max: number) {
 type EventTab = 'meal' | 'exercise' | 'sleep' | 'water' | 'substance' | 'stress' | 'other';
 type DashTab = 'overview' | 'organs' | 'trends';
 
-const EVENT_TABS: { id: EventTab; label: string; icon: string; accent: string }[] = [
-  { id: 'meal', label: 'Meal', icon: '🍽️', accent: '#f59e0b' },
-  { id: 'exercise', label: 'Exercise', icon: '🏃', accent: '#10b981' },
-  { id: 'sleep', label: 'Sleep', icon: '😴', accent: '#6366f1' },
-  { id: 'water', label: 'Water', icon: '💧', accent: '#0ea5e9' },
-  { id: 'substance', label: 'Substance', icon: '💊', accent: '#8b5cf6' },
-  { id: 'stress', label: 'Stress', icon: '🧘', accent: '#ef4444' },
-  { id: 'other', label: 'Other', icon: '⚡', accent: '#ec4899' },
+const EVENT_TABS: { id: EventTab; label: string; icon: any; accent: string }[] = [
+  { id: 'meal', label: 'Meal', icon: 'restaurant', accent: '#f59e0b' },
+  { id: 'exercise', label: 'Exercise', icon: 'fitness', accent: '#10b981' },
+  { id: 'sleep', label: 'Sleep', icon: 'bed', accent: '#6366f1' },
+  { id: 'water', label: 'Water', icon: 'water', accent: '#0ea5e9' },
+  { id: 'substance', label: 'Substance', icon: 'thermometer', accent: '#8b5cf6' },
+  { id: 'stress', label: 'Stress', icon: 'pulse', accent: '#ef4444' },
+  { id: 'other', label: 'Other', icon: 'flash', accent: '#ec4899' },
 ];
 
 // ─── Simulation stepper ───────────────────────────────────────────────────────
@@ -254,8 +254,17 @@ export default function TwinScreen() {
   const c = themeColors[theme as 'light' | 'dark'] ?? themeColors['dark'];
   const insets = useSafeAreaInsets();
 
+  const [showCatchUpModal, setShowCatchUpModal] = useState(false);
+
+  useEffect(() => {
+    if (params.triggerReminderPopup === 'true') {
+      setShowCatchUpModal(true);
+      router.setParams({ triggerReminderPopup: undefined });
+    }
+  }, [params.triggerReminderPopup]);
+
   const {
-    twinStatus, simulationStatus, simulationProgress, simulationError,
+    twinStatus, simulationStatus, simulationProgress, simulationError, simulationStartTime,
     lastVitals, lastAnomalies, lastInteractionWarnings, lastAiInsights,
     todayEvents, addEvent, addEventAndSimulate, removeEvent, clearToday, fillBaselineEvents,
     savedRoutines, saveCurrentRoutine, loadRoutine, loadRoutineWithConflictCheck, renameRoutine, deleteRoutine,
@@ -365,21 +374,20 @@ export default function TwinScreen() {
   const fabAnim = useRef(new Animated.Value(params.mode === 'routine' ? 1 : 0)).current;
 
   // ── Simulation elapsed timer ───────────────────────────────────────────────
-  const simStartRef = useRef<number | null>(null);
   const [elapsedSecs, setElapsedSecs] = useState(0);
 
   useEffect(() => {
     if (simulationStatus === 'running' || simulationStatus === 'queued') {
-      if (!simStartRef.current) simStartRef.current = Date.now();
+      const startTime = simulationStartTime || Date.now();
+      setElapsedSecs(Math.floor((Date.now() - startTime) / 1000));
       const id = setInterval(() => {
-        setElapsedSecs(Math.floor((Date.now() - simStartRef.current!) / 1000));
+        setElapsedSecs(Math.floor((Date.now() - startTime) / 1000));
       }, 1000);
       return () => clearInterval(id);
     } else {
-      simStartRef.current = null;
       setElapsedSecs(0);
     }
-  }, [simulationStatus]);
+  }, [simulationStatus, simulationStartTime]);
 
 
 
@@ -866,8 +874,8 @@ export default function TwinScreen() {
       carb_g: scaled.carbs,
       fat_g: scaled.fat,
       protein_g: scaled.protein,
-      displayLabel: `${getCategoryEmoji(selectedCsvFood.category)} ${selectedCsvFood.food} · ${scaled.calories} kcal`,
-      displayIcon: getCategoryEmoji(selectedCsvFood.category),
+      displayLabel: `${selectedCsvFood.food} · ${scaled.calories} kcal`,
+      displayIcon: 'restaurant',
     });
     Alert.alert('✅ Added', `${selectedCsvFood.food} logged at ${wallTimeToLabel(mealTime)}`);
     setSelectedCsvFood(null);
@@ -940,9 +948,12 @@ export default function TwinScreen() {
                   style={[ss.chip, mealCategory === cat.id && { backgroundColor: '#f59e0b', borderColor: '#f59e0b' }]}
                   onPress={() => setMealCategory(cat.id)}
                 >
-                  <Text style={[ss.chipTxt, mealCategory === cat.id && { color: '#fff' }]}>
-                    {cat.emoji} {cat.label}
-                  </Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                    <Ionicons name={cat.icon as any} size={12} color={mealCategory === cat.id ? '#fff' : '#f59e0b'} />
+                    <Text style={[ss.chipTxt, mealCategory === cat.id && { color: '#fff' }]}>
+                      {cat.label}
+                    </Text>
+                  </View>
                 </TouchableOpacity>
               ))}
             </ScrollView>
@@ -950,7 +961,7 @@ export default function TwinScreen() {
             {/* Food cards grid */}
             {filteredRecipes.length === 0 ? (
               <View style={{ alignItems: 'center', paddingVertical: 24 }}>
-                <Text style={{ fontSize: 32 }}>🤷</Text>
+                <Ionicons name="search-outline" size={32} color={c.sub} />
                 <Text style={[{ color: c.sub, marginTop: 8, fontSize: 13 }]}>No food found. Try the Quick or Custom tab.</Text>
               </View>
             ) : (
@@ -982,7 +993,9 @@ export default function TwinScreen() {
                           }}
                           activeOpacity={0.75}
                         >
-                          <Text style={ss.foodEmoji}>{getCategoryEmoji(recipe.category)}</Text>
+                          <View style={ss.foodEmoji}>
+                            <Ionicons name={getCategoryIcon(recipe.category) as any} size={16} color="#f59e0b" />
+                          </View>
                           <Text style={[ss.foodName, { color: c.text }]} numberOfLines={2}>{recipe.food}</Text>
                           <Text style={[ss.foodCal, { color: '#f59e0b' }]}>{recipe.calories} kcal</Text>
                           <View style={ss.foodMacroRow}>
@@ -1120,7 +1133,9 @@ export default function TwinScreen() {
         activeOpacity={0.85}
       >
         <View style={ss.actLabLeft}>
-          <Text style={ss.actLabIcon}>💪</Text>
+          <View style={ss.actLabIconContainer}>
+            <Ionicons name="fitness" size={20} color="#10b981" />
+          </View>
           <View>
             <Text style={[ss.actLabTitle, { color: c.text }]}>Activity Lab</Text>
             <Text style={[ss.actLabSub, { color: c.sub }]}>40+ activities · MET calorie burn · full detail</Text>
@@ -1732,29 +1747,7 @@ export default function TwinScreen() {
   const renderOrgansTab = () => (
     <>
       {organScores?.scores ? (
-        <>
-          <BodyMap scores={organScores.scores} c={c} lastVitals={lastVitals} sessions={sessions} profile={profile} />
-          {/* Horizontal scrollable organ cards below the map */}
-          <Text style={[ss.section, { color: c.text }]}>Scores Breakdown</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-            {(Object.keys(organScores.scores) as string[]).map(name => {
-              const data = organScores.scores[name];
-              const normStatus = (data.status || '').toLowerCase();
-              const clr = (normStatus === 'critical' || normStatus === 'poor') ? '#ef4444' : ((normStatus === 'warning' || normStatus === 'fair') ? '#f59e0b' : '#10b981');
-              const icons: Record<string, string> = { heart: '🫀', lungs: '🫁', gut: '🦠', brain: '🧠', liver: '🟤', legs: '🦵' };
-              return (
-                <View key={name} style={[ss.organCard, { backgroundColor: c.card, borderColor: c.border }]}>
-                  <Text style={{ fontSize: 24 }}>{icons[name] ?? '🔬'}</Text>
-                  <Text style={[ss.organScore, { color: clr }]}>{data.score}%</Text>
-                  <Text style={[ss.organName, { color: c.sub }]}>{name.charAt(0).toUpperCase() + name.slice(1)}</Text>
-                  <View style={[ss.organBar, { backgroundColor: c.border }]}>
-                    <View style={[ss.organBarFill, { width: `${data.score}%`, backgroundColor: clr }]} />
-                  </View>
-                </View>
-              );
-            })}
-          </ScrollView>
-        </>
+        <BodyMap scores={organScores.scores} c={c} lastVitals={lastVitals} sessions={sessions} profile={profile} />
       ) : (
         <View style={[ss.emptyCard, { backgroundColor: c.card }]}>
           <Text style={{ fontSize: 40 }}>🏥</Text>
@@ -1925,13 +1918,13 @@ export default function TwinScreen() {
             </View>
 
             {todayEvents.map((ev, i) => {
-              const tabInfo = EVENT_TABS.find(t => t.id === ev.event_type) || { accent: '#64748b' };
+              const tabInfo = EVENT_TABS.find(t => t.id === ev.event_type) || { icon: 'alert-circle' as any, accent: '#64748b' };
               return (
                 <View key={ev.id} style={[ss.timelineRow, { backgroundColor: c.card, borderColor: c.border }]}>
                   {/* Left accent line */}
                   <View style={[ss.timelineLine, { backgroundColor: tabInfo.accent }]} />
                   <View style={[ss.timelineDot, { backgroundColor: tabInfo.accent + '30', borderColor: tabInfo.accent }]}>
-                    <Text style={{ fontSize: 14 }}>{ev.displayIcon}</Text>
+                    <Ionicons name={tabInfo.icon || 'alert-circle'} size={12} color={tabInfo.accent} />
                   </View>
                   <View style={{ flex: 1, marginLeft: 10 }}>
                     <Text style={[ss.eventLabel, { color: c.text }]} numberOfLines={1}>{ev.displayLabel}</Text>
@@ -2013,8 +2006,8 @@ export default function TwinScreen() {
             return (
               <TouchableOpacity key={t.id} onPress={() => setActiveTab(t.id)}
                 style={[ss.tabBtn, active && { borderBottomWidth: 2.5, borderBottomColor: t.accent }]}>
-                <Text style={{ fontSize: 20 }}>{t.icon}</Text>
-                <Text style={[ss.tabBtnLabel, { color: active ? t.accent : c.sub }]}>{t.label}</Text>
+                <Ionicons name={t.icon} size={18} color={active ? t.accent : c.sub} />
+                <Text style={[ss.tabBtnLabel, { color: active ? t.accent : c.sub, marginTop: 4 }]}>{t.label}</Text>
               </TouchableOpacity>
             );
           })}
@@ -2071,6 +2064,83 @@ export default function TwinScreen() {
   const renderModals = () => (
     <>
       {renderSubPickerModal()}
+
+      {/* Catch-up Digital Twin Modal */}
+      <Modal
+        visible={showCatchUpModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowCatchUpModal(false)}
+      >
+        <Pressable style={ss.modalOverlay} onPress={() => setShowCatchUpModal(false)}>
+          <Pressable style={[ss.modalCard, { backgroundColor: c.card, borderWidth: 1, borderColor: c.border }]} onPress={(e) => e.stopPropagation()}>
+            <View style={{ alignItems: 'center', marginBottom: 12 }}>
+              <View style={{ backgroundColor: '#38bdf820', width: 56, height: 56, borderRadius: 28, justifyContent: 'center', alignItems: 'center', marginBottom: 10 }}>
+                <Ionicons name="sync-circle" size={36} color="#38bdf8" />
+              </View>
+              <Text style={[ss.modalTitle, { color: c.text, textAlign: 'center' }]}>Synchronize Digital Twin</Text>
+            </View>
+            
+            <Text style={[ss.modalSub, { color: c.sub, textAlign: 'center', lineHeight: 18, marginBottom: 16 }]}>
+              You haven't updated your physiological twin recently. To maintain accurate cardiovascular, metabolic, and organ scores, let's catch up!
+            </Text>
+
+            {savedRoutines.length > 0 && (
+              <View style={{ backgroundColor: c.border + '30', borderRadius: 12, padding: 12, marginBottom: 16, borderLeftWidth: 3, borderLeftColor: '#f59e0b' }}>
+                <Text style={{ fontWeight: '700', fontSize: 13, color: c.text }}>
+                  ⭐ Default State: {savedRoutines.find(r => r.isDefault)?.name || savedRoutines[0].name}
+                </Text>
+                <Text style={{ fontSize: 11, color: c.sub, marginTop: 2 }}>
+                  Will auto-simulate your standard daily routine events for the missed days.
+                </Text>
+              </View>
+            )}
+
+            <View style={{ width: '100%', gap: 10 }}>
+              <TouchableOpacity
+                style={[ss.modalBtn, { backgroundColor: c.active, width: '100%', justifyContent: 'center', paddingVertical: 14 }]}
+                onPress={async () => {
+                  setShowCatchUpModal(false);
+                  let daysMissed = 1;
+                  if (sessions.length > 0) {
+                    const lastSimTime = new Date(sessions[0].timestamp).getTime();
+                    const hoursSinceLastSim = (Date.now() - lastSimTime) / (1000 * 60 * 60);
+                    daysMissed = Math.max(1, Math.floor(hoursSinceLastSim / 24));
+                  }
+                  
+                  try {
+                    Alert.alert("Simulating Catch-up", `Starting catch-up simulation for ${daysMissed} missed day(s)...`);
+                    await runMultiDayCatchup(daysMissed);
+                  } catch (e: any) {
+                    Alert.alert("Catch-up Failed", e.message || "Could not complete simulation.");
+                  }
+                }}
+              >
+                <Text style={{ color: '#fff', fontWeight: '700' }}>⚡ Use Default Routine</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[ss.modalBtn, { backgroundColor: '#10b981', width: '100%', justifyContent: 'center', paddingVertical: 14 }]}
+                onPress={() => {
+                  setShowCatchUpModal(false);
+                  setMode('routine');
+                  setActiveTab('meal');
+                  Animated.spring(fabAnim, { toValue: 1, useNativeDriver: true }).start();
+                }}
+              >
+                <Text style={{ color: '#fff', fontWeight: '700' }}>✏️ Log Custom Routine</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[ss.modalBtn, { borderColor: c.border, borderWidth: 1, width: '100%', justifyContent: 'center', paddingVertical: 14 }]}
+                onPress={() => setShowCatchUpModal(false)}
+              >
+                <Text style={{ color: c.text, fontWeight: '600' }}>Ignore for Now</Text>
+              </TouchableOpacity>
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
 
       {/* CSV Food Quantity Modal */}
       {selectedCsvFood && (
@@ -2499,7 +2569,15 @@ const ss = StyleSheet.create({
     padding: 12, marginBottom: 10,
     alignItems: 'flex-start',
   },
-  foodEmoji: { fontSize: 28, marginBottom: 4 },
+  foodEmoji: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    backgroundColor: '#f59e0b16',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
   foodName: { fontSize: 13, fontWeight: '700', lineHeight: 17, marginBottom: 2 },
   foodCal: { fontSize: 14, fontWeight: '900', marginBottom: 4 },
   foodMacroRow: { flexDirection: 'row', gap: 4, flexWrap: 'wrap' },
@@ -2508,7 +2586,14 @@ const ss = StyleSheet.create({
   // Activity Lab card
   actLabCard: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderRadius: 18, borderWidth: 1.5, padding: 16, marginBottom: 14 },
   actLabLeft: { flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 },
-  actLabIcon: { fontSize: 28 },
+  actLabIconContainer: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: '#10b98120',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   actLabTitle: { fontWeight: '800', fontSize: 15, marginBottom: 2 },
   actLabSub: { fontSize: 11 },
   actLabBtn: { borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8 },

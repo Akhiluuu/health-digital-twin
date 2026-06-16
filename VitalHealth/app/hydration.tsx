@@ -39,16 +39,13 @@ type ReminderSettings = {
   endTime: Date;
 };
 
-///////////////////////////////////////////////////////////
-// QUICK ADD BUTTONS CONFIG
-///////////////////////////////////////////////////////////
 const QUICK_ADD_BUTTONS = [
-  { ml: 100, icon: "💧", label: "100ml" },
-  { ml: 150, icon: "🥤", label: "150ml" },
-  { ml: 200, icon: "🥛", label: "200ml" },
-  { ml: 250, icon: "🥛", label: "250ml" },
-  { ml: 500, icon: "🍶", label: "500ml" },
-  { ml: 750, icon: "🍶", label: "750ml" },
+  { ml: 100, iconSize: 16, label: "100ml" },
+  { ml: 150, iconSize: 18, label: "150ml" },
+  { ml: 200, iconSize: 20, label: "200ml" },
+  { ml: 250, iconSize: 22, label: "250ml" },
+  { ml: 500, iconSize: 26, label: "500ml" },
+  { ml: 750, iconSize: 30, label: "750ml" },
 ];
 
 ///////////////////////////////////////////////////////////
@@ -330,12 +327,10 @@ export default function HydrationScreen() {
 
       <ScrollView contentContainerStyle={styles.container}>
 
-        {/* ── WATER DISPLAY CARD ── */}
-        {/* ✅ Daily goal, progress bar and goal text removed */}
         <Animated.View style={[styles.waterCard, { transform: [{ scale: pulseAnim }] }]}>
           <View style={[styles.waterContainer, { backgroundColor: colors.card, borderColor: colors.border }]}>
             <View style={styles.waterIconContainer}>
-              <Text style={styles.waterIcon}>💧</Text>
+              <Ionicons name="water" size={30} color={colors.accent} />
             </View>
             <View style={styles.waterInfo}>
               <Text style={[styles.waterLabel, { color: colors.sub }]}>
@@ -350,14 +345,16 @@ export default function HydrationScreen() {
 
         {/* ── QUICK ADD BUTTONS ── */}
         <View style={styles.grid}>
-          {QUICK_ADD_BUTTONS.map(({ ml, icon, label }) => (
+          {QUICK_ADD_BUTTONS.map(({ ml, iconSize, label }) => (
             <TouchableOpacity
               key={ml}
               style={[styles.btn, { backgroundColor: colors.card }]}
               onPress={() => handleAddWater(ml)}
             >
-              <Text style={styles.btnIcon}>{icon}</Text>
-              <Text style={[styles.btnText, { color: colors.text }]}>
+              <View style={styles.btnIconContainer}>
+                <Ionicons name="water" size={iconSize} color={colors.accent} />
+              </View>
+              <Text style={[styles.btnText, { color: colors.text, marginTop: 6 }]}>
                 +{label}
               </Text>
             </TouchableOpacity>
@@ -499,8 +496,8 @@ export default function HydrationScreen() {
 
           {history.length === 0 ? (
             <View style={styles.emptyHistory}>
-              <Text style={styles.emptyIcon}>💧</Text>
-              <Text style={[styles.emptyText, { color: colors.sub }]}>
+              <Ionicons name="water-outline" size={36} color={colors.sub} />
+              <Text style={[styles.emptyText, { color: colors.sub, marginTop: 4 }]}>
                 No water logged yet today.{"\n"}Tap a button above to get started!
               </Text>
             </View>
@@ -531,9 +528,13 @@ export default function HydrationScreen() {
                     {/* Entry card */}
                     <View style={[styles.historyEntry, { backgroundColor: colors.historyBg }]}>
                       <View style={styles.historyEntryLeft}>
-                        <Text style={styles.historyEntryIcon}>
-                          {entry.source === "notification" ? "🔔" : "💧"}
-                        </Text>
+                        <View style={styles.historyEntryIconContainer}>
+                          <Ionicons
+                            name={entry.source === "notification" ? "notifications" : "water"}
+                            size={18}
+                            color={entry.source === "notification" ? colors.warning : colors.accent}
+                          />
+                        </View>
                         <View>
                           <Text style={[styles.historyAmount, { color: colors.text }]}>
                             +{entry.amount} ml
@@ -671,7 +672,14 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
 
-  btnIcon: { fontSize: 22 },
+  btnIconContainer: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: "rgba(14, 165, 233, 0.08)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
   btnText: { fontWeight: "bold", marginTop: 6, fontSize: 14 },
 
   // ── Module ──
@@ -793,7 +801,14 @@ const styles = StyleSheet.create({
 
   historyEntryLeft: { flexDirection: "row", alignItems: "center", gap: 10, flex: 1 },
 
-  historyEntryIcon: { fontSize: 22 },
+  historyEntryIconContainer: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    backgroundColor: "rgba(14, 165, 233, 0.08)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
 
   historyAmount: { fontSize: 16, fontWeight: "bold" },
 

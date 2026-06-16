@@ -1,6 +1,6 @@
 // app/step-intelligence.tsx
 
-import { Ionicons } from "@expo/vector-icons";
+import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
 import React, { useCallback, useEffect, useRef, useState } from "react";
@@ -60,7 +60,9 @@ const Ring = ({ progress, size, strokeWidth, color, children }: any) => {
 // ── Stat tile ──────────────────────────────────────────────────────────────────
 const Tile = ({ icon, label, value, unit, color, colors }: any) => (
   <View style={[tile.wrap, { backgroundColor: colors.card }]}>
-    <Text style={tile.icon}>{icon}</Text>
+    <View style={tile.iconContainer}>
+      <MaterialCommunityIcons name={icon} size={22} color={colors.accent || "#4f46e5"} />
+    </View>
     <Text style={[tile.value, { color }]}>{value}</Text>
     <Text style={[tile.unit,  { color: colors.subText }]}>{unit}</Text>
     <Text style={[tile.label, { color: colors.subText }]}>{label}</Text>
@@ -68,7 +70,7 @@ const Tile = ({ icon, label, value, unit, color, colors }: any) => (
 );
 const tile = StyleSheet.create({
   wrap:  { flex: 1, borderRadius: 18, padding: 14, alignItems: "center", marginHorizontal: 4 },
-  icon:  { fontSize: 20, marginBottom: 6 },
+  iconContainer: { width: 36, height: 36, borderRadius: 18, backgroundColor: "rgba(99, 102, 241, 0.08)", justifyContent: "center", alignItems: "center", marginBottom: 6 },
   value: { fontSize: 18, fontWeight: "900" },
   unit:  { fontSize: 9,  marginTop: 1 },
   label: { fontSize: 9,  marginTop: 3, letterSpacing: 0.8 },
@@ -77,12 +79,12 @@ const tile = StyleSheet.create({
 // ── Zone helper ────────────────────────────────────────────────────────────────
 const getZone = (steps: number, goal: number) => {
   const p = steps / goal;
-  if (steps === 0) return { label: "IDLE",       color: "#475569", emoji: "💤" };
-  if (p < 0.3)     return { label: "SEDENTARY",  color: "#ef4444", emoji: "👟" };
-  if (p < 0.6)     return { label: "LOW",        color: "#f97316", emoji: "🚶" };
-  if (p < 0.8)     return { label: "MODERATE",   color: "#f59e0b", emoji: "🏃" };
-  if (p < 1.0)     return { label: "ACTIVE",     color: "#22c55e", emoji: "⚡" };
-  return                  { label: "GOAL MET ✓", color: "#10b981", emoji: "🏆" };
+  if (steps === 0) return { label: "IDLE",       color: "#475569", icon: "sleep" };
+  if (p < 0.3)     return { label: "SEDENTARY",  color: "#ef4444", icon: "shoe-print" };
+  if (p < 0.6)     return { label: "LOW",        color: "#f97316", icon: "walk" };
+  if (p < 0.8)     return { label: "MODERATE",   color: "#f59e0b", icon: "run" };
+  if (p < 1.0)     return { label: "ACTIVE",     color: "#22c55e", icon: "lightning-bolt" };
+  return                  { label: "GOAL MET ✓", color: "#10b981", icon: "trophy" };
 };
 
 // ── Screen ─────────────────────────────────────────────────────────────────────
@@ -269,7 +271,9 @@ export default function StepIntelligenceScreen() {
           <Animated.View style={{ transform: [{ scale: pulseAnim }] }}>
             <Ring progress={progress} size={240} strokeWidth={16} color={zone.color}>
               <View style={[s.ringInner, { backgroundColor: colors.card }]}>
-                <Text style={s.zoneEmoji}>{zone.emoji}</Text>
+                <View style={s.zoneIconContainer}>
+                  <MaterialCommunityIcons name={zone.icon as any} size={28} color={zone.color} />
+                </View>
                 <Text style={[s.stepCount, { color: zone.color }]}>
                   {steps.toLocaleString("en-IN")}
                 </Text>
@@ -321,9 +325,9 @@ export default function StepIntelligenceScreen() {
 
         {/* Stat tiles */}
         <View style={s.tilesRow}>
-          <Tile icon="📍" label="DISTANCE" value={distanceKm.toFixed(2)}        unit="KM"     color={colors.text} colors={colors} />
-          <Tile icon="🔥" label="CALORIES" value={calories}                      unit="KCAL"   color={colors.text} colors={colors} />
-          <Tile icon="⚡" label="PACE"      value={pace > 0 ? `${pace}` : "--"}  unit="MIN/KM" color={colors.text} colors={colors} />
+          <Tile icon="map-marker" label="DISTANCE" value={distanceKm.toFixed(2)}        unit="KM"     color={colors.text} colors={colors} />
+          <Tile icon="fire" label="CALORIES" value={calories}                      unit="KCAL"   color={colors.text} colors={colors} />
+          <Tile icon="speedometer" label="PACE"      value={pace > 0 ? `${pace}` : "--"}  unit="MIN/KM" color={colors.text} colors={colors} />
         </View>
 
         {/* Profile row */}
@@ -510,7 +514,7 @@ const s = StyleSheet.create({
 
   centre:    { alignItems: "center", marginVertical: 6 },
   ringInner: { width: 190, height: 190, borderRadius: 95, justifyContent: "center", alignItems: "center", gap: 2 },
-  zoneEmoji: { fontSize: 24 },
+  zoneIconContainer: { width: 44, height: 44, borderRadius: 22, backgroundColor: "rgba(99, 102, 241, 0.08)", justifyContent: "center", alignItems: "center", marginBottom: 4 },
   stepCount: { fontSize: 44, fontWeight: "900", lineHeight: 50 },
   stepWord:  { fontSize: 10, letterSpacing: 5 },
   zonePill:  { marginTop: 7, paddingHorizontal: 12, paddingVertical: 3, borderRadius: 18, borderWidth: 1 },

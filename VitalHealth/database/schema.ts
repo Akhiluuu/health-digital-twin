@@ -122,6 +122,11 @@ export const initAllTables = async (): Promise<void> => {
         spo2             REAL,
         core_temperature REAL,
         cardiac_output   REAL,
+        map              REAL,
+        stroke_volume    REAL,
+        tidal_volume     REAL,
+        arterial_ph      REAL,
+        exercise_level   REAL,
         has_anomaly      INTEGER DEFAULT 0,
         anomaly_labels   TEXT,
         run_at           TEXT    NOT NULL
@@ -136,6 +141,23 @@ export const initAllTables = async (): Promise<void> => {
         size_bytes     INTEGER
       );
     `);
+
+    // Migrate simulation_history table for older installations
+    try {
+      await db.execAsync("ALTER TABLE simulation_history ADD COLUMN map REAL;");
+    } catch (_) {}
+    try {
+      await db.execAsync("ALTER TABLE simulation_history ADD COLUMN stroke_volume REAL;");
+    } catch (_) {}
+    try {
+      await db.execAsync("ALTER TABLE simulation_history ADD COLUMN tidal_volume REAL;");
+    } catch (_) {}
+    try {
+      await db.execAsync("ALTER TABLE simulation_history ADD COLUMN arterial_ph REAL;");
+    } catch (_) {}
+    try {
+      await db.execAsync("ALTER TABLE simulation_history ADD COLUMN exercise_level REAL;");
+    } catch (_) {}
 
     // ── Write schema version ─────────────────────────────────────────────────
     await db.runAsync(

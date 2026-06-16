@@ -22,12 +22,12 @@ import { scheduleRoutineReminder, cancelRoutineReminder } from '../../services/n
 import { getMedicines } from '../../database/medicineDB';
 
 type LogTab = 'nutrition' | 'exercise' | 'sleep' | 'hydration' | 'symptoms';
-const TABS: { id: LogTab; label: string; icon: string; accent: string }[] = [
-  { id: 'nutrition', label: 'Nutrition', icon: '🍽️', accent: '#f59e0b' },
-  { id: 'exercise', label: 'Exercise', icon: '💪', accent: '#10b981' },
-  { id: 'sleep', label: 'Sleep', icon: '😴', accent: '#6366f1' },
-  { id: 'hydration', label: 'Hydration', icon: '💧', accent: '#0ea5e9' },
-  { id: 'symptoms', label: 'Symptoms', icon: '🩺', accent: '#ef4444' },
+const TABS: { id: LogTab; label: string; icon: any; accent: string }[] = [
+  { id: 'nutrition', label: 'Nutrition', icon: 'restaurant', accent: '#f59e0b' },
+  { id: 'exercise', label: 'Exercise', icon: 'fitness', accent: '#10b981' },
+  { id: 'sleep', label: 'Sleep', icon: 'bed', accent: '#6366f1' },
+  { id: 'hydration', label: 'Hydration', icon: 'water', accent: '#0ea5e9' },
+  { id: 'symptoms', label: 'Symptoms', icon: 'thermometer', accent: '#ef4444' },
 ];
 
 const REMINDER_KEY = (tab: LogTab) => `@log_reminder_${tab}`;
@@ -529,9 +529,16 @@ const rc = StyleSheet.create({
 
 // ── Entry Card ────────────────────────────────────────────────────────────────
 function EntryCard({ icon, title, sub, time, accent, c }: any) {
+  const isEmoji = typeof icon === 'string' && icon.length <= 2;
   return (
     <View style={[ec.card, { backgroundColor: c.card }]}>
-      <View style={[ec.box, { backgroundColor: accent + '20' }]}><Text style={{ fontSize: 16 }}>{icon}</Text></View>
+      <View style={[ec.box, { backgroundColor: accent + '20' }]}>
+        {isEmoji ? (
+          <Text style={{ fontSize: 16 }}>{icon}</Text>
+        ) : (
+          <Ionicons name={icon} size={16} color={accent} />
+        )}
+      </View>
       <View style={{ flex: 1 }}>
         <Text style={[ec.title, { color: c.text }]} numberOfLines={1}>{title}</Text>
         {sub ? <Text style={[ec.sub, { color: c.sub }]} numberOfLines={1}>{sub}</Text> : null}
@@ -550,9 +557,14 @@ const ec = StyleSheet.create({
 
 // ── Empty State ───────────────────────────────────────────────────────────────
 function Empty({ icon, text, btn, onPress, accent, c }: any) {
+  const isEmoji = typeof icon === 'string' && icon.length <= 2;
   return (
     <View style={[em.wrap, { backgroundColor: c.card }]}>
-      <Text style={{ fontSize: 32 }}>{icon}</Text>
+      {isEmoji ? (
+        <Text style={{ fontSize: 32 }}>{icon}</Text>
+      ) : (
+        <Ionicons name={icon} size={32} color={accent} />
+      )}
       <Text style={[em.text, { color: c.sub }]}>{text}</Text>
       <TouchableOpacity style={[em.btn, { backgroundColor: accent }]} onPress={onPress}>
         <Text style={em.btnT}>{btn}</Text>
@@ -673,7 +685,7 @@ export default function LogRoutineScreen() {
     if (tab === 'hydration') {
       reloadHistory();
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab]);
 
   const [refreshing, setRefresh] = useState(false);
@@ -846,7 +858,7 @@ export default function LogRoutineScreen() {
             <SectionTitle text="INTAKE LOG" c={c} />
             {hydHistArray.slice(0, 12).map((e: any, i: number) => (
               <EntryCard key={e.id ?? i}
-                icon={e.source === 'notification' ? '🔔' : '💧'}
+                icon={e.source === 'notification' ? 'notifications' : 'water'}
                 title={`+${e.amount || 0} mL`}
                 sub={e.source === 'notification' ? 'From reminder' : 'Manual entry · running total: ' + (e.total || 0) + ' mL'}
                 time={e.timestamp ? fmt(e.timestamp) : ''} accent={accent} c={c} />
@@ -859,12 +871,12 @@ export default function LogRoutineScreen() {
           <>
             <SectionTitle text="BIOGEARS WATER EVENTS" c={c} />
             {bgWater.slice(0, 10).map(e => (
-              <EntryCard key={e.id} icon="💧" title={`${Math.round(e.value || 0)} mL`}
+              <EntryCard key={e.id} icon="water" title={`${Math.round(e.value || 0)} mL`}
                 sub="Synced to twin simulation" time={e.wallTime || ''} accent={accent} c={c} />
             ))}
           </>
         )}
-        {allHydEmpty && <Empty icon="💧" text={`No hydration logged today.\nStay hydrated — aim for ${waterGoal} mL.`} btn="Log Water" onPress={goWater} accent={accent} c={c} />}
+        {allHydEmpty && <Empty icon="water" text={`No hydration logged today.\nStay hydrated — aim for ${waterGoal} mL.`} btn="Log Water" onPress={goWater} accent={accent} c={c} />}
       </>
     );
   };
@@ -874,7 +886,7 @@ export default function LogRoutineScreen() {
     return (
       <>
         {activeSymptoms.length === 0 && historySymptoms.length === 0 ? (
-          <Empty icon="🩺" text={'No symptoms logged.\nTrack how you feel over time.'} btn="Log Symptom" onPress={goSym} accent={accent} c={c} />
+          <Empty icon="thermometer" text={'No symptoms logged.\nTrack how you feel over time.'} btn="Log Symptom" onPress={goSym} accent={accent} c={c} />
         ) : (
           <>
             {activeSymptoms.length > 0 && (
@@ -946,7 +958,7 @@ export default function LogRoutineScreen() {
           height: 48,
           backgroundColor: c.bg,
           zIndex: 10,
-          borderTopWidth: 8,
+          borderTopWidth: 4,
           borderTopColor: c.border,
           borderBottomWidth: 1,
           borderBottomColor: c.border,
@@ -958,7 +970,7 @@ export default function LogRoutineScreen() {
             <TouchableOpacity key={t.id}
               style={[s.tabBtn, { borderColor: active ? t.accent : c.border }, active && { backgroundColor: t.accent }]}
               onPress={() => setTab(t.id)}>
-              <Text style={{ fontSize: 13 }}>{t.icon}</Text>
+              <Ionicons name={t.icon} size={15} color={active ? '#fff' : t.accent} />
               <Text style={[s.tabLabel, { color: active ? '#fff' : c.sub }]}>{t.label}</Text>
             </TouchableOpacity>
           );
@@ -972,9 +984,12 @@ export default function LogRoutineScreen() {
 
         {/* Section header */}
         <View style={s.secHeader}>
-          <Text style={[s.secTitle, { color: c.text }]}>
-            {TABS.find(t => t.id === tab)?.icon} Today's {TABS.find(t => t.id === tab)?.label}
-          </Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+            <Ionicons name={TABS.find(t => t.id === tab)?.icon ?? 'medical'} size={18} color={accent} />
+            <Text style={[s.secTitle, { color: c.text }]}>
+              Today's {TABS.find(t => t.id === tab)?.label}
+            </Text>
+          </View>
           <TouchableOpacity style={[s.addBtn, { backgroundColor: accent }]} onPress={logAction()}>
             <Ionicons name="add" size={15} color="#fff" />
             <Text style={s.addBtnT}>Log</Text>
@@ -1003,7 +1018,7 @@ export default function LogRoutineScreen() {
             activeOpacity={1} onPress={() => setShowGoalModal(false)}>
             <TouchableOpacity activeOpacity={1} style={[gm.card, { backgroundColor: c.card, borderColor: c.border }]}>
               <View style={gm.row}>
-                <Text style={{ fontSize: 28 }}>💧</Text>
+                <Ionicons name="water" size={32} color={accent} />
                 <View style={{ flex: 1 }}>
                   <Text style={[gm.title, { color: c.text }]}>Daily Water Goal</Text>
                   <Text style={[gm.sub, { color: c.sub }]}>Set your personal hydration target in mL</Text>

@@ -98,6 +98,7 @@ export default {
       "expo-font",
       "@react-native-voice/voice",  // Included in native build (EAS)
       "./plugins/withExcludeOldSupportLib",
+      "./plugins/withNotifeeForegroundService",
 
       [
         "expo-splash-screen",
@@ -142,7 +143,7 @@ export default {
           android: {
             compileSdkVersion: 35,
             targetSdkVersion: 35,
-            minSdkVersion: 24,
+            minSdkVersion: 33,
 
             useAndroidX: true,
             enableJetifier: true,

@@ -305,9 +305,21 @@ export default function InsightsScreen() {
         {/* TRENDS */}
         <Text style={[S.sectionTitle, { color: c.text }]}>Vitals Trajectory</Text>
         <View style={[S.card, { backgroundColor: c.card }]}>
-          <TrendChart data={vitalsTrends?.sessions || []} metric="heart_rate" label="Heart Rate" color="#38bdf8" theme={c} />
-          <View style={{ height: 1, backgroundColor: '#ffffff10', marginVertical: 10 }} />
-          <TrendChart data={vitalsTrends?.sessions || []} metric="glucose"    label="Glucose"    color="#f59e0b" theme={c} />
+          {(!vitalsTrends?.sessions || vitalsTrends.sessions.length === 0) ? (
+            <View style={{ paddingVertical: 20, alignItems: 'center' }}>
+              <Ionicons name="stats-chart" size={32} color={c.sub} style={{ marginBottom: 8 }} />
+              <Text style={{ fontSize: 14, color: c.text, fontWeight: '600' }}>No Vitals Trajectory Yet</Text>
+              <Text style={{ fontSize: 12, color: c.sub, textAlign: 'center', marginTop: 4 }}>
+                Run simulations on the Clinical Twin to plot physiological changes over time.
+              </Text>
+            </View>
+          ) : (
+            <>
+              <TrendChart data={vitalsTrends.sessions} metric="heart_rate" label="Heart Rate" color="#38bdf8" theme={c} />
+              {vitalsTrends.sessions.length > 1 && <View style={{ height: 1, backgroundColor: '#ffffff10', marginVertical: 10 }} />}
+              <TrendChart data={vitalsTrends.sessions} metric="glucose"    label="Glucose"    color="#f59e0b" theme={c} />
+            </>
+          )}
         </View>
 
         {/* HISTORY */}
@@ -403,10 +415,42 @@ function OrganCard({ name, score, status, theme }: any) {
 }
 
 function TrendChart({ data, metric, label, color, theme }: any) {
-  if (!data || data.length < 2) return null;
-  const values: number[] = data.map((d: any) => d[metric]).filter((v: any) => v != null);
-  if (values.length < 2) return null;
   const h = 80; const w = SCREEN_WIDTH - 80;
+  if (!data || data.length === 0) {
+    return (
+      <View style={{ marginVertical: 10, height: h, justifyContent: 'center', alignItems: 'center' }}>
+        <Text style={{ fontSize: 13, color: theme.sub, textAlign: 'center' }}>No simulation data recorded for {label}.</Text>
+      </View>
+    );
+  }
+  const values: number[] = data.map((d: any) => d[metric]).filter((v: any) => v != null);
+
+  if (values.length === 0) {
+    return (
+      <View style={{ marginVertical: 10, height: h, justifyContent: 'center', alignItems: 'center' }}>
+        <Text style={{ fontSize: 13, color: theme.sub, textAlign: 'center' }}>No values found for {label}.</Text>
+      </View>
+    );
+  }
+
+  if (values.length === 1) {
+    return (
+      <View style={{ marginVertical: 10 }}>
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+          <Text style={{ fontSize: 12, fontWeight: '500', color: theme.sub }}>{label}</Text>
+          <Text style={{ fontSize: 16, fontWeight: '700', color: theme.text }}>{Math.round(values[0])}</Text>
+        </View>
+        <View style={{ height: h, width: w, justifyContent: 'center', alignItems: 'center', marginTop: 10 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: color + '15', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12 }}>
+            <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: color }} />
+            <Text style={{ fontSize: 12, color: theme.text, fontWeight: '600' }}>Initial baseline: {Math.round(values[0])}</Text>
+          </View>
+          <Text style={{ fontSize: 10, color: theme.sub, marginTop: 6 }}>Run another simulation to see trends.</Text>
+        </View>
+      </View>
+    );
+  }
+
   const max = Math.max(...values); const min = Math.min(...values); const range = max - min || 1;
   const pts = values.map((v, i) => `${i === 0 ? 'M' : 'L'} ${(i / (values.length - 1)) * w} ${h - ((v - min) / range) * h}`);
   return (
@@ -416,7 +460,7 @@ function TrendChart({ data, metric, label, color, theme }: any) {
         <Text style={{ fontSize: 16, fontWeight: '700', color: theme.text }}>{Math.round(values[values.length - 1])}</Text>
       </View>
       <Svg width={w} height={h} style={{ marginTop: 10 }}>
-        <Path d={pts.join(' ')} stroke={color} strokeWidth={2} fill="none" />
+        <Path d={pts.join(' ')} stroke={color} strokeWidth={2.5} fill="none" />
       </Svg>
     </View>
   );

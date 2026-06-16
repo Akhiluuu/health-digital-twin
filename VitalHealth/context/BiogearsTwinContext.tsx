@@ -70,6 +70,7 @@ export interface BiogearsTwinContextValue {
   simulationStatus: SimulationStatus;
   simulationProgress: string;
   simulationError: string | null;
+  simulationStartTime: number | null;
 
   // Twin identity
   twinUserId: string | null;
@@ -365,6 +366,7 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
   const [simulationStatus, setSimulationStatus] = useState<SimulationStatus>('idle');
   const [simulationProgress, setSimulationProgress] = useState('');
   const [simulationError, setSimulationError] = useState<string | null>(null);
+  const [simulationStartTime, setSimulationStartTime] = useState<number | null>(null);
 
   const [lastVitals, setLastVitals] = useState<BiogearsVitals | null>(null);
   const [lastAnomalies, setLastAnomalies] = useState<any[]>([]);
@@ -554,7 +556,7 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
           }
 
           if (!active) return;
-          await refreshAnalytics(true);
+          await refreshAnalytics(true, syncedSessions);
         } catch (e) {
           console.error('[BiogearsTwin] Sync & load error:', e);
         } finally {
@@ -606,15 +608,43 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
       if (statusRes.status === 'running' || statusRes.status === 'pending') {
         console.log(`[BiogearsTwin] Resuming active job: ${jobId}`);
         setSimulationStatus('running');
-        setSimulationProgress('Resuming background simulation...');
+        
+        const startTimeStr = await AsyncStorage.getItem('biogears_active_job_start_time');
+        const startTime = startTimeStr ? parseInt(startTimeStr, 10) : Date.now();
+        setSimulationStartTime(startTime);
+        simStartRef.current = startTime;
+        
+        setSimulationProgress('BioGears engine initialising...');
+        
+        if (progressTickRef.current) {
+          clearInterval(progressTickRef.current);
+        }
+        
+        progressTickRef.current = setInterval(() => {
+          const elapsed = Math.round((Date.now() - (simStartRef.current ?? Date.now())) / 1000);
+          const mins = Math.floor(elapsed / 60);
+          const secs = elapsed % 60;
+          const timeStr = mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
+          setSimulationProgress(`BioGears computing physiology... (${timeStr} elapsed)`);
+        }, 5000);
+
         const result = await BiogearsAPI.pollUntilDone(jobId, 3000, 43_200_000);
         await finishSimulationSuccess(result);
       } else {
         await AsyncStorage.removeItem('biogears_active_job');
+        await AsyncStorage.removeItem('biogears_active_job_start_time');
       }
     } catch (err) {
       console.log('Failed to resume active job:', err);
+      if (progressTickRef.current) {
+        clearInterval(progressTickRef.current);
+        progressTickRef.current = null;
+      }
+      simStartRef.current = null;
+      setSimulationStartTime(null);
+      setSimulationStatus('idle');
       await AsyncStorage.removeItem('biogears_active_job');
+      await AsyncStorage.removeItem('biogears_active_job_start_time');
     }
   };
 
@@ -711,14 +741,16 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
       progressTickRef.current = null;
     }
     simStartRef.current = null;
+    setSimulationStartTime(null);
+    await AsyncStorage.removeItem('biogears_active_job_start_time');
     setTodayEvents([]);
     if (twinUserId) {
       await AsyncStorage.removeItem(TODAY_EVENTS_KEY(twinUserId));
       await BiogearsAPI.syncPendingEvents(twinUserId, [], firestoreOwnerUid).catch(() => {});
     }
 
-    await refreshSessions();
-    await refreshAnalytics();
+    const updatedSessions = await refreshSessions();
+    await refreshAnalytics(true, updatedSessions);
     await scheduleInactivityReminder().catch(() => {});
   };
 
@@ -1086,11 +1118,19 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
     };
   }, []);
 
-  const refreshAnalytics = useCallback(async (force = false) => {
+  const refreshAnalytics = useCallback(async (force = false, latestSessions?: LocalSessionMeta[]) => {
     // Don't hammer the server when the twin isn't registered yet
     if (!twinUserId) return;
     if (!force && (twinStatus === 'unregistered' || twinStatus === 'checking')) return;
+
+    let targetSessions = (latestSessions && latestSessions.length > 0)
+      ? latestSessions
+      : (sessions && sessions.length > 0 ? sessions : []);
+
     try {
+      if (targetSessions.length === 0) {
+        targetSessions = await refreshSessions();
+      }
       // Prepare events for caloric balance
       const eventsForBurn: BiogearsHealthEvent[] = todayEvents.map(e => ({
         event_type: e.event_type,
@@ -1135,8 +1175,8 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
 
       // Fallback for vitalsTrends if API failed or empty
       if (!activeTrends || !activeTrends.sessions || activeTrends.sessions.length === 0) {
-        console.log('[BiogearsTwin] Constructing local fallback for vitals trends from sessions...');
-        activeTrends = getVitalsTrendsFallback(sessions);
+        console.log(`[BiogearsTwin] Constructing local fallback for vitals trends from ${targetSessions.length} sessions...`);
+        activeTrends = getVitalsTrendsFallback(targetSessions);
       }
 
       if (organs.status === 'fulfilled') {
@@ -1191,7 +1231,7 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
       } else {
         // Construct fallback trends as a last resort
         setOrganScores(fallbackOrganScores);
-        setVitalsTrends(getVitalsTrendsFallback(sessions));
+        setVitalsTrends(getVitalsTrendsFallback(targetSessions));
         const localEst = computeLocalCaloricBalanceFallback(profile, todayEvents, steps);
         setCaloricBalance(localEst);
       }
@@ -1201,6 +1241,7 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
     twinStatus,
     sessions,
     getVitalsTrendsFallback,
+    refreshSessions,
     firestoreOwnerUid,
     todayEvents,
     steps,
@@ -1555,6 +1596,7 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
       await BiogearsAPI.registerTwin(payload);
       console.log(`[BioGearsContext] Registration SUCCESS for ${payload.user_id}`);
       setTwinStatus('ready');
+      await scheduleInactivityReminder().catch(() => {});
     } catch (err: any) {
       console.log(`[BioGearsContext] Registration FAILED:`, err);
       setTwinStatus('error');
@@ -1623,8 +1665,11 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
       setSimulationStatus('running');
       const { job_id } = await BiogearsAPI.simulateAsync(twinUserId, events);
       await AsyncStorage.setItem('biogears_active_job', job_id);
+      const startTime = Date.now();
+      await AsyncStorage.setItem('biogears_active_job_start_time', String(startTime));
+      setSimulationStartTime(startTime);
 
-      simStartRef.current = Date.now();
+      simStartRef.current = startTime;
       setSimulationProgress('BioGears engine initialising...');
       progressTickRef.current = setInterval(() => {
         const elapsed = Math.round((Date.now() - (simStartRef.current ?? Date.now())) / 1000);
@@ -1643,6 +1688,9 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
         progressTickRef.current = null;
       }
       simStartRef.current = null;
+      setSimulationStartTime(null);
+      await AsyncStorage.removeItem('biogears_active_job_start_time');
+      await AsyncStorage.removeItem('biogears_active_job');
       setSimulationStatus('failed');
       setSimulationError(err.message || 'Simulation failed');
       setSimulationProgress('');
@@ -1696,9 +1744,12 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
       setSimulationStatus('running');
       const { job_id } = await BiogearsAPI.simulateAsync(twinUserId, events);
       await AsyncStorage.setItem('biogears_active_job', job_id);
+      const startTime = Date.now();
+      await AsyncStorage.setItem('biogears_active_job_start_time', String(startTime));
+      setSimulationStartTime(startTime);
 
       // Start live elapsed-time ticker so user sees progress
-      simStartRef.current = Date.now();
+      simStartRef.current = startTime;
       setSimulationProgress('BioGears engine initialising...');
       progressTickRef.current = setInterval(() => {
         const elapsed = Math.round((Date.now() - (simStartRef.current ?? Date.now())) / 1000);
@@ -1721,6 +1772,9 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
         progressTickRef.current = null;
       }
       simStartRef.current = null;
+      setSimulationStartTime(null);
+      await AsyncStorage.removeItem('biogears_active_job_start_time');
+      await AsyncStorage.removeItem('biogears_active_job');
       setSimulationStatus('failed');
       setSimulationError(err.message || 'Simulation failed');
       setSimulationProgress('');
@@ -1781,8 +1835,11 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
       setSimulationStatus('running');
       const { job_id } = await BiogearsAPI.simulateAsync(twinUserId, catchUpEvents);
       await AsyncStorage.setItem('biogears_active_job', job_id);
+      const startTime = Date.now();
+      await AsyncStorage.setItem('biogears_active_job_start_time', String(startTime));
+      setSimulationStartTime(startTime);
 
-      simStartRef.current = Date.now();
+      simStartRef.current = startTime;
       progressTickRef.current = setInterval(() => {
         const elapsed = Math.round((Date.now() - (simStartRef.current ?? Date.now())) / 1000);
         const mins = Math.floor(elapsed / 60);
@@ -1800,6 +1857,9 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
         progressTickRef.current = null;
       }
       simStartRef.current = null;
+      setSimulationStartTime(null);
+      await AsyncStorage.removeItem('biogears_active_job_start_time');
+      await AsyncStorage.removeItem('biogears_active_job');
       setSimulationStatus('failed');
       setSimulationError(err.message || 'Catch-up simulation failed');
       setSimulationProgress('');
@@ -1945,8 +2005,8 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
     setLastAiInsights([]);
     setLastAiInsightsText('');
     setAiInsightsLoading(false);
-    await refreshSessions();
-    await refreshAnalytics();
+    const updatedSessions = await refreshSessions();
+    await refreshAnalytics(true, updatedSessions);
   }, [twinUserId, refreshSessions, refreshAnalytics]);
 
   const restoreDefaultRoutine = useCallback(async () => {
@@ -2044,6 +2104,7 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
     simulationStatus,
     simulationProgress,
     simulationError,
+    simulationStartTime,
     twinUserId,
     isTwinLoading,
     lastVitals,

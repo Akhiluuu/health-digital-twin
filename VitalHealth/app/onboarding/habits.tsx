@@ -16,13 +16,14 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import TimePicker from "../../components/twin/TimePicker";
 import { auth, db } from "../../services/firebase";
 import { useTheme } from "../../context/ThemeContext";
+import { Ionicons } from "@expo/vector-icons";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const ACTIVITY_LEVELS = [
-  { label: "Sedentary", icon: "🪑", desc: "Little to no exercise" },
-  { label: "Moderate",  icon: "🚶", desc: "Light exercise 1–3 days" },
-  { label: "Active",    icon: "🏃", desc: "Hard exercise 4–5 days" },
+  { label: "Sedentary", icon: "cafe-outline", desc: "Little to no exercise" },
+  { label: "Moderate",  icon: "walk", desc: "Light exercise 1–3 days" },
+  { label: "Active",    icon: "fitness", desc: "Hard exercise 4–5 days" },
 ];
 
 const WATER_OPTIONS = ["1L", "2L", "3L", "4L", "5L", "6L"];
@@ -33,7 +34,7 @@ const FOOD_QUIZ: {
   id: string;
   question: string;
   subtitle: string;
-  emoji: string;
+  icon: string;
   type: "chips" | "single" | "dropdown" | "text";
   multi?: boolean;
   options?: { label: string; emoji?: string }[];
@@ -43,7 +44,7 @@ const FOOD_QUIZ: {
     id: "dietType",
     question: "What best describes your diet?",
     subtitle: "Pick the one that fits your lifestyle",
-    emoji: "🥗",
+    icon: "restaurant",
     type: "chips",
     multi: false,
     options: [
@@ -60,7 +61,7 @@ const FOOD_QUIZ: {
     id: "mealFreq",
     question: "How many times do you eat in a day?",
     subtitle: "Including snacks and small bites",
-    emoji: "🍽️",
+    icon: "time",
     type: "single",
     options: [
       { label: "1–2 meals", emoji: "1️⃣" },
@@ -73,7 +74,7 @@ const FOOD_QUIZ: {
     id: "snacking",
     question: "How often do you snack between meals?",
     subtitle: "Be honest — no judgement here!",
-    emoji: "🍿",
+    icon: "fast-food",
     type: "single",
     options: [
       { label: "Never",        emoji: "🚫" },
@@ -87,7 +88,7 @@ const FOOD_QUIZ: {
     id: "cookingFreq",
     question: "How often do you cook at home?",
     subtitle: "Home-cooked vs ordered / eaten out",
-    emoji: "👨‍🍳",
+    icon: "cafe",
     type: "single",
     options: [
       { label: "Always",    emoji: "🏆" },
@@ -101,7 +102,7 @@ const FOOD_QUIZ: {
     id: "eatingOut",
     question: "How often do you eat out or order in?",
     subtitle: "Restaurants, delivery, takeaway",
-    emoji: "🛵",
+    icon: "cart",
     type: "single",
     options: [
       { label: "Daily",        emoji: "📅" },
@@ -115,7 +116,7 @@ const FOOD_QUIZ: {
     id: "allergies",
     question: "Any food allergies or intolerances?",
     subtitle: "Select all that apply",
-    emoji: "⚠️",
+    icon: "alert-circle",
     type: "chips",
     multi: true,
     options: [
@@ -123,7 +124,7 @@ const FOOD_QUIZ: {
       { label: "Dairy",     emoji: "🥛" },
       { label: "Eggs",      emoji: "🥚" },
       { label: "Nuts",      emoji: "🥜" },
-      { label: "Soy",       emoji: "🫘" },
+      { label: "Soy",       emoji: "𫛎" },
       { label: "Shellfish", emoji: "🦐" },
       { label: "None",      emoji: "✅" },
     ],
@@ -132,7 +133,7 @@ const FOOD_QUIZ: {
     id: "cuisines",
     question: "Which cuisines do you love most?",
     subtitle: "Pick all your favourites",
-    emoji: "🌍",
+    icon: "globe",
     type: "chips",
     multi: true,
     options: [
@@ -150,7 +151,7 @@ const FOOD_QUIZ: {
     id: "favFoods",
     question: "What are your absolute favourite foods?",
     subtitle: "The ones you'd never say no to",
-    emoji: "❤️",
+    icon: "heart",
     type: "dropdown",
     options: [
       { label: "Rice & Dal",       emoji: "🍚" },
@@ -175,7 +176,7 @@ const FOOD_QUIZ: {
     id: "foodGoal",
     question: "What's your main food goal right now?",
     subtitle: "What do you want to achieve through eating?",
-    emoji: "🎯",
+    icon: "ribbon",
     type: "chips",
     multi: false,
     options: [
@@ -191,7 +192,7 @@ const FOOD_QUIZ: {
     id: "avoidFoods",
     question: "Any foods you actively avoid?",
     subtitle: "Beyond allergies — things you just don't enjoy",
-    emoji: "🚫",
+    icon: "ban",
     type: "text",
     placeholder: "e.g. Spicy food, raw onions, processed snacks…",
   },
@@ -199,7 +200,7 @@ const FOOD_QUIZ: {
     id: "cheatMeal",
     question: "What's your go-to cheat meal?",
     subtitle: "We won't tell anyone 🤫",
-    emoji: "🍩",
+    icon: "ice-cream",
     type: "text",
     placeholder: "e.g. Double cheeseburger, gulab jamun, ice cream…",
   },
@@ -207,7 +208,7 @@ const FOOD_QUIZ: {
     id: "mealPrepDay",
     question: "Do you meal prep in advance?",
     subtitle: "Planning meals ahead for the week",
-    emoji: "📦",
+    icon: "cube",
     type: "single",
     options: [
       { label: "Yes, every week", emoji: "🏆" },
@@ -220,7 +221,7 @@ const FOOD_QUIZ: {
     id: "waterPref",
     question: "How do you usually drink water?",
     subtitle: "Your hydration style",
-    emoji: "💧",
+    icon: "water",
     type: "single",
     options: [
       { label: "Plain water",     emoji: "🫗" },
@@ -258,7 +259,9 @@ const TimeField = memo(function TimeField({
         backgroundColor: colors.inputBg,
         borderColor: value ? accent + "60" : colors.inputBorder,
       }]}>
-        <Text style={styles.inputIcon}>{icon}</Text>
+        <View style={styles.inputIconContainer}>
+          <Ionicons name={icon as any} size={15} color={accent} />
+        </View>
         <Text style={[styles.inputPlaceholder, { color: colors.inputPlaceholder, flex: 1 }]}>
           {placeholder}
         </Text>
@@ -437,7 +440,7 @@ function FoodQuizCard({
       {/* Header */}
       <View style={qCard.header}>
         <View style={[qCard.emojiWrap, { backgroundColor: accent + "15" }]}>
-          <Text style={{ fontSize: 22 }}>{q.emoji}</Text>
+          <Ionicons name={q.icon as any} size={20} color={accent} />
         </View>
         <View style={{ flex: 1 }}>
           <Text style={[qCard.qTxt, { color: colors.titleText }]}>{q.question}</Text>
@@ -633,7 +636,7 @@ export default function Habits() {
         {/* HEADER */}
         <View style={styles.header}>
           <View style={[styles.badge, { backgroundColor: c.iconBadgeBg }]}>
-            <Text style={styles.badgeEmoji}>🌿</Text>
+            <Ionicons name="leaf" size={26} color={c.accent} />
           </View>
           <Text style={[styles.title,    { color: c.titleText }]}>Daily Habits</Text>
           <Text style={[styles.subtitle, { color: c.subtitleText }]}>
@@ -645,11 +648,11 @@ export default function Habits() {
         <View style={[styles.card, { backgroundColor: c.sectionCardBg, borderColor: c.sectionCardBorder }]}>
           <Text style={[styles.cardTitle, { color: c.sectionTitle }]}>Daily Schedule</Text>
           <Text style={[styles.cardHint,  { color: c.inputPlaceholder }]}>Tap any time to set</Text>
-          <TimeField label="Wake Up"   icon="🌅" value={wakeUp}    onChange={setWakeUp}    placeholder="e.g. 6:30 AM"  colors={c} accent={c.accent} />
-          <TimeField label="Breakfast" icon="🍳" value={breakfast} onChange={setBreakfast} placeholder="e.g. 8:00 AM"  colors={c} accent={c.accent} />
-          <TimeField label="Lunch"     icon="🥗" value={lunch}     onChange={setLunch}     placeholder="e.g. 1:00 PM"  colors={c} accent={c.accent} />
-          <TimeField label="Dinner"    icon="🍽️" value={dinner}    onChange={setDinner}    placeholder="e.g. 8:30 PM"  colors={c} accent={c.accent} />
-          <TimeField label="Sleep"     icon="🌙" value={sleep}     onChange={setSleep}     placeholder="e.g. 11:00 PM" colors={c} accent={c.accent} />
+          <TimeField label="Wake Up"   icon="sunny" value={wakeUp}    onChange={setWakeUp}    placeholder="e.g. 6:30 AM"  colors={c} accent={c.accent} />
+          <TimeField label="Breakfast" icon="cafe" value={breakfast} onChange={setBreakfast} placeholder="e.g. 8:00 AM"  colors={c} accent={c.accent} />
+          <TimeField label="Lunch"     icon="restaurant" value={lunch}     onChange={setLunch}     placeholder="e.g. 1:00 PM"  colors={c} accent={c.accent} />
+          <TimeField label="Dinner"    icon="pizza" value={dinner}    onChange={setDinner}    placeholder="e.g. 8:30 PM"  colors={c} accent={c.accent} />
+          <TimeField label="Sleep"     icon="moon" value={sleep}     onChange={setSleep}     placeholder="e.g. 11:00 PM" colors={c} accent={c.accent} />
         </View>
 
         {/* ── WATER ───────────────────────────────────────────────────── */}
@@ -673,7 +676,7 @@ export default function Habits() {
           </View>
           <View style={styles.waterRow}>
             {Array.from({ length: parseInt(water) || 2 }).map((_, i) => (
-              <Text key={i} style={[styles.drop, { color: c.waterDrop }]}>💧</Text>
+              <Ionicons key={i} name="water" size={16} color={c.waterDrop} style={{ marginRight: 2 }} />
             ))}
           </View>
         </View>
@@ -691,7 +694,9 @@ export default function Habits() {
               }]}
               onPress={() => setActivity(lvl.label)}
             >
-              <Text style={styles.actIcon}>{lvl.icon}</Text>
+              <View style={styles.actIconContainer}>
+                <Ionicons name={lvl.icon as any} size={20} color={c.accent} />
+              </View>
               <View style={{ flex: 1 }}>
                 <Text style={[styles.actLabel, { color: c.activityLabel }]}>{lvl.label}</Text>
                 <Text style={[styles.actDesc,  { color: c.activityDesc  }]}>{lvl.desc}</Text>
@@ -713,7 +718,7 @@ export default function Habits() {
         <View style={styles.divRow}>
           <View style={[styles.divLine, { backgroundColor: c.border }]} />
           <View style={[styles.divBadge, { backgroundColor: c.accent + "15", borderColor: c.accent + "35" }]}>
-            <Text style={{ fontSize: 14 }}>🍴</Text>
+            <Ionicons name="restaurant" size={13} color={c.accent} />
             <Text style={[styles.divLabel, { color: c.accent }]}>Food Habits</Text>
             <View style={[styles.optPill, { backgroundColor: c.accent + "20" }]}>
               <Text style={[styles.optPillTxt, { color: c.accent }]}>Optional</Text>
@@ -783,7 +788,7 @@ const styles = StyleSheet.create({
   fieldWrapper: { marginBottom: 10 },
   fieldLabel:   { fontSize: 11, marginBottom: 6, fontWeight: "600" },
   inputWrapper: { flexDirection: "row", alignItems: "center", borderWidth: 1.5, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 8, gap: 8 },
-  inputIcon:    { fontSize: 16 },
+  inputIconContainer: { width: 22, height: 22, justifyContent: "center", alignItems: "center" },
   inputPlaceholder: { fontSize: 14 },
   checkIcon:    { fontWeight: "700", marginLeft: 4, fontSize: 14 },
 
@@ -795,7 +800,7 @@ const styles = StyleSheet.create({
   drop:         { fontSize: 16, marginRight: 2 },
 
   actCard:      { flexDirection: "row", alignItems: "center", gap: 10, padding: 13, borderRadius: 14, marginBottom: 8 },
-  actIcon:      { fontSize: 22 },
+  actIconContainer: { width: 34, height: 34, borderRadius: 17, backgroundColor: "rgba(56, 189, 248, 0.08)", justifyContent: "center", alignItems: "center" },
   actLabel:     { fontWeight: "700", fontSize: 14 },
   actDesc:      { fontSize: 11 },
   actCheck:     { width: 24, height: 24, borderRadius: 12, alignItems: "center", justifyContent: "center" },
