@@ -41,13 +41,13 @@ const ORGANS: OrganPlacement[] = [
   { key: 'lungs',  label: 'Lungs',  emoji: '🫁', x: 82,  y: 102, detail: 'SpO₂ · Respiration rate · Tidal volume', icon: 'thermometer' },
   { key: 'liver',  label: 'Liver',  emoji: '🟤', x: 82,  y: 145, detail: 'Glucose metabolism · Active physical output', icon: 'flash' },
   { key: 'gut',    label: 'Gut',    emoji: '🦠', x: 98,  y: 165, detail: 'Nutritional digestion · Core body temperature', icon: 'restaurant' },
-  { key: 'legs',   label: 'Legs',   emoji: '🦵', x: 90,  y: 240, detail: 'Peripheral stroke volume · Muscle exercise load', icon: 'walk' },
+  { key: 'legs',   label: 'Legs',   emoji: '🦵', x: 76,  y: 240, detail: 'Peripheral stroke volume · Muscle exercise load', icon: 'walk' },
 ];
 
 const LEFT_ORGANS: OrganPlacement[] = [
   { key: 'lungs',  label: 'Lungs',  emoji: '🫁', x: 82,  y: 102, detail: 'SpO₂ · Respiration rate · Tidal volume', icon: 'thermometer' },
   { key: 'liver',  label: 'Liver',  emoji: '🟤', x: 82,  y: 145, detail: 'Glucose metabolism · Active physical output', icon: 'flash' },
-  { key: 'legs',   label: 'Legs',   emoji: '🦵', x: 90,  y: 240, detail: 'Peripheral stroke volume · Muscle exercise load', icon: 'walk' },
+  { key: 'legs',   label: 'Legs',   emoji: '🦵', x: 76,  y: 240, detail: 'Peripheral stroke volume · Muscle exercise load', icon: 'walk' },
 ];
 
 const RIGHT_ORGANS: OrganPlacement[] = [
@@ -72,6 +72,17 @@ function statusColor(status?: string): string {
   if (norm === 'warning' || norm === 'fair') return '#f59e0b'; // Amber
   return '#10b981'; // Green
 }
+
+const LiverIcon = ({ size, color, style }: { size: number; color: string; style?: any }) => (
+  <View style={style}>
+    <Svg width={size} height={size} viewBox="0 0 100 100">
+      <Path
+        d="M89.38,27.894c-4.961-1.701-10.136-2.604-15.381-2.684l-13.64-0.206c-0.496-0.131-2.139-0.618-7.255-2.385 C48.071,20.881,42.821,20,37.5,20C19.58,20,5,34.58,5,52.5v0.412l1.47,6.617c0.683,3.073,1.03,6.229,1.03,9.379 C7.5,75.024,12.476,80,18.592,80c2.59,0,5.112-0.913,7.101-2.571l11.002-9.168c0.936-0.781,1.998-1.372,3.157-1.758l7.281-2.427 c3.179-1.06,5.918-2.973,7.969-5.523c5.153,2.092,11.208,1.862,16.179-0.625c8.156-4.078,15.364-9.601,21.422-16.417l0.197-0.221 C94.254,39.765,95,37.802,95,35.763C95,32.209,92.742,29.047,89.38,27.894z"
+        fill={color}
+      />
+    </Svg>
+  </View>
+);
 
 export default function BodyMap({ scores, c, lastVitals, sessions = [], profile }: Props) {
   const [selected, setSelected] = useState<OrganPlacement | null>(null);
@@ -220,7 +231,11 @@ export default function BodyMap({ scores, c, lastVitals, sessions = [], profile 
         activeOpacity={0.7}
       >
         <View style={{ alignItems: 'center', gap: 2 }}>
-          <Text style={styles.cardEmoji}>{organ.emoji}</Text>
+          {organ.key === 'liver' ? (
+            <LiverIcon size={18} color="#a13c2f" />
+          ) : (
+            <Text style={styles.cardEmoji}>{organ.emoji}</Text>
+          )}
           <Text style={[styles.cardLabel, { color: c.text }]} numberOfLines={1}>{organ.label}</Text>
         </View>
         <View style={[styles.cardScoreBadge, { backgroundColor: color }]}>
@@ -264,7 +279,7 @@ export default function BodyMap({ scores, c, lastVitals, sessions = [], profile 
 
             {/* Symmetrical Human Outline */}
             <Path
-              d="M 90 12 A 20 20 0 0 0 90 52 L 84 52 L 84 62 Q 80 70 65 70 L 55 130 Q 55 136 60 136 L 65 136 L 71 95 L 74 150 L 71 190 L 65 305 Q 65 312 72 312 L 78 312 L 86 195 L 90 195 L 94 195 L 102 312 L 108 312 Q 115 312 115 305 L 109 190 L 106 150 L 109 95 L 115 136 L 120 136 Q 125 136 125 130 L 115 70 Q 100 70 96 62 L 96 52 L 90 52 A 20 20 0 0 0 90 12 Z"
+              d="M 90 12 A 20 20 0 0 0 90 52 L 84 52 L 84 62 Q 80 70 65 70 L 51 180 Q 49 200 54 200 L 57 180 L 71 95 L 74 150 L 71 190 L 65 305 Q 65 312 72 312 L 78 312 L 86 195 L 90 195 L 94 195 L 102 312 L 108 312 Q 115 312 115 305 L 109 190 L 106 150 L 109 95 L 123 180 L 126 200 Q 131 200 129 180 L 115 70 Q 100 70 96 62 L 96 52 L 90 52 A 20 20 0 0 0 90 12 Z"
               fill="url(#bodyGrad)"
               stroke={c.accent + "44"}
               strokeWidth={1.5}
@@ -367,7 +382,11 @@ export default function BodyMap({ scores, c, lastVitals, sessions = [], profile 
               }}
               activeOpacity={0.7}
             >
-              <Text style={{ fontSize: 22 }}>{organ.emoji}</Text>
+              {organ.key === 'liver' ? (
+                <LiverIcon size={22} color="#a13c2f" style={{ marginVertical: 2 }} />
+              ) : (
+                <Text style={{ fontSize: 22 }}>{organ.emoji}</Text>
+              )}
               <Text style={[styles.horizontalOrganScore, { color: clr }]}>{data.score}%</Text>
               <Text style={[styles.horizontalOrganName, { color: c.text }]}>{organ.label}</Text>
               <View style={[styles.horizontalOrganBar, { backgroundColor: c.border }]}>
@@ -389,7 +408,11 @@ export default function BodyMap({ scores, c, lastVitals, sessions = [], profile 
               <ScrollView showsVerticalScrollIndicator={false} style={{ width: '100%' }} contentContainerStyle={{ paddingBottom: 24 }}>
                 {/* Header */}
                 <View style={styles.sheetHeader}>
-                  <Text style={styles.sheetEmoji}>{selected.emoji}</Text>
+                  {selected.key === 'liver' ? (
+                    <LiverIcon size={42} color="#a13c2f" />
+                  ) : (
+                    <Text style={styles.sheetEmoji}>{selected.emoji}</Text>
+                  )}
                   <View style={{ flex: 1, marginLeft: 12 }}>
                     <Text style={[styles.sheetTitle, { color: c.text }]}>{selected.label} Diagnostics</Text>
                     <Text style={{ color: c.sub, fontSize: 12 }}>System: {selected.detail}</Text>

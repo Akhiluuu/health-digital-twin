@@ -14,6 +14,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import Svg, { Path } from 'react-native-svg';
 
 
 import { useBiogearsTwin } from '../../context/BiogearsTwinContext';
@@ -230,12 +231,27 @@ function VitalCard({ label, value, unit, icon, color, normal, c: themeC }: any) 
   );
 }
 
+const LiverIcon = ({ size, color, style }: { size: number; color: string; style?: any }) => (
+  <View style={style}>
+    <Svg width={size} height={size} viewBox="0 0 100 100">
+      <Path
+        d="M89.38,27.894c-4.961-1.701-10.136-2.604-15.381-2.684l-13.64-0.206c-0.496-0.131-2.139-0.618-7.255-2.385 C48.071,20.881,42.821,20,37.5,20C19.58,20,5,34.58,5,52.5v0.412l1.47,6.617c0.683,3.073,1.03,6.229,1.03,9.379 C7.5,75.024,12.476,80,18.592,80c2.59,0,5.112-0.913,7.101-2.571l11.002-9.168c0.936-0.781,1.998-1.372,3.157-1.758l7.281-2.427 c3.179-1.06,5.918-2.973,7.969-5.523c5.153,2.092,11.208,1.862,16.179-0.625c8.156-4.078,15.364-9.601,21.422-16.417l0.197-0.221 C94.254,39.765,95,37.802,95,35.763C95,32.209,92.742,29.047,89.38,27.894z"
+        fill={color}
+      />
+    </Svg>
+  </View>
+);
+
 function OrganCard({ name, score, status, c: themeC }: any) {
   const clr = status === 'critical' ? '#ef4444' : status === 'warning' ? '#f59e0b' : '#10b981';
   const icons: Record<string, string> = { heart: '🫀', lungs: '🫁', gut: '🦠', brain: '🧠', liver: '🟤', legs: '🦵' };
   return (
     <View style={[ss.organCard, { backgroundColor: themeC?.card ?? '#0f172a', borderColor: themeC?.border ?? '#1e293b' }]}>
-      <Text style={{ fontSize: 24 }}>{icons[name] ?? '🔬'}</Text>
+      {name === 'liver' ? (
+        <LiverIcon size={24} color="#a13c2f" style={{ marginVertical: 2 }} />
+      ) : (
+        <Text style={{ fontSize: 24 }}>{icons[name] ?? '🔬'}</Text>
+      )}
       <Text style={[ss.organScore, { color: clr }]}>{score}%</Text>
       <Text style={[ss.organName, { color: themeC?.sub ?? '#94a3b8' }]}>{name.charAt(0).toUpperCase() + name.slice(1)}</Text>
       <View style={[ss.organBar, { backgroundColor: themeC?.border ?? '#1e293b' }]}>

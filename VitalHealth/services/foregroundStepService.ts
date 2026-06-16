@@ -6,6 +6,7 @@
 
 import notifee, { AndroidImportance, EventType } from "@notifee/react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { Platform } from "react-native";
 
 export const CHANNEL_ID = "step_foreground";
 export const NOTIF_ID   = "step_foreground_notif";
@@ -16,38 +17,40 @@ export function registerStopTrackingCallback(cb: () => void) {
   stopTrackingCallback = cb;
 }
 
-// ── 1. Foreground Service handler — keeps process alive
-notifee.registerForegroundService(() => {
-  return new Promise(() => {
-    // This promise never resolves — the service runs until stopForegroundService()
-    console.log("🏃 Foreground step service keeper started");
+if (Platform.OS === "android") {
+  // ── 1. Foreground Service handler — keeps process alive
+  notifee.registerForegroundService(() => {
+    return new Promise(() => {
+      // This promise never resolves — the service runs until stopForegroundService()
+      console.log("🏃 Foreground step service keeper started");
+    });
   });
-});
 
-// ── 2. Background event handler — handles notification button presses
-notifee.onBackgroundEvent(async ({ type, detail }) => {
-  if (type === EventType.ACTION_PRESS) {
-    const actionId = detail.pressAction?.id;
+  // ── 2. Background event handler — handles notification button presses
+  notifee.onBackgroundEvent(async ({ type, detail }) => {
+    if (type === EventType.ACTION_PRESS) {
+      const actionId = detail.pressAction?.id;
 
-    if (actionId === "stop_tracking") {
-      console.log("⏹ Stop Tracking pressed from background");
-      if (stopTrackingCallback) {
-        stopTrackingCallback();
-      } else {
-        const activeUid = await AsyncStorage.getItem("vitalhealth_active_member_id") || "self";
-        const trackingKey = `step_is_tracking_v7_${activeUid}`;
-        await AsyncStorage.setItem(trackingKey, "0");
+      if (actionId === "stop_tracking") {
+        console.log("⏹ Stop Tracking pressed from background");
+        if (stopTrackingCallback) {
+          stopTrackingCallback();
+        } else {
+          const activeUid = await AsyncStorage.getItem("vitalhealth_active_member_id") || "self";
+          const trackingKey = `step_is_tracking_v7_${activeUid}`;
+          await AsyncStorage.setItem(trackingKey, "0");
+        }
+        // Stop the foreground service and dismiss the notification
+        await notifee.stopForegroundService().catch(() => {});
+        await notifee.cancelNotification(NOTIF_ID).catch(() => {});
       }
-      // Stop the foreground service and dismiss the notification
-      await notifee.stopForegroundService().catch(() => {});
-      await notifee.cancelNotification(NOTIF_ID).catch(() => {});
     }
-  }
 
-  if (type === EventType.PRESS) {
-    console.log("👆 Step notification tapped from background");
-  }
-});
+    if (type === EventType.PRESS) {
+      console.log("👆 Step notification tapped from background");
+    }
+  });
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // PUBLIC API

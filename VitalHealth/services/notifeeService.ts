@@ -10,6 +10,7 @@ import notifee, {
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { EventEmitter } from "eventemitter3";
 import { router } from "expo-router";
+import { Platform } from "react-native";
 
 import {
   markMedicineTakenByNotificationId,
@@ -69,17 +70,19 @@ export async function setupNotifee() {
     vibration: true,
   });
 
-  try {
-    const alreadyPrompted = await AsyncStorage.getItem("battery_opt_prompted");
-    if (!alreadyPrompted) {
-      const powerManagerInfo = await notifee.getPowerManagerInfo();
-      if (powerManagerInfo.activity) {
-        await notifee.openPowerManagerSettings();
-        await AsyncStorage.setItem("battery_opt_prompted", "true");
+  if (Platform.OS === "android") {
+    try {
+      const alreadyPrompted = await AsyncStorage.getItem("battery_opt_prompted");
+      if (!alreadyPrompted) {
+        const powerManagerInfo = await notifee.getPowerManagerInfo();
+        if (powerManagerInfo.activity) {
+          await notifee.openPowerManagerSettings();
+          await AsyncStorage.setItem("battery_opt_prompted", "true");
+        }
       }
+    } catch (e) {
+      console.log("⚠️ Power manager settings unavailable:", e);
     }
-  } catch (e) {
-    console.log("⚠️ Power manager settings unavailable:", e);
   }
 
   // Schedule daily digital twin sync check-in reminder
