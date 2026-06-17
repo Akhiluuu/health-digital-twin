@@ -71,6 +71,9 @@ _FAILURE_STRINGS = (
     "Could not find",
     "unable to find",
     "Error reading",
+    "is not ready to process",
+    "initialize the engine",
+    "load a state",
 )
 
 
@@ -226,7 +229,7 @@ def run_biogears(scenario_path: str, user_id: str = "unknown") -> EngineResult:
 
         if timed_out:
             logger.error(f"⏰  [{user_id}] Engine TIMEOUT after {elapsed}s — killed.")
-            _write_log(log_path, output_lines + [f"[TIMEOUT after {elapsed}s]"])
+            _write_log(log_path, output_lines + [f"[TIMEOUT after {elapsed}s]"], user_id)
             return EngineResult(success=False, log_path=str(log_path), return_code=-1)
 
         proc.wait(timeout=10)
@@ -240,7 +243,7 @@ def run_biogears(scenario_path: str, user_id: str = "unknown") -> EngineResult:
         )
         success = (rc == 0) and not engine_failed
 
-        _write_log(log_path, output_lines)
+        _write_log(log_path, output_lines, user_id)
 
         logger.info("=" * 55)
         if success:
@@ -262,13 +265,32 @@ def run_biogears(scenario_path: str, user_id: str = "unknown") -> EngineResult:
 
     except Exception as e:
         logger.error(f"❌  [{user_id}] Engine launch exception: {e}")
-        _write_log(log_path, [f"[LAUNCH ERROR] {e}"])
+        _write_log(log_path, [f"[LAUNCH ERROR] {e}"], user_id)
         return EngineResult(success=False, log_path=str(log_path), return_code=-2)
 
 
-def _write_log(path: Path, lines: list):
+def _prune_old_logs(user_id: str) -> None:
+    """Keep only the 10 most recent logs for this user to save disk space."""
+    try:
+        logs = sorted(
+            LOGS_DIR.glob(f"engine_{user_id}_*.log"),
+            key=os.path.getmtime,
+            reverse=True
+        )
+        for old in logs[10:]:
+            try:
+                old.unlink()
+            except Exception:
+                pass
+    except Exception as e:
+        logger.warning(f"Failed to prune old logs: {e}")
+
+
+def _write_log(path: Path, lines: list, user_id: str = None):
     try:
         Path(path).write_text("\n".join(lines), encoding="utf-8")
+        if user_id:
+            _prune_old_logs(user_id)
     except Exception:
         pass  # Best-effort
 

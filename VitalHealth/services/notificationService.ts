@@ -205,18 +205,6 @@ if (notifee) {
     }
   });
 
-  // Background
-  notifee.onBackgroundEvent(async ({ type, detail }: any) => {
-    if (type === EventType.ACTION_PRESS) {
-      const actionId = detail.pressAction?.id;
-      console.log("🔔 Background Action:", actionId);
-
-      if (actionId === "HYDRATION_100") {
-        console.log("💧 Adding 100ml");
-        addWaterFromNotification(100);
-      }
-    }
-  });
 }
 
 export default notifee;

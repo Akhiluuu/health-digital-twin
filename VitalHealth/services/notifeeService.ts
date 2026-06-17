@@ -738,3 +738,96 @@ export function registerNotifeeForegroundHandler() {
     if (notifId) await notifee.cancelDisplayedNotification(notifId);
   });
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// UNIFIED BACKGROUND EVENT HANDLER
+// ─────────────────────────────────────────────────────────────────────────────
+if (Platform.OS === "android") {
+  notifee.onBackgroundEvent(async ({ type, detail }) => {
+    if (type !== EventType.ACTION_PRESS) return;
+
+    const action     = detail.pressAction?.id;
+    const notifId    = detail.notification?.id ?? "";
+    const data       = detail.notification?.data ?? {};
+    const medicineId = String(data.medicineId ?? "");
+
+    console.log("🔔 [notifeeService] Unified Background Action:", action, "notifId:", notifId, "data:", data);
+
+    if (action === "stop_tracking") {
+      console.log("⏹ Stop Tracking pressed from background");
+      const activeUid = await AsyncStorage.getItem("vitalhealth_active_member_id") || "self";
+      const trackingKey = `step_is_tracking_v7_${activeUid}`;
+      await AsyncStorage.setItem(trackingKey, "0");
+      await notifee.stopForegroundService().catch(() => {});
+      await notifee.cancelNotification("step_foreground_notif").catch(() => {});
+      return;
+    }
+
+    if (action === ACTION_MEDICINE_TAKEN) {
+      await handleMedicineTaken(notifId, medicineId);
+      await scheduleInactivityReminder().catch(() => {});
+      return;
+    }
+
+    if (action === ACTION_MEDICINE_SNOOZE) {
+      await snoozeMedicine(
+        detail.notification?.body || "Medicine reminder",
+        medicineId,
+        String(data.frequency ?? "daily"),
+        5
+      );
+      await notifee.cancelDisplayedNotification(notifId);
+      return;
+    }
+
+    if (
+      action === ACTION_WATER_100 ||
+      action === ACTION_WATER_150 ||
+      action === ACTION_WATER_200
+    ) {
+      const ml =
+        action === ACTION_WATER_100 ? 100
+        : action === ACTION_WATER_150 ? 150
+        : 200;
+      await saveWaterToStorage(ml);
+      try {
+        const { addWaterFromNotification } = await import("../context/HydrationContext");
+        await addWaterFromNotification(ml);
+      } catch {
+        console.log("💧 [BG] HydrationContext not loaded");
+      }
+      await scheduleHydrationReminder();
+      await scheduleInactivityReminder().catch(() => {});
+      await notifee.cancelDisplayedNotification(notifId);
+      return;
+    }
+
+    if (action === ACTION_WATER_SKIP) {
+      await scheduleHydrationReminder();
+      await notifee.cancelDisplayedNotification(notifId);
+      return;
+    }
+
+    if (action === ACTION_SYMPTOM_DONE) {
+      await cancelSymptomNotification();
+      await scheduleInactivityReminder().catch(() => {});
+      await notifee.cancelDisplayedNotification(notifId);
+      return;
+    }
+
+    if (action === "SYMPTOM_NO" && data?.symptomId) {
+      try {
+        const { stopSymptomTracking } = await import("./reminderEngine");
+        await stopSymptomTracking(Number(data.symptomId));
+        await notifee.cancelNotification(notifId);
+      } catch (e) {
+        console.log("❌ [BG] SYMPTOM_NO error:", e);
+      }
+      return;
+    }
+
+    if (notifId) {
+      await notifee.cancelDisplayedNotification(notifId).catch(() => {});
+    }
+  });
+}

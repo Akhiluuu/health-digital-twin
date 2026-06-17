@@ -28,6 +28,7 @@ import {
   updateForegroundNotification,
   registerStopTrackingCallback,
   listenForegroundServiceEvents,
+  stepEventEmitter,
 } from "../services/foregroundStepService";
 
 // ── Storage Keys Generator ───────────────────────────────────────────────────
@@ -289,6 +290,7 @@ export const StepProvider: React.FC<{
   // FLUSH loop
   // ─────────────────────────────────────────────────────────────────────────
   const startFlushLoop = useCallback(() => {
+    if (Platform.OS === "android") return;
     if (flushRef.current) clearInterval(flushRef.current);
     flushRef.current = setInterval(async () => {
       if (!dirtyRef.current) return;
@@ -314,6 +316,7 @@ export const StepProvider: React.FC<{
   }, []);
 
   const flushNow = useCallback(async () => {
+    if (Platform.OS === "android") return;
     dirtyRef.current = false;
     const currentSteps = stepsRef.current;
     await AsyncStorage.multiSet([
@@ -343,7 +346,12 @@ export const StepProvider: React.FC<{
       lastMoveTs: Date.now(),
       date: todayString(),
     }, isSwitched ? activeMemberId : undefined).catch(() => {});
-  }, [userKeys, isSwitched, activeMemberId]);
+
+    if (Platform.OS === "android" && isTrackingRef.current) {
+      const kcal = Math.round(stepsRef.current * 0.04 * (weightKg / 70));
+      updateForegroundNotification(stepsRef.current, kcal).catch(() => {});
+    }
+  }, [userKeys, isSwitched, activeMemberId, weightKg]);
 
   // ── Session clock ─────────────────────────────────────────────────────────
   const startClock = useCallback((elapsedMs = 0) => {
@@ -402,10 +410,8 @@ export const StepProvider: React.FC<{
   }, []);
 
   const subscribePedometer = useCallback(async (): Promise<boolean> => {
+    if (Platform.OS === "android") return false;
     try {
-      if (Platform.OS === "android") {
-        await (Pedometer as any).requestPermissionsAsync?.();
-      }
       const available = await Pedometer.isAvailableAsync();
       if (!available) return false;
 
@@ -445,6 +451,7 @@ export const StepProvider: React.FC<{
   }, [addSteps]);
 
   const subscribeAccelerometer = useCallback(() => {
+    if (Platform.OS === "android") return;
     accelSub.current?.remove();
     accelSub.current = null;
     detector.current.reset();
@@ -474,6 +481,13 @@ export const StepProvider: React.FC<{
     if (isTrackingRef.current) return;
 
     await notifee.requestPermission();
+    if (Platform.OS === "android") {
+      try {
+        await (Pedometer as any).requestPermissionsAsync?.();
+      } catch (e) {
+        console.warn("Failed to request Pedometer permissions:", e);
+      }
+    }
     const now = Date.now();
 
     // Query hardware pedometer before starting to set baseline correctly
@@ -678,6 +692,9 @@ export const StepProvider: React.FC<{
         await startBestSensor();
         startSedTimer();
         startFlushLoop();
+        if (Platform.OS === "android") {
+          await startForegroundStepService().catch(() => {});
+        }
       }
     };
 
@@ -767,6 +784,21 @@ export const StepProvider: React.FC<{
       unsubForeground();
     };
   }, [stopTracking]);
+
+  useEffect(() => {
+    if (Platform.OS !== "android") return;
+
+    const handleStepsUpdated = (newSteps: number) => {
+      stepsRef.current = newSteps;
+      setSteps(newSteps);
+    };
+
+    stepEventEmitter.on("stepsUpdated", handleStepsUpdated);
+
+    return () => {
+      stepEventEmitter.off("stepsUpdated", handleStepsUpdated);
+    };
+  }, []);
 
   return (
     <StepContext.Provider value={{

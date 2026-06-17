@@ -322,6 +322,48 @@ def _build_vitals_from_df(df: pd.DataFrame) -> dict:
         return {}
 
 
+def _check_state_file_validity(state_file: Path, user_id: str) -> None:
+    """
+    Checks if a twin state file exists and is not corrupted (i.e. size >= 100 KB).
+    If it is corrupted, attempts to auto-heal from the latest valid backup.
+    """
+    if not state_file.exists():
+        raise HTTPException(status_code=404, detail=f"Twin '{user_id}' not found.")
+
+    if state_file.stat().st_size < 102400:  # 100 KB (valid state file is ~1.9 MB)
+        logger.warning(
+            f"⚠️ [{user_id}] State file {state_file.name} is empty or corrupted "
+            f"(size={state_file.stat().st_size} B). Checking backups for auto-healing..."
+        )
+        
+        # Try to heal from backups
+        bak_dir = USER_STATES_DIR / "backups" / user_id
+        if bak_dir.exists():
+            backups = sorted(bak_dir.glob(f"{user_id}_*.xml"), key=os.path.getmtime, reverse=True)
+            # Filter for non-corrupted backups (size >= 100 KB) and ignore temporary presim backups
+            valid_backups = [
+                b for b in backups 
+                if "presim" not in b.name and b.stat().st_size >= 102400
+            ]
+            if valid_backups:
+                latest_valid = valid_backups[0]
+                try:
+                    shutil.copy2(str(latest_valid), str(state_file))
+                    logger.info(f"♻️ [{user_id}] Auto-healed state file from backup: {latest_valid.name}")
+                    return # Successfully healed!
+                except Exception as he_err:
+                    logger.error(f"❌ [{user_id}] Failed to copy backup for auto-healing: {he_err}")
+        
+        # If we couldn't heal it, raise the exception
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Twin '{user_id}' state file is corrupted or incomplete. "
+                "No valid backups found. Please re-register or recalibrate the user."
+            )
+        )
+
+
 def _run_batch_sync_blocking(user_id: str, events: list) -> dict:
     """Wrapper that acquires user lock to prevent overlapping jobs."""
     user_lock = engine_runner.get_user_lock(user_id)
@@ -350,9 +392,7 @@ def _run_batch_sync_blocking_impl(user_id: str, events: list) -> dict:
     _check_rate_limit(user_id)
 
     state_file = USER_STATES_DIR / f"{user_id}.xml"
-
-    if not state_file.exists():
-        raise HTTPException(status_code=404, detail=f"Twin '{user_id}' not found.")
+    _check_state_file_validity(state_file, user_id)
 
     event_dicts = [e if isinstance(e, dict) else e.dict() for e in events]
 
@@ -578,6 +618,13 @@ def _run_batch_sync_blocking_core(
         candidates = list(BIOGEARS_BIN_DIR.rglob(f"batch_{user_id}.xml"))
         updated_state_path = candidates[0] if candidates else None
     
+    # Verify that the state was successfully serialized and is not empty or corrupted.
+    if not updated_state_path or not Path(updated_state_path).exists() or Path(updated_state_path).stat().st_size < 102400:
+        raise HTTPException(
+            status_code=500,
+            detail="Simulation state serialization failed or output is corrupted. Check server logs."
+        )
+
     # ── Data-gap warning ──────────────────────────────────────────────────────────────
     # Use the meta.json engine_sim_time rather than the state file's mtime.
     # os.path.getmtime() drifts whenever any process touches the file (e.g. backup
@@ -591,12 +638,11 @@ def _run_batch_sync_blocking_core(
     except Exception:
         pass  # fall back to the mtime-based gap_seconds already computed above
 
-    if updated_state_path and Path(updated_state_path).exists():
-        try:
-            os.replace(str(updated_state_path), str(state_file))
-            logger.info("🔄 State synchronized safely.")
-        except Exception as e:
-            logger.warning(f"⚠️ State sync skipped: {e}")
+    try:
+        os.replace(str(updated_state_path), str(state_file))
+        logger.info("🔄 State synchronized safely.")
+    except Exception as e:
+        logger.warning(f"⚠️ State sync skipped: {e}")
 
     # ── Auto-backup state after every successful simulation ──────────────────
     try:
@@ -915,7 +961,7 @@ def _register_impl(data: RegistrationRequest):
         if engine_runner.run_biogears(path, user_id=data.user_id):
             target_file = BIOGEARS_BIN_DIR / f"{data.user_id}.xml"
             perm_state = USER_STATES_DIR / f"{data.user_id}.xml"
-            if target_file.exists():
+            if target_file.exists() and target_file.stat().st_size >= 102400:
                 shutil.copy2(str(target_file), str(perm_state))
                 os.remove(str(target_file))
 
@@ -1085,8 +1131,7 @@ def simulate_async(data: AsyncSyncRequest, background_tasks: BackgroundTasks):
     Job state is persisted to disk so it survives server reloads.
     """
     state_file = USER_STATES_DIR / f"{data.user_id}.xml"
-    if not state_file.exists():
-        raise HTTPException(status_code=404, detail=f"Twin '{data.user_id}' not found.")
+    _check_state_file_validity(state_file, data.user_id)
 
     # Prevent duplicate jobs: Check if user already has a running simulation
     with _jobs_lock:
@@ -1232,8 +1277,7 @@ async def predict_recovery(data: PredictRequest):
 
 def _predict_recovery_impl(data: PredictRequest):
     state_file = USER_STATES_DIR / f"{data.user_id}.xml"
-    if not state_file.exists():
-        raise HTTPException(status_code=404, detail=f"Twin '{data.user_id}' not found.")
+    _check_state_file_validity(state_file, data.user_id)
 
     path, run_id, _csv_prefix = scenario_builder.build_forecast_scenario(
         data.user_id, str(state_file), hours=data.hours
@@ -1477,8 +1521,7 @@ async def predict_whatif(data: WhatIfRequest):
 
 def _predict_whatif_impl(data: WhatIfRequest):
     state_file = USER_STATES_DIR / f"{data.user_id}.xml"
-    if not state_file.exists():
-        raise HTTPException(status_code=404, detail=f"Twin '{data.user_id}' not found.")
+    _check_state_file_validity(state_file, data.user_id)
 
     event_dict = data.event.dict()
     errors = sim_validator.validate_events([event_dict])
