@@ -69,6 +69,9 @@ export interface FamilyMember {
   profileImage?: string;
   inviteCode?: string;
   status?: "active" | "pending";
+  phone?: string;
+  isDependent?: boolean;
+  managedBy?: string;
   createdAt?: string;
   updatedAt?: string;
 }

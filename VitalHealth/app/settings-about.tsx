@@ -110,7 +110,7 @@ export default function About() {
         <FadeIn delay={80}>
           <Text style={[s.heroTitle, { color: c.text1 }]}>
             About{" "}
-            <Text style={{ color: c.accent }}>VitalTwin</Text>
+            <Text style={{ color: c.accent }}>VitalHealth</Text>
           </Text>
         </FadeIn>
 
@@ -217,7 +217,7 @@ export default function About() {
           <TouchableOpacity
             style={[s.ctaBtnOutline, { borderColor: c.border }]}
             activeOpacity={0.85}
-            onPress={() => Linking.openURL("mailto:hello@vitaltwin.ai")}
+            onPress={() => Linking.openURL("mailto:vitalhealth12026@gmail.com")}
           >
             <Text style={[s.ctaBtnOutlineText, { color: c.accent }]}>Contact the team</Text>
           </TouchableOpacity>
@@ -226,9 +226,9 @@ export default function About() {
         {/* ── FOOTER ───────────────────────────── */}
         <FadeIn delay={740}>
           <View style={[s.footer, { borderTopColor: c.border }]}>
-            <Text style={[s.footerBrand, { color: c.text1 }]}>⬡ VitalTwin</Text>
-            <Text style={[s.footerSub, { color: c.text3 }]}>Your intelligent health companion</Text>
-            <Text style={[s.footerCopy, { color: c.text3 }]}>© 2026 VitalTwin AI · All rights reserved</Text>
+            <Text style={[s.footerBrand, { color: c.text1 }]}>⬡ VitalHealth</Text>
+            <Text style={[s.footerSub, { color: c.text3 }]}>Your intelligent digital twin companion</Text>
+            <Text style={[s.footerCopy, { color: c.text3 }]}>© 2026 VitalHealth · All rights reserved</Text>
           </View>
         </FadeIn>
 

@@ -44,6 +44,7 @@ export type FamilyContextType = {
   switchToMember:   (memberUid: string)  => Promise<void>;
   switchToSelf:     ()                   => Promise<void>;
   updateActiveProfile: (newProfile: UserProfile) => Promise<void>;
+  reportLoading?: (key: string, loading: boolean) => void;
 };
 
 const FamilyContext = createContext<FamilyContextType | null>(null);
@@ -91,6 +92,7 @@ export const FamilyProvider = ({
   useEffect(() => {
     loadMembers();
     restoreSession();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   /* After members finish loading, if we were switched, re-fetch
@@ -273,7 +275,7 @@ export const FamilyProvider = ({
   const removeMember = async (id: string) => {
     try {
       const nid = normalizeId(id);
-      
+
       // 1. Unlink if linked member
       await unlinkFamilyMember(id);
 
@@ -294,7 +296,8 @@ export const FamilyProvider = ({
       }
 
       await loadMembers();
-      if (activeMemberId === nid) await switchToSelf();
+      // ✅ FIX: normalize activeMemberId before comparing so uid formats don't diverge
+      if (normalizeId(activeMemberId) === nid) await switchToSelf();
     } catch (e) {
       console.error("❌ FamilyContext removeMember error:", e);
     }
@@ -305,6 +308,57 @@ export const FamilyProvider = ({
 
   const refreshMembers = async () => { await loadMembers(); };
 
+  const [loadingStates, setLoadingStates] = useState<Record<string, boolean>>({});
+  const isSwitchingRef = useRef(false);
+  const lastSwitchTimeRef = useRef<number>(0);
+
+  const reportLoading = useCallback((key: string, loading: boolean) => {
+    setLoadingStates((prev) => {
+      if (prev[key] === loading) return prev;
+      return { ...prev, [key]: loading };
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!isSwitchLoading) return;
+
+    // Check if any reported context is currently loading
+    const anyLoading = Object.values(loadingStates).some((loading) => loading === true);
+
+    if (!anyLoading) {
+      const elapsed = Date.now() - lastSwitchTimeRef.current;
+      const remaining = Math.max(0, 300 - elapsed); // 300ms min animation time
+      const timer = setTimeout(() => {
+        setIsSwitchLoading(false);
+        isSwitchingRef.current = false;
+      }, remaining);
+      return () => clearTimeout(timer);
+    }
+  }, [loadingStates, isSwitchLoading]);
+
+  /* ── SWITCH BACK TO SELF ─────────────────────────────────────────
+     Defined BEFORE switchToMember so switchToMember can list it
+     in its useCallback dependency array without forward-ref issues.
+  */
+  const switchToSelf = useCallback(async () => {
+    console.log("🔄 Switching back to self");
+    lastSwitchTimeRef.current = Date.now();
+    setLoadingStates({
+      medicine: true,
+      symptoms: true,
+      hydration: true,
+    });
+    setIsSwitchLoading(true);
+    try {
+      setActiveMemberId("self");
+      setActiveProfile(selfProfileRef.current);
+      await AsyncStorage.setItem(ACTIVE_MEMBER_KEY, "self");
+    } catch (e) {
+      console.error("❌ switchToSelf error:", e);
+      setIsSwitchLoading(false);
+    }
+  }, []);
+
   /* ── SWITCH TO MEMBER ─────────────────────────────────────────
      Calls fetchProfile(uid) — same function ProfileContext uses —
      reads doc("users", uid) with full EMPTY_PROFILE safe merge.
@@ -313,14 +367,27 @@ export const FamilyProvider = ({
   */
   const switchToMember = useCallback(async (memberUid: string) => {
     if (!memberUid || memberUid === "self") return;
+
+    // ✅ Guard: reject concurrent calls synchronously
+    if (isSwitchingRef.current) {
+      console.log("[FamilyContext] switchToMember: already switching, ignoring duplicate call for:", memberUid);
+      return;
+    }
+
     if (activeMemberId === memberUid) {
       // Tapping active member again → switch back to self
       await switchToSelf();
       return;
     }
 
+    isSwitchingRef.current = true;
+    lastSwitchTimeRef.current = Date.now();
+    setLoadingStates({
+      medicine: true,
+      symptoms: true,
+      hydration: true,
+    });
     setIsSwitchLoading(true);
-    const start = Date.now();
     try {
       console.log("🔄 Switching profile to UID:", memberUid);
 
@@ -344,35 +411,11 @@ export const FamilyProvider = ({
       await AsyncStorage.setItem(ACTIVE_MEMBER_KEY, memberUid);
     } catch (e) {
       console.error("❌ switchToMember error:", e);
-    } finally {
-      // Enforce a minimum transition time of 1500ms so data contexts have time to register & fetch
-      const elapsed = Date.now() - start;
-      const delay = Math.max(0, 1500 - elapsed);
-      setTimeout(() => {
-        setIsSwitchLoading(false);
-      }, delay);
+      setIsSwitchLoading(false);
+      isSwitchingRef.current = false;
     }
-  }, [activeMemberId, members]);
+  }, [activeMemberId, members, switchToSelf]);
 
-  /* ── SWITCH BACK TO SELF ─────────────────────────────────── */
-  const switchToSelf = useCallback(async () => {
-    console.log("🔄 Switching back to self");
-    setIsSwitchLoading(true);
-    const start = Date.now();
-    try {
-      setActiveMemberId("self");
-      setActiveProfile(selfProfileRef.current);
-      await AsyncStorage.setItem(ACTIVE_MEMBER_KEY, "self");
-    } catch (e) {
-      console.error("❌ switchToSelf error:", e);
-    } finally {
-      const elapsed = Date.now() - start;
-      const delay = Math.max(0, 1500 - elapsed);
-      setTimeout(() => {
-        setIsSwitchLoading(false);
-      }, delay);
-    }
-  }, []);
 
   /* ── UPDATE ACTIVE PROFILE ────────────────────────────────── */
   const updateActiveProfile = useCallback(async (newProfile: UserProfile) => {
@@ -430,6 +473,7 @@ export const FamilyProvider = ({
       addMember, removeMember, getMemberById, refreshMembers,
       activeMemberId, activeProfile, isSwitched, isSwitchLoading,
       activeMemberInfo, switchToMember, switchToSelf, updateActiveProfile,
+      reportLoading,
     }}>
       {children}
     </FamilyContext.Provider>

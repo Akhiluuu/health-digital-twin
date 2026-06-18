@@ -56,6 +56,12 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
   const [profile,  setProfile]  = useState<UserProfile>(EMPTY_PROFILE);
   const [isLoaded, setIsLoaded] = useState(false);
   const isMountedRef = useRef(true);
+  // Always keep a ref to the latest profile so async callbacks (updateProfile)
+  // compose on the real current state even under rapid sequential calls.
+  const profileRef = useRef<UserProfile>(EMPTY_PROFILE);
+  useEffect(() => {
+    profileRef.current = profile;
+  }, [profile]);
   useEffect(() => {
     return () => { isMountedRef.current = false; };
   }, []);
@@ -143,14 +149,25 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const updateProfileFn = useCallback(async (partial: Partial<UserProfile>) => {
-    const updated = { ...profile, ...partial };
+    // ✅ FIX: Use profileRef.current (always fresh) instead of `profile` from
+    // closure. This prevents rapid sequential calls from clobbering each other
+    // because `profile` in a closure captures a snapshot that may already be stale.
+    const updated = { ...profileRef.current, ...partial };
     setProfile(updated);
+    profileRef.current = updated;
     await AsyncStorage.setItem("userProfile", JSON.stringify(updated));
     await firebaseUpdate(partial);
-  }, [profile]);
+  }, []); // no deps — reads from profileRef, not the stale `profile` closure
 
   const resetProfile = useCallback(async () => {
     setProfile(EMPTY_PROFILE);
+    // Also clear the AsyncStorage cache so the empty profile persists
+    // across app restarts (otherwise the old profile reloads from cache).
+    try {
+      await AsyncStorage.removeItem("userProfile");
+    } catch (e) {
+      console.log("⚠️ resetProfile: failed to clear AsyncStorage cache:", e);
+    }
     console.log("🔄 Profile reset");
   }, []);
 

@@ -182,7 +182,6 @@ function enqueueFirebaseSync(steps: number, goal: number, activeUid: string) {
   if (firebaseSyncTimeout) return;
 
   firebaseSyncTimeout = setTimeout(async () => {
-    firebaseSyncTimeout = null;
     try {
       console.log(`[foregroundStepService] Syncing background steps to Firestore: ${steps}`);
       await syncStepsData({
@@ -194,6 +193,8 @@ function enqueueFirebaseSync(steps: number, goal: number, activeUid: string) {
       }, activeUid !== "self" ? activeUid : undefined);
     } catch (e) {
       console.warn("Failed to sync steps in background service:", e);
+    } finally {
+      firebaseSyncTimeout = null;
     }
   }, 5000); // Sync every 5 seconds
 }
@@ -282,9 +283,15 @@ if (Platform.OS === "android") {
     return new Promise<void>(async (resolve) => {
       resolveServicePromise = resolve;
       console.log("🏃 Foreground step service keeper started");
-      
-      const activeUid = await AsyncStorage.getItem("vitalhealth_active_member_id") || "self";
-      await startBackgroundSensorTracking(activeUid);
+      // ✅ FIX: The foreground step service is ALWAYS for the logged-in user (self).
+      // Reading activeMemberId here was wrong — if the user switched to a family member
+      // then killed the app, the service would restart tracking under the family uid,
+      // crediting steps to a different profile. We use auth.currentUser?.uid as the
+      // self-uid. If auth hasn't resolved yet, we fall back to "self" which maps to
+      // the logged-in user's keys once StepContext initialises and calls startTracking.
+      const { auth: _auth } = await import("./firebase");
+      const selfUid = _auth.currentUser?.uid || "self";
+      await startBackgroundSensorTracking(selfUid);
     });
   });
 }
@@ -296,7 +303,12 @@ if (Platform.OS === "android") {
 // ── Start the foreground service ──────────────────────────────────────────────
 export async function startForegroundStepService(): Promise<void> {
   try {
-    const activeUid = await AsyncStorage.getItem("vitalhealth_active_member_id") || "self";
+    // ✅ FIX: Always start tracking for the logged-in user (self), not whoever
+    // was the last activeMemberId. Step counting is personal — family members
+    // have their own devices. Reading activeMemberId here caused step data
+    // to be credited to the family member's profile on service restart.
+    const { auth: _auth } = await import("./firebase");
+    const activeUid = _auth.currentUser?.uid || "self";
     
     await notifee.createChannel({
       id:         CHANNEL_ID,

@@ -707,12 +707,12 @@ export function registerNotifeeForegroundHandler() {
         action === ACTION_WATER_100 ? 100
         : action === ACTION_WATER_150 ? 150
         : 200;
-      await saveWaterToStorage(ml);
       try {
         const { addWaterFromNotification } = await import("../context/HydrationContext");
         await addWaterFromNotification(ml);
-      } catch {
-        console.log("💧 HydrationContext not ready — AsyncStorage updated");
+      } catch (err) {
+        console.log("💧 HydrationContext import failed, writing directly to storage:", err);
+        await saveWaterToStorage(ml);
       }
       await scheduleHydrationReminder();
       await scheduleInactivityReminder().catch(() => {});
@@ -754,9 +754,14 @@ if (Platform.OS === "android") {
     console.log("🔔 [notifeeService] Unified Background Action:", action, "notifId:", notifId, "data:", data);
 
     if (action === "stop_tracking") {
-      console.log("⏹ Stop Tracking pressed from background");
-      const activeUid = await AsyncStorage.getItem("vitalhealth_active_member_id") || "self";
-      const trackingKey = `step_is_tracking_v7_${activeUid}`;
+      console.log("\u23f9 Stop Tracking pressed from background");
+      // \u2705 FIX: Steps are ALWAYS tracked for the logged-in user (self), never for a
+      // switched family member. Reading activeMemberId here caused the stop signal
+      // to write to the wrong uid if the user had switched profiles before killing the app.
+      // Use auth.currentUser uid as the canonical self-uid for the tracking key.
+      const { auth: _auth } = await import("./firebase");
+      const selfUid = _auth.currentUser?.uid || "self";
+      const trackingKey = `step_is_tracking_v7_${selfUid}`;
       await AsyncStorage.setItem(trackingKey, "0");
       await notifee.stopForegroundService().catch(() => {});
       await notifee.cancelNotification("step_foreground_notif").catch(() => {});
@@ -789,12 +794,12 @@ if (Platform.OS === "android") {
         action === ACTION_WATER_100 ? 100
         : action === ACTION_WATER_150 ? 150
         : 200;
-      await saveWaterToStorage(ml);
       try {
         const { addWaterFromNotification } = await import("../context/HydrationContext");
         await addWaterFromNotification(ml);
-      } catch {
-        console.log("💧 [BG] HydrationContext not loaded");
+      } catch (err) {
+        console.log("💧 [BG] HydrationContext import failed, writing directly to storage:", err);
+        await saveWaterToStorage(ml);
       }
       await scheduleHydrationReminder();
       await scheduleInactivityReminder().catch(() => {});

@@ -9,7 +9,7 @@ import React, {
   useRef,
   useState,
 } from 'react';
-import { Alert } from 'react-native';
+import { Alert, AppState } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useProfile } from './ProfileContext';
 import { useFamily } from './FamilyContext';
@@ -71,6 +71,8 @@ export interface BiogearsTwinContextValue {
   simulationProgress: string;
   simulationError: string | null;
   simulationStartTime: number | null;
+  calibrationJustSucceeded: boolean;
+  dismissCalibrationSuccess: () => void;
 
   // Twin identity
   twinUserId: string | null;
@@ -123,6 +125,7 @@ export interface BiogearsTwinContextValue {
   editingRoutineId: string | null;
   setEditingRoutineId: (id: string | null) => void;
   restoreDefaultRoutine: () => Promise<void>;
+  copyPrimaryDefaultRoutine: () => Promise<void>;
 
   // Substances Library
   substances: Record<string, string[]>;
@@ -216,6 +219,58 @@ function wallTimeToTimestamp(wallTime: string, anchorDate?: Date): number {
 }
 
 // ─── Event Fingerprinting & Conflict Detection ────────────────────────────────
+
+const parseAge = (dob?: any) => {
+  if (!dob || typeof dob !== 'string') return 30;
+
+  // Format 1: YYYY-MM-DD
+  if (dob.includes("-")) {
+    const parts = dob.split("-");
+    if (parts.length === 3) {
+      const year = parseInt(parts[0]);
+      const month = parseInt(parts[1]) - 1;
+      const day = parseInt(parts[2]);
+      const dbDate = new Date(year, month, day);
+      if (!isNaN(dbDate.getTime())) {
+        return Math.abs(new Date(Date.now() - dbDate.getTime()).getUTCFullYear() - 1970);
+      }
+    }
+  }
+
+  // Format 2: DD/MM/YYYY
+  if (dob.includes("/")) {
+    const parts = dob.split("/");
+    if (parts.length === 3) {
+      const year = parts[2].length === 2 ? parseInt("20" + parts[2]) : parseInt(parts[2]);
+      const month = parseInt(parts[1]) - 1;
+      const day = parseInt(parts[0]);
+      const dbDate = new Date(year, month, day);
+      if (!isNaN(dbDate.getTime())) {
+        return Math.abs(new Date(Date.now() - dbDate.getTime()).getUTCFullYear() - 1970);
+      }
+    }
+  }
+
+  // Fallback to standard javascript Date parsing
+  const parsed = Date.parse(dob);
+  if (!isNaN(parsed)) {
+    return Math.abs(new Date(Date.now() - parsed).getUTCFullYear() - 1970);
+  }
+
+  return 30;
+};
+
+const parseKg = (weight?: any) => {
+  if (!weight) return 70.0;
+  const match = String(weight).match(/\d+(\.\d+)?/);
+  return match ? parseFloat(match[0]) : 70.0;
+};
+
+const parseCm = (height?: any) => {
+  if (!height) return 170.0;
+  const match = String(height).match(/\d+(\.\d+)?/);
+  return match ? parseFloat(match[0]) : 170.0;
+};
 
 /**
  * Produces a deterministic fingerprint for an event so near-duplicate events
@@ -348,6 +403,7 @@ function computeLocalCaloricBalanceFallback(profile: any, todayEvents: RoutineEv
 
 export function BiogearsTwinProvider({ children }: { children: React.ReactNode }) {
   const { activeProfile: profile, activeMemberId, isSwitched } = useFamily();
+  const { profile: selfProfile } = useProfile();
   const { steps } = useSteps();
 
   // Derive userId from profile: use Firebase UID stored in profile, or firstName+lastName slug
@@ -367,6 +423,8 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
   const [simulationProgress, setSimulationProgress] = useState('');
   const [simulationError, setSimulationError] = useState<string | null>(null);
   const [simulationStartTime, setSimulationStartTime] = useState<number | null>(null);
+  const [calibrationJustSucceeded, setCalibrationJustSucceeded] = useState(false);
+  const isRegisteringRef = useRef(false);
 
   const [lastVitals, setLastVitals] = useState<BiogearsVitals | null>(null);
   const [lastAnomalies, setLastAnomalies] = useState<any[]>([]);
@@ -411,6 +469,7 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
   // ── Substances Library ────────────────────────────────────────────────────
 
   const substanceFetchingRef = useRef(false);
+  const isRecalibratingRef = useRef(false);
 
   const refreshSubstances = useCallback(async () => {
     // Guard: don't fire a second request if one is already in-flight
@@ -429,33 +488,40 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
 
-  // ── Recheck twin status on server ─────────────────────────────────────────
-
-  const recheckTwinStatus = useCallback(async () => {
-    if (!twinUserId) { setTwinStatus('unregistered'); return; }
-    setTwinStatus('checking');
-    try {
-      await BiogearsAPI.getTwinProfile(twinUserId);
-      setTwinStatus('ready');
-      setTwinStatusError(null);
-    } catch (err: any) {
-      if (err.statusCode === 404) {
-        setTwinStatus('unregistered');
-      } else {
-        // Server unreachable — use persisted flag as offline fallback
-        // so previously-calibrated users still see "Calibrated" status
-        if (profile?.biogears_registered) {
-          setTwinStatus('ready');
-          setTwinStatusError(null);
-        } else {
-          setTwinStatusError(err.message || 'Cannot reach BioGears server');
-          setTwinStatus('error');
-        }
-      }
-    }
-  }, [twinUserId, profile?.biogears_registered]);
+  // ── Recheck twin status on server (defined below registerTwin to avoid TDZ) ──
 
   // ── Load persisted data on mount ─────────────────────────────────────────
+
+  // Clear state instantly on user change to prevent old profile routines/vitals from showing
+  useEffect(() => {
+    setTwinStatus('checking');
+    setTwinStatusError(null);
+    setIsTwinRegistered(false);
+    setLastVitals(null);
+    setLastAnomalies([]);
+    setLastInteractionWarnings([]);
+    setLastSessionId(null);
+    setLastAiInsights([]);
+    setLastAiInsightsText("");
+    setSavedRoutines([]);
+    setSessions([]);
+    setTodayEvents([]);
+    setOrganScores(null);
+    setVitalsTrends(null);
+    setCvdRisk(null);
+    setRecoveryReadiness(null);
+    setWeeklySummary(null);
+    setHealthScore(null);
+    setBodyMetrics(null);
+    setCaloricBalance(null);
+    setTodayMacros({ carbs: 0, protein: 0, fat: 0, calories: 0 });
+    setSubstances({});
+    setPendingConflicts([]);
+    setPendingConflictResolver(null);
+    setSimulationStatus("idle");
+    setSimulationError(null);
+    setIsTwinLoading(true);
+  }, [twinUserId]);
 
   useEffect(() => {
     // Guard 1: skip if twinUserId is not yet resolved.
@@ -567,8 +633,16 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
       if (active) resumeActiveJob();
     }, 200);
 
+    const appStateSub = AppState.addEventListener('change', (nextAppState) => {
+      if (nextAppState === 'active') {
+        console.log('[BiogearsTwin] App foregrounded. Resuming/checking active job...');
+        resumeActiveJobRef.current();
+      }
+    });
+
     return () => {
       active = false;
+      appStateSub.remove();
       if (initDebounceRef.current) clearTimeout(initDebounceRef.current);
       if (progressTickRef.current) {
         clearInterval(progressTickRef.current);
@@ -604,37 +678,60 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
       const jobId = await AsyncStorage.getItem('biogears_active_job');
       if (!jobId) return;
       
+      const jobUserId = await AsyncStorage.getItem('biogears_active_job_user_id') || twinUserId || '';
+      const jobOwnerUid = await AsyncStorage.getItem('biogears_active_job_owner_uid') || firestoreOwnerUid || '';
+      
       const statusRes = await BiogearsAPI.getJobStatus(jobId);
+      const isCurrentActive = jobUserId === twinUserId;
+      
       if (statusRes.status === 'running' || statusRes.status === 'pending') {
-        console.log(`[BiogearsTwin] Resuming active job: ${jobId}`);
-        setSimulationStatus('running');
+        console.log(`[BiogearsTwin] Resuming active job: ${jobId} for user: ${jobUserId}`);
         
-        const startTimeStr = await AsyncStorage.getItem('biogears_active_job_start_time');
-        const startTime = startTimeStr ? parseInt(startTimeStr, 10) : Date.now();
-        setSimulationStartTime(startTime);
-        simStartRef.current = startTime;
-        
-        setSimulationProgress('BioGears engine initialising...');
-        
-        if (progressTickRef.current) {
-          clearInterval(progressTickRef.current);
+        if (isCurrentActive) {
+          setSimulationStatus('running');
+          
+          const startTimeStr = await AsyncStorage.getItem('biogears_active_job_start_time');
+          const startTime = startTimeStr ? parseInt(startTimeStr, 10) : Date.now();
+          setSimulationStartTime(startTime);
+          simStartRef.current = startTime;
+          
+          setSimulationProgress('BioGears engine initialising...');
+          
+          if (progressTickRef.current) {
+            clearInterval(progressTickRef.current);
+          }
+          
+          progressTickRef.current = setInterval(() => {
+            const elapsed = Math.round((Date.now() - (simStartRef.current ?? Date.now())) / 1000);
+            const mins = Math.floor(elapsed / 60);
+            const secs = elapsed % 60;
+            const timeStr = mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
+            setSimulationProgress(`BioGears computing physiology... (${timeStr} elapsed)`);
+          }, 5000);
         }
-        
-        progressTickRef.current = setInterval(() => {
-          const elapsed = Math.round((Date.now() - (simStartRef.current ?? Date.now())) / 1000);
-          const mins = Math.floor(elapsed / 60);
-          const secs = elapsed % 60;
-          const timeStr = mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
-          setSimulationProgress(`BioGears computing physiology... (${timeStr} elapsed)`);
-        }, 5000);
 
         const result = await BiogearsAPI.pollUntilDone(jobId, 3000, 43_200_000);
-        await finishSimulationSuccess(result);
+        await finishSimulationSuccess(result, jobUserId, jobOwnerUid);
+      } else if (statusRes.status === 'done') {
+        console.log(`[BiogearsTwin] Active job ${jobId} finished while app was backgrounded/closed. Processing results.`);
+        await finishSimulationSuccess(statusRes.result, jobUserId, jobOwnerUid);
       } else {
+        console.log(`[BiogearsTwin] Active job ${jobId} status is ${statusRes.status}. Clearing active job.`);
         await AsyncStorage.removeItem('biogears_active_job');
         await AsyncStorage.removeItem('biogears_active_job_start_time');
+        await AsyncStorage.removeItem('biogears_active_job_user_id');
+        await AsyncStorage.removeItem('biogears_active_job_owner_uid');
+        
+        if (isCurrentActive) {
+          if (statusRes.status === 'failed') {
+            setSimulationStatus('failed');
+            setSimulationError(statusRes.error || 'Simulation failed');
+          } else {
+            setSimulationStatus('idle');
+          }
+        }
       }
-    } catch (err) {
+    } catch (err: any) {
       console.log('Failed to resume active job:', err);
       if (progressTickRef.current) {
         clearInterval(progressTickRef.current);
@@ -642,13 +739,26 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
       }
       simStartRef.current = null;
       setSimulationStartTime(null);
-      setSimulationStatus('idle');
+      
+      const jobUserId = await AsyncStorage.getItem('biogears_active_job_user_id') || twinUserId || '';
+      const isCurrentActive = jobUserId === twinUserId;
+      if (isCurrentActive) {
+        setSimulationStatus('idle');
+      }
+      
       await AsyncStorage.removeItem('biogears_active_job');
       await AsyncStorage.removeItem('biogears_active_job_start_time');
+      await AsyncStorage.removeItem('biogears_active_job_user_id');
+      await AsyncStorage.removeItem('biogears_active_job_owner_uid');
     }
   };
 
-  const finishSimulationSuccess = async (result: any) => {
+  const resumeActiveJobRef = useRef(resumeActiveJob);
+  useEffect(() => {
+    resumeActiveJobRef.current = resumeActiveJob;
+  });
+
+  const finishSimulationSuccess = async (result: any, jobUserId?: string, jobOwnerUid?: string) => {
     if (!result) {
       console.error('[BiogearsTwin] finishSimulationSuccess called with null result');
       setSimulationStatus('failed');
@@ -659,82 +769,110 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
     await AsyncStorage.setItem('@last_simulated_date', todayStr);
     await scheduleDailyLogReminder();
 
-    setLastVitals(result.vitals || null);
-    setLastAnomalies(Array.isArray(result.anomalies) ? result.anomalies : []);
-    setLastInteractionWarnings(Array.isArray(result.interaction_warnings) ? result.interaction_warnings : []);
+    const targetUserId = jobUserId || twinUserId;
+    const targetOwnerUid = jobOwnerUid || firestoreOwnerUid;
+    const isCurrentActive = targetUserId === twinUserId;
+
+    if (isCurrentActive) {
+      setLastVitals(result.vitals || null);
+      setLastAnomalies(Array.isArray(result.anomalies) ? result.anomalies : []);
+      setLastInteractionWarnings(Array.isArray(result.interaction_warnings) ? result.interaction_warnings : []);
+    }
 
     const sessionId = new Date().toISOString().replace(/[:.]/g, '-');
-    await saveSimulationResult(
-      twinUserId!,
-      sessionId,
-      result.vitals,
-      result.anomalies || []
-    ).catch(err => console.warn('[BiogearsTwin] Local save failed (non-fatal):', err));
+    if (targetUserId) {
+      await saveSimulationResult(
+        targetUserId,
+        sessionId,
+        result.vitals,
+        result.anomalies || []
+      ).catch(err => console.warn('[BiogearsTwin] Local save failed (non-fatal):', err));
+    }
 
-    setLastSessionId(sessionId);
+    if (isCurrentActive) {
+      setLastSessionId(sessionId);
+    }
 
     // Generate quick fallback insights immediately (shown while AI loads)
     const fallbackInsights = generateInsights(result);
-    setLastAiInsights(fallbackInsights);
-    setLastAiInsightsText('');
+    if (isCurrentActive) {
+      setLastAiInsights(fallbackInsights);
+      setLastAiInsightsText('');
 
-    // Async: fetch richer AI insights from the healthbot server
-    (async () => {
-      try {
-        const storedIp   = await AsyncStorage.getItem(AI_SERVER_URL_KEY) || '';
-        const storedPort = await AsyncStorage.getItem(AI_SERVER_PORT_KEY) || '8000';
-        if (!storedIp) return;   // AI server not configured — silently skip
+      // Async: fetch richer AI insights from the healthbot server
+      (async () => {
+        try {
+          const storedIp   = await AsyncStorage.getItem(AI_SERVER_URL_KEY) || '';
+          const storedPort = await AsyncStorage.getItem(AI_SERVER_PORT_KEY) || '8000';
+          if (!storedIp) return;   // AI server not configured — silently skip
 
-        const baseUrl = storedIp.startsWith('http') ? storedIp : `http://${storedIp}:${storedPort}`;
-        const eventsLabel = todayEvents
-          .map(e => e.displayLabel)
-          .filter(Boolean)
-          .slice(0, 5)
-          .join(', ');
+          const baseUrl = storedIp.startsWith('http') ? storedIp : `http://${storedIp}:${storedPort}`;
+          const eventsLabel = todayEvents
+            .map(e => e.displayLabel)
+            .filter(Boolean)
+            .slice(0, 5)
+            .join(', ');
 
-        setAiInsightsLoading(true);
-        const res = await fetch(`${baseUrl}/biogears-insights`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            vitals:               result.vitals || {},
-            anomalies:            result.anomalies || [],
-            has_anomaly:          result.has_anomaly || false,
-            has_drug_interaction: result.has_drug_interaction || false,
-            interaction_warnings: result.interaction_warnings || [],
-            data_gap_warning:     result.data_gap_warning || null,
-            events_summary:       eventsLabel || null,
-          }),
-        });
-        if (res.ok) {
-          const data = await res.json();
-          if (data.insights_text) setLastAiInsightsText(data.insights_text);
-          if (data.bullet_points?.length > 0) setLastAiInsights(data.bullet_points);
+          setAiInsightsLoading(true);
+          const res = await fetch(`${baseUrl}/biogears-insights`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              vitals:               result.vitals || {},
+              anomalies:            result.anomalies || [],
+              has_anomaly:          result.has_anomaly || false,
+              has_drug_interaction: result.has_drug_interaction || false,
+              interaction_warnings: result.interaction_warnings || [],
+              data_gap_warning:     result.data_gap_warning || null,
+              events_summary:       eventsLabel || null,
+            }),
+          });
+          if (res.ok) {
+            const data = await res.json();
+            if (data.insights_text) setLastAiInsightsText(data.insights_text);
+            if (data.bullet_points?.length > 0) setLastAiInsights(data.bullet_points);
+          }
+        } catch (_e) {
+          // Silently fall back to hardcoded insights
+        } finally {
+          setAiInsightsLoading(false);
         }
-      } catch (_e) {
-        // Silently fall back to hardcoded insights
-      } finally {
-        setAiInsightsLoading(false);
-      }
-    })();
+      })();
+    }
+
+    let jobEvents: RoutineEvent[] = [];
+    if (isCurrentActive) {
+      jobEvents = todayEvents;
+    } else if (targetUserId) {
+      try {
+        const raw = await AsyncStorage.getItem(TODAY_EVENTS_KEY(targetUserId));
+        if (raw) jobEvents = JSON.parse(raw);
+      } catch {}
+    }
 
     const sessionMeta: LocalSessionMeta = {
       session_id: sessionId,
-      name: simulationName || `Simulation ${new Date().toLocaleDateString('en-IN')}`,
+      name: (isCurrentActive ? simulationName : '') || `Simulation ${new Date().toLocaleDateString('en-IN')}`,
       timestamp: new Date().toISOString(),
       vitals_snapshot: result.vitals,
       has_anomaly: result.has_anomaly,
-      events: todayEvents,
-      event_count: todayEvents.length,
+      events: jobEvents,
+      event_count: jobEvents.length,
       ai_insights: fallbackInsights,
-
     };
-    await BiogearsAPI.saveSessionMeta(twinUserId!, sessionMeta, firestoreOwnerUid);
-    setSessions(prev => [sessionMeta, ...prev]);
 
-    setSimulationStatus('done');
-    setSimulationProgress('Simulation complete!');
-    setSimulationName('');
+    if (targetUserId) {
+      await BiogearsAPI.saveSessionMeta(targetUserId, sessionMeta, targetOwnerUid);
+    }
+
+    if (isCurrentActive) {
+      setSessions(prev => [sessionMeta, ...prev]);
+      setSimulationStatus('done');
+      setSimulationProgress('Simulation complete!');
+      setSimulationName('');
+      setTodayEvents([]);
+    }
+
     // Stop progress ticker
     if (progressTickRef.current) {
       clearInterval(progressTickRef.current);
@@ -743,14 +881,19 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
     simStartRef.current = null;
     setSimulationStartTime(null);
     await AsyncStorage.removeItem('biogears_active_job_start_time');
-    setTodayEvents([]);
-    if (twinUserId) {
-      await AsyncStorage.removeItem(TODAY_EVENTS_KEY(twinUserId));
-      await BiogearsAPI.syncPendingEvents(twinUserId, [], firestoreOwnerUid).catch(() => {});
+    await AsyncStorage.removeItem('biogears_active_job');
+    await AsyncStorage.removeItem('biogears_active_job_user_id');
+    await AsyncStorage.removeItem('biogears_active_job_owner_uid');
+
+    if (targetUserId) {
+      await AsyncStorage.removeItem(TODAY_EVENTS_KEY(targetUserId));
+      await BiogearsAPI.syncPendingEvents(targetUserId, [], targetOwnerUid).catch(() => {});
     }
 
-    const updatedSessions = await refreshSessions();
-    await refreshAnalytics(true, updatedSessions);
+    if (isCurrentActive) {
+      const updatedSessions = await refreshSessions();
+      await refreshAnalytics(true, updatedSessions);
+    }
     await scheduleInactivityReminder().catch(() => {});
   };
 
@@ -761,10 +904,11 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
       if (raw) {
         const stored = JSON.parse(raw) as RoutineEvent[];
         // Only keep today's events (don't carry over from yesterday)
-        const todayStr = new Date().toDateString();
+        // ✅ FIX: Use ISO date comparison (locale-safe). toDateString() can differ by locale.
+        const todayStr = new Date().toISOString().split('T')[0];
         const fresh = stored.filter(e => {
           if (!e.timestamp) return false;
-          return new Date(e.timestamp * 1000).toDateString() === todayStr;
+          return new Date(e.timestamp * 1000).toISOString().split('T')[0] === todayStr;
         });
         setTodayEvents(fresh);
       }
@@ -794,7 +938,7 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
         if (profile && (profile as any).habits) {
           habits = (profile as any).habits;
           console.log('[BiogearsTwin] Found habits on profile from Firestore');
-        } else {
+        } else if (!isSwitched) {
           // 2. Fallback to AsyncStorage for offline / new onboarding completions
           const user = auth.currentUser;
           const habitsKey = user ? `@onboarding_habits_${user.uid}` : null;
@@ -1179,7 +1323,9 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
         activeTrends = getVitalsTrendsFallback(targetSessions);
       }
 
-      if (organs.status === 'fulfilled') {
+      const hasValidOrgans = organs.status === 'fulfilled' && organs.value && !organs.value.error && organs.value.scores;
+
+      if (hasValidOrgans) {
         setOrganScores(organs.value);
       } else {
         setOrganScores(fallbackOrgans);
@@ -1200,7 +1346,7 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
 
       // Cache all resolved analytics to Firestore
       const cacheObj = {
-        organScores: organs.status === 'fulfilled' ? organs.value : fallbackOrgans,
+        organScores: hasValidOrgans ? organs.value : fallbackOrgans,
         vitalsTrends: activeTrends,
         cvdRisk: cvd.status === 'fulfilled' ? cvd.value : cvdRisk,
         recoveryReadiness: recovery.status === 'fulfilled' ? recovery.value : recoveryReadiness,
@@ -1369,10 +1515,12 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
     });
   }, [twinUserId]);
 
+  // ✅ FIX: Include twinUserId in deps so persistToday is always fresh.
+  // Empty deps caused persistToday to use a stale twinUserId from mount-time closure.
   const setTodayEventsWrapped = useCallback((events: RoutineEvent[]) => {
     setTodayEvents(events);
     persistToday(events);
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [twinUserId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const clearToday = useCallback(() => {
     setTodayEvents([]);
@@ -1589,6 +1737,11 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
   // ── Register Twin ─────────────────────────────────────────────────────────
 
   const registerTwin = useCallback(async (payload: BiogearsRegistrationPayload) => {
+    if (isRegisteringRef.current) {
+      console.log('[BioGearsContext] Registration already in progress. Ignoring duplicate call.');
+      return;
+    }
+    isRegisteringRef.current = true;
     console.log(`[BioGearsContext] Registering Twin: ${payload.user_id}...`);
     setTwinStatus('registering');
     setTwinStatusError(null);
@@ -1596,19 +1749,124 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
       await BiogearsAPI.registerTwin(payload);
       console.log(`[BioGearsContext] Registration SUCCESS for ${payload.user_id}`);
       setTwinStatus('ready');
+      setCalibrationJustSucceeded(true);
       await scheduleInactivityReminder().catch(() => {});
     } catch (err: any) {
       console.log(`[BioGearsContext] Registration FAILED:`, err);
       setTwinStatus('error');
-      // BiogearsError.detail can be a FastAPI validation dict or a plain string
       const detail = err.detail;
       const msg = typeof detail === 'string'
         ? detail
         : (detail?.detail || detail?.message || err.message || 'Registration failed');
       setTwinStatusError(msg);
       throw err;
+    } finally {
+      isRegisteringRef.current = false;
     }
   }, []);
+
+  const recheckTwinStatus = useCallback(async () => {
+    if (!twinUserId) { setTwinStatus('unregistered'); return; }
+    setTwinStatus('checking');
+    try {
+      const remoteProfile = await BiogearsAPI.getTwinProfile(twinUserId);
+      setTwinStatus('ready');
+      setTwinStatusError(null);
+
+      // Background auto-calibration if clinical profile parameters mismatch
+      if (profile) {
+        const age = Math.round(parseAge(profile.dateOfBirth));
+        const weight = parseKg(profile.weight);
+        const height = parseCm(profile.height);
+        const sex = profile.gender?.toLowerCase() === "female" ? "Female" : "Male";
+        const body_fat = profile.biogears_body_fat ?? 0.2;
+        const resting_hr = profile.biogears_resting_hr ?? 72.0;
+        const systolic_bp = profile.biogears_systolic_bp ?? 114.0;
+        const diastolic_bp = profile.biogears_diastolic_bp ?? 73.5;
+        const is_smoker = !!profile.biogears_is_smoker;
+        const has_anemia = !!profile.biogears_has_anemia;
+        const has_type1_diabetes = !!profile.biogears_has_type1_diabetes;
+        const has_type2_diabetes = !!profile.biogears_has_type2_diabetes;
+        const hba1c = profile.biogears_hba1c ?? null;
+        const ethnicity = profile.biogears_ethnicity ?? 'Other';
+        const fitness_level = profile.biogears_fitness_level ?? 'sedentary';
+        const vo2max = profile.biogears_vo2max ?? null;
+        const medications = profile.medications ?? [];
+
+        const hasSmoker = remoteProfile.conditions?.includes("Smoker / COPD") || false;
+        const hasAnemia = remoteProfile.conditions?.includes("Chronic Anemia") || false;
+        const hasT1D = remoteProfile.conditions?.includes("Type 1 Diabetes") || false;
+        const hasT2D = remoteProfile.conditions?.includes("Type 2 Diabetes") || false;
+
+        const matches = 
+          remoteProfile.age === age &&
+          Math.abs((remoteProfile.weight_kg ?? 0) - weight) < 0.1 &&
+          Math.abs((remoteProfile.height_cm ?? 0) - height) < 0.1 &&
+          remoteProfile.sex === sex &&
+          Math.abs((remoteProfile.body_fat ?? 0.2) - body_fat) < 0.01 &&
+          Math.abs((remoteProfile.resting_hr ?? 72.0) - resting_hr) < 0.1 &&
+          Math.abs((remoteProfile.systolic_bp ?? 114.0) - systolic_bp) < 0.1 &&
+          Math.abs((remoteProfile.diastolic_bp ?? 73.5) - diastolic_bp) < 0.1 &&
+          hasSmoker === is_smoker &&
+          hasAnemia === has_anemia &&
+          hasT1D === has_type1_diabetes &&
+          hasT2D === has_type2_diabetes;
+
+        if (!matches) {
+          if (isRecalibratingRef.current) {
+            console.log('[BiogearsTwin] Background auto-calibration already in progress. Skipping duplicate run.');
+            return;
+          }
+          isRecalibratingRef.current = true;
+          console.log('[BiogearsTwin] Demographics mismatch detected. Auto-recalibrating remote digital twin...');
+          const payload: BiogearsRegistrationPayload = {
+            user_id: twinUserId,
+            age,
+            weight,
+            height,
+            sex,
+            body_fat,
+            resting_hr,
+            systolic_bp,
+            diastolic_bp,
+            is_smoker,
+            has_anemia,
+            has_type1_diabetes,
+            has_type2_diabetes,
+            hba1c,
+            ethnicity,
+            fitness_level,
+            vo2max,
+            current_medications: medications,
+          };
+          
+          registerTwin(payload)
+            .then(() => {
+              console.log('[BiogearsTwin] Background auto-calibration completed successfully.');
+            })
+            .catch(err => {
+              console.error('[BiogearsTwin] Background auto-calibration failed:', err);
+            })
+            .finally(() => {
+              isRecalibratingRef.current = false;
+            });
+        }
+      }
+
+    } catch (err: any) {
+      if (err.statusCode === 404) {
+        setTwinStatus('unregistered');
+      } else {
+        if (profile?.biogears_registered) {
+          setTwinStatus('ready');
+          setTwinStatusError(null);
+        } else {
+          setTwinStatusError(err.message || 'Cannot reach BioGears server');
+          setTwinStatus('error');
+        }
+      }
+    }
+  }, [twinUserId, profile, registerTwin]);
 
   // ── Add Event and Run Simulation Immediately ──────────────────────────────
 
@@ -1665,6 +1923,8 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
       setSimulationStatus('running');
       const { job_id } = await BiogearsAPI.simulateAsync(twinUserId, events);
       await AsyncStorage.setItem('biogears_active_job', job_id);
+      await AsyncStorage.setItem('biogears_active_job_user_id', twinUserId);
+      await AsyncStorage.setItem('biogears_active_job_owner_uid', firestoreOwnerUid || '');
       const startTime = Date.now();
       await AsyncStorage.setItem('biogears_active_job_start_time', String(startTime));
       setSimulationStartTime(startTime);
@@ -1680,7 +1940,7 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
       }, 5000);
 
       const result = await BiogearsAPI.pollUntilDone(job_id, 3000, 43_200_000);
-      await finishSimulationSuccess(result);
+      await finishSimulationSuccess(result, twinUserId, firestoreOwnerUid);
 
     } catch (err: any) {
       if (progressTickRef.current) {
@@ -1691,12 +1951,15 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
       setSimulationStartTime(null);
       await AsyncStorage.removeItem('biogears_active_job_start_time');
       await AsyncStorage.removeItem('biogears_active_job');
+      await AsyncStorage.removeItem('biogears_active_job_user_id');
+      await AsyncStorage.removeItem('biogears_active_job_owner_uid');
       setSimulationStatus('failed');
       setSimulationError(err.message || 'Simulation failed');
       setSimulationProgress('');
       throw err;
     }
-  }, [twinUserId, twinStatus, todayEvents, simulationStatus]);
+  // ✅ FIX: Added steps and profile to deps so step event and weight/height are current.
+  }, [twinUserId, twinStatus, todayEvents, simulationStatus, steps, profile]);
 
   // ── Run Simulation ────────────────────────────────────────────────────────
 
@@ -1744,6 +2007,8 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
       setSimulationStatus('running');
       const { job_id } = await BiogearsAPI.simulateAsync(twinUserId, events);
       await AsyncStorage.setItem('biogears_active_job', job_id);
+      await AsyncStorage.setItem('biogears_active_job_user_id', twinUserId);
+      await AsyncStorage.setItem('biogears_active_job_owner_uid', firestoreOwnerUid || '');
       const startTime = Date.now();
       await AsyncStorage.setItem('biogears_active_job_start_time', String(startTime));
       setSimulationStartTime(startTime);
@@ -1762,8 +2027,7 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
       // Poll progress — BioGears engine can take 10–25 minutes for a full-day scenario
       const result = await BiogearsAPI.pollUntilDone(job_id, 3000, 43_200_000);  // 12 hour timeout
 
-      await finishSimulationSuccess(result);
-
+      await finishSimulationSuccess(result, twinUserId, firestoreOwnerUid);
 
     } catch (err: any) {
       // Stop progress ticker on failure too
@@ -1775,12 +2039,16 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
       setSimulationStartTime(null);
       await AsyncStorage.removeItem('biogears_active_job_start_time');
       await AsyncStorage.removeItem('biogears_active_job');
+      await AsyncStorage.removeItem('biogears_active_job_user_id');
+      await AsyncStorage.removeItem('biogears_active_job_owner_uid');
       setSimulationStatus('failed');
       setSimulationError(err.message || 'Simulation failed');
       setSimulationProgress('');
       throw err;
     }
-  }, [twinUserId, twinStatus, todayEvents, simulationName]);
+  // ✅ FIX: Added `steps` to deps — runSimulation uses steps to build stepEvent;
+  // without it the stale step count (often 0) was sent to BioGears.
+  }, [twinUserId, twinStatus, todayEvents, simulationName, steps, profile]);
 
   const runMultiDayCatchup = useCallback(async (days: number) => {
     if (!twinUserId) return;
@@ -1835,6 +2103,8 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
       setSimulationStatus('running');
       const { job_id } = await BiogearsAPI.simulateAsync(twinUserId, catchUpEvents);
       await AsyncStorage.setItem('biogears_active_job', job_id);
+      await AsyncStorage.setItem('biogears_active_job_user_id', twinUserId);
+      await AsyncStorage.setItem('biogears_active_job_owner_uid', firestoreOwnerUid || '');
       const startTime = Date.now();
       await AsyncStorage.setItem('biogears_active_job_start_time', String(startTime));
       setSimulationStartTime(startTime);
@@ -1849,7 +2119,7 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
       }, 5000);
 
       const result = await BiogearsAPI.pollUntilDone(job_id, 3000, 43_200_000);
-      await finishSimulationSuccess(result);
+      await finishSimulationSuccess(result, twinUserId, firestoreOwnerUid);
 
     } catch (err: any) {
       if (progressTickRef.current) {
@@ -1860,6 +2130,8 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
       setSimulationStartTime(null);
       await AsyncStorage.removeItem('biogears_active_job_start_time');
       await AsyncStorage.removeItem('biogears_active_job');
+      await AsyncStorage.removeItem('biogears_active_job_user_id');
+      await AsyncStorage.removeItem('biogears_active_job_owner_uid');
       setSimulationStatus('failed');
       setSimulationError(err.message || 'Catch-up simulation failed');
       setSimulationProgress('');
@@ -2017,7 +2289,7 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
       // 1. Check if habits are stored in the synced Firestore profile
       if (profile && (profile as any).habits) {
         habits = (profile as any).habits;
-      } else {
+      } else if (!isSwitched) {
         // 2. Fallback to AsyncStorage
         const user = auth.currentUser;
         const habitsKey = user ? `@onboarding_habits_${user.uid}` : null;
@@ -2059,6 +2331,35 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
       Alert.alert("Error", err.message || "Failed to restore default routine.");
     }
   }, [twinUserId, profile, firestoreOwnerUid]);
+
+  const copyPrimaryDefaultRoutine = useCallback(async () => {
+    if (!isSwitched || !twinUserId) return;
+    try {
+      const primaryTwinId = getTwinId(selfProfile);
+      const primaryRoutines = await BiogearsAPI.loadSavedRoutines(primaryTwinId);
+      const primaryDefault = primaryRoutines.find(r => r.isDefault) || primaryRoutines[0];
+      
+      if (!primaryDefault) {
+        throw new Error("No default routine found on the primary profile.");
+      }
+
+      const copiedRoutine: SavedRoutine = {
+        ...primaryDefault,
+        id: `routine_copied_${Date.now()}`,
+        name: `${primaryDefault.name} (Copy)`,
+        createdAt: new Date().toISOString(),
+        isDefault: true,
+      };
+
+      await BiogearsAPI.saveRoutine(twinUserId, copiedRoutine, firestoreOwnerUid);
+      await BiogearsAPI.setDefaultRoutine(twinUserId, copiedRoutine.id, firestoreOwnerUid, true);
+      
+      await loadRoutinesFromStorage();
+      Alert.alert("Success", `Copied "${primaryDefault.name}" as a template for ${profile?.firstName || "dependent"}.`);
+    } catch (e: any) {
+      Alert.alert("Copy Failed", e.message || "Could not copy primary routine.");
+    }
+  }, [isSwitched, twinUserId, selfProfile, firestoreOwnerUid, loadRoutinesFromStorage, profile?.firstName]);
 
   // ─────────────────────────────────────────────────────────────────────────────
 
@@ -2142,6 +2443,7 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
     editingRoutineId,
     setEditingRoutineId,
     restoreDefaultRoutine,
+    copyPrimaryDefaultRoutine,
     substances,
     refreshSubstances,
     sessions,
@@ -2166,6 +2468,12 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
       setPendingConflicts([]);
       setPendingConflictResolver(null);
     },
+
+    // Calibration success propagation
+    calibrationJustSucceeded,
+    dismissCalibrationSuccess: useCallback(() => {
+      setCalibrationJustSucceeded(false);
+    }, []),
   };
 
 

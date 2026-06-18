@@ -190,6 +190,17 @@ export async function updateProfile(
     const uid = targetUid || user?.uid;
     if (!uid) return false;
 
+    const userDocRef = doc(db, "users", uid);
+    const userSnap = await getDoc(userDocRef);
+    let managedBy = "";
+    let inviteCode = "";
+    let existingRelation = "Family";
+    if (userSnap.exists()) {
+      managedBy = userSnap.data()?.managedBy || "";
+      inviteCode = userSnap.data()?.inviteCode || userSnap.data()?.healthId || "";
+      existingRelation = userSnap.data()?.relation || "Family";
+    }
+
     const safePartial: Partial<UserProfile> = {
       ...partial,
     };
@@ -203,13 +214,59 @@ export async function updateProfile(
     }
 
     await setDoc(
-      doc(db, "users", uid),
+      userDocRef,
       {
         ...safePartial,
         updatedAt: new Date().toISOString(),
       },
       { merge: true }
     );
+
+    // If managed by a parent account, sync the linkedMembers map entry
+    if (managedBy) {
+      const parentRef = doc(db, "users", managedBy);
+      const updatedSnap = await getDoc(userDocRef);
+      if (updatedSnap.exists()) {
+        const fullChild = updatedSnap.data();
+        
+        // Find existing relation from parent's copy if possible
+        let finalRelation = existingRelation;
+        const parentSnap = await getDoc(parentRef);
+        if (parentSnap.exists()) {
+          const parentData = parentSnap.data();
+          const oldEntry = parentData?.linkedMembers?.[uid];
+          if (oldEntry?.relation) {
+            finalRelation = oldEntry.relation;
+          }
+        }
+
+        const linkEntry = {
+          uid: uid,
+          id: uid,
+          userId: uid,
+          firstName: fullChild.firstName || "",
+          lastName: fullChild.lastName || "",
+          relation: finalRelation,
+          inviteCode: inviteCode,
+          status: "active",
+          bloodGroup: fullChild.bloodGroup || "",
+          gender: fullChild.gender || "",
+          dateOfBirth: fullChild.dateOfBirth || fullChild.dob || "",
+          dob: fullChild.dateOfBirth || fullChild.dob || "",
+        };
+
+        await setDoc(
+          parentRef,
+          {
+            linkedMembers: {
+              [uid]: linkEntry,
+            },
+          },
+          { merge: true }
+        );
+        console.log(`✅ Synced child profile ${uid} updates to parent account ${managedBy}`);
+      }
+    }
 
     console.log("✅ Profile updated:", Object.keys(partial).join(", "));
     return true;

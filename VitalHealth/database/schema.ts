@@ -8,7 +8,9 @@ import { db } from "./index";
 export { db };
 
 // ── Version tracking so future migrations know the current schema ─────────────
-const SCHEMA_VERSION = 3;
+// v4: Added takenDate column directly to medicines schema (was previously added
+//     only via ALTER TABLE in initMedicineDB, which was not authoritative)
+const SCHEMA_VERSION = 4;
 
 export const initAllTables = async (): Promise<void> => {
   try {
@@ -36,7 +38,8 @@ export const initAllTables = async (): Promise<void> => {
         endDate        TEXT,
         reminder       INTEGER,
         notificationId TEXT,
-        taken          INTEGER DEFAULT 0
+        taken          INTEGER DEFAULT 0,
+        takenDate      TEXT DEFAULT NULL
       );
 
       -- ── Medicine history ────────────────────────────────────────────────────

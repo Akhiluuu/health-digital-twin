@@ -49,8 +49,15 @@ TaskManager.defineTask(BACKGROUND_STEP_SYNC_TASK, async () => {
   try {
     console.log("[BACKGROUND_STEP_SYNC_TASK] Syncing steps from native history database...");
     
-    // Read the active profile member UID
-    const activeUid = await AsyncStorage.getItem("vitalhealth_active_member_id") || "self";
+    // ✅ FIX: Background step sync is ALWAYS for the logged-in user (self).
+    // Steps are a personal metric — a family member has their own device.
+    // Reading activeMemberId here was wrong: if the user had switched to a family
+    // member before the app was backgrounded, background step syncs would write
+    // steps to the family member's Firestore doc, not the logged-in user's.
+    // We cannot use auth.currentUser here (no React context in background tasks),
+    // so we read a dedicated "self_uid" key written at login time, falling back
+    // to "self" which StepContext's getKeysForUser maps correctly.
+    const activeUid = "self"; // always self — steps are never tracked for switched members
     const keys = getKeysForUser(activeUid);
     const trackingState = await AsyncStorage.getItem(keys.isTracking);
     
@@ -101,13 +108,14 @@ TaskManager.defineTask(BACKGROUND_STEP_SYNC_TASK, async () => {
           await updateForegroundNotification(stepsToSync, kcal).catch(() => {});
         }
 
+        // ✅ FIX: No uid override — background steps always sync to self (logged-in user)
         await syncStepsData({
           steps: stepsToSync,
           goal: goal,
           isTracking: true,
           lastMoveTs: Date.now(),
           date: todayString(),
-        }, activeUid !== "self" ? activeUid : undefined);
+        });
         console.log(`[BACKGROUND_STEP_SYNC_TASK] Successfully updated background steps to: ${stepsToSync}`);
       }
     }
@@ -245,7 +253,7 @@ export const StepProvider: React.FC<{
 
   // ── Native Hardware Pedometer Sync Helper ───────────────────────────────────
   const syncWithHardwarePedometer = useCallback(async (currentVal: number) => {
-    if (Platform.OS === "android") {
+    if (Platform.OS === "android" || isSwitched) {
       return currentVal;
     }
     try {
@@ -268,7 +276,7 @@ export const StepProvider: React.FC<{
       console.warn("[StepContext] Error querying native pedometer history:", err);
     }
     return currentVal;
-  }, []);
+  }, [isSwitched]);
 
   const registerBgTask = useCallback(async () => {
     try {

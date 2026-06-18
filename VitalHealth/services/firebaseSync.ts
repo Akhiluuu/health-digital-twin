@@ -19,24 +19,39 @@ import {
 import { auth, db } from "./firebase";
 
 // ── Pending sync queue ───────────────────────────────────────────
-// Stores failed syncs and retries when auth is ready
+// Stores failed syncs and retries when auth is ready.
+// ✅ Module-level design: intentional singleton — survives component unmounts.
 const pendingSyncs: Array<() => Promise<void>> = [];
+let isFlushing = false; // Re-entrancy guard
 
 const flushPendingSyncs = async () => {
-  if (pendingSyncs.length === 0) return;
+  // Guard: don't re-enter if a flush is already in progress
+  // (prevents duplicate syncs if auth fires multiple times rapidly)
+  if (isFlushing || pendingSyncs.length === 0) return;
+  isFlushing = true;
   console.log(`🔄 Flushing ${pendingSyncs.length} pending Firebase syncs...`);
-  const toFlush = [...pendingSyncs];
-  pendingSyncs.length = 0;
+  // Capture current queue before draining — any new pushes during the flush
+  // (e.g. syncAddSymptom re-queuing itself on failure) will not be in toFlush
+  // and will be picked up in the NEXT flush cycle.
+  const toFlush = pendingSyncs.splice(0, pendingSyncs.length);
   for (const fn of toFlush) {
     try { await fn(); } catch (e) { console.log("⚠️ Pending sync failed:", e); }
   }
+  isFlushing = false;
 };
 
-// Listen for auth state and flush pending syncs when user logs in
+// Listen for auth state and flush pending syncs when user logs in.
+// Guard: only flush once per unique uid to avoid re-flushing on token refresh.
+let lastFlushedForUid: string | null = null;
 auth.onAuthStateChanged((user) => {
-  if (user) {
+  if (user && user.uid !== lastFlushedForUid) {
+    lastFlushedForUid = user.uid;
     console.log("🔥 Auth ready — flushing pending syncs for:", user.uid);
     setTimeout(flushPendingSyncs, 1000);
+  }
+  if (!user) {
+    // User logged out — reset the uid guard so next login triggers a fresh flush
+    lastFlushedForUid = null;
   }
 });
 
@@ -61,19 +76,41 @@ export const isBiometricSyncEnabled = async (): Promise<boolean> => {
 
 // ── Helper — get current user ID ────────────────────────────────
 // Checks auth.currentUser first, then waits for auth state,
-// then falls back to AsyncStorage cache
+// then falls back to AsyncStorage cache.
+//
+// ✅ FIX (cold-start race): `onAuthStateChanged` fires once immediately
+//    with `null` if Firebase hasn't restored the persisted session yet.
+//    The old code called unsub() on that first null and returned null —
+//    dropping all syncs from the first ~300ms of app startup.
+//    Fix: ignore the first null-only emission during a brief window and
+//    wait for a real user to appear before giving up.
 export const getUserId = async (): Promise<string | null> => {
-  // 1. Check if already logged in
+  // 1. Check if already logged in (fast path — no async needed)
   if (auth.currentUser?.uid) return auth.currentUser.uid;
 
-  // 2. Wait up to 8 seconds for Firebase Auth to restore session
+  // 2. Wait up to 8 seconds for Firebase Auth to restore session.
+  //    IMPORTANT: skip the initial null emission that fires synchronously
+  //    before the persisted session has been read from disk.
   const uid = await new Promise<string | null>((resolve) => {
     let timer: any = null;
+    let firstEmission = true;
+
     const unsub = auth.onAuthStateChanged((user) => {
+      // The very first callback fires synchronously with null during cold start.
+      // Give Firebase a beat to rehydrate before treating null as "logged out".
+      if (firstEmission && !user) {
+        firstEmission = false;
+        // Don't unsub yet — wait for the real auth state
+        return;
+      }
+      firstEmission = false;
+
       if (timer) clearTimeout(timer);
       unsub();
       resolve(user?.uid ?? null);
     });
+
+    // Fallback timeout: if auth never fires a confirmed state, give up after 8s
     timer = setTimeout(() => {
       unsub();
       resolve(null);
@@ -97,6 +134,7 @@ export const getUserId = async (): Promise<string | null> => {
 
   return null;
 };
+
 
 // ── Collection paths ──────────────────────────────────────────────
 const medicinesCol     = (uid: string) => collection(db, "users", uid, "medicines");
@@ -296,17 +334,22 @@ export async function syncAddSymptom(
     followUpMinutes?: number;
     followUpAnswers?: string;
   },
-  targetUid?: string
+  targetUid?: string,
+  retryCount: number = 0
 ): Promise<void> {
   if (!(await isVitalsSyncEnabled())) return;
-  console.log("🔄 syncAddSymptom called:", symptom.name, "id:", symptom.id, "target:", targetUid);
+  console.log("🔄 syncAddSymptom called:", symptom.name, "id:", symptom.id, "target:", targetUid, "retryCount:", retryCount);
   try {
     const uid = targetUid || await getUserId();
     console.log("🔑 syncAddSymptom uid:", uid ?? "NULL");
 
     if (!uid) {
       console.log("⚠️ No auth — queuing symptom:", symptom.name);
-      pendingSyncs.push(() => syncAddSymptom(symptom, targetUid));
+      if (retryCount < 5) {
+        pendingSyncs.push(() => syncAddSymptom(symptom, targetUid, retryCount + 1));
+      } else {
+        console.log("🛑 syncAddSymptom retry limit reached (5 attempts). Dropping pending sync.");
+      }
       return;
     }
 
@@ -323,7 +366,11 @@ export async function syncAddSymptom(
     console.log("✅ Symptom synced to Firebase:", symptom.name);
   } catch (e: any) {
     console.log("❌ syncAddSymptom FAILED:", e?.code, e?.message ?? e);
-    pendingSyncs.push(() => syncAddSymptom(symptom, targetUid));
+    if (retryCount < 5) {
+      pendingSyncs.push(() => syncAddSymptom(symptom, targetUid, retryCount + 1));
+    } else {
+      console.log("🛑 syncAddSymptom retry limit reached (5 attempts). Dropping pending sync.");
+    }
   }
 }
 
@@ -334,7 +381,8 @@ export async function syncResolveSymptom(
   id: number,
   resolvedAt: number,
   duration: number,
-  targetUid?: string
+  targetUid?: string,
+  retryCount: number = 0
 ): Promise<void> {
   if (!(await isVitalsSyncEnabled())) return;
   try {
@@ -342,7 +390,11 @@ export async function syncResolveSymptom(
 
     if (!uid) {
       // ✅ queue retry (IMPORTANT)
-      pendingSyncs.push(() => syncResolveSymptom(id, resolvedAt, duration, targetUid));
+      if (retryCount < 5) {
+        pendingSyncs.push(() => syncResolveSymptom(id, resolvedAt, duration, targetUid, retryCount + 1));
+      } else {
+        console.log("🛑 syncResolveSymptom retry limit reached (5 attempts). Dropping pending sync.");
+      }
       return;
     }
 
@@ -376,7 +428,11 @@ export async function syncResolveSymptom(
       await deleteDoc(symptomRef);
     } catch (e) {
       console.log("⚠️ Delete failed, retrying later:", e);
-      pendingSyncs.push(() => syncResolveSymptom(id, resolvedAt, duration, targetUid));
+      if (retryCount < 5) {
+        pendingSyncs.push(() => syncResolveSymptom(id, resolvedAt, duration, targetUid, retryCount + 1));
+      } else {
+        console.log("🛑 syncResolveSymptom retry limit reached (5 attempts). Dropping pending sync.");
+      }
     }
 
     console.log("🔥 Removed from active + added to history:", id);
@@ -384,7 +440,11 @@ export async function syncResolveSymptom(
     console.log("⚠️ syncResolveSymptom failed:", e);
 
     // ✅ retry later
-    pendingSyncs.push(() => syncResolveSymptom(id, resolvedAt, duration, targetUid));
+    if (retryCount < 5) {
+      pendingSyncs.push(() => syncResolveSymptom(id, resolvedAt, duration, targetUid, retryCount + 1));
+    } else {
+      console.log("🛑 syncResolveSymptom retry limit reached (5 attempts). Dropping pending sync.");
+    }
   }
 }
 
@@ -425,6 +485,28 @@ export async function syncUpdateSymptom(
     console.log("✅ Symptom updated in Firebase:", id);
   } catch (e) {
     console.log("⚠️ syncUpdateSymptom failed (non-critical):", e);
+  }
+}
+
+/**
+ * Batch-delete all documents from the current user's symptomHistory sub-collection.
+ * Called by SymptomContext.clearHistory() so that cleared history does NOT bleed
+ * back on the next Firebase → local merge/refresh.
+ */
+export async function syncClearSymptomHistory(targetUid?: string): Promise<void> {
+  try {
+    const uid = targetUid || await getUserId();
+    if (!uid) return;
+
+    const snap = await getDocs(symptomHistCol(uid));
+    if (snap.empty) return;
+
+    const batch = writeBatch(db);
+    snap.forEach((docSnap) => { batch.delete(docSnap.ref); });
+    await batch.commit();
+    console.log("✅ Symptom history cleared from Firebase");
+  } catch (e) {
+    console.log("⚠️ syncClearSymptomHistory failed (non-critical):", e);
   }
 }
 

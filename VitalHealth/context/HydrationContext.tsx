@@ -58,11 +58,18 @@ let globalAddWater: ((ml: number, source?: "manual" | "notification") => void) |
 // HELPERS
 ///////////////////////////////////////////////////////////
 
-const getTodayKey = () =>
-  `hydration-${new Date().toISOString().split("T")[0]}`;
+// Use LOCAL date string (YYYY-MM-DD) to avoid midnight UTC vs local timezone mismatch.
+// e.g. if the user is in UTC+5:30, midnight local is 6:30pm UTC of the previous day.
+const getLocalDateString = (): string => {
+  const d = new Date();
+  const yy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${yy}-${mm}-${dd}`;
+};
 
-const getTodayDate = () =>
-  new Date().toISOString().split("T")[0];
+const getTodayKey = () => `hydration-${getLocalDateString()}`;
+const getTodayDate = () => getLocalDateString();
 
 ///////////////////////////////////////////////////////////
 // PROVIDER
@@ -76,7 +83,13 @@ export const HydrationProvider = ({
   const [water, setWater] = useState<number>(0);
   const [history, setHistory] = useState<HydrationEntry[]>([]);
   const [isLoadingHydration, setIsLoadingHydration] = useState<boolean>(false);
-  const { isSwitched, activeMemberId } = useFamily();
+  const { isSwitched, activeMemberId, reportLoading } = useFamily();
+
+  useEffect(() => {
+    if (reportLoading) {
+      reportLoading("hydration", isLoadingHydration);
+    }
+  }, [isLoadingHydration, reportLoading]);
 
   const isMountedRef = React.useRef(true);
   useEffect(() => {
@@ -205,18 +218,26 @@ export const HydrationProvider = ({
   const addWater = useCallback(
     (ml: number, source: "manual" | "notification" = "manual") => {
       if (isSwitched && activeMemberId && activeMemberId !== "self") {
-        const timestamp = Date.now();
-        const entry = {
-          id: timestamp,
-          amount: ml,
-          total: water + ml,
-          timestamp,
-          source,
-        };
-        setWater((prev) => prev + ml);
-        setHistory((prev) => [entry, ...prev]);
-        syncAddHydration(entry, activeMemberId);
-        console.log(`💧 Switched addWater: +${ml}ml for ${activeMemberId}`);
+        // ✅ FIX: use functional updater so `total` is always computed from
+        // the latest committed state, not a potentially stale closure value.
+        setWater((prev) => {
+          const newTotal = prev + ml;
+          const timestamp = Date.now();
+          const entry = {
+            id: timestamp,
+            amount: ml,
+            total: newTotal,
+            timestamp,
+            source,
+          };
+          // Update history with the correct total
+          setHistory((prevHistory) => [entry, ...prevHistory]);
+          syncAddHydration(entry, activeMemberId).catch(
+            (err: unknown) => console.log("❌ Switched hydration sync error:", err)
+          );
+          console.log(`💧 Switched addWater: +${ml}ml → total: ${newTotal}ml for ${activeMemberId}`);
+          return newTotal;
+        });
       } else {
         setWater((prev) => {
           const newValue = prev + ml;
@@ -233,7 +254,9 @@ export const HydrationProvider = ({
               setHistory(entries);
               const lastEntry = entries[0];
               if (lastEntry) {
-                syncAddHydration(lastEntry);
+                syncAddHydration(lastEntry).catch(
+                  (err: unknown) => console.log("❌ Self hydration sync error:", err)
+                );
               }
             })
             .catch((err: unknown) => console.log("❌ History entry error:", err));
@@ -244,7 +267,7 @@ export const HydrationProvider = ({
         });
       }
     },
-    [isSwitched, activeMemberId, water]
+    [isSwitched, activeMemberId]
   );
 
   /////////////////////////////////////////////////////////
@@ -255,7 +278,9 @@ export const HydrationProvider = ({
     if (isSwitched && activeMemberId && activeMemberId !== "self") {
       setWater(0);
       setHistory([]);
-      syncClearHydration(activeMemberId);
+      syncClearHydration(activeMemberId).catch((err: unknown) =>
+        console.log("❌ Switched hydration clear error:", err)
+      );
       console.log(`💧 Switched hydration reset for ${activeMemberId}`);
     } else {
       lastStoredValue.current = 0;
@@ -270,7 +295,9 @@ export const HydrationProvider = ({
         console.log("❌ History clear error:", err)
       );
 
-      syncClearHydration();
+      syncClearHydration().catch((err: unknown) =>
+        console.log("❌ Self hydration Firebase clear error:", err)
+      );
       console.log(`💧 Self hydration reset`);
     }
   }, [isSwitched, activeMemberId]);
@@ -289,6 +316,10 @@ export const HydrationProvider = ({
 
   // ── Sync + Reminder on profile switch ─────────────────────────────────
   useEffect(() => {
+    // Instantly clear hydration data on profile switch to avoid rendering previous user's data
+    setWater(0);
+    setHistory([]);
+
     lastSyncTimeRef.current = Date.now();
     syncHydrationWithFirebase();
 
@@ -377,12 +408,11 @@ export const useHydration = () => {
 };
 
 export const addWaterFromNotification = async (ml: number) => {
-  await saveWaterToStorage(ml);
-
   if (globalAddWater) {
-    console.log(`💧 Provider mounted — reloading water state from storage`);
+    console.log(`💧 Provider mounted — adding water via active context`);
     globalAddWater(ml, "notification");
   } else {
-    console.log(`💧 Provider not mounted — AsyncStorage updated by saveWaterToStorage`);
+    console.log(`💧 Provider not mounted — writing directly to storage/DB`);
+    await saveWaterToStorage(ml);
   }
 };

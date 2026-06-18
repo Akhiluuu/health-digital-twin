@@ -161,12 +161,15 @@ export async function fetchMemberHealthData(
       userId: uid,
       firstName: data.firstName || "",
       lastName: data.lastName || "",
+      phone: data.phone || "",
       dateOfBirth: data.dateOfBirth || data.dob,
       dob: data.dob || data.dateOfBirth,
-      gender: health?.gender,
-      bloodGroup: health?.bloodGroup,
-      height: health?.height,
-      weight: health?.weight,
+      gender: data.gender || health?.gender,
+      bloodGroup: data.bloodGroup || health?.bloodGroup,
+      height: data.height || health?.height,
+      weight: data.weight || health?.weight,
+      isDependent: !!data.isDependent,
+      managedBy: data.managedBy || "",
       heartRate,
       spo2: health?.spo2,
       hydration: health?.hydration,
@@ -193,65 +196,81 @@ export function subscribeToMemberHealth(
   try {
     const userRef = doc(db, "users", uid);
 
+    // Debounce guard: prevents cascading sub-collection reads when the user
+    // doc updates rapidly (e.g. a profile save or step sync while the listener
+    // is active). Without this, every write triggers a full medicines + symptoms
+    // + heartRate read burst.
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const doSubcollectionRead = async (data: any) => {
+      const health = data.healthData || data || {};
+
+      let medicines: any[] = [];
+      let symptoms: any[] = [];
+
+      try {
+        const medsSnap = await getDocs(
+          collection(db, "users", uid, "medicines")
+        );
+        medicines = medsSnap.docs.map((doc) => doc.data());
+      } catch {
+        medicines = health.medicines || [];
+      }
+
+      try {
+        const symSnap = await getDocs(
+          collection(db, "users", uid, "symptoms")
+        );
+        symptoms = symSnap.docs.map((doc) => doc.data());
+      } catch {
+        symptoms = health.symptoms || [];
+      }
+
+      const heartRate = await fetchLatestHeartRate(uid);
+
+      callback({
+        id: uid,
+        uid,
+        userId: uid,
+        firstName: data.firstName || "",
+        lastName: data.lastName || "",
+        dateOfBirth: data.dateOfBirth || data.dob,
+        dob: data.dob || data.dateOfBirth,
+        gender: health?.gender,
+        bloodGroup: health?.bloodGroup,
+        height: health?.height,
+        weight: health?.weight,
+        heartRate,
+        spo2: health?.spo2,
+        hydration: health?.hydration,
+        steps: health?.steps,
+        calories: health?.calories || 0,
+        medicines: normalizeMedicines(medicines),
+        symptoms: Array.isArray(symptoms) ? symptoms : [],
+        profileImage: data.profileImage,
+        updatedAt: data.updatedAt,
+      });
+    };
+
     // ─── Listener for user document ─────────────────────────────────────────
-    // onError: silently swallow permission-denied — the one-shot
-    // fetchMemberHealthData() already populated the UI with initial data.
     const unsubscribeUser = onSnapshot(
       userRef,
-      async (snapshot) => {
+      (snapshot) => {
         if (!snapshot.exists()) {
           callback(null);
           return;
         }
-
         const data = snapshot.data() || {};
-        const health = data.healthData || data || {};
 
-        let medicines: any[] = [];
-        let symptoms: any[] = [];
-
-        try {
-          const medsSnap = await getDocs(
-            collection(db, "users", uid, "medicines")
-          );
-          medicines = medsSnap.docs.map((doc) => doc.data());
-        } catch {
-          medicines = health.medicines || [];
-        }
-
-        try {
-          const symSnap = await getDocs(
-            collection(db, "users", uid, "symptoms")
-          );
-          symptoms = symSnap.docs.map((doc) => doc.data());
-        } catch {
-          symptoms = health.symptoms || [];
-        }
-
-        const heartRate = await fetchLatestHeartRate(uid);
-
-        callback({
-          id: uid,
-          uid,
-          userId: uid,
-          firstName: data.firstName || "",
-          lastName: data.lastName || "",
-          dateOfBirth: data.dateOfBirth || data.dob,
-          dob: data.dob || data.dateOfBirth,
-          gender: health?.gender,
-          bloodGroup: health?.bloodGroup,
-          height: health?.height,
-          weight: health?.weight,
-          heartRate,
-          spo2: health?.spo2,
-          hydration: health?.hydration,
-          steps: health?.steps,
-          calories: health?.calories || 0,
-          medicines: normalizeMedicines(medicines),
-          symptoms: Array.isArray(symptoms) ? symptoms : [],
-          profileImage: data.profileImage,
-          updatedAt: data.updatedAt,
-        });
+        // Debounce: collapse rapid document updates into a single read burst
+        if (debounceTimer) clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(() => {
+          doSubcollectionRead(data).catch((err: any) => {
+            if (err?.code !== "permission-denied") {
+              console.log("⚠️ subscribeToMemberHealth read error:", err?.code);
+            }
+          });
+        }, 500); // 500ms window collapses rapid consecutive writes
       },
       (err: any) => {
         // Silently ignore permission-denied — Firestore rules only allow
@@ -282,6 +301,7 @@ export function subscribeToMemberHealth(
     );
 
     return () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
       unsubscribeUser();
       unsubscribeHR();
     };
@@ -376,6 +396,87 @@ export async function linkFamilyMember(
 }
 
 /* ──────────────────────────────────────────────────────────────
+   Create Dependent Profile — no own account/email/phone needed
+   ────────────────────────────────────────────────────────────── */
+export async function createDependentProfile(details: {
+  firstName: string;
+  lastName: string;
+  dateOfBirth: string;
+  gender: string;
+  bloodGroup: string;
+  height: string;
+  weight: string;
+  relation: string;
+}): Promise<{ newId: string; fakePhoneSuffix: string; inviteCode: string } | null> {
+  try {
+    const myUid = await getMyUid();
+    if (!myUid) return null;
+
+    // Not a Firebase Auth UID — just a unique document ID for this person.
+    const newId = `dep_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    // Stash a clean 4-digit number of only digits as "fake phone" so getTwinId()
+    // never collides and gets parsed cleanly by replace(/\D/g, "")
+    const fakePhoneSuffix = Math.floor(1000 + Math.random() * 9000).toString();
+
+    // Generate a truly unique Health ID / inviteCode.
+    // Mix UID + timestamp + random to eliminate collisions even if
+    // two dependents are created in the same millisecond.
+    const randomSuffix = Math.random().toString(36).slice(2, 8).toUpperCase();
+    const timePart = Date.now().toString(36).toUpperCase().slice(-4);
+    const uidPart = myUid.replace(/[^a-zA-Z0-9]/g, "").substring(0, 4).toUpperCase();
+    const depCode = `VT-${uidPart}${timePart}-${randomSuffix.substring(0, 4)}`;
+
+    const dependentProfile = {
+      firstName: details.firstName,
+      lastName: details.lastName,
+      email: "",
+      phone: fakePhoneSuffix,
+      dateOfBirth: details.dateOfBirth,
+      dob: details.dateOfBirth,
+      gender: details.gender,
+      bloodGroup: details.bloodGroup,
+      height: details.height,
+      weight: details.weight,
+      inviteCode: depCode,
+      healthId: depCode,
+      linkedMembers: {},
+      biogears_registered: false,
+      isDependent: true,
+      managedBy: myUid,
+      createdAt: new Date().toISOString(),
+    };
+
+    await setDoc(doc(db, "users", newId), dependentProfile);
+
+    const linkEntry: LinkedMember = {
+      uid: newId,
+      id: newId,
+      userId: newId,
+      firstName: details.firstName,
+      lastName: details.lastName,
+      relation: details.relation,
+      inviteCode: depCode,
+      status: "active",
+      bloodGroup: details.bloodGroup,
+      gender: details.gender,
+      dateOfBirth: details.dateOfBirth,
+      dob: details.dateOfBirth,
+    };
+
+    await updateDoc(doc(db, "users", myUid), {
+      [`linkedMembers.${newId}`]: linkEntry,
+    }).catch(async () => {
+      await setDoc(doc(db, "users", myUid), { linkedMembers: { [newId]: linkEntry } }, { merge: true });
+    });
+
+    return { newId, fakePhoneSuffix, inviteCode: depCode };
+  } catch (e) {
+    console.log("❌ createDependentProfile error:", e);
+    return null;
+  }
+}
+
+/* ──────────────────────────────────────────────────────────────
    Unlink Family Member
    ────────────────────────────────────────────────────────────── */
 export async function unlinkFamilyMember(
@@ -384,6 +485,21 @@ export async function unlinkFamilyMember(
   try {
     const myUid = await getMyUid();
     if (!myUid) return;
+
+    // ── Check if target is a dependent managed by me ──────────────────────────
+    // If it is, delete the document entirely to prevent orphaned database records.
+    if (targetUid.startsWith("dep_")) {
+      const depRef = doc(db, "users", targetUid);
+      const depSnap = await getDoc(depRef);
+      if (depSnap.exists()) {
+        const depData = depSnap.data();
+        if (depData?.managedBy === myUid) {
+          const { deleteDoc } = await import("firebase/firestore");
+          await deleteDoc(depRef);
+          console.log(`🧹 Deleted orphaned dependent profile document: ${targetUid}`);
+        }
+      }
+    }
 
     // ✅ Dot-notation deleteField only removes the single entry
     await updateDoc(doc(db, "users", myUid), {
@@ -395,5 +511,75 @@ export async function unlinkFamilyMember(
     }).catch(() => {});
   } catch (e) {
     console.log("❌ unlinkFamilyMember error:", e);
+  }
+}
+
+/* ──────────────────────────────────────────────────────────────
+   Update Dependent Profile
+   ────────────────────────────────────────────────────────────── */
+export async function updateDependentProfile(
+  dependentUid: string,
+  details: {
+    firstName: string;
+    lastName: string;
+    dateOfBirth: string;
+    gender: string;
+    bloodGroup: string;
+    height: string;
+    weight: string;
+    relation: string;
+  }
+): Promise<boolean> {
+  try {
+    const myUid = await getMyUid();
+    if (!myUid) return false;
+
+    // 1. Get existing inviteCode/healthId
+    const depRef = doc(db, "users", dependentUid);
+    const depSnap = await getDoc(depRef);
+    const inviteCode = depSnap.exists()
+      ? (depSnap.data()?.inviteCode || depSnap.data()?.healthId || "")
+      : "";
+
+    // 2. Update the dependent's own document in users
+    await updateDoc(depRef, {
+      firstName: details.firstName,
+      lastName: details.lastName,
+      dateOfBirth: details.dateOfBirth,
+      dob: details.dateOfBirth,
+      gender: details.gender,
+      bloodGroup: details.bloodGroup,
+      height: details.height,
+      weight: details.weight,
+      inviteCode: inviteCode,
+      healthId: inviteCode,
+      updatedAt: new Date().toISOString(),
+    });
+
+    // 3. Update the parent's linkedMembers map entry
+    const parentRef = doc(db, "users", myUid);
+    const linkEntry = {
+      uid: dependentUid,
+      id: dependentUid,
+      userId: dependentUid,
+      firstName: details.firstName,
+      lastName: details.lastName,
+      relation: details.relation,
+      inviteCode: inviteCode,
+      status: "active",
+      bloodGroup: details.bloodGroup,
+      gender: details.gender,
+      dateOfBirth: details.dateOfBirth,
+      dob: details.dateOfBirth,
+    };
+
+    await updateDoc(parentRef, {
+      [`linkedMembers.${dependentUid}`]: linkEntry,
+    });
+
+    return true;
+  } catch (e) {
+    console.error("❌ updateDependentProfile error:", e);
+    return false;
   }
 }

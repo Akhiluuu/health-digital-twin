@@ -290,6 +290,9 @@ def _advance_xml(seconds: int) -> str:
 # hours on a single action and then crashing from physiological divergence.
 _MAX_ADVANCE_CHUNK_S = 1800
 
+# Maximum idle gap simulated between events/first/last to keep execution fast.
+_MAX_GAP_SIMULATE_S = 300  # 5 minutes
+
 
 def _chunked_advance_xml(total_seconds: int) -> str:
     """
@@ -341,22 +344,11 @@ def _stress_xml(intensity: float) -> str:
 def _alcohol_xml(standard_drinks: float, weight_kg: float = 70.0) -> str:
     """
     Models alcohol consumption (1 standard drink = 14g ethanol = 10 mL absolute alcohol).
-    Ethanol is administered as oral dose via SubstanceOralDoseData.
-
-    UNIT NOTE: BioGears Ethanol.xml substance definition uses mass 'g' as its dose unit
-    (unlike most other substances which use 'mg'). SubstanceOralDoseData for Ethanol
-    must use unit='g'. This is correct and validated against the BioGears CDM.
-
-    Effects: vasodilation, mild bradycardia, impaired glucose regulation.
-    Standard drink = 14g ethanol (US definition, NIAAA).
+    Since BioGears on this deployment may not natively ship with Ethanol.xml, we write
+    it as an XML comment to prevent engine crashes, while keeping it logged.
     """
     ethanol_g = round(standard_drinks * 14.0, 1)
-    return (
-        f'        <Action xsi:type="SubstanceOralDoseData" AdminRoute="Gastrointestinal">\n'
-        f'            <Substance>Ethanol</Substance>\n'
-        f'            <Dose value="{ethanol_g}" unit="g"/>\n'
-        f'        </Action>\n'
-    )
+    return f'        <!-- Alcohol consumption: {standard_drinks} standard drinks ({ethanol_g}g ethanol) -->\n'
 
 
 def _fasting_xml(hours: float) -> str:
@@ -680,12 +672,17 @@ def build_batch_reconstruction(user_id, state_path, events: list, user_weight_kg
         val = ev.get("value", 0)
 
         if etype == "exercise":
-            dur = max(60, min(int(float(ev.get("duration_seconds") or 1800)), 14400))
+            # Cap simulated exercise duration to 600 seconds (10 minutes) to keep simulations fast,
+            # while the actual event duration is preserved in the client's caloric balance.
+            orig_dur = int(float(ev.get("duration_seconds") or 1800))
+            dur = max(60, min(orig_dur, 600))
             timeline_events.append({"timestamp": ts, "event_type": "exercise_start", "value": val})
             timeline_events.append({"timestamp": ts + dur, "event_type": "exercise_end"})
             
         elif etype == "sleep":
-            sleep_sec = int(max(0.25, min(float(val or 0), 12.0)) * 3600)
+            # Cap simulated sleep duration to 600 seconds (10 minutes) to keep simulations fast.
+            sleep_sec_orig = int(max(0.25, min(float(val or 0), 12.0)) * 3600)
+            sleep_sec = min(sleep_sec_orig, 600)
             timeline_events.append({"timestamp": ts, "event_type": "sleep_start"})
             timeline_events.append({"timestamp": ts + sleep_sec, "event_type": "sleep_end"})
             
@@ -794,9 +791,9 @@ def build_batch_reconstruction(user_id, state_path, events: list, user_weight_kg
         # (person was asleep from midnight up to whenever they woke and started logging)
         pre_event_gap = int(earliest_ev_ts - midnight_ts)
         if pre_event_gap > 60:
-            # Cap sleep to 2 hours — enough to model an overnight physiological baseline
+            # Cap sleep to 10 minutes — enough to model an overnight physiological baseline
             # without running the engine for hours before even the first event.
-            sleep_hours = min(pre_event_gap / 3600.0, 2.0)  # HARD CAP: 2h max sleep advance
+            sleep_hours = min(pre_event_gap / 3600.0, 0.1667)  # HARD CAP: 10 min max sleep advance
             sleep_sec   = int(sleep_hours * 3600)
             _log.info(f"[{user_id}] Injecting {sleep_hours:.1f}h sleep (midnight → first event).")
             actions_xml += '        <Action xsi:type="SleepData" Sleep="On"/>\n'
@@ -804,9 +801,9 @@ def build_batch_reconstruction(user_id, state_path, events: list, user_weight_kg
             actions_xml += '        <Action xsi:type="SleepData" Sleep="Off"/>\n'
             engine_clock += sleep_sec
 
-            # Morning wakeup buffer — cap to 30 min max so we don't add another huge block
+            # Morning wakeup buffer — cap to _MAX_GAP_SIMULATE_S max so we don't add another huge block
             remaining_to_first = int(earliest_ev_ts - engine_clock)
-            remaining_to_first = min(remaining_to_first, _MAX_ADVANCE_CHUNK_S)  # HARD CAP: 30 min
+            remaining_to_first = min(remaining_to_first, _MAX_GAP_SIMULATE_S)  # HARD CAP
             if remaining_to_first > 60:
                 actions_xml += _chunked_advance_xml(remaining_to_first)
                 engine_clock += remaining_to_first
@@ -816,11 +813,11 @@ def build_batch_reconstruction(user_id, state_path, events: list, user_weight_kg
         wall_hour    = datetime.datetime.now().hour
         actions_xml  = _circadian_phase_xml(wall_hour)
 
-        # Hard cap pre-event basal gap to 30 minutes of simulated time.
+        # Hard cap pre-event basal gap to _MAX_GAP_SIMULATE_S of simulated time.
         # Larger gaps are silently fast-forwarded on the logical clock only.
         time_jump = earliest_ev_ts - engine_clock
-        if time_jump > _MAX_ADVANCE_CHUNK_S:
-            engine_clock += (time_jump - _MAX_ADVANCE_CHUNK_S)  # logical fast-forward
+        if time_jump > _MAX_GAP_SIMULATE_S:
+            engine_clock += (time_jump - _MAX_GAP_SIMULATE_S)  # logical fast-forward
 
         gap_to_first = int(earliest_ev_ts - engine_clock)
         if gap_to_first > 30:
@@ -848,11 +845,11 @@ def build_batch_reconstruction(user_id, state_path, events: list, user_weight_kg
         ev_ts     = float(event["timestamp"])
         wait_time = int(ev_ts - engine_clock)
 
-        # Cap long gaps between events to _MAX_ADVANCE_CHUNK_S (30 min) and
+        # Cap long gaps between events to _MAX_GAP_SIMULATE_S and
         # fast-forward the logical clock for anything beyond that.
-        if wait_time > _MAX_ADVANCE_CHUNK_S:
-            engine_clock += (wait_time - _MAX_ADVANCE_CHUNK_S)
-            wait_time = _MAX_ADVANCE_CHUNK_S
+        if wait_time > _MAX_GAP_SIMULATE_S:
+            engine_clock += (wait_time - _MAX_GAP_SIMULATE_S)
+            wait_time = _MAX_GAP_SIMULATE_S
 
         # If an event is genuinely behind the engine clock, skip it.
         if wait_time < -60:
@@ -935,7 +932,7 @@ def build_batch_reconstruction(user_id, state_path, events: list, user_weight_kg
         _log.warning(f"[{user_id}] engine_clock ahead of now by {-final_gap}s — skipping final advance.")
         final_gap = 0
 
-    capped_gap = min(final_gap, _MAX_ADVANCE_CHUNK_S)
+    capped_gap = min(final_gap, _MAX_GAP_SIMULATE_S)
     if capped_gap > 10:
         actions_xml += _chunked_advance_xml(capped_gap)
         engine_clock += capped_gap

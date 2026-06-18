@@ -9,6 +9,7 @@ import {
   LayoutAnimation,
   Platform,
   UIManager,
+  Linking,
 } from "react-native";
 import Header from "./components/Header";
 import { useTheme } from "../context/ThemeContext";
@@ -39,8 +40,8 @@ const SECTIONS: Section[] = [
       },
       {
         icon: "📱",
-        q: "Which devices does VitalTwin support?",
-        a: "VitalTwin works with Apple Health, Google Fit, Fitbit, Garmin, Samsung Health, and most Bluetooth-enabled wearables. Go to Settings → Devices to connect.",
+        q: "Which devices does VitalHealth support?",
+        a: "VitalHealth works with Apple Health, Google Fit, Fitbit, Garmin, Samsung Health, and most Bluetooth-enabled wearables. Go to Settings → Devices to connect.",
       },
       {
         icon: "🔗",
@@ -54,7 +55,7 @@ const SECTIONS: Section[] = [
     faqs: [
       {
         icon: "❤️",
-        q: "What vitals does VitalTwin track?",
+        q: "What vitals does VitalHealth track?",
         a: "Heart rate, SpO₂, HRV, respiratory rate, blood glucose (if sensor connected), sleep stages, hydration estimate, activity, stress index, and skin temperature.",
       },
       {
@@ -222,7 +223,7 @@ export default function SettingsHelp() {
           </View>
           <Text style={[styles.pageTitle, { color: c.text1 }]}>Help Center</Text>
           <Text style={[styles.pageSubtitle, { color: c.text2 }]}>
-            Find answers to common questions about VitalTwin.
+            Find answers to common questions about VitalHealth.
           </Text>
         </View>
 
@@ -262,13 +263,14 @@ export default function SettingsHelp() {
           <TouchableOpacity
             style={[styles.contactBtn, { backgroundColor: c.accent }]}
             activeOpacity={0.85}
+            onPress={() => Linking.openURL("mailto:vitalhealth12026@gmail.com")}
           >
             <Text style={styles.contactBtnText}>Contact Support →</Text>
           </TouchableOpacity>
         </View>
 
         <Text style={[styles.version, { color: c.text3 }]}>
-          VitalTwin v2.4.1 · help@vitaltwin.ai
+          VitalHealth v2.4.1 · vitalhealth12026@gmail.com
         </Text>
       </ScrollView>
     </View>

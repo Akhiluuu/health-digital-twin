@@ -16,6 +16,7 @@ import * as ImagePicker from "expo-image-picker";
 import * as FileSystem from "expo-file-system";
 import { LinearGradient } from "expo-linear-gradient";
 import { useFocusEffect, useRouter } from "expo-router";
+import { useIsFocused } from "@react-navigation/native";
 import React, { useEffect, useRef, useState } from "react";
 import { useFamily } from "../context/FamilyContext";
 import {
@@ -372,7 +373,10 @@ export default function ProfileScreen() {
 
   const { addMember, removeMember, members, activeMemberId, activeProfile, isSwitched, switchToMember, switchToSelf, updateActiveProfile, isSwitchLoading, refreshMembers } = useFamily();
   const { profile, updateProfile, isLoaded, isProfileComplete, resetProfile, reloadProfile } = useProfile();
-  const { twinStatus, twinStatusError, simulationProgress, registerTwin } = useBiogearsTwin();
+  const { twinStatus, twinStatusError, simulationProgress, registerTwin, calibrationJustSucceeded, dismissCalibrationSuccess } = useBiogearsTwin();
+  const isFocused = useIsFocused();
+  const isCalibratingLocalRef = useRef(false);
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
 
   // ── Custom Alert State ──────────────────────────────────────────────────────
   const [customAlert, setCustomAlert] = useState<{
@@ -606,6 +610,20 @@ export default function ProfileScreen() {
       console.log("❌ saveProfileData error:", e);
     }
   };
+
+  useEffect(() => {
+    if (calibrationJustSucceeded) {
+      // Always save flag in background
+      const calibratedProfile = { ...localProfile, biogears_registered: true };
+      saveProfileData(calibratedProfile).catch(console.error);
+
+      // Alert only if this screen is active/focused
+      if (isFocused) {
+        setShowSuccessModal(true);
+        dismissCalibrationSuccess();
+      }
+    }
+  }, [calibrationJustSucceeded, isFocused, localProfile]);
 
   const handleDeleteAccount = async (passwordForReauth?: string) => {
     const user = auth.currentUser;
@@ -950,6 +968,10 @@ export default function ProfileScreen() {
   };
 
   const handleRegisterTwin = async () => {
+    if (isCalibratingLocalRef.current || twinStatus === "registering") {
+      console.log("[Profile] Calibration already in progress. Blocking duplicate tap.");
+      return;
+    }
     const missing: string[] = [];
     if (!localProfile.firstName) missing.push("First Name");
     if (!localProfile.lastName) missing.push("Last Name");
@@ -964,9 +986,10 @@ export default function ProfileScreen() {
       Alert.alert("Missing Profile Data", `BioGears requires a complete physiological baseline. Please provide:\n\n• ${missing.join("\n• ")}`, [{ text: "OK" }]);
       return;
     }
+    isCalibratingLocalRef.current = true;
     try {
       closeModal(setEditMedicalModal);
-      saveProfileData(localProfile).catch(console.error);
+      await saveProfileData(localProfile);
 
       const generatedId = getTwinId(localProfile);
       const payload: BiogearsRegistrationPayload = {
@@ -990,16 +1013,11 @@ export default function ProfileScreen() {
         current_medications: localProfile.medications,
       };
 
-      registerTwin(payload).then(() => {
-        // Persist calibration flag so status survives app restart
-        const calibratedProfile = { ...localProfile, biogears_registered: true };
-        saveProfileData(calibratedProfile).catch(console.error);
-        Alert.alert("Calibration Successful", "Your Digital Twin has been calibrated and saved.");
-      }).catch((err: any) => {
-        Alert.alert("Calibration Failed", err.message || "Could not reach BioGears server.");
-      });
+      await registerTwin(payload);
     } catch (err: any) {
-      Alert.alert("Calibration Error", err.message || "Could not start calibration.");
+      Alert.alert("Calibration Failed", err.message || "Could not complete calibration.");
+    } finally {
+      isCalibratingLocalRef.current = false;
     }
   };
 
@@ -1056,22 +1074,36 @@ export default function ProfileScreen() {
           ))}
         </View>
       </View>
-      <View style={[styles.twinStatusBox, { borderColor: twinStatus === 'ready' ? colors.success : twinStatus === 'registering' ? colors.warning : colors.danger, backgroundColor: twinStatus === 'ready' ? colors.success + "10" : twinStatus === 'registering' ? colors.warning + "10" : colors.danger + "10" }]}>
+      <View style={[styles.twinStatusBox, {
+        borderColor: twinStatus === 'ready' ? colors.success : (twinStatus === 'registering' || twinStatus === 'checking') ? colors.warning : colors.danger,
+        backgroundColor: twinStatus === 'ready' ? colors.success + "10" : (twinStatus === 'registering' || twinStatus === 'checking') ? colors.warning + "10" : colors.danger + "10"
+      }]}>
         <View style={styles.twinStatusHeader}>
-          <Ionicons name={twinStatus === 'ready' ? "checkmark-circle" : twinStatus === 'registering' ? "hourglass" : "warning"} size={20} color={twinStatus === 'ready' ? colors.success : twinStatus === 'registering' ? colors.warning : colors.danger} />
-          <Text style={[styles.twinStatusText, { color: twinStatus === 'ready' ? colors.success : twinStatus === 'registering' ? colors.warning : colors.danger }]}>
-            {twinStatus === "registering" ? "Calibrating Twin Engine..." : twinStatus === "ready" ? "Clinical Engine Calibrated" : "⚠️ Twin Profile Uncalibrated"}
+          <Ionicons
+            name={twinStatus === 'ready' ? "checkmark-circle" : (twinStatus === 'registering' || twinStatus === 'checking') ? "hourglass" : "warning"}
+            size={20}
+            color={twinStatus === 'ready' ? colors.success : (twinStatus === 'registering' || twinStatus === 'checking') ? colors.warning : colors.danger}
+          />
+          <Text style={[styles.twinStatusText, { color: twinStatus === 'ready' ? colors.success : (twinStatus === 'registering' || twinStatus === 'checking') ? colors.warning : colors.danger }]}>
+            {twinStatus === "checking" ? "Checking Status..." : twinStatus === "registering" ? "Calibrating Twin Engine..." : twinStatus === "ready" ? "Clinical Engine Calibrated" : "⚠️ Twin Profile Uncalibrated"}
           </Text>
         </View>
         {twinStatusError ? (
           <Text style={{ color: colors.danger, fontSize: 11, marginBottom: 8, paddingHorizontal: 4 }}>{twinStatusError}</Text>
         ) : null}
         <TouchableOpacity
-          style={[styles.twinActionBtn, { backgroundColor: twinStatus === 'ready' ? colors.card : colors.danger, borderColor: twinStatus === 'ready' ? colors.success : "transparent", borderWidth: twinStatus === 'ready' ? 1 : 0 }]}
-          onPress={handleRegisterTwin} disabled={twinStatus === "registering"}
+          style={[styles.twinActionBtn, {
+            backgroundColor: twinStatus === 'ready' ? colors.card : (twinStatus === 'registering' || twinStatus === 'checking') ? colors.warning : colors.danger,
+            borderColor: twinStatus === 'ready' ? colors.success : "transparent",
+            borderWidth: twinStatus === 'ready' ? 1 : 0
+          }]}
+          onPress={handleRegisterTwin}
+          disabled={twinStatus === "registering" || twinStatus === "checking"}
         >
           {twinStatus === "registering" ? (
-            <Text style={{ color: "#fff", fontSize: 13, fontWeight: "bold" }}>Please Wait... {simulationProgress}</Text>
+            <Text style={{ color: "#fff", fontSize: 13, fontWeight: "bold" }}>Please Wait...</Text>
+          ) : twinStatus === "checking" ? (
+            <Text style={{ color: "#fff", fontSize: 13, fontWeight: "bold" }}>Checking...</Text>
           ) : (
             <Text style={[styles.twinActionBtnText, { color: twinStatus === 'ready' ? colors.success : "#fff" }]}>
               {twinStatus === 'ready' ? "Recalibrate Engine" : "Calibrate Twin System"}
@@ -1932,6 +1964,76 @@ export default function ProfileScreen() {
                 );
               })}
             </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ── Calibration Progress Overlay ── */}
+      <Modal transparent visible={twinStatus === 'registering'} animationType="fade">
+        <View style={{
+          flex: 1,
+          backgroundColor: 'rgba(0,0,0,0.7)',
+          justifyContent: 'center',
+          alignItems: 'center',
+          padding: 24
+        }}>
+          <View style={{
+            backgroundColor: colors.card,
+            borderRadius: 24,
+            padding: 32,
+            alignItems: 'center',
+            width: '85%',
+            maxWidth: 320,
+            borderWidth: 1,
+            borderColor: colors.border,
+            shadowColor: colors.accent,
+            shadowOffset: { width: 0, height: 4 },
+            shadowOpacity: 0.3,
+            shadowRadius: 12,
+            elevation: 8
+          }}>
+            <ActivityIndicator size="large" color={colors.accent} style={{ marginBottom: 20 }} />
+            <Text style={{
+              color: colors.text,
+              fontSize: 18,
+              fontWeight: 'bold',
+              textAlign: 'center',
+              marginBottom: 8
+            }}>
+              Calibrating Twin
+            </Text>
+            <Text style={{
+              color: colors.subText,
+              fontSize: 13,
+              textAlign: 'center',
+              lineHeight: 18
+            }}>
+              Adapting the BioGears clinical engine to your physiological baseline. This takes a moment...
+            </Text>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ── Calibration Success Modal ── */}
+      <Modal transparent visible={showSuccessModal} animationType="fade" onRequestClose={() => setShowSuccessModal(false)}>
+        <View style={[styles.modalOverlay, { justifyContent: "center", alignItems: "center" }]}>
+          <Pressable style={StyleSheet.absoluteFill} onPress={() => setShowSuccessModal(false)} />
+          <View style={[styles.modalCard, { backgroundColor: colors.card, borderColor: colors.border, borderWidth: 1, alignItems: 'center', padding: 24, borderRadius: 24, width: '85%', maxWidth: 340 }]}>
+            <View style={{ width: 64, height: 64, borderRadius: 32, backgroundColor: '#10b98115', justifyContent: 'center', alignItems: 'center', marginBottom: 16 }}>
+              <Ionicons name="checkmark-circle" size={44} color="#10b981" />
+            </View>
+            <Text style={[styles.modalTitle, { color: colors.text, textAlign: 'center', marginBottom: 8, fontSize: 18, fontWeight: 'bold' }]}>
+              Calibration Successful
+            </Text>
+            <Text style={{ color: colors.subText, fontSize: 13, textAlign: 'center', lineHeight: 18, marginBottom: 20 }}>
+              Your Digital Twin clinical parameters have been synced and calibrated successfully with the BioGears physiology engine.
+            </Text>
+            <TouchableOpacity
+              style={[styles.modalButton, { backgroundColor: colors.accent, width: '100%', borderRadius: 14, paddingVertical: 12, alignItems: 'center', flex: undefined }]}
+              onPress={() => setShowSuccessModal(false)}
+            >
+              <Text style={{ color: '#fff', fontWeight: 'bold', fontSize: 14 }}>Explore Digital Twin</Text>
+            </TouchableOpacity>
           </View>
         </View>
       </Modal>

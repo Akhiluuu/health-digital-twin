@@ -122,9 +122,8 @@ def run_biogears(scenario_path: str, user_id: str = "unknown") -> EngineResult:
         return EngineResult(success=False, log_path=str(log_path), return_code=-3)
 
     rel_scenario = os.path.relpath(scenario_path, BIOGEARS_BIN_DIR)
-    # Use "./" prefix so the shell resolves the binary relative to BIOGEARS_BIN_DIR
-    # (bg-cli is not on $PATH, only present in that directory).
-    command      = f'"./{BIOGEARS_EXECUTABLE.name}" Scenario "{rel_scenario}"'
+    exec_path = str(BIOGEARS_EXECUTABLE.absolute())
+    command = [exec_path, "Scenario", rel_scenario]
 
     logger.info("")
     logger.info("=" * 55)
@@ -163,7 +162,7 @@ def run_biogears(scenario_path: str, user_id: str = "unknown") -> EngineResult:
             text=True,
             encoding="utf-8",
             errors="replace",
-            shell=True,
+            shell=False,
             cwd=str(BIOGEARS_BIN_DIR),
             env=env,
             bufsize=1,      # line-buffered → real-time output

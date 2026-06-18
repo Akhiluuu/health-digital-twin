@@ -141,7 +141,13 @@ export const MedicineProvider = ({
   // MedicineProvider is always rendered inside FamilyProvider (see _layout.tsx),
   // so useFamily() is safe to call unconditionally at the top level.
   // Calling hooks inside try/catch is a React Rules of Hooks violation.
-  const { isSwitched, activeMemberId } = useFamily();
+  const { isSwitched, activeMemberId, reportLoading } = useFamily();
+
+  React.useEffect(() => {
+    if (reportLoading) {
+      reportLoading("medicine", isLoadingMemberMedicines);
+    }
+  }, [isLoadingMemberMedicines, reportLoading]);
 
   ///////////////////////////////////////////////////////////
   // LOAD MEDICINES
@@ -287,14 +293,23 @@ export const MedicineProvider = ({
   // Event bus — medicine taken in foreground notification
   ///////////////////////////////////////////////////////////
 
+  // ✅ FIX: Use a ref so the event listener always calls the latest loadMedicines
+  // without unsubscribing/resubscribing on every isSwitched/activeMemberId change.
+  // The brief gap during unsubscribe/resubscribe could cause a medicine_taken event
+  // (fired by notifeeService) to be missed, leaving the tick invisible to the user.
+  const loadMedicinesRef = React.useRef(loadMedicines);
+  React.useEffect(() => {
+    loadMedicinesRef.current = loadMedicines;
+  }, [loadMedicines]);
+
   useEffect(() => {
     const onTaken = () => {
       console.log("🔄 medicine_taken event — reloading");
-      loadMedicines();
+      loadMedicinesRef.current();
     };
     medicineEventBus.on("medicine_taken", onTaken);
     return () => { medicineEventBus.off("medicine_taken", onTaken); };
-  }, [isSwitched, activeMemberId]);
+  }, []); // ✅ Stable — loadMedicinesRef always points to latest version
 
   ///////////////////////////////////////////////////////////
   // Reload on app foreground
@@ -328,7 +343,9 @@ export const MedicineProvider = ({
         timestamp < 1_000_000_000_000 ? timestamp * 1000 : timestamp;
 
       if (isSwitched && activeMemberId && activeMemberId !== "self") {
-        const medId = Date.now();
+        // ✅ FIX: Collision-proof ID — Date.now() alone risks collision if two medicines
+        // are added in the same millisecond (rapid saves on slow devices).
+        const medId = Date.now() * 1000 + Math.floor(Math.random() * 1000);
         await syncAddMedicine({
           id: medId, name, dose, type, time,
           timestamp: normalisedTimestamp, meal, frequency,
@@ -370,7 +387,7 @@ export const MedicineProvider = ({
         id: lastMedicine.id, name, dose, type, time,
         timestamp: normalisedTimestamp, meal, frequency,
         startDate, endDate, reminder, notificationId: notifId,
-      });
+      }).catch((err) => console.log("⚠️ syncAddMedicine (self) failed:", err));
 
       if (notifId) syncUpdateMedicineNotificationId(lastMedicine.id, notifId);
 
@@ -420,7 +437,7 @@ export const MedicineProvider = ({
       const item = medicines.find((m) => m.id === id);
       if (item?.notificationId) await cancelMedicineNotification(item.notificationId);
       deleteMedicine(id);
-      syncDeleteMedicine(id);
+      syncDeleteMedicine(id).catch((err) => console.log("⚠️ syncDeleteMedicine (self) failed:", err));
       await loadMedicines();
     } catch (err) {
       console.log("💊 Delete medicine error:", err);

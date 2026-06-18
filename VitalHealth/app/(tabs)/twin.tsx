@@ -14,6 +14,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useIsFocused } from '@react-navigation/native';
 import Svg, { Path } from 'react-native-svg';
 
 
@@ -284,7 +285,7 @@ export default function TwinScreen() {
     lastVitals, lastAnomalies, lastInteractionWarnings, lastAiInsights,
     todayEvents, addEvent, addEventAndSimulate, removeEvent, clearToday, fillBaselineEvents,
     savedRoutines, saveCurrentRoutine, loadRoutine, loadRoutineWithConflictCheck, renameRoutine, deleteRoutine,
-    editingRoutineId, setEditingRoutineId, setDefaultRoutine, restoreDefaultRoutine,
+    editingRoutineId, setEditingRoutineId, setDefaultRoutine, restoreDefaultRoutine, copyPrimaryDefaultRoutine,
     sessions, refreshSessions,
     simulationName, setSimulationName,
     runSimulation,
@@ -298,8 +299,19 @@ export default function TwinScreen() {
     pendingConflicts,
     pendingConflictResolver,
     dismissConflicts,
+    calibrationJustSucceeded,
+    dismissCalibrationSuccess,
   } = useBiogearsTwin();
-  const { activeProfile: profile } = useFamily();
+   const { activeProfile: profile, isSwitched } = useFamily();
+  const isFocused = useIsFocused();
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
+
+  useEffect(() => {
+    if (calibrationJustSucceeded && isFocused) {
+      setShowSuccessModal(true);
+      dismissCalibrationSuccess();
+    }
+  }, [calibrationJustSucceeded, isFocused]);
 
   const handleFillBaseline = async () => {
     if (sessions.length > 0 && savedRoutines.length > 0) {
@@ -1641,11 +1653,49 @@ export default function TwinScreen() {
             </TouchableOpacity>
           ))
         ) : (
-          <View style={[ss.routineCard, { backgroundColor: c.card, paddingVertical: 18, justifyContent: 'center', alignItems: 'center', borderStyle: 'dashed', borderWidth: 1, borderColor: c.border }]}>
-            <Text style={{ color: c.sub, fontSize: 13 }}>No saved routines found.</Text>
-            <TouchableOpacity onPress={handleRestoreDefault} style={{ marginTop: 8 }}>
-              <Text style={{ color: c.active, fontSize: 12, fontWeight: 'bold' }}>Retrieve Default State</Text>
-            </TouchableOpacity>
+          <View style={[ss.emptyRoutineCard, { backgroundColor: c.card, borderColor: c.border }]}>
+            <View style={ss.emptyRoutineIconContainer}>
+              <Ionicons name="calendar-outline" size={24} color={c.active} />
+            </View>
+            <Text style={[ss.emptyRoutineTitle, { color: c.text }]}>No Saved Routines</Text>
+            <Text style={[ss.emptyRoutineDesc, { color: c.sub }]}>
+              {isSwitched 
+                ? `No daily habits or routines have been logged for ${profile?.firstName || 'this member'}.`
+                : "A saved routine represents your typical daily schedule (sleep, meals, activities) to automatically sync the clinical twin."
+              }
+            </Text>
+            
+            <View style={ss.emptyRoutineActions}>
+              <TouchableOpacity
+                style={[ss.emptyRoutineBtn, { backgroundColor: c.active }]}
+                onPress={() => {
+                  switchMode('routine');
+                  setActiveTab('meal');
+                  Animated.spring(fabAnim, { toValue: 1, useNativeDriver: true }).start();
+                }}
+              >
+                <Ionicons name="add-circle" size={16} color="#fff" />
+                <Text style={ss.emptyRoutineBtnTxt}>Log Custom Routine</Text>
+              </TouchableOpacity>
+
+              {isSwitched ? (
+                <TouchableOpacity
+                  style={[ss.emptyRoutineBtnSecondary, { borderColor: c.active, borderWidth: 1 }]}
+                  onPress={copyPrimaryDefaultRoutine}
+                >
+                  <Ionicons name="copy-outline" size={16} color={c.active} />
+                  <Text style={[ss.emptyRoutineBtnTxtSecondary, { color: c.active }]}>Copy Primary Routine</Text>
+                </TouchableOpacity>
+              ) : (
+                <TouchableOpacity
+                  style={[ss.emptyRoutineBtnSecondary, { borderColor: c.active, borderWidth: 1 }]}
+                  onPress={handleRestoreDefault}
+                >
+                  <Ionicons name="sync-outline" size={16} color={c.active} />
+                  <Text style={[ss.emptyRoutineBtnTxtSecondary, { color: c.active }]}>Retrieve Default State</Text>
+                </TouchableOpacity>
+              )}
+            </View>
           </View>
         )}
 
@@ -1762,13 +1812,28 @@ export default function TwinScreen() {
 
   const renderOrgansTab = () => (
     <>
-      {organScores?.scores ? (
+      {sessions.length > 0 && organScores?.scores ? (
         <BodyMap scores={organScores.scores} c={c} lastVitals={lastVitals} sessions={sessions} profile={profile} />
+      ) : sessions.length > 0 ? (
+        <View style={[ss.emptyCard, { backgroundColor: c.card, minHeight: 250, justifyContent: 'center' }]}>
+          <ActivityIndicator size="large" color={c.active} style={{ marginBottom: 12 }} />
+          <Text style={[ss.emptyTitle, { color: c.text }]}>Analyzing Vitals...</Text>
+          <Text style={[ss.emptySub, { color: c.sub }]}>Resolving organ health metrics from BioGears</Text>
+        </View>
       ) : (
-        <View style={[ss.emptyCard, { backgroundColor: c.card }]}>
-          <Text style={{ fontSize: 40 }}>🏥</Text>
-          <Text style={[ss.emptyTitle, { color: c.text }]}>No Organ Data Yet</Text>
-          <Text style={[ss.emptySub, { color: c.sub }]}>Run a simulation to see organ health scores</Text>
+        <View style={[ss.emptyCard, { backgroundColor: c.card, alignItems: 'center', padding: 24, borderRadius: 20 }]}>
+          <Text style={{ fontSize: 44, marginBottom: 12 }}>🫁</Text>
+          <Text style={[ss.emptyTitle, { color: c.text, fontWeight: '800', fontSize: 16 }]}>Anatomical Twin Offline</Text>
+          <Text style={[ss.emptySub, { color: c.sub, textAlign: 'center', marginTop: 8, lineHeight: 18, fontSize: 13, marginBottom: 16 }]}>
+            Your physiological map will populate here once you run your first simulation.
+          </Text>
+          <TouchableOpacity
+            style={{ backgroundColor: c.active, borderRadius: 12, paddingHorizontal: 20, paddingVertical: 12, flexDirection: 'row', alignItems: 'center', gap: 6 }}
+            onPress={() => setMode('routine')}
+          >
+            <Ionicons name="flash" size={16} color="#fff" />
+            <Text style={{ color: '#fff', fontWeight: 'bold', fontSize: 13 }}>Log Routine & Simulate</Text>
+          </TouchableOpacity>
         </View>
       )}
     </>
@@ -2317,6 +2382,29 @@ export default function TwinScreen() {
           </Pressable>
         </Pressable>
       </Modal>
+
+      {/* ── Calibration Success Modal ── */}
+      <Modal transparent visible={showSuccessModal} animationType="fade" onRequestClose={() => setShowSuccessModal(false)}>
+        <Pressable style={ss.modalOverlay} onPress={() => setShowSuccessModal(false)}>
+          <Pressable style={[ss.modalCard, { backgroundColor: c.card, borderColor: c.border, borderWidth: 1, alignItems: 'center', padding: 24, borderRadius: 24, width: '85%', maxWidth: 340 }]} onPress={(e) => e.stopPropagation()}>
+            <View style={{ width: 64, height: 64, borderRadius: 32, backgroundColor: '#10b98115', justifyContent: 'center', alignItems: 'center', marginBottom: 16 }}>
+              <Ionicons name="checkmark-circle" size={44} color="#10b981" />
+            </View>
+            <Text style={[ss.modalTitle, { color: c.text, textAlign: 'center', marginBottom: 8, fontSize: 18, fontWeight: 'bold' }]}>
+              Calibration Successful
+            </Text>
+            <Text style={{ color: c.sub, fontSize: 13, textAlign: 'center', lineHeight: 18, marginBottom: 20 }}>
+              Your Digital Twin clinical parameters have been synced and calibrated successfully with the BioGears physiology engine.
+            </Text>
+            <TouchableOpacity
+              style={[ss.modalBtn, { backgroundColor: c.active, width: '100%', borderRadius: 14, paddingVertical: 12, alignItems: 'center', justifyContent: 'center' }]}
+              onPress={() => setShowSuccessModal(false)}
+            >
+              <Text style={{ color: '#fff', fontWeight: 'bold', fontSize: 14 }}>Explore Digital Twin</Text>
+            </TouchableOpacity>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </>
   );
 
@@ -2336,6 +2424,20 @@ export default function TwinScreen() {
         <View style={[ss.noticeBar, { backgroundColor: '#f59e0b20', borderColor: '#f59e0b', marginTop: insets.top + 52 }]}>
           <Ionicons name="warning-outline" size={14} color="#f59e0b" />
           <Text style={ss.noticeTxt}>No twin registered — Profile → Calibrate Twin</Text>
+        </View>
+      )}
+
+      {twinStatus === 'checking' && (
+        <View style={[ss.noticeBar, { backgroundColor: '#f59e0b20', borderColor: '#f59e0b', marginTop: insets.top + 52 }]}>
+          <ActivityIndicator size="small" color="#f59e0b" style={{ marginRight: 6 }} />
+          <Text style={ss.noticeTxt}>Checking twin status...</Text>
+        </View>
+      )}
+
+      {twinStatus === 'registering' && (
+        <View style={[ss.noticeBar, { backgroundColor: '#eab30820', borderColor: '#eab308', marginTop: insets.top + 52 }]}>
+          <ActivityIndicator size="small" color="#eab308" style={{ marginRight: 6 }} />
+          <Text style={[ss.noticeTxt, { color: '#eab308' }]}>Calibrating Twin Engine in background. Please wait...</Text>
         </View>
       )}
 
@@ -2649,5 +2751,67 @@ const ss = StyleSheet.create({
   fillBaselineBtnTxt: {
     fontSize: 12,
     fontWeight: '700',
+  },
+  emptyRoutineCard: {
+    marginHorizontal: 4,
+    marginVertical: 8,
+    padding: 20,
+    borderRadius: 20,
+    borderWidth: 1.5,
+    borderStyle: 'dashed',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  emptyRoutineIconContainer: {
+    width: 54,
+    height: 54,
+    borderRadius: 27,
+    backgroundColor: 'rgba(56, 189, 248, 0.12)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  emptyRoutineTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    marginBottom: 6,
+  },
+  emptyRoutineDesc: {
+    fontSize: 12,
+    textAlign: 'center',
+    lineHeight: 18,
+    marginBottom: 16,
+    paddingHorizontal: 10,
+  },
+  emptyRoutineActions: {
+    width: '100%',
+    gap: 10,
+  },
+  emptyRoutineBtn: {
+    width: '100%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 12,
+    borderRadius: 12,
+  },
+  emptyRoutineBtnTxt: {
+    color: '#fff',
+    fontWeight: '700',
+    fontSize: 13,
+  },
+  emptyRoutineBtnSecondary: {
+    width: '100%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 12,
+    borderRadius: 12,
+  },
+  emptyRoutineBtnTxtSecondary: {
+    fontWeight: '700',
+    fontSize: 13,
   },
 });

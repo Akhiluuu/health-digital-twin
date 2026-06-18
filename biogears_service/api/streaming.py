@@ -59,9 +59,8 @@ def _engine_thread(job_id: str, scenario_path: str, user_id: str,
     job = _stream_jobs[job_id]
     try:
         rel_scenario = os.path.relpath(scenario_path, BIOGEARS_BIN_DIR)
-        # Use "./" prefix so the shell resolves the binary relative to BIOGEARS_BIN_DIR.
-        # Without it, the shell searches $PATH and fails to find bg-cli.
-        command = f'"./{BIOGEARS_EXECUTABLE.name}" Scenario "{rel_scenario}"'
+        exec_path = str(BIOGEARS_EXECUTABLE.absolute())
+        command = [exec_path, "Scenario", rel_scenario]
 
         # Inject correct library path based on OS so bg-cli can find dynamic libraries
         env = os.environ.copy()
@@ -88,7 +87,7 @@ def _engine_thread(job_id: str, scenario_path: str, user_id: str,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
-            shell=True,
+            shell=False,
             cwd=str(BIOGEARS_BIN_DIR),
             env=env,
         )

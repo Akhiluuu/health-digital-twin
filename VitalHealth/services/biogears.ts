@@ -546,6 +546,10 @@ export async function saveSessionMeta(userId: string, meta: LocalSessionMeta, ow
     if (firestoreUid) {
       await setDoc(doc(db, "users", firestoreUid, "session_meta", meta.session_id), meta);
       console.log(`☁️ Session meta synced to Firestore: ${meta.session_id} for owner: ${firestoreUid}`);
+    } else {
+      // ✅ FIX: Auth not ready yet — session is safely in AsyncStorage;
+      // it will be synced on the next app foreground via syncDigitalTwinDataFromFirestore.
+      console.log("[BioGears] saveSessionMeta: auth not ready, skipping Firestore (AsyncStorage OK)");
     }
   } catch (err) {
     console.warn("⚠️ Failed to sync session meta to Firestore:", err);
@@ -751,16 +755,22 @@ export async function syncDigitalTwinDataFromFirestore(userId: string, ownerUid?
 
 export async function syncPendingEvents(userId: string, events: any[], ownerUid?: string): Promise<void> {
   try {
+    // ✅ FIX: Don't silently skip on cold-start null auth.
+    // If ownerUid is provided (family member case), use it directly.
+    // For self, if auth.currentUser is null (cold start), skip gracefully —
+    // todayEvents are persisted to AsyncStorage too, so no data is lost.
     const user = auth.currentUser;
     const firestoreUid = ownerUid || user?.uid;
-    if (firestoreUid) {
-      await setDoc(doc(db, "users", firestoreUid, "biogears_pending", "today"), {
-        userId,
-        events,
-        updatedAt: serverTimestamp(),
-      });
-      console.log(`☁️ Pending events synced to Firestore for owner: ${firestoreUid}`);
+    if (!firestoreUid) {
+      console.log("[BioGears] syncPendingEvents: auth not ready, skipping Firestore sync (AsyncStorage backup OK)");
+      return;
     }
+    await setDoc(doc(db, "users", firestoreUid, "biogears_pending", "today"), {
+      userId,
+      events,
+      updatedAt: serverTimestamp(),
+    });
+    console.log(`☁️ Pending events synced to Firestore for owner: ${firestoreUid}`);
   } catch (err) {
     console.warn("⚠️ Failed to sync pending events to Firestore:", err);
   }

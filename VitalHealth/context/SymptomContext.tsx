@@ -21,6 +21,7 @@ import {
   syncDeleteSymptom,
   syncResolveSymptom,
   syncUpdateSymptom,
+  syncClearSymptomHistory,
   fetchSymptomsFromFirebase,
   fetchSymptomHistoryFromFirebase,
 } from "../services/firebaseSync";
@@ -181,7 +182,13 @@ export function SymptomsProvider({ children }: { children: React.ReactNode }) {
   // NOTE: SymptomsProvider is always rendered inside FamilyProvider (see _layout.tsx).
   // useFamily() is safe to call unconditionally here. The previous try/catch pattern
   // was a React Rules of Hooks VIOLATION (hooks must never be called in try/catch).
-  const { isSwitched, activeMemberId } = useFamily();
+  const { isSwitched, activeMemberId, reportLoading } = useFamily();
+
+  useEffect(() => {
+    if (reportLoading) {
+      reportLoading("symptoms", isLoadingMemberSymptoms);
+    }
+  }, [isLoadingMemberSymptoms, reportLoading]);
 
   //////////////////////////////////////////////////////////
   // REFRESH — reacts to profile switching
@@ -413,7 +420,7 @@ export function SymptomsProvider({ children }: { children: React.ReactNode }) {
       }
       syncWithRetry(() => syncUpdateSymptom(id, updates), "UpdateSymptom");
     },
-    []
+    [isSwitched, activeMemberId]
   );
 
   //////////////////////////////////////////////////////////
@@ -422,8 +429,16 @@ export function SymptomsProvider({ children }: { children: React.ReactNode }) {
 
   const clearHistory = useCallback(async () => {
     setHistorySymptoms([]);
+    if (isSwitched && activeMemberId && activeMemberId !== "self") {
+      // For switched member: clear their Firebase symptom history
+      syncWithRetry(() => syncClearSymptomHistory(activeMemberId), "ClearSymptomHistory").catch(() => {});
+      return;
+    }
+    // For self: clear local AsyncStorage AND Firebase history
     await AsyncStorage.removeItem(HISTORY_KEY);
-  }, []);
+    // Also wipe Firebase symptomHistory sub-collection so it doesn't bleed back on next sync
+    syncWithRetry(() => syncClearSymptomHistory(), "ClearSymptomHistory").catch(() => {});
+  }, [isSwitched, activeMemberId]);
 
   //////////////////////////////////////////////////////////
   // PROVIDER

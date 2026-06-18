@@ -155,17 +155,19 @@ export function LoadingOverlay() {
           },
         ]}
       >
-        {/* Animated Icon Ring */}
-        <Animated.View style={[styles.iconContainer, { transform: [{ rotate: spin }] }]}>
+        {/* Animated DNA Spinner Ring */}
+        <Animated.View
+          style={[
+            styles.iconContainer,
+            {
+              borderColor: isDark ? "rgba(14, 165, 233, 0.2)" : "rgba(14, 165, 233, 0.12)",
+              borderTopColor: "#0ea5e9",
+              transform: [{ rotate: spin }],
+            },
+          ]}
+        >
           <Text style={styles.emojiIcon}>🧬</Text>
         </Animated.View>
-
-        {/* Health Spinner */}
-        <ActivityIndicator
-          size="small"
-          color="#0ea5e9"
-          style={styles.spinner}
-        />
 
         {/* Creative Pulse Text */}
         <Animated.Text
@@ -222,20 +224,18 @@ const styles = StyleSheet.create({
     elevation: 8,
   },
   iconContainer: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    borderWidth: 3,
     justifyContent: "center",
     alignItems: "center",
-    marginBottom: 16,
+    marginBottom: 20,
   },
   emojiIcon: {
     fontSize: 40,
     lineHeight: 48,
     textAlign: "center",
-  },
-  spinner: {
-    marginBottom: 12,
   },
   titleText: {
     fontSize: 16,

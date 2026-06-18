@@ -85,6 +85,9 @@ let _timerInterval: ReturnType<typeof setInterval> | null = null;
 let _loaded       = false;
 
 async function loadPersistedState() {
+  // ✅ FIX: _loaded is reset on stopAccelerometerTracking() so that if tracking
+  // restarts in the same JS process, we correctly reload from AsyncStorage
+  // instead of silently starting from 0 (the default in-memory state).
   if (_loaded) return;
   _loaded = true;
   try {
@@ -164,6 +167,11 @@ export function stopAccelerometerTracking() {
   try { _accelSub?.remove(); } catch {}
   _accelSub = null;
   if (_timerInterval) { clearInterval(_timerInterval); _timerInterval = null; }
+  // ✅ FIX: Reset _loaded so the NEXT startAccelerometerTracking() call
+  // (within the same JS process, e.g. after foreground service restart)
+  // will correctly reload from AsyncStorage rather than skipping it
+  // and starting fresh from in-memory defaults (which may be 0).
+  _loaded = false;
   saveStepState(_steps, _sessionSecs, _lastMoveTime, _notifSent);
 }
 

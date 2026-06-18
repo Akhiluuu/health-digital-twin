@@ -4,11 +4,12 @@
 // – Theme support
 // – Profile-switch CTA
 // – Proper "Switch Profile" button to view everything in their context
+// – Dependent profile editing and BioGears Twin recalibration directly from the details page
+// – Option to unlink/remove the member directly
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
-  Alert,
   Image,
   Modal,
   Pressable,
@@ -19,10 +20,19 @@ import {
   Text,
   TouchableOpacity,
   View,
+  TextInput,
+  FlatList,
+  KeyboardAvoidingView,
+  Platform,
+  Alert,
+  Share,
 } from "react-native";
+import Clipboard from "@react-native-clipboard/clipboard";
 import { router, Stack, useLocalSearchParams } from "expo-router";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
+import { doc, setDoc } from "firebase/firestore";
+import { db } from "../../services/firebase";
 
 import { useFamily } from "../../context/FamilyContext";
 import { useTheme } from "../../context/ThemeContext";
@@ -30,7 +40,10 @@ import { colors as globalColors } from "../../theme/colors";
 import {
   fetchMemberHealthData,
   subscribeToMemberHealth,
+  updateDependentProfile,
 } from "../../services/familySync";
+import { registerTwin } from "../../services/biogears";
+import { getTwinId } from "../../utils/twinUtils";
 import { FamilyMember } from "../../types/FamilyMember";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -60,6 +73,36 @@ function getInitials(member: Partial<FamilyMember>): string {
   return first + last || "?";
 }
 
+const MONTHS = [
+  { label: "January", value: "01" },
+  { label: "February", value: "02" },
+  { label: "March", value: "03" },
+  { label: "April", value: "04" },
+  { label: "May", value: "05" },
+  { label: "June", value: "06" },
+  { label: "July", value: "07" },
+  { label: "August", value: "08" },
+  { label: "September", value: "09" },
+  { label: "October", value: "10" },
+  { label: "November", value: "11" },
+  { label: "December", value: "12" },
+];
+
+const BLOOD_GROUPS = ["A+", "A-", "B+", "B-", "O+", "O-", "AB+", "AB-"];
+
+const CURRENT_YEAR = new Date().getFullYear();
+const YEARS = Array.from({ length: 121 }, (_, i) => String(CURRENT_YEAR - i));
+
+const daysInMonth = (year: string, month: string) => {
+  const y = parseInt(year, 10) || CURRENT_YEAR;
+  const m = parseInt(month, 10) || 1;
+  return new Date(y, m, 0).getDate();
+};
+
+const monthLabel = (value: string) => MONTHS.find((m) => m.value === value)?.label || "";
+
+type PickerType = null | "year" | "month" | "day" | "bloodGroup";
+
 // ─── Reusable Section ─────────────────────────────────────────────────────────
 
 function Section({
@@ -67,19 +110,28 @@ function Section({
   icon,
   children,
   c,
+  rightAction,
 }: {
   title: string;
   icon: keyof typeof Ionicons.glyphMap;
   children: React.ReactNode;
   c: any;
+  rightAction?: () => void;
 }) {
   return (
     <View style={[styles.section, { backgroundColor: c.card, borderColor: c.border }]}>
       <View style={styles.sectionHeader}>
-        <View style={[styles.sectionIconBg, { backgroundColor: c.accent + "18" }]}>
-          <Ionicons name={icon} size={16} color={c.accent} />
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 10, flex: 1 }}>
+          <View style={[styles.sectionIconBg, { backgroundColor: c.accent + "18" }]}>
+            <Ionicons name={icon} size={16} color={c.accent} />
+          </View>
+          <Text style={[styles.sectionTitle, { color: c.text }]}>{title}</Text>
         </View>
-        <Text style={[styles.sectionTitle, { color: c.text }]}>{title}</Text>
+        {rightAction ? (
+          <TouchableOpacity onPress={rightAction} style={{ padding: 4 }}>
+            <Ionicons name="create-outline" size={18} color={c.accent} />
+          </TouchableOpacity>
+        ) : null}
       </View>
       {children}
     </View>
@@ -91,22 +143,34 @@ function InfoRow({
   value,
   icon,
   c,
+  onPress,
+  rightIcon,
 }: {
   label: string;
   value: string;
   icon?: keyof typeof MaterialCommunityIcons.glyphMap;
   c: any;
+  onPress?: () => void;
+  rightIcon?: keyof typeof Ionicons.glyphMap;
 }) {
+  const Container = onPress ? TouchableOpacity : View;
   return (
-    <View style={[styles.infoRow, { borderBottomColor: c.border }]}>
+    <Container
+      style={[styles.infoRow, { borderBottomColor: c.border }]}
+      onPress={onPress}
+      activeOpacity={0.7}
+    >
       <Text style={[styles.infoLabel, { color: c.sub }]}>{label}</Text>
       <View style={styles.infoValueRow}>
         {icon ? (
           <MaterialCommunityIcons name={icon} size={14} color={c.sub} style={{ marginRight: 4 }} />
         ) : null}
-        <Text style={[styles.infoValue, { color: c.text }]}>{value}</Text>
+        <Text style={[styles.infoValue, { color: c.text, marginRight: rightIcon ? 6 : 0 }]}>{value}</Text>
+        {rightIcon ? (
+          <Ionicons name={rightIcon} size={15} color={c.active} />
+        ) : null}
       </View>
-    </View>
+    </Container>
   );
 }
 
@@ -150,6 +214,8 @@ export default function MemberDetailsScreen() {
     isSwitched,
     activeMemberId,
     switchToSelf,
+    removeMember,
+    refreshMembers,
   } = useFamily();
 
   // Base member from context (has name/relation but may lack live health data)
@@ -163,6 +229,22 @@ export default function MemberDetailsScreen() {
   const [loading, setLoading]     = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const unsubRef = useRef<(() => void) | null>(null);
+
+  // Edit Dependent profile states
+  const [editModalVisible, setEditModalVisible] = useState(false);
+  const [depFirstName, setDepFirstName] = useState("");
+  const [depLastName, setDepLastName] = useState("");
+  const [depYear, setDepYear] = useState("");
+  const [depMonth, setDepMonth] = useState("");
+  const [depDay, setDepDay] = useState("");
+  const [depDob, setDepDob] = useState("");           // derived YYYY-MM-DD
+  const [depGender, setDepGender] = useState<"Male" | "Female">("Male");
+  const [depBloodGroup, setDepBloodGroup] = useState("");
+  const [depHeight, setDepHeight] = useState("");      // cm
+  const [depWeight, setDepWeight] = useState("");      // kg
+  const [depRelation, setDepRelation] = useState("");
+  const [activePicker, setActivePicker] = useState<PickerType>(null);
+  const [editLoading, setEditLoading] = useState(false);
 
   // ── Load initial data ──────────────────────────────────────────────────────
   const loadHealthData = useCallback(async () => {
@@ -224,6 +306,25 @@ export default function MemberDetailsScreen() {
     setRefreshing(false);
   }, [loadHealthData]);
 
+  // Keep depDob in sync whenever year/month/day are all chosen
+  useEffect(() => {
+    if (depYear && depMonth && depDay) {
+      setDepDob(`${depYear}-${depMonth}-${depDay}`);
+    } else {
+      setDepDob("");
+    }
+  }, [depYear, depMonth, depDay]);
+
+  // If the chosen day no longer fits the chosen month/year (e.g. Feb 30), reset it
+  useEffect(() => {
+    if (depDay && depYear && depMonth) {
+      const maxDay = daysInMonth(depYear, depMonth);
+      if (parseInt(depDay, 10) > maxDay) {
+        setDepDay("");
+      }
+    }
+  }, [depYear, depMonth]);
+
   // ── Merged member data ─────────────────────────────────────────────────────
   const member: Partial<FamilyMember> = { ...(baseMember ?? {}), ...(liveData ?? {}) };
 
@@ -233,6 +334,32 @@ export default function MemberDetailsScreen() {
     "Family Member";
   const relation = member.relation ?? member.relationship ?? "Family";
   const age      = getAge(member.dateOfBirth ?? member.dob);
+
+  const handleShareId = (label: string, idVal: string) => {
+    Alert.alert(
+      `${label} Options`,
+      `What would you like to do with this ${label}?`,
+      [
+        {
+          text: "Copy to Clipboard",
+          onPress: () => {
+            Clipboard.setString(idVal);
+            Alert.alert("Copied", `${label} copied to clipboard.`);
+          },
+        },
+        {
+          text: "Share via Apps",
+          onPress: () => {
+            Share.share({
+              message: `VitalTwin Profile Details:\nName: ${fullName}\n${label}: ${idVal}`,
+              title: `Share ${label}`,
+            });
+          },
+        },
+        { text: "Cancel", style: "cancel" },
+      ]
+    );
+  };
 
   const isThisMemberActive = isSwitched && activeMemberId === memberUid;
 
@@ -258,6 +385,173 @@ export default function MemberDetailsScreen() {
       ]
     );
   }, [isThisMemberActive, baseMember, fullName, switchToMember, switchToSelf]);
+
+  // ── Handle Edit Dependent Modal ─────────────────────────────────────────────
+  const openEditModal = () => {
+    setDepFirstName(member.firstName || "");
+    setDepLastName(member.lastName || "");
+    setDepRelation(relation);
+    setDepGender(member.gender === "Female" ? "Female" : "Male");
+    setDepBloodGroup(member.bloodGroup || "");
+    setDepHeight(member.height ? String(member.height) : "");
+    setDepWeight(member.weight ? String(member.weight) : "");
+
+    const dobStr = member.dateOfBirth || member.dob || "";
+    if (dobStr && dobStr.includes("-")) {
+      const parts = dobStr.split("-");
+      if (parts.length === 3) {
+        setDepYear(parts[0]);
+        setDepMonth(parts[1]);
+        setDepDay(parts[2]);
+      }
+    } else {
+      setDepYear("");
+      setDepMonth("");
+      setDepDay("");
+    }
+
+    setEditModalVisible(true);
+  };
+
+  const handleSaveDependent = async () => {
+    if (!depFirstName.trim() || !depLastName.trim()) {
+      Alert.alert("Error", "Please enter first and last name.");
+      return;
+    }
+    if (!depDob.trim() || !depHeight.trim() || !depWeight.trim()) {
+      Alert.alert("Error", "Please select date of birth and fill in height and weight.");
+      return;
+    }
+    if (!depRelation.trim()) {
+      Alert.alert("Error", "Please enter relationship.");
+      return;
+    }
+
+    setEditLoading(true);
+    try {
+      const success = await updateDependentProfile(memberUid, {
+        firstName: depFirstName.trim(),
+        lastName: depLastName.trim(),
+        dateOfBirth: depDob.trim(),
+        gender: depGender,
+        bloodGroup: depBloodGroup.trim(),
+        height: depHeight.trim(),
+        weight: depWeight.trim(),
+        relation: depRelation.trim(),
+      });
+
+      if (!success) {
+        Alert.alert("Error", "Failed to update profile. Please try again.");
+        return;
+      }
+
+      // Check if physiological metrics changed to trigger twin recalibration
+      const isPhysiologyChanged =
+        depGender !== member.gender ||
+        depDob !== (member.dateOfBirth || member.dob) ||
+        parseFloat(depHeight) !== parseFloat(String(member.height || 0)) ||
+        parseFloat(depWeight) !== parseFloat(String(member.weight || 0));
+
+      if (isPhysiologyChanged) {
+        const birthDate = new Date(depDob.trim());
+        const age = Math.max(
+          1,
+          Math.floor((Date.now() - birthDate.getTime()) / (365.25 * 24 * 60 * 60 * 1000))
+        );
+
+        await registerTwin({
+          user_id: getTwinId({
+            firstName: depFirstName.trim(),
+            lastName: depLastName.trim(),
+            phone: member.phone || "",
+          } as any),
+          age,
+          weight: parseFloat(depWeight) || 20,
+          height: parseFloat(depHeight) || 100,
+          sex: depGender,
+        });
+        await setDoc(doc(db, "users", memberUid), { biogears_registered: true }, { merge: true });
+      }
+
+      await refreshMembers();
+      await loadHealthData();
+      setEditModalVisible(false);
+      Alert.alert("Success", "Profile updated successfully!");
+    } catch (e) {
+      console.log("❌ Update profile error:", e);
+      Alert.alert("Error", "An error occurred while saving profile.");
+    } finally {
+      setEditLoading(false);
+    }
+  };
+
+  const handleRemoveMember = () => {
+    Alert.alert(
+      "Remove Member",
+      `Are you sure you want to remove ${fullName} from your family health network?`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Remove",
+          style: "destructive",
+          onPress: async () => {
+            setEditModalVisible(false);
+            setLoading(true);
+            try {
+              await removeMember(memberUid);
+              router.back();
+            } catch (e) {
+              console.log("❌ removeMember error:", e);
+              Alert.alert("Error", "Could not remove member.");
+            } finally {
+              setLoading(false);
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const renderDropdownField = (value: string, placeholder: string, onPress: () => void) => (
+    <TouchableOpacity
+      onPress={onPress}
+      style={[styles.input, styles.dropdownField, { backgroundColor: c.bg, borderColor: c.border }]}
+    >
+      <Text style={{ color: value ? c.text : c.sub, fontSize: 14 }}>{value || placeholder}</Text>
+      <Ionicons name="chevron-down" size={16} color={c.sub} />
+    </TouchableOpacity>
+  );
+
+  const pickerOptions: { label: string; value: string }[] =
+    activePicker === "year"
+      ? YEARS.map((y) => ({ label: y, value: y }))
+      : activePicker === "month"
+      ? MONTHS
+      : activePicker === "day"
+      ? Array.from({ length: daysInMonth(depYear, depMonth) }, (_, i) => {
+          const d = String(i + 1).padStart(2, "0");
+          return { label: d, value: d };
+        })
+      : activePicker === "bloodGroup"
+      ? BLOOD_GROUPS.map((b) => ({ label: b, value: b }))
+      : [];
+
+  const pickerTitle =
+    activePicker === "year"
+      ? "Select Year"
+      : activePicker === "month"
+      ? "Select Month"
+      : activePicker === "day"
+      ? "Select Day"
+      : "Select Blood Group";
+
+  const handlePickerSelect = (value: string) => {
+    if (activePicker === "year") setDepYear(value);
+    if (activePicker === "month") setDepMonth(value);
+    if (activePicker === "day") setDepDay(value);
+    if (activePicker === "bloodGroup") setDepBloodGroup(value);
+    setActivePicker(null);
+  };
 
   // ── Loading / not-found states ─────────────────────────────────────────────
   if (!isLoaded) {
@@ -355,12 +649,35 @@ export default function MemberDetailsScreen() {
           ) : null}
 
           {/* Personal Information */}
-          <Section title="Personal Information" icon="person-outline" c={c}>
+          <Section
+            title="Personal Information"
+            icon="person-outline"
+            c={c}
+            rightAction={member.isDependent ? openEditModal : undefined}
+          >
             <InfoRow label="Blood Group" value={member.bloodGroup ?? "--"} c={c} />
             <InfoRow label="Height"      value={member.height ? `${member.height} cm` : "--"} c={c} />
             <InfoRow label="Weight"      value={member.weight ? `${member.weight} kg` : "--"} c={c} />
             {member.dateOfBirth || member.dob ? (
               <InfoRow label="Date of Birth" value={member.dateOfBirth ?? member.dob ?? "--"} c={c} />
+            ) : null}
+            {member.inviteCode || baseMember?.inviteCode ? (
+              <InfoRow
+                label="Health ID"
+                value={member.inviteCode || baseMember?.inviteCode || ""}
+                c={c}
+                rightIcon="share-social-outline"
+                onPress={() => handleShareId("Health ID", member.inviteCode || baseMember?.inviteCode || "")}
+              />
+            ) : null}
+            {memberUid ? (
+              <InfoRow
+                label="Profile ID"
+                value={memberUid}
+                c={c}
+                rightIcon="share-social-outline"
+                onPress={() => handleShareId("Profile ID", memberUid)}
+              />
             ) : null}
           </Section>
 
@@ -484,6 +801,164 @@ export default function MemberDetailsScreen() {
           ) : null}
         </ScrollView>
       </View>
+
+      {/* Edit Dependent Modal */}
+      <Modal
+        visible={editModalVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setEditModalVisible(false)}
+      >
+        <KeyboardAvoidingView
+          style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "center", alignItems: "center" }}
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+        >
+          <View style={[styles.modalSheet, { backgroundColor: c.card, borderColor: c.border, borderWidth: 1 }]}>
+            <Text style={[styles.modalTitle, { color: c.text }]}>Edit Dependent Profile</Text>
+
+            <ScrollView style={styles.modalScroll} keyboardShouldPersistTaps="handled">
+              <Text style={[styles.label, { color: c.text }]}>First Name</Text>
+              <TextInput
+                style={[styles.input, { backgroundColor: c.bg, color: c.text, borderColor: c.border }]}
+                placeholderTextColor={c.sub}
+                value={depFirstName}
+                onChangeText={setDepFirstName}
+              />
+
+              <Text style={[styles.label, { color: c.text }]}>Last Name</Text>
+              <TextInput
+                style={[styles.input, { backgroundColor: c.bg, color: c.text, borderColor: c.border }]}
+                placeholderTextColor={c.sub}
+                value={depLastName}
+                onChangeText={setDepLastName}
+              />
+
+              <Text style={[styles.label, { color: c.text }]}>Relationship</Text>
+              <TextInput
+                style={[styles.input, { backgroundColor: c.bg, color: c.text, borderColor: c.border }]}
+                placeholder="e.g. Son, Daughter, Mother"
+                placeholderTextColor={c.sub}
+                value={depRelation}
+                onChangeText={setDepRelation}
+              />
+
+              <Text style={[styles.label, { color: c.text }]}>Date of Birth</Text>
+              <View style={styles.dobRow}>
+                <View style={{ flex: 1 }}>
+                  {renderDropdownField(depYear, "Year", () => setActivePicker("year"))}
+                </View>
+                <View style={{ flex: 1.3 }}>
+                  {renderDropdownField(monthLabel(depMonth), "Month", () => setActivePicker("month"))}
+                </View>
+                <View style={{ flex: 1 }}>
+                  {renderDropdownField(depDay, "Day", () => setActivePicker("day"))}
+                </View>
+              </View>
+
+              <Text style={[styles.label, { color: c.text }]}>Gender</Text>
+              <View style={{ flexDirection: "row", gap: 10, marginBottom: 8 }}>
+                {(["Male", "Female"] as const).map((g) => (
+                  <TouchableOpacity
+                    key={g}
+                    onPress={() => setDepGender(g)}
+                    style={[
+                      styles.genderBtn,
+                      {
+                        flex: 1,
+                        backgroundColor: depGender === g ? c.accent : c.bg,
+                        borderColor: c.border,
+                      },
+                    ]}
+                  >
+                    <Text style={{ color: depGender === g ? "#fff" : c.text, fontWeight: "600", fontSize: 13 }}>{g}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              <Text style={[styles.label, { color: c.text }]}>Height (cm)</Text>
+              <TextInput
+                style={[styles.input, { backgroundColor: c.bg, color: c.text, borderColor: c.border }]}
+                keyboardType="numeric"
+                placeholderTextColor={c.sub}
+                value={depHeight}
+                onChangeText={setDepHeight}
+              />
+
+              <Text style={[styles.label, { color: c.text }]}>Weight (kg)</Text>
+              <TextInput
+                style={[styles.input, { backgroundColor: c.bg, color: c.text, borderColor: c.border }]}
+                keyboardType="numeric"
+                placeholderTextColor={c.sub}
+                value={depWeight}
+                onChangeText={setDepWeight}
+              />
+
+              <Text style={[styles.label, { color: c.text }]}>Blood Group</Text>
+              {renderDropdownField(depBloodGroup, "Select blood group", () => setActivePicker("bloodGroup"))}
+            </ScrollView>
+
+            <TouchableOpacity
+              style={[styles.removeBtn, { borderColor: c.danger }]}
+              onPress={handleRemoveMember}
+            >
+              <Ionicons name="trash-outline" size={16} color={c.danger} />
+              <Text style={[styles.removeBtnText, { color: c.danger }]}>Remove Member</Text>
+            </TouchableOpacity>
+
+            <View style={styles.btnRow}>
+              <TouchableOpacity
+                style={[styles.modalBtn, { backgroundColor: c.bg }]}
+                onPress={() => setEditModalVisible(false)}
+                disabled={editLoading}
+              >
+                <Text style={[styles.modalBtnText, { color: c.text }]}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalBtn, { backgroundColor: c.accent }]}
+                onPress={handleSaveDependent}
+                disabled={editLoading}
+              >
+                {editLoading ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text style={[styles.modalBtnText, { color: "#fff" }]}>Save Changes</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      {/* Picker Modal — shared by Year / Month / Day / Blood Group */}
+      <Modal
+        visible={activePicker !== null}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setActivePicker(null)}
+      >
+        <TouchableOpacity
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => setActivePicker(null)}
+        >
+          <View style={[styles.modalPickerSheet, { backgroundColor: c.card }]}>
+            <Text style={[styles.modalTitle, { color: c.text }]}>{pickerTitle}</Text>
+            <FlatList
+              data={pickerOptions}
+              keyExtractor={(item) => item.value}
+              style={{ maxHeight: 320 }}
+              renderItem={({ item }) => (
+                <TouchableOpacity
+                  style={[styles.modalOption, { borderBottomColor: c.border }]}
+                  onPress={() => handlePickerSelect(item.value)}
+                >
+                  <Text style={{ color: c.text, fontSize: 15 }}>{item.label}</Text>
+                </TouchableOpacity>
+              )}
+            />
+          </View>
+        </TouchableOpacity>
+      </Modal>
 
       {/* Themed Custom Alert Modal */}
       <Modal
@@ -716,7 +1191,6 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     marginBottom: 12,
-    gap: 10,
   },
   sectionIconBg: {
     width: 30,
@@ -785,5 +1259,104 @@ const styles = StyleSheet.create({
     textAlign: "center",
     fontSize: 12,
     marginTop: 4,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.4)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  modalSheet: {
+    width: "88%",
+    maxHeight: "85%",
+    borderRadius: 20,
+    padding: 20,
+    elevation: 5,
+    shadowColor: "#000",
+    shadowOpacity: 0.15,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+  },
+  modalPickerSheet: {
+    width: "80%",
+    maxHeight: "60%",
+    borderRadius: 16,
+    padding: 16,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+    textAlign: "center",
+    marginBottom: 16,
+  },
+  modalScroll: {
+    flexGrow: 0,
+    marginBottom: 16,
+  },
+  modalOption: {
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+  },
+  label: {
+    fontSize: 13,
+    fontWeight: "600",
+    marginBottom: 6,
+    marginTop: 10,
+  },
+  input: {
+    height: 46,
+    borderRadius: 8,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    fontSize: 14,
+    marginBottom: 8,
+  },
+  dropdownField: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  dobRow: {
+    flexDirection: "row",
+    gap: 6,
+    marginBottom: 8,
+  },
+  genderBtn: {
+    height: 44,
+    borderRadius: 8,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  removeBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    height: 44,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    marginBottom: 16,
+    marginTop: 8,
+  },
+  removeBtnText: {
+    fontWeight: "700",
+    fontSize: 14,
+  },
+  btnRow: {
+    flexDirection: "row",
+    gap: 10,
+    marginTop: 4,
+  },
+  modalBtn: {
+    flex: 1,
+    height: 48,
+    borderRadius: 10,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  modalBtnText: {
+    fontWeight: "700",
+    fontSize: 14,
   },
 });
