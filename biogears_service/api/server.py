@@ -92,10 +92,54 @@ async def require_api_key(key: str = Depends(api_key_header)):
 # PERSISTENT JOB STORE  (file-backed JSON, survives server restarts)
 # ---------------------------------------------------------------------------
 # Jobs are saved to JOBS_STORE_PATH so a reload/crash doesn't wipe results.
-# Thread-safe via _jobs_lock. Jobs older than JOB_TTL_SECONDS are pruned.
+# Thread-safe and cross-process safe via _jobs_lock and CrossProcessFileLock.
+# Jobs older than JOB_TTL_SECONDS are pruned.
 # ---------------------------------------------------------------------------
-_jobs_lock     = threading.Lock()
+_jobs_lock      = threading.Lock()
 JOB_TTL_SECONDS = 86400  # 24 hours
+
+
+class CrossProcessFileLock:
+    def __init__(self, lock_path: Path):
+        self.lock_path = lock_path
+        self.file_handle = None
+
+    def __enter__(self):
+        try:
+            self.lock_path.parent.mkdir(parents=True, exist_ok=True)
+            self.file_handle = open(self.lock_path, "w")
+            try:
+                import fcntl
+                flags = fcntl.LOCK_EX
+                fcntl.flock(self.file_handle, flags)
+            except ImportError:
+                try:
+                    import msvcrt
+                    self.file_handle.seek(0)
+                    msvcrt.locking(self.file_handle.fileno(), msvcrt.LK_LOCK, 1)
+                except (ImportError, OSError):
+                    pass
+        except Exception:
+            pass
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if self.file_handle:
+            try:
+                import fcntl
+                fcntl.flock(self.file_handle, fcntl.LOCK_UN)
+            except ImportError:
+                try:
+                    import msvcrt
+                    self.file_handle.seek(0)
+                    msvcrt.locking(self.file_handle.fileno(), msvcrt.LK_UNLCK, 1)
+                except Exception:
+                    pass
+            try:
+                self.file_handle.close()
+            except Exception:
+                pass
+            self.file_handle = None
 
 
 def _load_jobs() -> Dict[str, Dict[str, Any]]:
@@ -119,12 +163,12 @@ def _save_jobs(jobs: Dict[str, Dict[str, Any]]) -> None:
 
 
 def _get_job(job_id: str) -> Optional[Dict[str, Any]]:
-    with _jobs_lock:
+    with _jobs_lock, CrossProcessFileLock(JOBS_STORE_PATH.with_suffix(".lock")):
         return _load_jobs().get(job_id)
 
 
 def _set_job(job_id: str, data: Dict[str, Any]) -> None:
-    with _jobs_lock:
+    with _jobs_lock, CrossProcessFileLock(JOBS_STORE_PATH.with_suffix(".lock")):
         jobs = _load_jobs()
         jobs[job_id] = data
         _save_jobs(jobs)
@@ -132,7 +176,7 @@ def _set_job(job_id: str, data: Dict[str, Any]) -> None:
 
 def _prune_old_jobs() -> None:
     """Remove jobs older than JOB_TTL_SECONDS. Called once on startup."""
-    with _jobs_lock:
+    with _jobs_lock, CrossProcessFileLock(JOBS_STORE_PATH.with_suffix(".lock")):
         jobs = _load_jobs()
         cutoff = time.time() - JOB_TTL_SECONDS
         pruned = {jid: j for jid, j in jobs.items()
@@ -145,7 +189,7 @@ def _prune_old_jobs() -> None:
 
 def _recover_interrupted_jobs() -> None:
     """Finds any pending/running jobs on startup and marks them as failed so they don't hang the UI forever."""
-    with _jobs_lock:
+    with _jobs_lock, CrossProcessFileLock(JOBS_STORE_PATH.with_suffix(".lock")):
         jobs = _load_jobs()
         modified = False
         for jid, j in jobs.items():
@@ -1293,13 +1337,19 @@ def _predict_recovery_impl(data: PredictRequest):
 @app.get("/analytics/organ-scores/{user_id}", dependencies=[Depends(require_api_key)],
          summary="Get organ-specific health scores for the Twin markers")
 def get_organ_scores(user_id: str):
-    return analytics.compute_organ_scores(user_id, USER_HISTORY_DIR)
+    res = analytics.compute_organ_scores(user_id, USER_HISTORY_DIR)
+    if "error" in res:
+        raise HTTPException(status_code=404, detail=res["error"])
+    return res
 
 
 @app.get("/analytics/vitals-progress/{user_id}", dependencies=[Depends(require_api_key)],
          summary="Get historical progress trends (weeks/months)")
 def get_vitals_progress(user_id: str, timespan: str = "month"):
-    return analytics.compute_historical_progress(user_id, USER_HISTORY_DIR, timespan)
+    res = analytics.compute_historical_progress(user_id, USER_HISTORY_DIR, timespan)
+    if "error" in res:
+        raise HTTPException(status_code=404, detail=res["error"])
+    return res
 
 
 @app.post("/sync/undo/{user_id}", dependencies=[Depends(require_api_key)],
