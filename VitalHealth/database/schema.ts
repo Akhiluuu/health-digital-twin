@@ -10,7 +10,7 @@ export { db };
 // ── Version tracking so future migrations know the current schema ─────────────
 // v4: Added takenDate column directly to medicines schema (was previously added
 //     only via ALTER TABLE in initMedicineDB, which was not authoritative)
-const SCHEMA_VERSION = 4;
+const SCHEMA_VERSION = 5;
 
 export const initAllTables = async (): Promise<void> => {
   try {
@@ -132,6 +132,7 @@ export const initAllTables = async (): Promise<void> => {
         exercise_level   REAL,
         has_anomaly      INTEGER DEFAULT 0,
         anomaly_labels   TEXT,
+        event_count      INTEGER DEFAULT 0,
         run_at           TEXT    NOT NULL
       );
 
@@ -160,6 +161,9 @@ export const initAllTables = async (): Promise<void> => {
     } catch (_) {}
     try {
       await db.execAsync("ALTER TABLE simulation_history ADD COLUMN exercise_level REAL;");
+    } catch (_) {}
+    try {
+      await db.execAsync("ALTER TABLE simulation_history ADD COLUMN event_count INTEGER DEFAULT 0;");
     } catch (_) {}
 
     // ── Write schema version ─────────────────────────────────────────────────

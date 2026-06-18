@@ -599,7 +599,14 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
               if (!active) return;
               if (s.vitals_snapshot) {
                 const anomaliesList = s.has_anomaly ? [{ label: 'Anomaly' }] : [];
-                await saveSimulationResult(twinUserId, s.session_id, s.vitals_snapshot, anomaliesList).catch(() => {});
+                await saveSimulationResult(
+                  twinUserId,
+                  s.session_id,
+                  s.vitals_snapshot,
+                  anomaliesList,
+                  s.event_count ?? 0,
+                  s.timestamp
+                ).catch(() => {});
               }
             }
           }
@@ -779,13 +786,25 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
       setLastInteractionWarnings(Array.isArray(result.interaction_warnings) ? result.interaction_warnings : []);
     }
 
+    let jobEvents: RoutineEvent[] = [];
+    if (isCurrentActive) {
+      jobEvents = todayEvents;
+    } else if (targetUserId) {
+      try {
+        const raw = await AsyncStorage.getItem(TODAY_EVENTS_KEY(targetUserId));
+        if (raw) jobEvents = JSON.parse(raw);
+      } catch {}
+    }
+
     const sessionId = new Date().toISOString().replace(/[:.]/g, '-');
     if (targetUserId) {
       await saveSimulationResult(
         targetUserId,
         sessionId,
         result.vitals,
-        result.anomalies || []
+        result.anomalies || [],
+        jobEvents.length,
+        new Date().toISOString()
       ).catch(err => console.warn('[BiogearsTwin] Local save failed (non-fatal):', err));
     }
 
@@ -838,16 +857,6 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
           setAiInsightsLoading(false);
         }
       })();
-    }
-
-    let jobEvents: RoutineEvent[] = [];
-    if (isCurrentActive) {
-      jobEvents = todayEvents;
-    } else if (targetUserId) {
-      try {
-        const raw = await AsyncStorage.getItem(TODAY_EVENTS_KEY(targetUserId));
-        if (raw) jobEvents = JSON.parse(raw);
-      } catch {}
     }
 
     const sessionMeta: LocalSessionMeta = {
@@ -1099,7 +1108,7 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
             cardiac_output: rec.cardiac_output ?? undefined,
           },
           has_anomaly: rec.has_anomaly === 1,
-          event_count: 0,
+          event_count: rec.event_count ?? 0,
           ai_insights,
         });
       }

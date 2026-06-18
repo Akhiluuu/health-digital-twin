@@ -24,6 +24,7 @@ export interface SimulationRecord {
   exercise_level: number | null;
   has_anomaly: number;
   anomaly_labels: string | null;   // JSON array of label strings
+  event_count: number | null;
   run_at: string;                  // ISO timestamp
 }
 
@@ -33,20 +34,40 @@ export async function saveSimulationResult(
   uid: string,
   sessionId: string,
   vitals: BiogearsVitals,
-  anomalies: Array<{ label: string }> = []
+  anomalies: Array<{ label: string }> = [],
+  eventCount: number = 0,
+  customTimestamp?: string
 ): Promise<void> {
   try {
     const anomalyLabels = anomalies.length > 0
       ? JSON.stringify(anomalies.map(a => a.label))
       : null;
 
+    const runAt = customTimestamp || new Date().toISOString();
+
     await db.runAsync(
       `INSERT INTO simulation_history
         (uid, session_id, heart_rate, blood_pressure, glucose, respiration,
          spo2, core_temperature, cardiac_output, map, stroke_volume, tidal_volume,
-         arterial_ph, exercise_level, has_anomaly, anomaly_labels, run_at)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-       ON CONFLICT(session_id) DO NOTHING`,
+         arterial_ph, exercise_level, has_anomaly, anomaly_labels, event_count, run_at)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+       ON CONFLICT(session_id) DO UPDATE SET
+         heart_rate = excluded.heart_rate,
+         blood_pressure = excluded.blood_pressure,
+         glucose = excluded.glucose,
+         respiration = excluded.respiration,
+         spo2 = excluded.spo2,
+         core_temperature = excluded.core_temperature,
+         cardiac_output = excluded.cardiac_output,
+         map = excluded.map,
+         stroke_volume = excluded.stroke_volume,
+         tidal_volume = excluded.tidal_volume,
+         arterial_ph = excluded.arterial_ph,
+         exercise_level = excluded.exercise_level,
+         has_anomaly = excluded.has_anomaly,
+         anomaly_labels = excluded.anomaly_labels,
+         event_count = excluded.event_count,
+         run_at = excluded.run_at`,
       [
         uid,
         sessionId,
@@ -64,7 +85,8 @@ export async function saveSimulationResult(
         vitals.exercise_level ?? null,
         anomalies.length > 0 ? 1 : 0,
         anomalyLabels,
-        new Date().toISOString(),
+        eventCount,
+        runAt,
       ]
     );
     // Keep only the last 30 records per user to control storage
