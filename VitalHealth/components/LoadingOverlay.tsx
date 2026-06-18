@@ -8,6 +8,8 @@ import {
   Easing,
   Dimensions,
 } from "react-native";
+import { useSegments } from "expo-router";
+import { auth } from "../services/firebase";
 import { useFamily } from "../context/FamilyContext";
 import { useTheme } from "../context/ThemeContext";
 import { useMedicine } from "../context/MedicineContext";
@@ -19,6 +21,9 @@ import { useHydration } from "../context/HydrationContext";
 const { width } = Dimensions.get("window");
 
 export function LoadingOverlay() {
+  const segments = useSegments();
+  const currentUser = auth.currentUser;
+  
   const { isSwitchLoading, activeMemberId } = useFamily();
   const { theme } = useTheme();
   
@@ -65,14 +70,22 @@ export function LoadingOverlay() {
     isLoadingHyd,
   ]);
 
+  const isAuthScreen =
+    segments[0] === "signin" ||
+    segments[0] === "signup" ||
+    segments[0] === "welcome" ||
+    segments[0] === "startup";
+
   const showOverlay =
-    isSyncingSwitchedProfile ||
-    isSwitchLoading ||
-    isLoadingMeds ||
-    isLoadingSymps ||
-    isTwinLoading ||
-    isLoadingNutr ||
-    isLoadingHyd;
+    !isAuthScreen &&
+    !!currentUser &&
+    (isSyncingSwitchedProfile ||
+      isSwitchLoading ||
+      isLoadingMeds ||
+      isLoadingSymps ||
+      isTwinLoading ||
+      isLoadingNutr ||
+      isLoadingHyd);
 
   // Animation refs
   const spinValue = useRef(new Animated.Value(0)).current;

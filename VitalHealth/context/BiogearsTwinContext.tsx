@@ -494,6 +494,12 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
 
   // Clear state instantly on user change to prevent old profile routines/vitals from showing
   useEffect(() => {
+    if (!twinUserId || twinUserId === 'temp_user') {
+      setIsTwinLoading(false);
+      setTwinStatus('unregistered');
+      return;
+    }
+
     setTwinStatus('checking');
     setTwinStatusError(null);
     setIsTwinRegistered(false);
