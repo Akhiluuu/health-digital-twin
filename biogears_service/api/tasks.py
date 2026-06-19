@@ -22,10 +22,9 @@ def run_simulation_task(scenario_path: str, user_id: str = "unknown"):
     """Celery task to run the BioGears simulation subprocess."""
     logger.info(f"🚀 [Celery Worker] Starting simulation task for scenario: {scenario_path} (user: {user_id})")
     result = engine_runner.run_biogears(scenario_path, user_id=user_id)
-    logger.info(f"✅ [Celery Worker] Finished simulation task for scenario: {scenario_path} (user: {user_id})")
     return {
         "success": result.success,
-        "exit_code": result.exit_code,
-        "elapsed_seconds": result.elapsed_seconds,
-        "timed_out": result.timed_out,
+        "return_code": result.return_code,
+        "log_path": result.log_path,
     }
+
