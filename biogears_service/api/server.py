@@ -109,6 +109,52 @@ api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 async def require_api_key(key: str = Depends(api_key_header)):
     if API_KEY_ENV and key != API_KEY_ENV:
         raise HTTPException(status_code=403, detail="Invalid or missing API key. Set X-API-Key header.")
+    from biogears_service.api.db import current_actor
+    if key:
+        current_actor.set(f"api_key:{key[:8]}...")
+    else:
+        current_actor.set("system")
+
+def _run_biogears_via_celery(scenario_path: str, user_id: str = "unknown") -> bool:
+    try:
+        from biogears_service.api.tasks import run_simulation_task
+        task_res = run_simulation_task.delay(scenario_path, user_id=user_id)
+        result = task_res.get()
+        return bool(result.get("success", False))
+    except Exception as e:
+        logger.error(f"❌ [Celery Handoff] Failed to run simulation via Celery: {e}")
+        logger.info("⚠️ Falling back to local synchronous BioGears execution...")
+        res = engine_runner.run_biogears(scenario_path, user_id=user_id)
+        return res.success
+
+def compress_state_file(xml_path: Path):
+    """Compresses an XML state file to .gz in-place (deleting the original .xml)."""
+    import gzip
+    gz_path = xml_path.with_suffix(".xml.gz")
+    if xml_path.exists():
+        try:
+            with open(xml_path, "rb") as f_in:
+                with gzip.open(gz_path, "wb") as f_out:
+                    shutil.copyfileobj(f_in, f_out)
+            os.remove(str(xml_path))
+            logger.info(f"💾 Compressed state file to: {gz_path.name}")
+        except Exception as e:
+            logger.warning(f"Failed to compress state file {xml_path.name}: {e}")
+
+def decompress_state_file(xml_path: Path) -> bool:
+    """Decompresses a .xml.gz file back to .xml. Returns True if decompressed, False otherwise."""
+    import gzip
+    gz_path = xml_path.with_suffix(".xml.gz")
+    if gz_path.exists():
+        try:
+            with gzip.open(gz_path, "rb") as f_in:
+                with open(xml_path, "wb") as f_out:
+                    shutil.copyfileobj(f_in, f_out)
+            logger.info(f"🔓 Decompressed state file: {xml_path.name}")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to decompress state file {gz_path.name}: {e}")
+    return False
 
 # ---------------------------------------------------------------------------
 # PERSISTENT JOB STORE  (file-backed JSON, survives server restarts)
@@ -390,15 +436,13 @@ def _build_vitals_from_df(df: pd.DataFrame) -> dict:
 
 def _check_state_file_validity(state_file: Path, user_id: str) -> None:
     """
-    Checks if a twin state file exists and is not corrupted (i.e. size >= 50 KB).
-    If it is corrupted, attempts to auto-heal from the latest valid backup.
-
-    FIX: Threshold lowered from 100 KB (102400) to 50 KB (51200).
-    Valid BioGears state files are ~1.9 MB after full registration, but smaller
-    valid states (100–500 KB) can occur legitimately after lightweight runs or
-    on different BioGears builds. 50 KB is a safe floor that still catches truly
-    empty/zeroed files while not rejecting valid compact states.
+    Checks if a twin state file exists and is not corrupted.
+    Handles transparent decompression of gzipped state files.
     """
+    gz_path = state_file.with_suffix(".xml.gz")
+    if gz_path.exists() and not state_file.exists():
+        decompress_state_file(state_file)
+
     if not state_file.exists():
         raise HTTPException(status_code=404, detail=f"Twin '{user_id}' not found.")
 
@@ -413,20 +457,36 @@ def _check_state_file_validity(state_file: Path, user_id: str) -> None:
         # Try to heal from backups
         bak_dir = USER_STATES_DIR / "backups" / user_id
         if bak_dir.exists():
-            backups = sorted(bak_dir.glob(f"{user_id}_*.xml"), key=os.path.getmtime, reverse=True)
-            # Filter for non-corrupted backups (size >= 50 KB) and ignore temporary presim backups
-            valid_backups = [
-                b for b in backups 
-                if "presim" not in b.name and b.stat().st_size >= MIN_VALID_SIZE
-            ]
+            backups = sorted(
+                list(bak_dir.glob(f"{user_id}_*.xml")) + list(bak_dir.glob(f"{user_id}_*.xml.gz")),
+                key=os.path.getmtime,
+                reverse=True
+            )
+            # Filter for non-corrupted backups
+            valid_backups = []
+            for b in backups:
+                if "presim" in b.name:
+                    continue
+                if b.suffix == ".gz":
+                    if b.stat().st_size >= 10240:  # 10 KB compressed is > 50 KB raw
+                        valid_backups.append(b)
+                elif b.stat().st_size >= MIN_VALID_SIZE:
+                    valid_backups.append(b)
+
             if valid_backups:
                 latest_valid = valid_backups[0]
                 try:
-                    shutil.copy2(str(latest_valid), str(state_file))
+                    if latest_valid.suffix == ".gz":
+                        import gzip
+                        with gzip.open(latest_valid, "rb") as f_in:
+                            with open(state_file, "wb") as f_out:
+                                shutil.copyfileobj(f_in, f_out)
+                    else:
+                        shutil.copy2(str(latest_valid), str(state_file))
                     logger.info(f"♻️ [{user_id}] Auto-healed state file from backup: {latest_valid.name}")
                     return # Successfully healed!
                 except Exception as he_err:
-                    logger.error(f"❌ [{user_id}] Failed to copy backup for auto-healing: {he_err}")
+                    logger.error(f"❌ [{user_id}] Failed to restore backup for auto-healing: {he_err}")
         
         # If we couldn't heal it, raise the exception
         raise HTTPException(
@@ -446,9 +506,12 @@ def _run_batch_sync_blocking(user_id: str, events: list) -> dict:
             status_code=409,
             detail="A simulation job is already running for this user. Please wait for it to complete."
         )
+    state_file = USER_STATES_DIR / f"{user_id}.xml"
     try:
+        decompress_state_file(state_file)
         return _run_batch_sync_blocking_impl(user_id, events)
     finally:
+        compress_state_file(state_file)
         user_lock.release()
 
 def _run_batch_sync_blocking_impl(user_id: str, events: list) -> dict:
@@ -571,8 +634,8 @@ def _run_batch_sync_blocking_core(
     logger.info(f"      [{user_id}] Scenario ready → {Path(path).name}")
 
     # ── [4/6] Run BioGears engine ─────────────────────────────────────────────
-    logger.info(f"[4/6] [{user_id}] Handing off to BioGears engine... ({_elapsed()})")
-    if not engine_runner.run_biogears(path, user_id=user_id):
+    logger.info(f"[4/6] [{user_id}] Handing off to BioGears engine via Celery... ({_elapsed()})")
+    if not _run_biogears_via_celery(path, user_id=user_id):
         log = engine_runner.get_latest_log(user_id) or ""
         # Strip ANSI escape sequences and BioGears progress-bar noise before
         # returning the snippet so it's human-readable on mobile.
@@ -991,6 +1054,7 @@ async def register(data: RegistrationRequest):
             detail="A simulation job is already running for this user. Please wait for it to complete."
         )
     try:
+        _check_rate_limit(data.user_id)
         return await asyncio.to_thread(_register_impl, data)
     finally:
         user_lock.release()
@@ -1066,7 +1130,7 @@ def _register_impl(data: RegistrationRequest):
             data.sex, data.body_fat, data.dict()
         )
 
-        if engine_runner.run_biogears(path, user_id=data.user_id):
+        if _run_biogears_via_celery(path, user_id=data.user_id):
             target_file = BIOGEARS_BIN_DIR / f"{data.user_id}.xml"
             perm_state = USER_STATES_DIR / f"{data.user_id}.xml"
             MIN_VALID_SIZE = 51200  # 50 KB — must match _check_state_file_validity
@@ -1115,6 +1179,7 @@ def _register_impl(data: RegistrationRequest):
                 })
 
                 logger.info(f"✅ Twin {data.user_id} calibrated and metadata saved.")
+                compress_state_file(perm_state)
                 
                 # Clean up backups on success
                 if has_xml_bak and xml_bak.exists():
@@ -1380,6 +1445,7 @@ async def predict_recovery(data: PredictRequest):
             detail="A simulation job is already running for this user. Please wait for it to complete."
         )
     try:
+        _check_rate_limit(data.user_id)
         return await asyncio.to_thread(_predict_recovery_impl, data)
     finally:
         user_lock.release()
@@ -1392,7 +1458,7 @@ def _predict_recovery_impl(data: PredictRequest):
         data.user_id, str(state_file), hours=data.hours
     )
     try:
-        if engine_runner.run_biogears(path):
+        if _run_biogears_via_celery(path, user_id=data.user_id):
             chart_url = visualizer.generate_forecast_report(data.user_id, run_id=run_id)
             try:
                 csv_path = visualizer.get_csv_path(data.user_id, run_id=run_id, prefix="forecast_")
@@ -1650,6 +1716,7 @@ async def predict_whatif(data: WhatIfRequest):
             detail="A simulation job is already running for this user. Please wait for it to complete."
         )
     try:
+        _check_rate_limit(data.user_id)
         return await asyncio.to_thread(_predict_whatif_impl, data)
     finally:
         user_lock.release()
@@ -1669,7 +1736,7 @@ def _predict_whatif_impl(data: WhatIfRequest):
         )
 
     # Run baseline
-    if not engine_runner.run_biogears(base_path, user_id=data.user_id):
+    if not _run_biogears_via_celery(base_path, user_id=data.user_id):
         raise HTTPException(status_code=500, detail="Baseline simulation failed.")
 
     base_csv_name = f"{base_prefix}Results.csv"
@@ -1685,7 +1752,7 @@ def _predict_whatif_impl(data: WhatIfRequest):
                                                     custom_path=base_candidates[0])
 
     # Run intervention
-    if not engine_runner.run_biogears(evt_path, user_id=data.user_id):
+    if not _run_biogears_via_celery(evt_path, user_id=data.user_id):
         raise HTTPException(status_code=500, detail="Intervention simulation failed.")
 
     evt_csv_name = f"{evt_prefix}Results.csv"

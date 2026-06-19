@@ -19,10 +19,21 @@ import {
 import { auth, db } from "./firebase";
 
 // ── Pending sync queue ───────────────────────────────────────────
-// Stores failed syncs and retries when auth is ready.
+// Stores failed syncs and retries when auth is ready or with exponential backoff.
 // ✅ Module-level design: intentional singleton — survives component unmounts.
 const pendingSyncs: Array<() => Promise<void>> = [];
 let isFlushing = false; // Re-entrancy guard
+
+const scheduleRetry = (fn: () => Promise<void>, retryCount: number) => {
+  const baseDelay = 1000; // 1 second
+  const maxDelay = 30000; // 30 seconds max delay
+  const delay = Math.min(maxDelay, Math.pow(2, retryCount) * baseDelay + Math.random() * 1000);
+  console.log(`⏳ [firebaseSync] Scheduling retry #${retryCount} in ${Math.round(delay)}ms...`);
+  setTimeout(() => {
+    pendingSyncs.push(fn);
+    flushPendingSyncs();
+  }, delay);
+};
 
 const flushPendingSyncs = async () => {
   // Guard: don't re-enter if a flush is already in progress
@@ -367,7 +378,7 @@ export async function syncAddSymptom(
   } catch (e: any) {
     console.log("❌ syncAddSymptom FAILED:", e?.code, e?.message ?? e);
     if (retryCount < 5) {
-      pendingSyncs.push(() => syncAddSymptom(symptom, targetUid, retryCount + 1));
+      scheduleRetry(() => syncAddSymptom(symptom, targetUid, retryCount + 1), retryCount + 1);
     } else {
       console.log("🛑 syncAddSymptom retry limit reached (5 attempts). Dropping pending sync.");
     }
@@ -429,7 +440,7 @@ export async function syncResolveSymptom(
     } catch (e) {
       console.log("⚠️ Delete failed, retrying later:", e);
       if (retryCount < 5) {
-        pendingSyncs.push(() => syncResolveSymptom(id, resolvedAt, duration, targetUid, retryCount + 1));
+        scheduleRetry(() => syncResolveSymptom(id, resolvedAt, duration, targetUid, retryCount + 1), retryCount + 1);
       } else {
         console.log("🛑 syncResolveSymptom retry limit reached (5 attempts). Dropping pending sync.");
       }
@@ -441,7 +452,7 @@ export async function syncResolveSymptom(
 
     // ✅ retry later
     if (retryCount < 5) {
-      pendingSyncs.push(() => syncResolveSymptom(id, resolvedAt, duration, targetUid, retryCount + 1));
+      scheduleRetry(() => syncResolveSymptom(id, resolvedAt, duration, targetUid, retryCount + 1), retryCount + 1);
     } else {
       console.log("🛑 syncResolveSymptom retry limit reached (5 attempts). Dropping pending sync.");
     }

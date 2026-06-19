@@ -85,7 +85,15 @@ export async function getLatestHeartRate(uid: string): Promise<HeartRateReading 
 // ── Event subscriptions ───────────────────────────────────────────────────────
 export function onHeartRateFrame(cb: (e: HeartRateFrameEvent) => void) {
   if (!emitter) return () => {};
-  const sub = emitter.addListener('HeartRateFrame', cb);
+  let lastTime = 0;
+  const throttledCb = (e: HeartRateFrameEvent) => {
+    const now = Date.now();
+    if (now - lastTime >= 33) {
+      lastTime = now;
+      cb(e);
+    }
+  };
+  const sub = emitter.addListener('HeartRateFrame', throttledCb);
   return () => sub.remove();
 }
 

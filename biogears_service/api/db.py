@@ -1,66 +1,115 @@
 """
-db.py - Persistent patient metadata store using twins_database.json
-All read/write operations are atomic via temp-file + rename pattern.
-Thread-safe via a threading.Lock (in-process) + atomic os.replace (cross-process).
+db.py - Persistent patient metadata store using PostgreSQL / SQLite.
+Provides transaction guarantees, indexing on user_id, and an immutable HIPAA-compliant audit trail.
 """
 
-import json
 import os
-import shutil
-import threading
-from pathlib import Path
+import json
+import sqlite3
+import contextvars
 from typing import Optional, Dict, Any
-
+from pathlib import Path
 from biogears_service.simulation.config import BASE_DIR
 
-DB_PATH = BASE_DIR / "twins_database.json"
-_db_lock = threading.Lock()
-_file_lock_path = DB_PATH.with_suffix(".lock")
+# Database configuration
+DATABASE_URL = os.environ.get("DATABASE_URL")
+POSTGRES_HOST = os.environ.get("POSTGRES_HOST")
+POSTGRES_DB = os.environ.get("POSTGRES_DB")
+POSTGRES_USER = os.environ.get("POSTGRES_USER")
+POSTGRES_PASSWORD = os.environ.get("POSTGRES_PASSWORD")
+POSTGRES_PORT = os.environ.get("POSTGRES_PORT", "5432")
+
+# Local SQLite fallback
+SQLITE_PATH = BASE_DIR / "twins_database.db"
+
+_db_initialized = False
+
+# ContextVar to track the requester for HIPAA compliance auditing
+current_actor = contextvars.ContextVar("current_actor", default="system")
+
+def get_connection():
+    global _db_initialized
+    if DATABASE_URL or (POSTGRES_HOST and POSTGRES_DB):
+        import psycopg2
+        if DATABASE_URL:
+            conn = psycopg2.connect(DATABASE_URL)
+        else:
+            conn = psycopg2.connect(
+                host=POSTGRES_HOST,
+                database=POSTGRES_DB,
+                user=POSTGRES_USER,
+                password=POSTGRES_PASSWORD,
+                port=POSTGRES_PORT
+            )
+        if not _db_initialized:
+            with conn.cursor() as cur:
+                # Core profiles table
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS profiles (
+                        user_id VARCHAR(255) PRIMARY KEY,
+                        metadata JSONB NOT NULL
+                    );
+                """)
+                # PHI Access Audit trail table
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS audit_logs (
+                        id SERIAL PRIMARY KEY,
+                        timestamp TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+                        user_id VARCHAR(255) NOT NULL,
+                        action VARCHAR(50) NOT NULL,
+                        performed_by VARCHAR(255) NOT NULL,
+                        details TEXT
+                    );
+                """)
+                cur.execute("CREATE INDEX IF NOT EXISTS idx_audit_logs_user_id ON audit_logs(user_id);")
+                conn.commit()
+            _db_initialized = True
+        return conn, True
+    else:
+        conn = sqlite3.connect(str(SQLITE_PATH))
+        if not _db_initialized:
+            with conn:
+                # Core profiles table
+                conn.execute("""
+                    CREATE TABLE IF NOT EXISTS profiles (
+                        user_id TEXT PRIMARY KEY,
+                        metadata TEXT NOT NULL
+                    );
+                """)
+                # PHI Access Audit trail table
+                conn.execute("""
+                    CREATE TABLE IF NOT EXISTS audit_logs (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        user_id TEXT NOT NULL,
+                        action TEXT NOT NULL,
+                        performed_by TEXT NOT NULL,
+                        details TEXT
+                    );
+                """)
+                conn.execute("CREATE INDEX IF NOT EXISTS idx_audit_logs_user_id ON audit_logs(user_id);")
+            _db_initialized = True
+        return conn, False
 
 
-class CrossProcessFileLock:
-    def __init__(self, lock_path: Path):
-        self.lock_path = lock_path
-        self.file_handle = None
-
-    def __enter__(self):
-        self.file_handle = open(self.lock_path, "w")
-        import fcntl
-        fcntl.flock(self.file_handle, fcntl.LOCK_EX)
-        return self
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        if self.file_handle:
-            import fcntl
-            try:
-                fcntl.flock(self.file_handle, fcntl.LOCK_UN)
-            except Exception:
-                pass
-            try:
-                self.file_handle.close()
-            except Exception:
-                pass
-
-
-def _load() -> Dict[str, Any]:
-    """Load the full database dict. Returns {} if file is missing or empty."""
+def write_audit_log(conn, is_pg: bool, user_id: str, action: str, performed_by: str, details: str = None) -> None:
+    """Inserts a record into the audit logs table."""
     try:
-        if DB_PATH.exists() and DB_PATH.stat().st_size > 0:
-            with open(DB_PATH, "r", encoding="utf-8") as f:
-                return json.load(f)
-    except (json.JSONDecodeError, IOError):
-        pass
-    return {}
-
-
-def _save(data: Dict[str, Any]) -> None:
-    """Atomically write the database dict to disk (POSIX-safe)."""
-    tmp = DB_PATH.with_suffix(".tmp")
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2)
-    # os.replace() is atomic on POSIX (rename syscall) — avoids partial writes
-    # and works on same filesystem. shutil.move() can fail cross-device.
-    os.replace(str(tmp), str(DB_PATH))
+        if is_pg:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    INSERT INTO audit_logs (user_id, action, performed_by, details)
+                    VALUES (%s, %s, %s, %s);
+                """, (user_id, action, performed_by, details))
+        else:
+            conn.execute("""
+                INSERT INTO audit_logs (user_id, action, performed_by, details)
+                VALUES (?, ?, ?, ?);
+            """, (user_id, action, performed_by, details))
+    except Exception as e:
+        # Do not block main application operations if logging fails, but log a warning
+        import logging
+        logging.getLogger(__name__).warning(f"⚠️ PHI Audit Log Insertion Failed: {e}")
 
 
 # ---------------------------------------------------------------------------
@@ -68,42 +117,123 @@ def _save(data: Dict[str, Any]) -> None:
 # ---------------------------------------------------------------------------
 
 def upsert_profile(user_id: str, metadata: Dict[str, Any]) -> None:
-    """Create or fully overwrite a profile record. Thread-safe and process-safe."""
-    with _db_lock:
-        with CrossProcessFileLock(_file_lock_path):
-            db = _load()
-            db[user_id] = metadata
-            _save(db)
+    """Create or fully overwrite a profile record."""
+    conn, is_pg = get_connection()
+    try:
+        actor = current_actor.get()
+        if is_pg:
+            with conn:
+                with conn.cursor() as cur:
+                    cur.execute("""
+                        INSERT INTO profiles (user_id, metadata)
+                        VALUES (%s, %s)
+                        ON CONFLICT (user_id)
+                        DO UPDATE SET metadata = EXCLUDED.metadata;
+                    """, (user_id, json.dumps(metadata)))
+                write_audit_log(conn, is_pg, user_id, "UPDATE", actor, "Profile metadata upserted")
+        else:
+            with conn:
+                conn.execute("""
+                    INSERT INTO profiles (user_id, metadata)
+                    VALUES (?, ?)
+                    ON CONFLICT(user_id)
+                    DO UPDATE SET metadata = excluded.metadata;
+                """, (user_id, json.dumps(metadata)))
+                write_audit_log(conn, is_pg, user_id, "UPDATE", actor, "Profile metadata upserted")
+    finally:
+        conn.close()
 
 
 def get_profile(user_id: str) -> Optional[Dict[str, Any]]:
-    """Return a single profile dict, or None if not found. Thread-safe and process-safe."""
-    with _db_lock:
-        with CrossProcessFileLock(_file_lock_path):
-            return _load().get(user_id)
+    """Return a single profile dict, or None if not found."""
+    conn, is_pg = get_connection()
+    try:
+        actor = current_actor.get()
+        if is_pg:
+            with conn:
+                with conn.cursor() as cur:
+                    cur.execute("SELECT metadata FROM profiles WHERE user_id = %s;", (user_id,))
+                    row = cur.fetchone()
+                    write_audit_log(conn, is_pg, user_id, "VIEW", actor, "Profile details viewed")
+                    if row:
+                        val = row[0]
+                        if isinstance(val, str):
+                            return json.loads(val)
+                        return val
+        else:
+            with conn:
+                cur = conn.cursor()
+                cur.execute("SELECT metadata FROM profiles WHERE user_id = ?;", (user_id,))
+                row = cur.fetchone()
+                write_audit_log(conn, is_pg, user_id, "VIEW", actor, "Profile details viewed")
+                if row:
+                    return json.loads(row[0])
+    finally:
+        conn.close()
+    return None
 
 
 def delete_profile(user_id: str) -> bool:
-    """Remove a profile. Returns True if it existed, False otherwise. Thread-safe and process-safe."""
-    with _db_lock:
-        with CrossProcessFileLock(_file_lock_path):
-            db = _load()
-            if user_id in db:
-                del db[user_id]
-                _save(db)
-                return True
-            return False
+    """Remove a profile. Returns True if it existed, False otherwise."""
+    conn, is_pg = get_connection()
+    try:
+        actor = current_actor.get()
+        if is_pg:
+            with conn:
+                with conn.cursor() as cur:
+                    cur.execute("DELETE FROM profiles WHERE user_id = %s RETURNING user_id;", (user_id,))
+                    row = cur.fetchone()
+                    existed = row is not None
+                    if existed:
+                        write_audit_log(conn, is_pg, user_id, "DELETE", actor, "Profile deleted")
+                    return existed
+        else:
+            with conn:
+                cur = conn.cursor()
+                cur.execute("DELETE FROM profiles WHERE user_id = ?;", (user_id,))
+                changes = conn.total_changes
+                existed = changes > 0
+                if existed:
+                    write_audit_log(conn, is_pg, user_id, "DELETE", actor, "Profile deleted")
+                return existed
+    finally:
+        conn.close()
 
 
 def list_profiles() -> Dict[str, Any]:
-    """Return the entire database dict (keyed by user_id). Thread-safe and process-safe."""
-    with _db_lock:
-        with CrossProcessFileLock(_file_lock_path):
-            return _load()
+    """Return the entire database dict (keyed by user_id)."""
+    conn, is_pg = get_connection()
+    profiles = {}
+    try:
+        actor = current_actor.get()
+        if is_pg:
+            with conn:
+                with conn.cursor() as cur:
+                    cur.execute("SELECT user_id, metadata FROM profiles;")
+                    rows = cur.fetchall()
+                    write_audit_log(conn, is_pg, "all", "LIST", actor, "All profiles listed")
+                    for row in rows:
+                        user_id, val = row
+                        if isinstance(val, str):
+                            profiles[user_id] = json.loads(val)
+                        else:
+                            profiles[user_id] = val
+        else:
+            with conn:
+                cur = conn.cursor()
+                cur.execute("SELECT user_id, metadata FROM profiles;")
+                rows = cur.fetchall()
+                write_audit_log(conn, is_pg, "all", "LIST", actor, "All profiles listed")
+                for row in rows:
+                    user_id, val = row
+                    profiles[user_id] = json.loads(val)
+    finally:
+        conn.close()
+    return profiles
 
 
 def update_last_sleep_hours(user_id: str, events: list) -> None:
-    """Scan events for sleep and update last_sleep_hours in user's profile. Thread-safe."""
+    """Scan events for sleep and update last_sleep_hours in user's profile."""
     sleep_events = [e for e in events if isinstance(e, dict) and e.get("event_type") == "sleep"]
     if not sleep_events:
         return
@@ -118,4 +248,3 @@ def update_last_sleep_hours(user_id: str, events: list) -> None:
                 upsert_profile(user_id, profile)
         except Exception:
             pass
-

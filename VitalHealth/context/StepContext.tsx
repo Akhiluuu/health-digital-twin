@@ -295,9 +295,45 @@ export const StepProvider: React.FC<{
 
     if (!pedoOk) {
       detector.current.reset();
-      detector.current.onStep = () => { stepsRef.current++; dirtyRef.current = true; setSteps(stepsRef.current); };
+      let lastStepTime = Date.now();
+      let currentInterval = 50;
+
+      detector.current.onStep = () => {
+        stepsRef.current++;
+        dirtyRef.current = true;
+        setSteps(stepsRef.current);
+        lastStepTime = Date.now();
+        if (currentInterval !== 50) {
+          currentInterval = 50;
+          Accelerometer.setUpdateInterval(50);
+          console.log("🏃 Active step detected. Accelerometer sampling scaled up to 50ms.");
+        }
+      };
+
       Accelerometer.setUpdateInterval(50);
-      accelSub.current = Accelerometer.addListener(({ x, y, z }) => detector.current.feed(x, y, z));
+      accelSub.current = Accelerometer.addListener(({ x, y, z }) => {
+        detector.current.feed(x, y, z);
+        
+        const now = Date.now();
+        const idleTime = now - lastStepTime;
+
+        // If idle for > 60s, throttle to 250ms to save battery
+        if (idleTime > 60000 && currentInterval === 50) {
+          currentInterval = 250;
+          Accelerometer.setUpdateInterval(250);
+          console.log("🔋 Stationarity detected. Throttling accelerometer to 250ms.");
+        }
+
+        // If throttled, wake up immediately on motion spike
+        if (currentInterval > 50) {
+          const mag = Math.sqrt(x * x + y * y + z * z);
+          if (Math.abs(mag - 1.0) > 0.15) {
+            currentInterval = 50;
+            Accelerometer.setUpdateInterval(50);
+            console.log("🏃 Motion spike detected. Accelerometer sampling scaled up to 50ms.");
+          }
+        }
+      });
       setDataSource('SENSOR_FUSION');
     }
   }, [stopIosSensors]);

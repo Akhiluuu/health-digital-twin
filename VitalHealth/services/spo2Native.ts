@@ -67,7 +67,15 @@ const eventEmitter = Spo2Module ? new NativeEventEmitter(Spo2Module) : null;
 
 export function onSpo2Frame(callback: (event: Spo2FrameEvent) => void) {
   if (!eventEmitter) return () => {};
-  const sub = eventEmitter.addListener("Spo2Frame", callback);
+  let lastTime = 0;
+  const throttledCallback = (event: Spo2FrameEvent) => {
+    const now = Date.now();
+    if (now - lastTime >= 33) {
+      lastTime = now;
+      callback(event);
+    }
+  };
+  const sub = eventEmitter.addListener("Spo2Frame", throttledCallback);
   return () => sub.remove();
 }
 

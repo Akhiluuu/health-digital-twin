@@ -183,6 +183,15 @@ export default {
       eas: {
         projectId: "25851d8d-cbb7-4158-87cf-14451ab53cb6",
       },
+      firebaseConfig: {
+        apiKey: "AIzaSyBO9o2UiP6WH0NCHX15WvwYR8FP4--l9jI",
+        authDomain: "vital-health-2026-1e1ee.firebaseapp.com",
+        projectId: "vital-health-2026-1e1ee",
+        storageBucket: "vital-health-2026-1e1ee.firebasestorage.app",
+        messagingSenderId: "531709406873",
+        appId: "1:531709406873:web:81199b6c6fb8c0cefa9208",
+        measurementId: "G-E5HQKHME00"
+      }
     },
   },
 };

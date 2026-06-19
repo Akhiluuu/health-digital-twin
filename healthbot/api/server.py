@@ -22,11 +22,13 @@ import tempfile
 import re
 import time as _time
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Dict
 
+import jwt
+import requests
 from fastapi import FastAPI, HTTPException, UploadFile, File, Depends, Security
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.security import APIKeyHeader
+from fastapi.security import APIKeyHeader, HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel, Field
 
 from health_ai.embeddings.embedder import EmbeddingModel
@@ -72,10 +74,59 @@ app.add_middleware(
 # Set env var DIGITAL_TWIN_API_KEY to require callers to pass an API key.
 API_KEY_ENV = os.environ.get("DIGITAL_TWIN_API_KEY", "")
 api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
+http_bearer = HTTPBearer(auto_error=False)
 
-async def require_api_key(key: str = Depends(api_key_header)):
-    if API_KEY_ENV and key != API_KEY_ENV:
-        raise HTTPException(status_code=403, detail="Invalid or missing API key. Set X-API-Key header.")
+FIREBASE_PROJECT_ID = "vital-health-2026-1e1ee"
+GOOGLE_PUBLIC_KEYS_URL = "https://www.googleapis.com/robot/v1/metadata/x509/securetoken@system.gserviceaccount.com"
+
+_public_keys = {}
+_keys_expire_at = 0
+
+def get_google_public_key(kid: str) -> Optional[str]:
+    global _public_keys, _keys_expire_at
+    now = _time.time()
+    if not _public_keys or now > _keys_expire_at:
+        try:
+            res = requests.get(GOOGLE_PUBLIC_KEYS_URL, timeout=5)
+            if res.status_code == 200:
+                _public_keys = res.json()
+                _keys_expire_at = now + 3600
+        except Exception:
+            pass
+    return _public_keys.get(kid)
+
+async def require_api_key(
+    x_api_key: Optional[str] = Depends(api_key_header),
+    bearer: Optional[HTTPAuthorizationCredentials] = Depends(http_bearer)
+):
+    # 1. First try matching the X-API-Key header
+    if API_KEY_ENV and x_api_key == API_KEY_ENV:
+        return {"auth_type": "api_key"}
+
+    # 2. Try validating Bearer token as a Firebase ID Token
+    if bearer:
+        token = bearer.credentials
+        try:
+            header = jwt.get_unverified_header(token)
+            kid = header.get("kid")
+            if kid:
+                cert_pem = get_google_public_key(kid)
+                if cert_pem:
+                    payload = jwt.decode(
+                        token,
+                        cert_pem,
+                        algorithms=["RS256"],
+                        audience=FIREBASE_PROJECT_ID,
+                        issuer=f"https://securetoken.google.com/{FIREBASE_PROJECT_ID}"
+                    )
+                    return {"auth_type": "firebase", "user": payload}
+        except Exception as e:
+            raise HTTPException(status_code=403, detail=f"Firebase ID Token validation failed: {e}")
+
+    raise HTTPException(
+        status_code=403,
+        detail="Invalid or missing API key (X-API-Key) or Firebase ID Token (Bearer)."
+    )
 
 # ── Singletons ────────────────────────────────────────────────────────────────
 
@@ -1074,8 +1125,32 @@ async def embed_query(request: EmbedQueryRequest):
 
 
 
-@app.post("/generate", response_model=GenerateResponse, tags=["Generation"], dependencies=[Depends(require_api_key)])
-async def generate(request: GenerateRequest):
+# Rate limiting for AI chatbot endpoint: max 60 requests per minute per authenticated client
+import collections
+_chatbot_rate_log: Dict[str, collections.deque] = {}
+CHATBOT_LIMIT_MAX = 60
+CHATBOT_LIMIT_WINDOW = 60
+
+def _check_chatbot_rate_limit(ident: str):
+    now = _time.time()
+    if ident not in _chatbot_rate_log:
+        _chatbot_rate_log[ident] = collections.deque()
+    dq = _chatbot_rate_log[ident]
+    while dq and now - dq[0] > CHATBOT_LIMIT_WINDOW:
+        dq.popleft()
+    if len(dq) >= CHATBOT_LIMIT_MAX:
+        wait = int(CHATBOT_LIMIT_WINDOW - (now - dq[0]))
+        raise HTTPException(
+            status_code=429,
+            detail=f"Too many requests. Please wait {wait} seconds."
+        )
+    dq.append(now)
+
+@app.post("/generate", response_model=GenerateResponse, tags=["Generation"])
+async def generate(request: GenerateRequest, auth: dict = Depends(require_api_key)):
+    # Rate limit on user ID or authorization type
+    ident = auth.get("uid") or auth.get("auth_type", "anonymous")
+    _check_chatbot_rate_limit(ident)
 
     # ── Instant Emergency Short-Circuit Bypass (Bypass LLM completely) ────────
     if detect_red_flags(request.query):
