@@ -15,6 +15,11 @@ import {
   scheduleHydrationReminder,
   cancelHydrationReminders,
 } from "../services/notifeeService";
+import {
+  scheduleHydrationAlarm,
+  cancelHydrationAlarm,
+  isNativeHydrationAlarmAvailable,
+} from "../services/hydrationAlarmNative";
 
 import {
   HydrationEntry,
@@ -203,9 +208,18 @@ export const HydrationProvider = ({
 
   const initializeHydrationReminder = useCallback(async () => {
     try {
-      await cancelHydrationReminders();
-      await scheduleHydrationReminder();
-      console.log("💧 Hydration reminder scheduled");
+      const value = await AsyncStorage.getItem("hydration_interval");
+      const minutes = value ? Number(value) : 60;
+      
+      if (isNativeHydrationAlarmAvailable()) {
+        cancelHydrationAlarm();
+        scheduleHydrationAlarm(minutes);
+        console.log(`💧 Native Hydration reminder scheduled for ${minutes} minutes`);
+      } else {
+        await cancelHydrationReminders();
+        await scheduleHydrationReminder();
+        console.log(`💧 Notifee Hydration reminder scheduled for ${minutes} minutes`);
+      }
     } catch (err) {
       console.log("❌ Hydration reminder error:", err);
     }
@@ -266,8 +280,9 @@ export const HydrationProvider = ({
           return newValue;
         });
       }
+      initializeHydrationReminder().catch(() => {});
     },
-    [isSwitched, activeMemberId]
+    [isSwitched, activeMemberId, initializeHydrationReminder]
   );
 
   /////////////////////////////////////////////////////////

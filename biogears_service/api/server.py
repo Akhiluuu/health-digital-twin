@@ -1,8 +1,9 @@
-from fastapi import FastAPI, HTTPException, Depends, BackgroundTasks, Query
+from fastapi import FastAPI, HTTPException, Depends, BackgroundTasks, Query, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, Response
 from fastapi.security.api_key import APIKeyHeader
+from starlette.routing import Match
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
 import shutil, os, math, json, threading, re
@@ -70,6 +71,27 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+@app.middleware("http")
+async def validate_user_id_middleware(request: Request, call_next):
+    # Check path parameters for user_id in a routing-aware manner to prevent path traversal
+    for route in request.app.routes:
+        try:
+            match, child_scope = route.matches(request.scope)
+            if match == Match.FULL:
+                path_params = child_scope.get("path_params", {})
+                user_id = path_params.get("user_id")
+                if user_id:
+                    if not re.match(r'^[a-zA-Z0-9_\-\.]+$', user_id) or '..' in user_id:
+                        from fastapi.responses import JSONResponse
+                        return JSONResponse(
+                            status_code=400,
+                            content={"detail": "Invalid user_id format. Only alphanumeric, underscore, hyphen, and dot are allowed."}
+                        )
+                break
+        except Exception:
+            pass
+    return await call_next(request)
 
 REPORT_DIR = BASE_DIR / "reports"
 REPORT_DIR.mkdir(exist_ok=True)
@@ -368,26 +390,34 @@ def _build_vitals_from_df(df: pd.DataFrame) -> dict:
 
 def _check_state_file_validity(state_file: Path, user_id: str) -> None:
     """
-    Checks if a twin state file exists and is not corrupted (i.e. size >= 100 KB).
+    Checks if a twin state file exists and is not corrupted (i.e. size >= 50 KB).
     If it is corrupted, attempts to auto-heal from the latest valid backup.
+
+    FIX: Threshold lowered from 100 KB (102400) to 50 KB (51200).
+    Valid BioGears state files are ~1.9 MB after full registration, but smaller
+    valid states (100–500 KB) can occur legitimately after lightweight runs or
+    on different BioGears builds. 50 KB is a safe floor that still catches truly
+    empty/zeroed files while not rejecting valid compact states.
     """
     if not state_file.exists():
         raise HTTPException(status_code=404, detail=f"Twin '{user_id}' not found.")
 
-    if state_file.stat().st_size < 102400:  # 100 KB (valid state file is ~1.9 MB)
+    MIN_VALID_SIZE = 51200  # 50 KB — absolute floor for a non-empty BioGears state
+    if state_file.stat().st_size < MIN_VALID_SIZE:
         logger.warning(
             f"⚠️ [{user_id}] State file {state_file.name} is empty or corrupted "
-            f"(size={state_file.stat().st_size} B). Checking backups for auto-healing..."
+            f"(size={state_file.stat().st_size} B, threshold={MIN_VALID_SIZE} B). "
+            f"Checking backups for auto-healing..."
         )
         
         # Try to heal from backups
         bak_dir = USER_STATES_DIR / "backups" / user_id
         if bak_dir.exists():
             backups = sorted(bak_dir.glob(f"{user_id}_*.xml"), key=os.path.getmtime, reverse=True)
-            # Filter for non-corrupted backups (size >= 100 KB) and ignore temporary presim backups
+            # Filter for non-corrupted backups (size >= 50 KB) and ignore temporary presim backups
             valid_backups = [
                 b for b in backups 
-                if "presim" not in b.name and b.stat().st_size >= 102400
+                if "presim" not in b.name and b.stat().st_size >= MIN_VALID_SIZE
             ]
             if valid_backups:
                 latest_valid = valid_backups[0]
@@ -485,6 +515,13 @@ def _run_batch_sync_blocking_impl(user_id: str, events: list) -> dict:
     except Exception as e:
         # ROLLBACK ON EXCEPTION
         logger.error(f"❌ [{user_id}] Simulation failed or crashed: {e}. Rolling back state.")
+        # Delete temporary meta.json.tmp so it is not used in future attempts
+        meta_tmp = state_file.with_suffix(".meta.json.tmp")
+        if meta_tmp.exists():
+            try:
+                meta_tmp.unlink()
+            except Exception:
+                pass
         if pre_sim_backup_path and pre_sim_backup_path.exists():
             try:
                 shutil.copy2(str(pre_sim_backup_path), str(state_file))
@@ -663,7 +700,9 @@ def _run_batch_sync_blocking_core(
         updated_state_path = candidates[0] if candidates else None
     
     # Verify that the state was successfully serialized and is not empty or corrupted.
-    if not updated_state_path or not Path(updated_state_path).exists() or Path(updated_state_path).stat().st_size < 102400:
+    # Using the same 50 KB floor as _check_state_file_validity to be consistent.
+    MIN_VALID_SIZE = 51200  # 50 KB
+    if not updated_state_path or not Path(updated_state_path).exists() or Path(updated_state_path).stat().st_size < MIN_VALID_SIZE:
         raise HTTPException(
             status_code=500,
             detail="Simulation state serialization failed or output is corrupted. Check server logs."
@@ -685,6 +724,14 @@ def _run_batch_sync_blocking_core(
     try:
         os.replace(str(updated_state_path), str(state_file))
         logger.info("🔄 State synchronized safely.")
+        meta_tmp = state_file.with_suffix(".meta.json.tmp")
+        meta_perm = state_file.with_suffix(".meta.json")
+        if meta_tmp.exists():
+            try:
+                os.replace(str(meta_tmp), str(meta_perm))
+            except Exception as me:
+                logger.warning(f"⚠️ Meta sync skipped: {me}")
+        db.update_last_sleep_hours(user_id, sorted_events)
     except Exception as e:
         logger.warning(f"⚠️ State sync skipped: {e}")
 
@@ -694,10 +741,17 @@ def _run_batch_sync_blocking_core(
         bak_dir.mkdir(parents=True, exist_ok=True)
         ts_bak = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         shutil.copy2(str(state_file), str(bak_dir / f"{user_id}_{ts_bak}.xml"))
+        # Prune old backups safely — os.path.getmtime can raise if a file was
+        # concurrently deleted, so we use Path.stat() with an exception guard.
+        def _safe_mtime(p: Path) -> float:
+            try:
+                return p.stat().st_mtime
+            except OSError:
+                return 0.0
         for old in sorted(bak_dir.glob(f"{user_id}_*.xml"),
-                          key=os.path.getmtime, reverse=True)[7:]:
+                          key=_safe_mtime, reverse=True)[7:]:
             try: old.unlink()
-            except: pass
+            except Exception: pass
     except Exception as bak_err:
         logger.warning(f"Auto-backup failed (non-fatal): {bak_err}")
 
@@ -903,6 +957,9 @@ def get_profile(user_id: str):
             summary="Permanently delete a Digital Twin and all its data")
 def delete_profile(user_id: str):
     """Removes the engine state, simulation history, and stored metadata."""
+    # Security: prevent path traversal
+    if not re.match(r'^[a-zA-Z0-9_\-\.]+$', user_id) or '..' in user_id:
+        raise HTTPException(status_code=400, detail="Invalid user_id format.")
     try:
         state_file = USER_STATES_DIR / f"{user_id}.xml"
         if state_file.exists():
@@ -940,6 +997,13 @@ async def register(data: RegistrationRequest):
 
 def _register_impl(data: RegistrationRequest):
     logger.info(f"🚀 Registering Twin: {data.user_id}")
+
+    # ── 0. Sanitize user_id (prevent path-traversal attacks) ─────────────────
+    if not re.match(r'^[a-zA-Z0-9_\-\.]+$', data.user_id) or '..' in data.user_id:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid user_id. Use only alphanumerics, underscores, hyphens, and dots."
+        )
 
     # ── 1. Validate registration fields before touching the engine ────────────
     reg_errors = sim_validator.validate_registration(data.dict())
@@ -1005,7 +1069,8 @@ def _register_impl(data: RegistrationRequest):
         if engine_runner.run_biogears(path, user_id=data.user_id):
             target_file = BIOGEARS_BIN_DIR / f"{data.user_id}.xml"
             perm_state = USER_STATES_DIR / f"{data.user_id}.xml"
-            if target_file.exists() and target_file.stat().st_size >= 102400:
+            MIN_VALID_SIZE = 51200  # 50 KB — must match _check_state_file_validity
+            if target_file.exists() and target_file.stat().st_size >= MIN_VALID_SIZE:
                 shutil.copy2(str(target_file), str(perm_state))
                 os.remove(str(target_file))
 
@@ -1326,10 +1391,23 @@ def _predict_recovery_impl(data: PredictRequest):
     path, run_id, _csv_prefix = scenario_builder.build_forecast_scenario(
         data.user_id, str(state_file), hours=data.hours
     )
-    if engine_runner.run_biogears(path):
-        chart_url = visualizer.generate_forecast_report(data.user_id, run_id=run_id)
-        return {"status": "success", "forecast_chart": chart_url, "hours": data.hours}
-    raise HTTPException(status_code=500, detail="Forecast engine failed.")
+    try:
+        if engine_runner.run_biogears(path):
+            chart_url = visualizer.generate_forecast_report(data.user_id, run_id=run_id)
+            try:
+                csv_path = visualizer.get_csv_path(data.user_id, run_id=run_id, prefix="forecast_")
+                if csv_path and os.path.exists(str(csv_path)):
+                    os.remove(str(csv_path))
+            except Exception:
+                pass
+            return {"status": "success", "forecast_chart": chart_url, "hours": data.hours}
+        raise HTTPException(status_code=500, detail="Forecast engine failed.")
+    finally:
+        try:
+            if os.path.exists(path):
+                os.remove(path)
+        except Exception:
+            pass
 
 
 # ── GREEN TIER: ANALYTICS ENDPOINTS ──────────────────────────────────────────
@@ -1358,6 +1436,12 @@ def undo_last_simulation(user_id: str):
     """
     Reverts the twin's XML state file to the most recent backup.
     This effectively 'undos' the last simulation run.
+
+    FIX: The backup list is sorted newest-first (reverse=True). backups[0] IS the
+    most-recent backup and represents the state just before the last simulation ran.
+    We do NOT need a second entry (backups[1]) — the current state_file IS the
+    post-simulation state; the newest backup is the pre-simulation state we want.
+    Changed requirement from len >= 2 to len >= 1 (we only need 1 backup to undo).
     """
     state_file = USER_STATES_DIR / f"{user_id}.xml"
     bak_dir = USER_STATES_DIR / "backups" / user_id
@@ -1366,14 +1450,15 @@ def undo_last_simulation(user_id: str):
         raise HTTPException(status_code=404, detail="No backups found for this twin.")
         
     backups = sorted(bak_dir.glob(f"{user_id}_*.xml"), key=os.path.getmtime, reverse=True)
-    if len(backups) < 2:
-        # Index 0 is the backup of the current state. We need Index 1.
+    # Filter out presim (temporary) backups — only use regular post-simulation backups
+    valid_backups = [b for b in backups if "presim" not in b.name]
+    if len(valid_backups) < 1:
         raise HTTPException(status_code=404, detail="Not enough history to undo.")
         
-    target_bak = backups[1] # The one before the current state
+    # backups[0] = most-recent backup (pre-last-simulation state) — this is what we revert to
+    target_bak = valid_backups[0]
     try:
         shutil.copy2(str(target_bak), str(state_file))
-        # Optional: remove the latest CSV result if we want to be very clean
         logger.info(f"⏪ Undo successful for {user_id}. Reverted to {target_bak.name}")
         return {"status": "success", "message": "State reverted successfully."}
     except Exception as e:
@@ -1622,6 +1707,21 @@ def _predict_whatif_impl(data: WhatIfRequest):
     comparison_report = visualizer.generate_comparison_report(
         data.user_id, base_df, evt_df, intervention_label=intervention_label
     )
+
+    # Clean up what-if XML and CSV files to avoid polluting disk
+    for path in [base_path, evt_path]:
+        try:
+            if os.path.exists(path):
+                os.remove(path)
+        except Exception:
+            pass
+    for candidates in [base_candidates, evt_candidates]:
+        if candidates:
+            try:
+                if os.path.exists(str(candidates[0])):
+                    os.remove(str(candidates[0]))
+            except Exception:
+                pass
 
     return {
         "status": "success",

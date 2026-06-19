@@ -24,10 +24,6 @@ import { useProfile } from "../context/ProfileContext";
 import { useSteps } from "../context/StepContext";
 import { useTheme } from "../context/ThemeContext";
 
-// 🔹 Firebase Imports
-import { doc, setDoc, onSnapshot } from "firebase/firestore";
-import { db } from "../services/firebase";
-import { getUserId } from "../services/firebaseSync";
 
 // ── Circular ring ──────────────────────────────────────────────────────────────
 const Ring = ({ progress, size, strokeWidth, color, children }: any) => {
@@ -99,69 +95,22 @@ export default function StepIntelligenceScreen() {
   const { weightKg, heightCm, profile } = useProfile();
   const {
     steps, calories, distanceKm, goal, sessionSecs,
-    isTracking, usingFallback,
+    isTracking, dataSource, lastSyncAt,
     setGoal, startTracking, stopTracking, resetToday,
   } = useSteps();
 
-  /* 🔹 Sync Steps Data with Firebase */
-  useEffect(() => {
-    let active = true;
-    let unsubscribe: (() => void) | undefined;
-
-    const syncStepsWithFirebase = async () => {
-      try {
-        const uid = await getUserId();
-        if (!active) return;
-        if (!uid) return;
-
-        const userRef = doc(db, "users", uid);
-
-        // 🔹 Save step data to Firebase
-        await setDoc(
-          userRef,
-          {
-            steps: steps,
-            calories: calories,
-            distanceKm: distanceKm,
-            stepGoal: goal,
-            sessionSecs: sessionSecs,
-            isTracking: isTracking,
-            updatedAt: new Date().toISOString(),
-          },
-          { merge: true }
-        );
-
-        if (!active) return;
-
-        const unsub = onSnapshot(
-          userRef,
-          (snapshot) => {
-            if (active && snapshot.exists()) {
-              console.log("🔥 Step data synced:", snapshot.data());
-            }
-          },
-          (err) => {
-            console.log("⚠️ Step onSnapshot error:", err);
-          }
-        );
-
-        if (!active) {
-          unsub();
-        } else {
-          unsubscribe = unsub;
-        }
-      } catch (error) {
-        console.error("❌ Error syncing steps:", error);
-      }
-    };
-
-    syncStepsWithFirebase();
-
-    return () => {
-      active = false;
-      if (unsubscribe) unsubscribe();
-    };
-  }, [steps, calories, distanceKm, goal, sessionSecs, isTracking]);
+  // Derived from new API
+  const usingFallback = dataSource === 'SENSOR_FUSION';
+  const sourceLabel = dataSource === 'STEP_SENSOR'
+    ? '🦾 Hardware step counter'
+    : dataSource === 'HEALTH_CONNECT'
+    ? '❤️ Health Connect'
+    : dataSource === 'PEDOMETER'
+    ? '🍎 HealthKit pedometer'
+    : '📱 Accelerometer (software)';
+  const lastSyncLabel = lastSyncAt > 0
+    ? `Synced ${Math.round((Date.now() - lastSyncAt) / 1000)}s ago`
+    : 'Not yet synced';
 
   const [goalModalOpen, setGoalModalOpen] = useState(false);
   const [goalInput,     setGoalInput]     = useState(goal.toString());
@@ -250,10 +199,16 @@ export default function StepIntelligenceScreen() {
           <View style={[s.banner, { backgroundColor: colors.card, borderColor: colors.border }]}>
             <Ionicons name="radio" size={13} color="#22c55e" />
             <Text style={[s.bannerText, { color: colors.text }]}>
-              {usingFallback ? "📱 Accelerometer mode — keep phone in pocket" : "🦾 Hardware pedometer active"}
+              {sourceLabel}
             </Text>
           </View>
         )}
+
+        {/* Sync status */}
+        <View style={[s.syncRow, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <Ionicons name="cloud-done-outline" size={11} color={colors.subText} />
+          <Text style={[s.syncText, { color: colors.subText }]}>{lastSyncLabel}</Text>
+        </View>
 
         {/* ── STEP COUNT DEBUG ROW — always visible so you can confirm data flow ── */}
         <View style={[s.debugRow, { backgroundColor: colors.card, borderColor: colors.border }]}>
@@ -423,16 +378,17 @@ export default function StepIntelligenceScreen() {
           ))}
         </View>
 
-        {/* Tips */}
+        {/* Source indicator */}
         <View style={[s.card, { backgroundColor: colors.card }]}>
           <Text style={[s.cardTitle, { color: colors.subText }]}>💡 INSIGHTS</Text>
           <Text style={[s.tip, { color: colors.subText }]}>
-            • Sensor: {usingFallback ? "Accelerometer (software detection)" : "Hardware step counter chip"}
+            • Source: {sourceLabel}
           </Text>
-          <Text style={[s.tip, { color: colors.subText }]}>• Steps update every 2 seconds on screen</Text>
+          <Text style={[s.tip, { color: colors.subText }]}>• Steps update in real-time from native sensor</Text>
           <Text style={[s.tip, { color: colors.subText }]}>• Stride estimated from your height ({heightCm}cm → {strideM}m)</Text>
           <Text style={[s.tip, { color: colors.subText }]}>• Calories personalised to your weight ({weightKg}kg)</Text>
           <Text style={[s.tip, { color: colors.subText }]}>• Stand up every 30–60 mins to reduce sedentary risk</Text>
+          <Text style={[s.tip, { color: colors.subText }]}>• Tracking survives screen-off, lock, swipe-away</Text>
         </View>
 
         <View style={{ height: 120 }} />
@@ -503,6 +459,9 @@ const s = StyleSheet.create({
   headerSub:   { fontSize: 11, marginTop: 2 },
   iconBtn:     { width: 40, height: 40, borderRadius: 20, justifyContent: "center", alignItems: "center" },
   scroll:      { paddingHorizontal: 16, paddingTop: 8 },
+
+  syncRow:    { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 10, borderWidth: 1, marginBottom: 10 },
+  syncText:   { fontSize: 10 },
 
   banner:     { flexDirection: "row", alignItems: "center", gap: 7, borderWidth: 1, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 8, marginBottom: 10 },
   bannerText: { fontSize: 11, flex: 1 },

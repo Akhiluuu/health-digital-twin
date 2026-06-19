@@ -192,6 +192,7 @@ export default function HomeScreen() {
   const { activeMemberId, isSwitched, activeProfile } = useFamily();
 
   const [spo2, setSpo2] = useState<number>(0);
+  const [measuredHeartRate, setMeasuredHeartRate] = useState<number | null>(null);
   const [heartModalOpen, setHeartModalOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState("");
   const isFocused = useRef(false);
@@ -204,12 +205,12 @@ export default function HomeScreen() {
     return () => { isFocused.current = false; };
   }, [refreshSymptoms]));
 
-  // ✅ SpO₂ Subscription logic preserved
+  // ✅ Vitals (SpO₂ & Heart Rate) Subscription logic
   useEffect(() => {
     let active = true;
     let unsubscribe: (() => void) | undefined;
 
-    const subscribeToSpo2 = async () => {
+    const subscribeToVitals = async () => {
       try {
         let uid: string | null = null;
         if (isSwitched && activeMemberId && activeMemberId !== "self") {
@@ -221,6 +222,7 @@ export default function HomeScreen() {
         if (!uid) return;
 
         setSpo2(0);
+        setMeasuredHeartRate(null);
         const ref = doc(db, "users", uid);
         const unsub = onSnapshot(
           ref,
@@ -228,10 +230,11 @@ export default function HomeScreen() {
             if (active && snapshot.exists()) {
               const data = snapshot.data();
               setSpo2(data.spo2 !== undefined ? data.spo2 : 0);
+              setMeasuredHeartRate(data.heartRate !== undefined ? Math.round(data.heartRate) : null);
             }
           },
           (err: any) => {
-            console.log("⚠️ Dashboard SpO₂ onSnapshot error:", err);
+            console.log("⚠️ Dashboard Vitals onSnapshot error:", err);
           }
         );
 
@@ -241,11 +244,11 @@ export default function HomeScreen() {
           unsubscribe = unsub;
         }
       } catch (error) {
-        console.error("❌ SpO₂ subscription error:", error);
+        console.error("❌ Vitals subscription error:", error);
       }
     };
 
-    subscribeToSpo2();
+    subscribeToVitals();
     return () => {
       active = false;
       if (unsubscribe) unsubscribe();
@@ -385,12 +388,12 @@ export default function HomeScreen() {
           />
           <TelemetryCard
             title="HEART RATE"
-            value={lastVitals?.heart_rate ? Math.round(lastVitals.heart_rate).toString() : "78"}
+            value={measuredHeartRate !== null ? measuredHeartRate.toString() : (lastVitals?.heart_rate ? Math.round(lastVitals.heart_rate).toString() : "78")}
             unit="BPM"
             icon={<PulsingHeart color="#ef4444" />}
             accent="#ef4444"
             theme={theme}
-            onPress={() => setHeartModalOpen(true)}
+            onPress={() => router.push("/heart-scanner")}
           >
             <ECGLine accent="#ef4444" />
           </TelemetryCard>

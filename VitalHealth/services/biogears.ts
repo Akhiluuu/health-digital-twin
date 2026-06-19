@@ -374,6 +374,14 @@ export async function pollUntilDone(
         const job = await getJobStatus(jobId);
         if (job.status === 'done' && job.result) {
           resolve(job.result);
+        } else if (job.status === 'done' && !job.result) {
+          // FIX: job is 'done' but result is missing — this means the server
+          // marked the job complete but didn't write the result (serialization error).
+          // Reject immediately instead of silently looping until timeout.
+          reject(new BiogearsError(
+            'Simulation completed but returned no data. Check server logs for serialization errors.',
+            500
+          ));
         } else if (job.status === 'failed') {
           reject(new BiogearsError(job.error || 'Simulation failed', 500));
         } else {

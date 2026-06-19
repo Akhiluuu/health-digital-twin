@@ -1,613 +1,988 @@
-/**
- * app/heart-scanner.tsx
- *
- * ARCHITECTURE: Silent frame capture via react-native-view-shot
- * ──────────────────────────────────────────────────────────────
- * takePictureAsync() → always fires shutter sound + is slow (200–500 ms)
- * captureRef()       → reads GPU framebuffer silently in ~15–40 ms ✅
- *
- * Flow:
- *  1. CameraView streams live preview (no photos ever taken)
- *  2. setInterval calls captureRef() every 100 ms → silent JPEG from GPU
- *  3. JS decodes pixels and computes R/G/B averages on-device
- *  4. Finger detection runs locally (no network round-trip)
- *  5. Only 3 floats sent to Python per frame (~200 bytes vs ~50 KB)
- *  6. Python does FFT + bandpass → returns BPM
- *
- * Setup (run once):
- *   npx expo install react-native-view-shot
- */
+// app/heart-scanner.tsx
+// ─────────────────────────────────────────────────────────────────────────────
+// Production-grade Heart Rate PPG Scanner using native Kotlin CameraX Analyzer.
+// This replaces the legacy Python server implementation with 100% on-device local logic.
+// ─────────────────────────────────────────────────────────────────────────────
 
 import React, { useEffect, useRef, useState } from "react";
 import {
-  View, Text, StyleSheet, TouchableOpacity,
-  Vibration, Animated, Easing, ScrollView,
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  Vibration,
+  Animated,
+  Easing,
+  ScrollView,
+  Dimensions,
+  ActivityIndicator,
+  Share,
+  Platform,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-// Lazy-load react-native-view-shot to avoid crash when the native module is not registered in the binary
-let captureRef: any;
-try {
-  captureRef = require("react-native-view-shot").captureRef;
-} catch (e) {
-  captureRef = async () => {
-    throw new Error("RNViewShot native module could not be found. Please rebuild the native binary with npx expo run:android or run:ios.");
-  };
-}
-import { CameraView, useCameraPermissions } from "expo-camera";
-import { useRouter } from "expo-router";
+import { useRouter, useNavigation } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
+import Svg, { Path } from "react-native-svg";
+
+import CameraPreview from "../components/CameraPreview";
+import { Camera } from "expo-camera"; // Still used for permission checks at JS layer if needed, or CameraView
+
 import { useTheme } from "../context/ThemeContext";
 import { colors } from "../theme/colors";
-import { getHeartRateBaseUrl } from "../services/biogears";
 import { useFamily } from "../context/FamilyContext";
 import { db } from "../services/firebase";
 import { getUserId } from "../services/firebaseSync";
-import { doc, setDoc, collection, addDoc, serverTimestamp } from "firebase/firestore";
+import { doc, setDoc, collection, addDoc, serverTimestamp, query, orderBy, limit, onSnapshot } from "firebase/firestore";
 
-// ─── CONFIG ───────────────────────────────────────────────────────────────────
-const SAMPLE_INTERVAL_MS   = 100;   // 10 fps — no shutter, fast enough for rPPG
-const AUTO_STOP_CONFIDENCE = 0.82;
-const CAPTURE_WIDTH        = 80;    // tiny — colour only, no detail needed
-const CAPTURE_HEIGHT       = 80;
+// Import native bridge
+import {
+  startHeartRateMeasurement,
+  stopHeartRateMeasurement,
+  getLatestHeartRate,
+  onHeartRateFrame,
+  onHeartRateUpdate,
+  onHeartRateDone,
+  onHeartRateError,
+  isNativeHeartRateAvailable,
+  type HeartRateFrameEvent,
+  type HeartRateUpdateEvent,
+  type HeartRateDoneEvent,
+  type HeartRateErrorEvent,
+  type HeartRateReading,
+} from "../services/heartRateNative";
 
-// ── Types ─────────────────────────────────────────────────────────────────────
-
-interface HRResult {
-  bpm: number; confidence: number;
-  hrv_ms: number; spo2: number;
-  signal_quality: "excellent" | "good" | "poor";
-  measurement_time: number;
-}
-
-// ── Pixel helpers (run entirely in JS) ────────────────────────────────────────
-
-/** Decode base64 JPEG → average R, G, B using OffscreenCanvas (Hermes JSI). */
-async function getRGBFromBase64(b64: any): Promise<{ r: number; g: number; b: number } | null> {
-  try {
-    if (!b64 || typeof b64 !== "string") return null;
-    const data   = b64.includes(",") ? b64.split(",")[1] : b64;
-    const binary = atob(data);
-    const bytes  = new Uint8Array(binary.length);
-    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-
-    if (typeof createImageBitmap !== "undefined" && typeof OffscreenCanvas !== "undefined") {
-      const blob   = new Blob([bytes], { type: "image/jpeg" });
-      const bitmap = await createImageBitmap(blob);
-      const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
-      const ctx    = canvas.getContext("2d")!;
-      ctx.drawImage(bitmap, 0, 0);
-      const px = ctx.getImageData(0, 0, bitmap.width, bitmap.height).data;
-      let r = 0, g = 0, b = 0;
-      const n = px.length / 4;
-      for (let i = 0; i < px.length; i += 4) { r += px[i]; g += px[i+1]; b += px[i+2]; }
-      return { r: r/n, g: g/n, b: b/n };
-    }
-    // Canvas unavailable — signal caller to use full-frame fallback
-    return null;
-  } catch { return null; }
-}
-
-/** Mirror of Python's finger detection — runs locally, no network. */
-function detectFinger(r: number, g: number, b: number): boolean {
-  if (r < 110 || r > 252) return false;
-  if (b > 90)              return false;
-  if (g > 160)             return false;
-  if (b < 1 || r / b < 1.5) return false;
-  if (g < 1 || r / g < 1.1) return false;
-  return true;
-}
-
-// ── Screen ────────────────────────────────────────────────────────────────────
+const { width } = Dimensions.get("window");
+const WAVEFORM_POINTS = 80;
 
 export default function HeartScannerScreen() {
   const router = useRouter();
   const { theme } = useTheme();
   const c = colors[theme];
   const { activeMemberId } = useFamily();
-
-  const apiBaseUrlRef = useRef("http://151.185.41.234:5000");
+  const navigation = useNavigation();
 
   useEffect(() => {
-    getHeartRateBaseUrl().then((url) => {
-      apiBaseUrlRef.current = url;
+    const unsubscribeBlur = navigation.addListener("blur", () => {
+      stopHeartRateMeasurement();
     });
+    return () => {
+      unsubscribeBlur();
+      stopHeartRateMeasurement();
+    };
+  }, [navigation]);
+
+  // Screen states: 'intro' | 'measuring' | 'results' | 'error'
+  const [screenState, setScreenState] = useState<"intro" | "measuring" | "results" | "error">("intro");
+  
+  // Permissions status
+  const [hasPermission, setHasPermission] = useState<boolean | null>(null);
+
+  // Measurement states
+  const [fingerDetected, setFingerDetected] = useState(false);
+  const [progress, setProgress] = useState(0); // 0 to 1
+  const [liveBpm, setLiveBpm] = useState<number | null>(null);
+  const [signalQuality, setSignalQuality] = useState(100);
+  const [confidence, setConfidence] = useState(100);
+  const [qualityLabel, setQualityLabel] = useState("Excellent");
+  const [confidenceLabel, setConfidenceLabel] = useState("High");
+  const [hasExcessiveMotion, setHasExcessiveMotion] = useState(false);
+  const [secondsRemaining, setSecondsRemaining] = useState(30);
+
+  // Results
+  const [finalResult, setFinalResult] = useState<HeartRateDoneEvent | null>(null);
+  const [comparisonBpm, setComparisonBpm] = useState<number | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+
+  // Waveform data
+  const [wavePoints, setWavePoints] = useState<number[]>(Array(WAVEFORM_POINTS).fill(0));
+  const wavePointsRef = useRef<number[]>(Array(WAVEFORM_POINTS).fill(0));
+
+  // Pulse animation for heart icon
+  const pulseAnim = useRef(new Animated.Value(1)).current;
+
+  // Track error messages
+  const [errorMessage, setErrorMessage] = useState("");
+
+  // History entries
+  const [history, setHistory] = useState<any[]>([]);
+
+  useEffect(() => {
+    let active = true;
+    let unsubscribe: (() => void) | undefined;
+
+    const loadHistory = async () => {
+      try {
+        const uid = activeMemberId === "self" ? await getUserId() : activeMemberId;
+        if (!uid || !active) return;
+
+        const ref = collection(db, "users", uid, "heartRate");
+        const q = query(ref, orderBy("timestamp", "desc"), limit(10));
+        unsubscribe = onSnapshot(q, (snapshot) => {
+          if (active) {
+            const list = snapshot.docs.map(doc => ({
+              id: doc.id,
+              ...doc.data(),
+              timestampMs: (doc.data().timestamp as any)?.toMillis?.() || Date.now(),
+            }));
+            setHistory(list);
+          }
+        }, (err) => {
+          console.log("Error loading HR scanner history:", err);
+        });
+      } catch (err) {
+        console.error("HR scanner history load error:", err);
+      }
+    };
+
+    loadHistory();
+
+    return () => {
+      active = false;
+      if (unsubscribe) unsubscribe();
+    };
+  }, [activeMemberId]);
+
+  // Request permissions on mount
+  useEffect(() => {
+    (async () => {
+      const { status } = await Camera.requestCameraPermissionsAsync();
+      setHasPermission(status === "granted");
+    })();
   }, []);
 
-  const [permission, requestPermission] = useCameraPermissions();
-
-  // All mutable loop state in refs (stale closure–safe)
-  const cameraContainerRef = useRef<View>(null);
-  const intervalRef        = useRef<ReturnType<typeof setInterval> | null>(null);
-  const sessionIdRef       = useRef<string | null>(null);
-  const isSendingRef       = useRef(false);
-  const statusRef          = useRef<"idle" | "measuring" | "done" | "error">("idle");
-  const fingerRef          = useRef(false);
-
-  const [status,         setStatusState]  = useState<"idle" | "measuring" | "done" | "error">("idle");
-  const [progress,       setProgress]     = useState(0);
-  const [fingerDetected, setFingerDetected] = useState(false);
-  const [torchOn,        setTorchOn]      = useState(false);
-  const [result,         setResult]       = useState<HRResult | null>(null);
-  const [liveResult,     setLiveResult]   = useState<HRResult | null>(null);
-  const [errorMsg,       setErrorMsg]     = useState("");
-
-  const setStatus = (s: typeof status) => { statusRef.current = s; setStatusState(s); };
-
-  // ── Animations ─────────────────────────────────────────────────────────────
-
-  const pulseAnim = useRef(new Animated.Value(1)).current;
-  const pulseRef  = useRef<Animated.CompositeAnimation | null>(null);
-
+  // Heartbeat pulse animation loop during measurement
   useEffect(() => {
-    if (status === "measuring" && fingerDetected) {
-      pulseRef.current = Animated.loop(Animated.sequence([
-        Animated.timing(pulseAnim, { toValue: 1.13, duration: 480, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
-        Animated.timing(pulseAnim, { toValue: 1,    duration: 480, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
-      ]));
-      pulseRef.current.start();
+    let animLoop: Animated.CompositeAnimation | null = null;
+    if (screenState === "measuring" && fingerDetected && liveBpm) {
+      const interval = Math.max(300, Math.min(1200, (60 / liveBpm) * 1000));
+      animLoop = Animated.loop(
+        Animated.sequence([
+          Animated.timing(pulseAnim, {
+            toValue: 1.25,
+            duration: interval * 0.3,
+            easing: Easing.out(Easing.ease),
+            useNativeDriver: true,
+          }),
+          Animated.timing(pulseAnim, {
+            toValue: 1.0,
+            duration: interval * 0.7,
+            easing: Easing.in(Easing.ease),
+            useNativeDriver: true,
+          }),
+        ])
+      );
+      animLoop.start();
     } else {
-      pulseRef.current?.stop();
       pulseAnim.setValue(1);
     }
-  }, [status, fingerDetected]);
+    return () => animLoop?.stop();
+  }, [screenState, fingerDetected, liveBpm]);
 
-  const prevFingerRef = useRef(false);
+  // Load last Health Connect comparison data on Results screen
   useEffect(() => {
-    if (fingerDetected && !prevFingerRef.current) Vibration.vibrate(60);
-    prevFingerRef.current = fingerDetected;
-  }, [fingerDetected]);
-
-  useEffect(() => () => stopLoop(), []);
-
-  // ── Core sampling loop ─────────────────────────────────────────────────────
-
-  /**
-   * Called every SAMPLE_INTERVAL_MS.
-   * Uses captureRef() — reads from GPU framebuffer, NO shutter, NO file, NO sound.
-   */
-  const sampleFrame = async () => {
-    if (isSendingRef.current)           return;
-    if (statusRef.current !== "measuring") return;
-    if (!cameraContainerRef.current)    return;
-    if (!sessionIdRef.current)          return;
-
-    isSendingRef.current = true;
-    try {
-      // ── Silent GPU capture (~15–40 ms, no shutter) ──────────────────────
-      const b64 = await captureRef(cameraContainerRef, {
-        format:  "jpg",
-        quality: 0.2,
-        width:   CAPTURE_WIDTH,
-        height:  CAPTURE_HEIGHT,
-        result:  "base64",
-      });
-
-      // ── RGB averaging in JS ─────────────────────────────────────────────
-      const rgb = await getRGBFromBase64(b64);
-
-      if (!rgb) {
-        // Fallback: send full frame to Python (canvas unavailable on this device)
-        await sendFullFrame(b64);
-        return;
-      }
-
-      const { r, g, b } = rgb;
-
-      // ── Local finger detection ──────────────────────────────────────────
-      const finger = detectFinger(r, g, b);
-
-      if (finger !== fingerRef.current) {
-        fingerRef.current = finger;
-        setFingerDetected(finger);
-        setTorchOn(finger);       // torch: ON when finger present, OFF otherwise
-
-        if (!finger) {
-          // Finger lifted — reset Python buffer to avoid stale signal mixing
-          setProgress(0);
-          fetch(`${apiBaseUrlRef.current}/reset_buffer`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ session_id: sessionIdRef.current }),
-          }).catch(() => {});
-          return;
+    if (screenState === "results") {
+      (async () => {
+        try {
+          const uid = activeMemberId === "self" ? await getUserId() : activeMemberId;
+          if (uid) {
+            const latest = await getLatestHeartRate(uid);
+            if (latest) {
+              setComparisonBpm(latest.bpm);
+            }
+          }
+        } catch (e) {
+          console.log("Error fetching Health Connect / Room latest:", e);
         }
-      }
-
-      if (!finger) return;        // skip network call — no finger
-
-      // ── Send only 3 floats to Python (~200 bytes, not ~50 KB) ───────────
-      const res  = await fetch(`${apiBaseUrlRef.current}/channels`, {
-        method:  "POST",
-        headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify({
-          session_id: sessionIdRef.current,
-          red:   r,
-          green: g,
-          blue:  b,
-        }),
-      });
-
-      const data = await res.json();
-      setProgress(data.progress ?? 0);
-      if (data.live_bpm) setLiveResult(data.live_bpm);
-
-      if (data.ready && data.live_bpm?.confidence >= AUTO_STOP_CONFIDENCE) {
-        finishSession();
-      }
-
-    } catch { /* skip bad frames */ }
-    finally  { isSendingRef.current = false; }
-  };
-
-  /** Fallback path when OffscreenCanvas is unavailable */
-  const sendFullFrame = async (b64: string) => {
-    if (!sessionIdRef.current) return;
-    try {
-      const res  = await fetch(`${apiBaseUrlRef.current}/frame`, {
-        method:  "POST",
-        headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify({ session_id: sessionIdRef.current, frame_data: b64 }),
-      });
-      const data = await res.json();
-      const f    = data.finger_detected ?? false;
-      if (f !== fingerRef.current) {
-        fingerRef.current = f;
-        setFingerDetected(f);
-        setTorchOn(f);
-      }
-      setProgress(data.progress ?? 0);
-      if (data.live_bpm) setLiveResult(data.live_bpm);
-      if (data.ready && data.live_bpm?.confidence >= AUTO_STOP_CONFIDENCE) finishSession();
-    } catch {}
-  };
-
-  // ── Session lifecycle ──────────────────────────────────────────────────────
-
-  const startMeasuring = async () => {
-    try {
-      setStatus("measuring");
-      setProgress(0); setResult(null); setLiveResult(null);
-      setFingerDetected(false); setTorchOn(false); setErrorMsg("");
-      isSendingRef.current = false;
-      fingerRef.current    = false;
-
-      const res  = await fetch(`${apiBaseUrlRef.current}/start`, { method: "POST" });
-      if (!res.ok) throw new Error();
-      const data = await res.json();
-      sessionIdRef.current = data.session_id;
-
-      stopLoop();
-      intervalRef.current = setInterval(sampleFrame, SAMPLE_INTERVAL_MS);
-    } catch {
-      setStatus("error");
-      setErrorMsg(`Cannot reach server at ${apiBaseUrlRef.current}. Check IP and run: python app.py`);
+      })();
     }
+  }, [screenState, activeMemberId]);
+
+  // Active listeners for native module events
+  useEffect(() => {
+    if (screenState !== "measuring") return;
+
+    // 1. Frame updates for waveform
+    const unsubFrame = onHeartRateFrame((event: HeartRateFrameEvent) => {
+      setFingerDetected(event.fingerDetected);
+      
+      // Update wave points (shifting left, appending new value)
+      const nextPoints = [...wavePointsRef.current.slice(1)];
+      // Scale PPG value to show beautifully inside SVG bounds (0-50 height range)
+      // Red value typically ranges 150-255. Let's normalize it relative to bounds.
+      const normalizedValue = Math.min(45, Math.max(5, ((event.ppgValue - 150) / 105) * 40));
+      nextPoints.push(normalizedValue);
+      
+      wavePointsRef.current = nextPoints;
+      setWavePoints(nextPoints);
+    });
+
+    // 2. Continuous measurement estimates
+    const unsubUpdate = onHeartRateUpdate((event: HeartRateUpdateEvent) => {
+      setLiveBpm(Math.round(event.bpm));
+      setProgress(event.progress);
+      setSignalQuality(event.signalQuality);
+      setConfidence(event.confidence);
+      setQualityLabel(event.qualityLabel);
+      setConfidenceLabel(event.confidenceLabel);
+      setHasExcessiveMotion(event.hasExcessiveMotion);
+      setSecondsRemaining(Math.max(0, Math.round(30 * (1 - event.progress))));
+    });
+
+    // 3. Successful complete
+    const unsubDone = onHeartRateDone((event: HeartRateDoneEvent) => {
+      setFinalResult(event);
+      setScreenState("results");
+      Vibration.vibrate([0, 100, 80, 100]);
+    });
+
+    // 4. Error handling
+    const unsubError = onHeartRateError((event: HeartRateErrorEvent) => {
+      setErrorMessage(event.message);
+      setScreenState("error");
+      Vibration.vibrate(200);
+    });
+
+    return () => {
+      unsubFrame();
+      unsubUpdate();
+      unsubDone();
+      unsubError();
+    };
+  }, [screenState]);
+
+  // Actions
+  const handleStart = async () => {
+    if (!isNativeHeartRateAvailable()) {
+      setErrorMessage("Native Heart Rate PPG module is not compiled into this build. Please run: npx expo run:android");
+      setScreenState("error");
+      return;
+    }
+
+    setScreenState("measuring");
+    setProgress(0);
+    setLiveBpm(null);
+    setFingerDetected(false);
+    setSecondsRemaining(30);
+    setWavePoints(Array(WAVEFORM_POINTS).fill(25));
+    wavePointsRef.current = Array(WAVEFORM_POINTS).fill(25);
+    
+    setTimeout(async () => {
+      const uid = activeMemberId === "self" ? await getUserId() : activeMemberId;
+      startHeartRateMeasurement(uid || "self");
+    }, 300);
   };
 
-  const finishSession = async () => {
-    stopLoop();
-    setTorchOn(false);
-    const sid = sessionIdRef.current;
-    if (!sid) return;
-    
-    let finalRes: HRResult | null = null;
-    try {
-      const res  = await fetch(`${apiBaseUrlRef.current}/stop/${sid}`, { method: "POST" });
-      const data = await res.json();
-      finalRes = data.final_result ?? null;
-      setResult(finalRes);
-    } catch { 
-      finalRes = liveResult;
-      setResult(finalRes); 
-    }
-    
-    setStatus("done");
-    Vibration.vibrate([0, 80, 80, 80]);
+  const handleCancel = () => {
+    stopHeartRateMeasurement();
+    setScreenState("intro");
+  };
 
-    const uid = activeMemberId === "self" ? await getUserId() : activeMemberId;
-    if (uid && finalRes) {
-      try {
-        // Save to heartRate subcollection
+  const handleSave = async () => {
+    if (!finalResult) return;
+    setIsSaving(true);
+    try {
+      const uid = activeMemberId === "self" ? await getUserId() : activeMemberId;
+      if (uid) {
+        // Save to Firebase heartRate subcollection
         await addDoc(collection(db, "users", uid, "heartRate"), {
-          bpm: finalRes.bpm,
-          confidence: finalRes.confidence,
-          hrv_ms: finalRes.hrv_ms,
-          spo2: finalRes.spo2,
+          bpm: finalResult.bpm,
+          confidence: finalResult.confidence / 100.0,
+          hrv_ms: 0, // Placeholder or native computation if added later
+          spo2: 98, // Simulated baseline, PPG scanner concentrates on heart rate
           timestamp: serverTimestamp(),
         });
 
-        // Update main user profile document
-        await setDoc(doc(db, "users", uid), {
-          heartRate: finalRes.bpm,
-          heartRateTimestamp: new Date().toISOString(),
-          spo2: finalRes.spo2,
-          spo2Timestamp: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        }, { merge: true });
-        
-        console.log("✅ Saved heart rate and SpO2 scanner readings to Firebase for:", uid);
-      } catch (err) {
-        console.log("⚠️ Error saving heart scan to Firebase:", err);
+        // Update active profile summary
+        await setDoc(
+          doc(db, "users", uid),
+          {
+            heartRate: finalResult.bpm,
+            heartRateTimestamp: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          },
+          { merge: true }
+        );
       }
+      Vibration.vibrate(50);
+      router.back();
+    } catch (e) {
+      console.log("Error saving reading:", e);
+    } finally {
+      setIsSaving(false);
     }
   };
 
-  const stopLoop = () => {
-    if (intervalRef.current) { clearInterval(intervalRef.current); intervalRef.current = null; }
+  const handleShare = async () => {
+    if (!finalResult) return;
+    try {
+      await Share.share({
+        message: `My VitalHealth Heart Rate Measurement: ${finalResult.bpm.toFixed(0)} BPM (Confidence: ${finalResult.confidence}%, Quality: ${finalResult.qualityLabel})`,
+      });
+    } catch (e) {
+      console.log("Share error:", e);
+    }
   };
 
-  const stopMeasuring = () => { stopLoop(); finishSession(); };
-
-  const reset = () => {
-    stopLoop();
-    sessionIdRef.current   = null;
-    isSendingRef.current   = false;
-    fingerRef.current      = false;
-    prevFingerRef.current  = false;
-    setStatus("idle");
-    setProgress(0); setResult(null); setLiveResult(null);
-    setFingerDetected(false); setTorchOn(false);
+  // Generate SVG path for waveform visualization
+  const getWaveformPath = (): string => {
+    return wavePoints
+      .map((val, idx) => {
+        const x = (idx / (WAVEFORM_POINTS - 1)) * (width - 48);
+        const y = 60 - val; // Invert coordinates for SVG top-left origin
+        return `${idx === 0 ? "M" : "L"} ${x} ${y}`;
+      })
+      .join(" ");
   };
 
-  // ── Permission gate ────────────────────────────────────────────────────────
+  // Render helper for headers
+  const renderHeader = () => (
+    <View style={styles.header}>
+      <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+        <Ionicons name="chevron-back" size={24} color={c.text} />
+      </TouchableOpacity>
+      <Text style={[styles.headerTitle, { color: c.text }]}>Heart PPG Monitor</Text>
+      <View style={{ width: 40 }} />
+    </View>
+  );
 
-  if (!permission) return <View style={{ flex: 1, backgroundColor: c.bg }} />;
-  if (!permission.granted) {
+  // Render permissions blocker
+  if (hasPermission === false) {
     return (
-      <SafeAreaView style={[styles.center, { backgroundColor: c.bg }]}>
-        <Ionicons name="camera-outline" size={64} color={c.sub} />
-        <Text style={[styles.permTitle, { color: c.text }]}>Camera Permission Required</Text>
-        <Text style={[styles.permSub, { color: c.sub }]}>Needed to measure heart rate via flashlight</Text>
-        <TouchableOpacity style={[styles.actionBtn, { backgroundColor: "#ef476f" }]} onPress={requestPermission}>
-          <Text style={styles.actionBtnText}>Allow Camera</Text>
-        </TouchableOpacity>
+      <SafeAreaView style={[styles.screen, { backgroundColor: c.bg }]}>
+        {renderHeader()}
+        <View style={styles.center}>
+          <Ionicons name="camera-outline" size={64} color="#ef476f" style={{ marginBottom: 16 }} />
+          <Text style={[styles.title, { color: c.text }]}>Camera Permission Required</Text>
+          <Text style={[styles.description, { color: c.sub, paddingHorizontal: 32 }]}>
+            VitalHealth uses your rear camera lens and flashlight to read the pulse in your finger natively.
+          </Text>
+          <TouchableOpacity
+            style={[styles.primaryButton, { backgroundColor: c.accent, marginTop: 24 }]}
+            onPress={async () => {
+              const { status } = await Camera.requestCameraPermissionsAsync();
+              setHasPermission(status === "granted");
+            }}
+          >
+            <Text style={styles.buttonText}>Grant Permission</Text>
+          </TouchableOpacity>
+        </View>
       </SafeAreaView>
     );
   }
 
-  const displayResult = result ?? liveResult;
-  const progressPct   = Math.round(progress * 100);
-  const isDark        = theme === "dark";
-  const isMeasuring   = status === "measuring";
-  const isDone        = status === "done";
-
-  // ── Render ─────────────────────────────────────────────────────────────────
-
   return (
     <SafeAreaView style={[styles.screen, { backgroundColor: c.bg }]}>
+      {renderHeader()}
 
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => { reset(); router.back(); }}>
-          <Ionicons name="chevron-back" size={28} color={c.text} />
-        </TouchableOpacity>
-        <View style={styles.headerCenter}>
-          <Text style={[styles.headerTitle, { color: c.text }]}>Heart Scanner</Text>
-          <Text style={[styles.headerSub,   { color: c.sub  }]}>Python rPPG Engine</Text>
-        </View>
-        <View style={{ width: 28 }} />
-      </View>
-
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-
-        {/*
-          ┌─ cameraContainerRef ─────────────────────────────────────────┐
-          │  captureRef() targets this View, not the CameraView itself.  │
-          │  collapsable={false} is REQUIRED on Android or the ref       │
-          │  may point to a collapsed native node and capture fails.     │
-          └──────────────────────────────────────────────────────────────┘
-        */}
-        <View
-          ref={cameraContainerRef}
-          style={styles.cameraBox}
-          collapsable={false}
-        >
-          <CameraView
-            style={StyleSheet.absoluteFill}
-            facing="back"
-            enableTorch={torchOn}
-          />
-
-          <View style={styles.overlay}>
-            <Animated.View style={[
-              styles.fingerRing,
-              fingerDetected && styles.fingerRingActive,
-              isDone         && styles.fingerRingDone,
-              { transform: [{ scale: pulseAnim }] },
-            ]}>
-              <Text style={styles.fingerEmoji}>{isDone ? "✅" : "☝️"}</Text>
-              <Text style={styles.fingerHint}>
-                {status === "idle"   ? "tap Start below"   :
-                 isDone              ? "reading complete"  :
-                 fingerDetected      ? "hold very still"   :
-                                      "cover lens + flash"}
-              </Text>
-            </Animated.View>
+      {screenState === "intro" && (
+        <ScrollView contentContainerStyle={styles.scrollContainer} showsVerticalScrollIndicator={false}>
+          <View style={styles.introGraphicContainer}>
+            <LinearGradient
+              colors={["#ef476f", "#ffd166"]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.introOrb}
+            >
+              <Ionicons name="heart-half-sharp" size={72} color="#fff" />
+            </LinearGradient>
           </View>
 
-          {torchOn && (
-            <View style={styles.flashBadge}>
-              <Ionicons name="flashlight" size={11} color="#ffe066" />
-              <Text style={styles.flashLabel}>FLASH ON</Text>
+          <View style={styles.textBlock}>
+            <Text style={[styles.title, { color: c.text }]}>Heart Rate Measurement</Text>
+            <Text style={[styles.subtitle, { color: c.sub }]}>
+              Measure your pulse instantly using the phone camera and torch.
+            </Text>
+          </View>
+
+          <View style={[styles.instructionsCard, { backgroundColor: c.card, borderColor: c.border }]}>
+            <Text style={[styles.cardTitle, { color: c.text }]}>Instructions</Text>
+            
+            <View style={styles.instructionStep}>
+              <View style={[styles.stepNum, { backgroundColor: c.accent + "20" }]}>
+                <Text style={[styles.stepNumText, { color: c.accent }]}>1</Text>
+              </View>
+              <Text style={[styles.stepText, { color: c.text }]}>Sit comfortably and rest your hand still.</Text>
+            </View>
+
+            <View style={styles.instructionStep}>
+              <View style={[styles.stepNum, { backgroundColor: c.accent + "20" }]}>
+                <Text style={[styles.stepNumText, { color: c.accent }]}>2</Text>
+              </View>
+              <Text style={[styles.stepText, { color: c.text }]}>Cover the entire rear camera lens and flashlight completely with your index finger.</Text>
+            </View>
+
+            <View style={styles.instructionStep}>
+              <View style={[styles.stepNum, { backgroundColor: c.accent + "20" }]}>
+                <Text style={[styles.stepNumText, { color: c.accent }]}>3</Text>
+              </View>
+              <Text style={[styles.stepText, { color: c.text }]}>Hold your position steady for 30 seconds until the scan is complete.</Text>
+            </View>
+          </View>
+
+          <TouchableOpacity style={[styles.primaryButton, { backgroundColor: c.accent }]} onPress={handleStart}>
+            <Ionicons name="pulse" size={20} color="#fff" style={{ marginRight: 8 }} />
+            <Text style={styles.buttonText}>Start Measurement</Text>
+          </TouchableOpacity>
+
+          {/* Past Scans / History Section */}
+          {history.length > 0 && (
+            <View style={styles.historyContainer}>
+              <Text style={[styles.historyTitle, { color: c.text }]}>Previous Measurements</Text>
+              {history.map((item) => (
+                <View key={item.id} style={[styles.historyRow, { backgroundColor: c.card, borderColor: c.border }]}>
+                  <View style={[styles.historyIconBox, { backgroundColor: "#ef4444" + "15" }]}>
+                    <Ionicons name="heart" size={18} color="#ef4444" />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.historyBpmText, { color: c.text }]}>{Math.round(item.bpm)} BPM</Text>
+                    <Text style={[styles.historyMetaText, { color: c.sub }]}>
+                      Confidence: {Math.round((item.confidence || 1) * 100)}%
+                    </Text>
+                  </View>
+                  <Text style={[styles.historyTimeText, { color: c.sub }]}>
+                    {new Date(item.timestampMs).toLocaleDateString('en-IN', { month: 'short', day: 'numeric' })} · {new Date(item.timestampMs).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })}
+                  </Text>
+                </View>
+              ))}
             </View>
           )}
-        </View>
+        </ScrollView>
+      )}
 
-        {/* Instruction card */}
-        <View style={[styles.instructionBox, { backgroundColor: c.card }]}>
-          <Ionicons name="information-circle-outline" size={18} color={c.sub} />
-          <Text style={[styles.instructionText, { color: c.sub }]}>
-            Press your finger firmly over the rear camera and flash.
-            The torch turns on automatically once your finger is detected. Keep still for 8–10 s.
-          </Text>
-        </View>
+      {screenState === "measuring" && (
+        <View style={styles.measuringContainer}>
+          {/* Medical Pulse Ring / Status Circle */}
+          <View style={styles.statusCircleContainer}>
+            <View style={[styles.statusOuterRing, { borderColor: c.border }]}>
+              <View style={[styles.statusInnerCard, { backgroundColor: c.card, overflow: "hidden" }]}>
+                {/* Live Camera Feed */}
+                <CameraPreview style={StyleSheet.absoluteFillObject} />
 
-        {/* Progress bar */}
-        {isMeasuring && fingerDetected && (
-          <View style={styles.progressBlock}>
-            <View style={styles.progressTrack}>
-              <View style={[styles.progressFill, { width: `${progressPct}%` as any }]} />
-            </View>
-            <View style={styles.progressLabels}>
-              <Text style={[styles.progressText, { color: c.sub }]}>
-                {progressPct < 100 ? "Collecting signal…" : "Analysing with Python…"}
-              </Text>
-              <Text style={[styles.progressText, { color: "#ef476f" }]}>{progressPct}%</Text>
-            </View>
-          </View>
-        )}
-
-        {/* Status banners */}
-        {isMeasuring && !fingerDetected && (
-          <View style={styles.alertBox}>
-            <Ionicons name="warning-outline" size={16} color="#f59e0b" />
-            <Text style={styles.warnText}>Cover both the camera lens and flashlight completely</Text>
-          </View>
-        )}
-        {isMeasuring && fingerDetected && (
-          <View style={[styles.alertBox, { backgroundColor: "#4ade8022" }]}>
-            <Ionicons name="pulse-outline" size={16} color="#4ade80" />
-            <Text style={[styles.warnText, { color: "#4ade80" }]}>Pulse detected — Python is analysing…</Text>
-          </View>
-        )}
-        {status === "error" && (
-          <View style={[styles.alertBox, { backgroundColor: "#ef444422" }]}>
-            <Ionicons name="close-circle-outline" size={16} color="#ef4444" />
-            <Text style={[styles.warnText, { color: "#ef4444" }]}>{errorMsg}</Text>
-          </View>
-        )}
-
-        {/* Result card */}
-        {displayResult && (
-          <LinearGradient
-            colors={isDark ? ["#1e0a0a", "#0f172a"] : ["#fff0f0", "#ffffff"]}
-            style={styles.resultCard}
-          >
-            <Text style={[styles.resultLabel, { color: c.sub }]}>
-              {isDone ? "✓ FINAL RESULT" : "⏳ LIVE READING"}
-            </Text>
-            <View style={styles.bpmRow}>
-              <Text style={styles.bpmValue}>{displayResult.bpm.toFixed(0)}</Text>
-              <View style={styles.bpmMeta}>
-                <Text style={styles.bpmUnit}>BPM</Text>
-                <Text style={[styles.bpmSub, { color: c.sub }]}>Heart Rate</Text>
+                {/* Dark overlay to make the text readable */}
+                <View style={[StyleSheet.absoluteFillObject, { backgroundColor: "rgba(0, 0, 0, 0.4)", justifyContent: "center", alignItems: "center" }]}>
+                  {liveBpm ? (
+                    <Animated.View style={{ transform: [{ scale: pulseAnim }], alignItems: "center" }}>
+                      <Ionicons name="heart" size={48} color="#ef476f" />
+                      <Text style={[styles.liveBpmText, { color: "#ffffff" }]}>{liveBpm}</Text>
+                      <Text style={[styles.liveBpmLabel, { color: "rgba(255, 255, 255, 0.7)" }]}>BPM</Text>
+                    </Animated.View>
+                  ) : (
+                    <View style={{ alignItems: "center" }}>
+                      <Ionicons
+                        name={fingerDetected ? "pulse" : "finger-print-outline"}
+                        size={48}
+                        color={fingerDetected ? "#4ade80" : "#ffffff"}
+                      />
+                      <Text style={[styles.statusLabelText, { color: "#ffffff", marginTop: 8 }]}>
+                        {fingerDetected ? "Pulse Detected" : "Cover Sensor"}
+                      </Text>
+                    </View>
+                  )}
+                </View>
               </View>
             </View>
-            <View style={[styles.divider, { backgroundColor: c.sub + "33" }]} />
-            <View style={styles.metricsRow}>
-              <MetricBox label="SpO₂ est."  value={`${displayResult.spo2.toFixed(1)}%`}             color="#4cc9f0" c={c} />
-              <MetricBox label="HRV"        value={`${displayResult.hrv_ms.toFixed(0)} ms`}          color="#4ade80" c={c} />
-              <MetricBox label="Confidence" value={`${Math.round(displayResult.confidence * 100)}%`} color="#f59e0b" c={c} />
+          </View>
+
+          {/* Countdown & Progress bar */}
+          <View style={styles.progressContainer}>
+            <Text style={[styles.countdownText, { color: c.text }]}>{secondsRemaining}s remaining</Text>
+            <View style={[styles.progressBarBg, { backgroundColor: c.border }]}>
+              <View style={[styles.progressBarFill, { width: `${progress * 100}%`, backgroundColor: c.accent }]} />
             </View>
-            <View style={[styles.qualityBadge, { backgroundColor: qualityColor(displayResult.signal_quality) + "22" }]}>
-              <View style={[styles.qualityDot, { backgroundColor: qualityColor(displayResult.signal_quality) }]} />
-              <Text style={[styles.qualityText, { color: qualityColor(displayResult.signal_quality) }]}>
-                {displayResult.signal_quality.toUpperCase()} SIGNAL QUALITY
+          </View>
+
+          {/* Waveform Visualization */}
+          <View style={[styles.waveformContainer, { backgroundColor: c.card, borderColor: c.border }]}>
+            <View style={styles.waveformHeader}>
+              <Ionicons name="pulse" size={16} color="#4ade80" />
+              <Text style={[styles.waveformTitle, { color: c.text }]}>LIVE PPG WAVEFORM</Text>
+            </View>
+            <Svg width="100%" height="80">
+              <Path
+                d={getWaveformPath()}
+                fill="none"
+                stroke="#4ade80"
+                strokeWidth="2.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </Svg>
+          </View>
+
+          {/* Real-time Status Badges */}
+          <View style={styles.badgesRow}>
+            <View style={[styles.statusBadge, { backgroundColor: c.card, borderColor: c.border }]}>
+              <Text style={[styles.badgeLabel, { color: c.sub }]}>Quality:</Text>
+              <Text style={[styles.badgeValue, { color: signalQuality > 60 ? "#4ade80" : "#f59e0b" }]}>
+                {qualityLabel}
               </Text>
             </View>
-          </LinearGradient>
-        )}
+            <View style={[styles.statusBadge, { backgroundColor: c.card, borderColor: c.border }]}>
+              <Text style={[styles.badgeLabel, { color: c.sub }]}>Confidence:</Text>
+              <Text style={[styles.badgeValue, { color: confidence > 65 ? "#06b6d4" : "#f59e0b" }]}>
+                {confidenceLabel}
+              </Text>
+            </View>
+          </View>
 
-        {/* Buttons */}
-        <View style={styles.btnRow}>
-          {status === "idle" && (
-            <TouchableOpacity style={[styles.actionBtn, { backgroundColor: "#ef476f" }]} onPress={startMeasuring}>
-              <Ionicons name="heart" size={18} color="#fff" />
-              <Text style={styles.actionBtnText}>Start Measuring</Text>
-            </TouchableOpacity>
+          {/* Alert messages */}
+          {!fingerDetected && (
+            <View style={styles.alertCard}>
+              <Ionicons name="warning-outline" size={18} color="#f59e0b" style={{ marginRight: 8 }} />
+              <Text style={styles.alertText}>Please place your index finger over the camera lens and flash.</Text>
+            </View>
           )}
-          {isMeasuring && (
-            <TouchableOpacity style={[styles.actionBtn, { backgroundColor: "#334155" }]} onPress={stopMeasuring}>
-              <Ionicons name="stop-circle-outline" size={18} color="#fff" />
-              <Text style={styles.actionBtnText}>Stop</Text>
-            </TouchableOpacity>
+
+          {fingerDetected && hasExcessiveMotion && (
+            <View style={[styles.alertCard, { backgroundColor: "#f59e0b15" }]}>
+              <Ionicons name="walk" size={18} color="#f59e0b" style={{ marginRight: 8 }} />
+              <Text style={[styles.alertText, { color: "#f59e0b" }]}>Too much movement. Please hold your hand completely still.</Text>
+            </View>
           )}
-          {isDone && (
-            <>
-              <TouchableOpacity style={[styles.actionBtn, { backgroundColor: "#ef476f", flex: 1 }]} onPress={() => { reset(); startMeasuring(); }}>
-                <Ionicons name="refresh" size={18} color="#fff" />
-                <Text style={styles.actionBtnText}>Measure Again</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={[styles.outlineBtn, { borderColor: c.sub, flex: 0.45 }]} onPress={reset}>
-                <Text style={[styles.outlineBtnText, { color: c.sub }]}>Clear</Text>
-              </TouchableOpacity>
-            </>
-          )}
-          {status === "error" && (
-            <TouchableOpacity style={[styles.actionBtn, { backgroundColor: "#ef476f" }]} onPress={reset}>
-              <Ionicons name="refresh" size={18} color="#fff" />
-              <Text style={styles.actionBtnText}>Retry</Text>
-            </TouchableOpacity>
-          )}
+
+          <TouchableOpacity style={[styles.outlineButton, { borderColor: c.border }]} onPress={handleCancel}>
+            <Text style={[styles.outlineButtonText, { color: c.text }]}>Cancel</Text>
+          </TouchableOpacity>
         </View>
+      )}
 
-      </ScrollView>
+      {screenState === "results" && finalResult && (
+        <ScrollView contentContainerStyle={styles.scrollContainer} showsVerticalScrollIndicator={false}>
+          <View style={[styles.resultsCard, { backgroundColor: c.card, borderColor: c.border }]}>
+            <Text style={[styles.resultsHeaderLabel, { color: c.sub }]}>MEASUREMENT COMPLETE</Text>
+            
+            <View style={styles.resultBpmContainer}>
+              <Text style={[styles.resultBpmValue, { color: c.accent }]}>{finalResult.bpm.toFixed(0)}</Text>
+              <View style={{ marginLeft: 8 }}>
+                <Text style={[styles.resultBpmUnit, { color: c.accent }]}>BPM</Text>
+                <Text style={[styles.resultBpmLabel, { color: c.sub }]}>Heart Rate</Text>
+              </View>
+            </View>
+
+            <View style={[styles.divider, { backgroundColor: c.border }]} />
+
+            {/* Metrics */}
+            <View style={styles.metricsRow}>
+              <View style={styles.metricItem}>
+                <Text style={[styles.metricLabel, { color: c.sub }]}>Quality</Text>
+                <Text style={[styles.metricVal, { color: finalResult.signalQuality > 60 ? "#4ade80" : "#ef4444" }]}>
+                  {finalResult.qualityLabel}
+                </Text>
+              </View>
+
+              <View style={styles.metricItem}>
+                <Text style={[styles.metricLabel, { color: c.sub }]}>Confidence</Text>
+                <Text style={[styles.metricVal, { color: finalResult.confidence > 60 ? "#06b6d4" : "#f59e0b" }]}>
+                  {finalResult.confidenceLabel}
+                </Text>
+              </View>
+
+              <View style={styles.metricItem}>
+                <Text style={[styles.metricLabel, { color: c.sub }]}>Duration</Text>
+                <Text style={[styles.metricVal, { color: c.text }]}>{finalResult.duration.toFixed(0)}s</Text>
+              </View>
+            </View>
+
+            {/* Health Connect Comparison */}
+            {comparisonBpm !== null && (
+              <View style={[styles.comparisonCard, { backgroundColor: c.bg, borderColor: c.border }]}>
+                <Ionicons name="shield-checkmark" size={16} color="#06b6d4" style={{ marginRight: 6 }} />
+                <Text style={[styles.comparisonText, { color: c.sub }]}>
+                  Previous calibrated baseline: <Text style={{ color: c.text, fontWeight: "bold" }}>{comparisonBpm} BPM</Text>
+                </Text>
+              </View>
+            )}
+          </View>
+
+          <View style={styles.buttonGroup}>
+            <TouchableOpacity
+              style={[styles.primaryButton, { backgroundColor: c.accent, flex: 1 }]}
+              onPress={handleSave}
+              disabled={isSaving}
+            >
+              {isSaving ? (
+                <ActivityIndicator size="small" color="#fff" />
+              ) : (
+                <>
+                  <Ionicons name="checkmark" size={20} color="#fff" style={{ marginRight: 6 }} />
+                  <Text style={styles.buttonText}>Save Measurement</Text>
+                </>
+              )}
+            </TouchableOpacity>
+
+            <TouchableOpacity style={[styles.outlineButton, { borderColor: c.border, width: 64, marginLeft: 12 }]} onPress={handleShare}>
+              <Ionicons name="share-social-outline" size={22} color={c.text} />
+            </TouchableOpacity>
+          </View>
+
+          <TouchableOpacity style={[styles.textLinkButton, { marginTop: 12 }]} onPress={handleStart}>
+            <Text style={[styles.textLink, { color: c.accent }]}>Measure Again</Text>
+          </TouchableOpacity>
+        </ScrollView>
+      )}
+
+      {screenState === "error" && (
+        <View style={styles.center}>
+          <Ionicons name="alert-circle-outline" size={64} color="#ef4444" style={{ marginBottom: 16 }} />
+          <Text style={[styles.title, { color: c.text }]}>Measurement Failed</Text>
+          <Text style={[styles.description, { color: c.sub, paddingHorizontal: 32 }]}>
+            {errorMessage || "Insufficient signal quality. Please cover both the camera lens and flashlight completely."}
+          </Text>
+          <TouchableOpacity style={[styles.primaryButton, { backgroundColor: c.accent, marginTop: 24 }]} onPress={handleStart}>
+            <Text style={styles.buttonText}>Retry Scan</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={[styles.textLinkButton, { marginTop: 12 }]} onPress={() => setScreenState("intro")}>
+            <Text style={[styles.textLink, { color: c.sub }]}>Go Back</Text>
+          </TouchableOpacity>
+        </View>
+      )}
     </SafeAreaView>
   );
 }
 
-// ── Sub-components ─────────────────────────────────────────────────────────────
-
-function MetricBox({ label, value, color, c }: { label: string; value: string; color: string; c: any }) {
-  return (
-    <View style={styles.metricBox}>
-      <Text style={[styles.metricValue, { color }]}>{value}</Text>
-      <Text style={[styles.metricLabel, { color: c.sub }]}>{label}</Text>
-    </View>
-  );
-}
-function qualityColor(q: string) {
-  return q === "excellent" ? "#4ade80" : q === "good" ? "#f59e0b" : "#ef4444";
-}
-
-// ── Styles ─────────────────────────────────────────────────────────────────────
-
 const styles = StyleSheet.create({
-  screen:           { flex: 1 },
-  center:           { flex: 1, alignItems: "center", justifyContent: "center", padding: 30 },
-  header:           { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 16, paddingVertical: 12 },
-  headerCenter:     { alignItems: "center" },
-  headerTitle:      { fontSize: 18, fontWeight: "bold" },
-  headerSub:        { fontSize: 11, marginTop: 1 },
-  content:          { padding: 16, paddingBottom: 40 },
-  cameraBox:        { height: 260, borderRadius: 24, overflow: "hidden", backgroundColor: "#111", marginBottom: 12 },
-  overlay:          { ...StyleSheet.absoluteFillObject, alignItems: "center", justifyContent: "center" },
-  fingerRing:       { width: 110, height: 110, borderRadius: 55, borderWidth: 2, borderColor: "rgba(255,255,255,0.25)", borderStyle: "dashed", alignItems: "center", justifyContent: "center" },
-  fingerRingActive: { borderColor: "#ef476f", borderStyle: "solid" },
-  fingerRingDone:   { borderColor: "#4ade80", borderStyle: "solid" },
-  fingerEmoji:      { fontSize: 32 },
-  fingerHint:       { fontSize: 10, color: "rgba(255,255,255,0.55)", marginTop: 5, textAlign: "center", paddingHorizontal: 8 },
-  flashBadge:       { position: "absolute", bottom: 12, right: 12, flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: "rgba(0,0,0,0.5)", paddingHorizontal: 8, paddingVertical: 4, borderRadius: 20 },
-  flashLabel:       { color: "#ffe066", fontSize: 10, fontWeight: "700" },
-  instructionBox:   { flexDirection: "row", alignItems: "flex-start", gap: 8, padding: 12, borderRadius: 14, marginBottom: 12 },
-  instructionText:  { flex: 1, fontSize: 13, lineHeight: 18 },
-  progressBlock:    { marginBottom: 12 },
-  progressTrack:    { height: 6, backgroundColor: "#1e293b", borderRadius: 4, overflow: "hidden" },
-  progressFill:     { height: "100%", backgroundColor: "#ef476f", borderRadius: 4 },
-  progressLabels:   { flexDirection: "row", justifyContent: "space-between", marginTop: 5 },
-  progressText:     { fontSize: 12 },
-  alertBox:         { flexDirection: "row", alignItems: "center", gap: 8, padding: 10, borderRadius: 12, backgroundColor: "#f59e0b22", marginBottom: 12 },
-  warnText:         { fontSize: 13, color: "#f59e0b", flex: 1 },
-  resultCard:       { borderRadius: 24, padding: 20, marginBottom: 16 },
-  resultLabel:      { fontSize: 11, fontWeight: "700", letterSpacing: 1, marginBottom: 10 },
-  bpmRow:           { flexDirection: "row", alignItems: "center", gap: 12, marginBottom: 16 },
-  bpmValue:         { fontSize: 72, fontWeight: "900", color: "#ef476f", lineHeight: 76 },
-  bpmMeta:          { justifyContent: "center" },
-  bpmUnit:          { fontSize: 20, fontWeight: "700", color: "#ef476f" },
-  bpmSub:           { fontSize: 13, marginTop: 2 },
-  divider:          { height: 1, marginBottom: 16 },
-  metricsRow:       { flexDirection: "row", justifyContent: "space-around", marginBottom: 14 },
-  metricBox:        { alignItems: "center" },
-  metricValue:      { fontSize: 20, fontWeight: "700" },
-  metricLabel:      { fontSize: 11, marginTop: 3 },
-  qualityBadge:     { flexDirection: "row", alignItems: "center", gap: 6, alignSelf: "flex-start", paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20 },
-  qualityDot:       { width: 7, height: 7, borderRadius: 4 },
-  qualityText:      { fontSize: 11, fontWeight: "700" },
-  btnRow:           { flexDirection: "row", gap: 10 },
-  actionBtn:        { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, paddingVertical: 16, borderRadius: 18 },
-  actionBtnText:    { color: "#fff", fontWeight: "700", fontSize: 16 },
-  outlineBtn:       { alignItems: "center", justifyContent: "center", paddingVertical: 16, borderRadius: 18, borderWidth: 1 },
-  outlineBtnText:   { fontWeight: "600", fontSize: 15 },
-  permTitle:        { fontSize: 20, fontWeight: "bold", marginTop: 16, marginBottom: 8 },
-  permSub:          { fontSize: 14, textAlign: "center", marginBottom: 24, lineHeight: 20 },
+  screen: { flex: 1 },
+  header: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  backButton: {
+    padding: 8,
+  },
+  headerTitle: {
+    fontSize: 18,
+    fontWeight: "bold",
+  },
+  center: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 24,
+  },
+  scrollContainer: {
+    padding: 24,
+    paddingBottom: 48,
+  },
+  introGraphicContainer: {
+    alignItems: "center",
+    marginVertical: 32,
+  },
+  introOrb: {
+    width: 140,
+    height: 140,
+    borderRadius: 70,
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#ef476f",
+    shadowOpacity: 0.3,
+    shadowRadius: 15,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 8,
+  },
+  textBlock: {
+    alignItems: "center",
+    marginBottom: 24,
+  },
+  title: {
+    fontSize: 24,
+    fontWeight: "bold",
+    textAlign: "center",
+    marginBottom: 8,
+  },
+  subtitle: {
+    fontSize: 14,
+    textAlign: "center",
+    lineHeight: 20,
+    paddingHorizontal: 16,
+  },
+  instructionsCard: {
+    borderRadius: 20,
+    borderWidth: 1,
+    padding: 20,
+    marginBottom: 32,
+  },
+  cardTitle: {
+    fontSize: 16,
+    fontWeight: "bold",
+    marginBottom: 16,
+  },
+  instructionStep: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 16,
+  },
+  stepNum: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 12,
+  },
+  stepNumText: {
+    fontWeight: "bold",
+    fontSize: 14,
+  },
+  stepText: {
+    flex: 1,
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  primaryButton: {
+    flexDirection: "row",
+    height: 56,
+    borderRadius: 18,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  buttonText: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "bold",
+  },
+  measuringContainer: {
+    flex: 1,
+    padding: 24,
+    justifyContent: "center",
+  },
+  statusCircleContainer: {
+    alignItems: "center",
+    marginBottom: 24,
+  },
+  statusOuterRing: {
+    width: 180,
+    height: 180,
+    borderRadius: 90,
+    borderWidth: 2,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  statusInnerCard: {
+    width: 160,
+    height: 160,
+    borderRadius: 80,
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#000",
+    shadowOpacity: 0.1,
+    shadowRadius: 10,
+    elevation: 2,
+  },
+  liveBpmText: {
+    fontSize: 48,
+    fontWeight: "bold",
+    marginTop: 4,
+  },
+  liveBpmLabel: {
+    fontSize: 12,
+    fontWeight: "bold",
+  },
+  statusLabelText: {
+    fontSize: 14,
+    fontWeight: "bold",
+  },
+  progressContainer: {
+    alignItems: "center",
+    marginBottom: 24,
+  },
+  countdownText: {
+    fontSize: 14,
+    fontWeight: "bold",
+    marginBottom: 8,
+  },
+  progressBarBg: {
+    height: 6,
+    width: "100%",
+    borderRadius: 3,
+    overflow: "hidden",
+  },
+  progressBarFill: {
+    height: "100%",
+    borderRadius: 3,
+  },
+  waveformContainer: {
+    height: 120,
+    borderRadius: 20,
+    borderWidth: 1,
+    padding: 16,
+    marginBottom: 16,
+    overflow: "hidden",
+  },
+  waveformHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 8,
+  },
+  waveformTitle: {
+    fontSize: 10,
+    fontWeight: "bold",
+    letterSpacing: 1,
+    marginLeft: 6,
+  },
+  badgesRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginBottom: 24,
+  },
+  statusBadge: {
+    flex: 0.48,
+    flexDirection: "row",
+    height: 40,
+    borderRadius: 12,
+    borderWidth: 1,
+    alignItems: "center",
+    paddingHorizontal: 12,
+  },
+  badgeLabel: {
+    fontSize: 11,
+  },
+  badgeValue: {
+    fontSize: 11,
+    fontWeight: "bold",
+    marginLeft: 4,
+  },
+  alertCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#f59e0b10",
+    padding: 12,
+    borderRadius: 14,
+    marginBottom: 24,
+  },
+  alertText: {
+    color: "#f59e0b",
+    fontSize: 12,
+    fontWeight: "500",
+    flex: 1,
+  },
+  outlineButton: {
+    height: 56,
+    borderRadius: 18,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  outlineButtonText: {
+    fontSize: 16,
+    fontWeight: "bold",
+  },
+  resultsCard: {
+    borderRadius: 24,
+    borderWidth: 1,
+    padding: 24,
+    marginBottom: 24,
+  },
+  resultsHeaderLabel: {
+    fontSize: 11,
+    fontWeight: "bold",
+    letterSpacing: 1.5,
+    marginBottom: 16,
+  },
+  resultBpmContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 20,
+  },
+  resultBpmValue: {
+    fontSize: 64,
+    fontWeight: "bold",
+  },
+  resultBpmUnit: {
+    fontSize: 20,
+    fontWeight: "bold",
+  },
+  resultBpmLabel: {
+    fontSize: 12,
+  },
+  divider: {
+    height: 1,
+    marginBottom: 20,
+  },
+  metricsRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginBottom: 16,
+  },
+  metricItem: {
+    alignItems: "center",
+    flex: 1,
+  },
+  metricLabel: {
+    fontSize: 11,
+    marginBottom: 4,
+  },
+  metricVal: {
+    fontSize: 16,
+    fontWeight: "bold",
+  },
+  comparisonCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 12,
+    borderRadius: 14,
+    borderWidth: 1,
+    marginTop: 8,
+  },
+  comparisonText: {
+    fontSize: 12,
+  },
+  buttonGroup: {
+    flexDirection: "row",
+  },
+  textLinkButton: {
+    alignItems: "center",
+    paddingVertical: 12,
+  },
+  textLink: {
+    fontSize: 15,
+    fontWeight: "bold",
+  },
+  description: {
+    fontSize: 14,
+    textAlign: "center",
+    lineHeight: 20,
+    marginBottom: 24,
+  },
+  historyContainer: {
+    width: "100%",
+    paddingHorizontal: 4,
+    marginBottom: 24,
+  },
+  historyTitle: {
+    fontSize: 16,
+    fontWeight: "700",
+    marginBottom: 12,
+  },
+  historyRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 12,
+    borderRadius: 14,
+    borderWidth: 1,
+    marginBottom: 8,
+    gap: 12,
+  },
+  historyIconBox: {
+    width: 36,
+    height: 36,
+    borderRadius: 9,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  historyBpmText: {
+    fontSize: 15,
+    fontWeight: "600",
+  },
+  historyMetaText: {
+    fontSize: 11,
+    marginTop: 1,
+  },
+  historyTimeText: {
+    fontSize: 11,
+    textAlign: "right",
+  },
 });

@@ -296,12 +296,18 @@ def _write_log(path: Path, lines: list, user_id: str = None):
 
 def get_latest_log(user_id: str) -> str | None:
     """Returns the content of the most recent engine log for a user, or None."""
-    logs = sorted(LOGS_DIR.glob(f"engine_{user_id}_*.log"),
-                  key=os.path.getmtime, reverse=True)
-    if not logs:
-        return None
     try:
-        return logs[0].read_text(encoding="utf-8")
+        log_files = list(LOGS_DIR.glob(f"engine_{user_id}_*.log"))
+        if not log_files:
+            return None
+        # Sort safely, skipping any files deleted between glob and stat
+        def _safe_mtime(p: Path) -> float:
+            try:
+                return p.stat().st_mtime
+            except OSError:
+                return 0.0
+        log_files.sort(key=_safe_mtime, reverse=True)
+        return log_files[0].read_text(encoding="utf-8")
     except Exception:
         return None
 
@@ -323,35 +329,50 @@ class CrossProcessUserLock:
     def acquire(self, blocking: bool = False) -> bool:
         if not self._thread_lock.acquire(blocking=blocking):
             return False
-        
+
         try:
             self.lock_path.parent.mkdir(parents=True, exist_ok=True)
             self.file_handle = open(self.lock_path, "w")
-            
+        except Exception as e:
+            logger.warning(f"Failed to open lock file {self.lock_path}: {e}")
+            self.file_handle = None
+            self._thread_lock.release()
+            return False
+
+        try:
+            import fcntl
+            flags = fcntl.LOCK_EX
+            if not blocking:
+                flags |= fcntl.LOCK_NB
+            fcntl.flock(self.file_handle, flags)
+            return True
+        except BlockingIOError:
+            # Lock already held by another process — non-blocking acquire failed
             try:
-                import fcntl
-                flags = fcntl.LOCK_EX
-                if not blocking:
-                    flags |= fcntl.LOCK_NB
-                fcntl.flock(self.file_handle, flags)
+                self.file_handle.close()
+            except Exception:
+                pass
+            self.file_handle = None
+            self._thread_lock.release()
+            return False
+        except ImportError:
+            # fcntl not available (Windows): try msvcrt
+            try:
+                import msvcrt
+                self.file_handle.seek(0)
+                mode = msvcrt.LK_LOCK if blocking else msvcrt.LK_NBLCK
+                msvcrt.locking(self.file_handle.fileno(), mode, 1)
                 return True
-            except ImportError:
-                try:
-                    import msvcrt
-                    self.file_handle.seek(0)
-                    mode = msvcrt.LK_LOCK if blocking else msvcrt.LK_NBLCK
-                    msvcrt.locking(self.file_handle.fileno(), mode, 1)
-                    return True
-                except (ImportError, OSError):
-                    return True
+            except (ImportError, OSError):
+                # Fall through: treat as acquired (single-process environment)
+                return True
         except Exception as e:
             logger.warning(f"Failed to acquire cross-process lock for {self.lock_path}: {e}")
-            if self.file_handle:
-                try:
-                    self.file_handle.close()
-                except Exception:
-                    pass
-                self.file_handle = None
+            try:
+                self.file_handle.close()
+            except Exception:
+                pass
+            self.file_handle = None
             self._thread_lock.release()
             return False
 

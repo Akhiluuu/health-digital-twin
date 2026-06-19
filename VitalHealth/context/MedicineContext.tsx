@@ -7,7 +7,7 @@
 // ─────────────────────────────────────────────────────────────────
 
 import React, { createContext, useContext, useEffect, useState } from "react";
-import { AppState } from "react-native";
+import { AppState, Platform } from "react-native";
 
 import {
   addMedicine as dbAddMedicine,
@@ -18,6 +18,11 @@ import {
   updateMedicineNotificationId,
   insertOrReplaceMedicine,
 } from "../database/medicineDB";
+
+import {
+  scheduleMedicineAlarm,
+  cancelMedicineAlarm,
+} from "../services/medicineAlarmNative";
 
 import {
   cancelMedicineNotification,
@@ -369,14 +374,20 @@ export const MedicineProvider = ({
           const now     = new Date();
           const freq    = frequency.toLowerCase();
 
-          if (freq === "once" && dateObj.getTime() > now.getTime()) {
-            notifId = await scheduleMedicineOnce(`${name} — ${dose}`, dateObj, lastMedicine.id);
-          }
-          if (freq === "daily") {
-            notifId = await scheduleMedicineDaily(`${name} — ${dose}`, dateObj.getHours(), dateObj.getMinutes(), lastMedicine.id);
-          }
-          if (notifId) {
+          if (Platform.OS === "android") {
+            scheduleMedicineAlarm(lastMedicine.id, name, dose, normalisedTimestamp, frequency);
+            notifId = String(lastMedicine.id);
             updateMedicineNotificationId(lastMedicine.id, notifId);
+          } else {
+            if (freq === "once" && dateObj.getTime() > now.getTime()) {
+              notifId = await scheduleMedicineOnce(`${name} — ${dose}`, dateObj, lastMedicine.id);
+            }
+            if (freq === "daily") {
+              notifId = await scheduleMedicineDaily(`${name} — ${dose}`, dateObj.getHours(), dateObj.getMinutes(), lastMedicine.id);
+            }
+            if (notifId) {
+              updateMedicineNotificationId(lastMedicine.id, notifId);
+            }
           }
         } catch (notifError) {
           console.log("❌ Notification scheduling failed:", notifError);
@@ -435,7 +446,11 @@ export const MedicineProvider = ({
       }
 
       const item = medicines.find((m) => m.id === id);
-      if (item?.notificationId) await cancelMedicineNotification(item.notificationId);
+      if (Platform.OS === "android") {
+        cancelMedicineAlarm(id);
+      } else if (item?.notificationId) {
+        await cancelMedicineNotification(item.notificationId);
+      }
       deleteMedicine(id);
       syncDeleteMedicine(id).catch((err) => console.log("⚠️ syncDeleteMedicine (self) failed:", err));
       await loadMedicines();
@@ -453,7 +468,9 @@ export const MedicineProvider = ({
       }
 
       for (const med of medicines) {
-        if (med.notificationId) {
+        if (Platform.OS === "android") {
+          cancelMedicineAlarm(med.id);
+        } else if (med.notificationId) {
           await cancelMedicineNotification(med.notificationId);
         }
       }

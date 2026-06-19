@@ -1814,7 +1814,9 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
         const hasT2D = remoteProfile.conditions?.includes("Type 2 Diabetes") || false;
 
         const matches = 
-          remoteProfile.age === age &&
+          // FIX: Use tolerance-based comparison for age (±1 year) to handle DOB parsing
+          // edge cases (e.g., birthday today, UTC vs local midnight, parseAge floating point).
+          Math.abs((remoteProfile.age ?? 0) - age) <= 1 &&
           Math.abs((remoteProfile.weight_kg ?? 0) - weight) < 0.1 &&
           Math.abs((remoteProfile.height_cm ?? 0) - height) < 0.1 &&
           remoteProfile.sex === sex &&
@@ -2369,12 +2371,20 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
       await BiogearsAPI.saveRoutine(twinUserId, copiedRoutine, firestoreOwnerUid);
       await BiogearsAPI.setDefaultRoutine(twinUserId, copiedRoutine.id, firestoreOwnerUid, true);
       
-      await loadRoutinesFromStorage();
+      // FIX: loadRoutinesFromStorage is a plain function (not useCallback), so including
+      // it in deps creates a new callback reference every render and causes stale closures.
+      // Replace with direct API load + setSavedRoutines to keep the dep list stable.
+      const refreshed = await BiogearsAPI.loadSavedRoutines(twinUserId);
+      setSavedRoutines(refreshed);
+
       Alert.alert("Success", `Copied "${primaryDefault.name}" as a template for ${profile?.firstName || "dependent"}.`);
     } catch (e: any) {
       Alert.alert("Copy Failed", e.message || "Could not copy primary routine.");
     }
-  }, [isSwitched, twinUserId, selfProfile, firestoreOwnerUid, loadRoutinesFromStorage, profile?.firstName]);
+  // loadRoutinesFromStorage intentionally EXCLUDED — it's a plain function (not useCallback)
+  // and its inclusion caused a new callback reference on every render (unstable dep).
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isSwitched, twinUserId, selfProfile, firestoreOwnerUid, profile?.firstName]);
 
   // ─────────────────────────────────────────────────────────────────────────────
 

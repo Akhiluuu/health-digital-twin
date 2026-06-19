@@ -12,3 +12,15 @@ import "./services/notifeeService";
 ///////////////////////////////////////////////////////////
 
 AppRegistry.registerComponent(appName, () => App);
+
+// Register Headless JS task for native WorkManager synchronization
+AppRegistry.registerHeadlessTask("BackgroundSyncTask", () => {
+  return async () => {
+    try {
+      const { runBackgroundSync } = require("./tasks/backgroundSyncTask");
+      await runBackgroundSync();
+    } catch (err) {
+      console.error("❌ Headless BackgroundSyncTask error:", err);
+    }
+  };
+});

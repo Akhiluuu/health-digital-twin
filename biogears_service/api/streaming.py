@@ -24,9 +24,11 @@ import os
 import json
 import time
 import uuid
+import math
 import shutil
 import asyncio
 import datetime
+import logging
 import threading
 import subprocess
 import pandas as pd
@@ -40,13 +42,31 @@ from biogears_service.simulation.config import (
 from biogears_service.simulation import scenario_builder, visualizer
 from biogears_service.api import db
 
+logger = logging.getLogger("DigitalTwin.Streaming")
 BASE_URL = os.environ.get("SERVER_BASE_URL", "http://127.0.0.1:8000").rstrip("/")
+
+# Stream job TTL: auto-expire in-memory stream jobs after 4 hours
+_STREAM_JOB_TTL_SECONDS = 14400
 
 # ---------------------------------------------------------------------------
 # In-memory stream job store
-# stream_id → {status, csv_prefix, dest_csv, user_id, error, process}
+# stream_id → {status, csv_prefix, dest_csv, user_id, error, process, created_at}
 # ---------------------------------------------------------------------------
 _stream_jobs: Dict[str, Dict[str, Any]] = {}
+_stream_jobs_lock = threading.Lock()
+
+
+def _prune_expired_streams() -> None:
+    """Remove expired stream jobs from the in-memory store. Thread-safe."""
+    cutoff = time.time() - _STREAM_JOB_TTL_SECONDS
+    with _stream_jobs_lock:
+        expired = [sid for sid, j in _stream_jobs.items()
+                   if j.get("created_at", 0) < cutoff
+                   and j.get("status") in ("done", "failed")]
+        for sid in expired:
+            del _stream_jobs[sid]
+        if expired:
+            logger.info(f"🗑️ Pruned {len(expired)} expired stream job(s).")
 
 
 # ---------------------------------------------------------------------------
@@ -54,7 +74,7 @@ _stream_jobs: Dict[str, Dict[str, Any]] = {}
 # Runs bg-cli in a daemon thread; updates job record on completion.
 # ---------------------------------------------------------------------------
 def _engine_thread(job_id: str, scenario_path: str, user_id: str,
-                   csv_prefix: str, dest_csv: Path, state_file: Path):
+                   csv_prefix: str, dest_csv: Path, state_file: Path, events: list):
     """Worker thread: runs BioGears and finalises the job record."""
     job = _stream_jobs[job_id]
     try:
@@ -159,14 +179,25 @@ def _engine_thread(job_id: str, scenario_path: str, user_id: str,
             try:
                 os.replace(str(state_candidates[0]), str(state_file))
                 logger.info(f"🔄 [{user_id}] State synchronized safely (streaming).")
+                meta_tmp = state_file.with_suffix(".meta.json.tmp")
+                meta_perm = state_file.with_suffix(".meta.json")
+                if meta_tmp.exists():
+                    try:
+                        os.replace(str(meta_tmp), str(meta_perm))
+                    except Exception as me:
+                        logger.warning(f"⚠️ Meta sync skipped in streaming: {me}")
+                db.update_last_sleep_hours(user_id, events)
                 # Auto-backup
                 bak_dir = USER_STATES_DIR / "backups" / user_id
                 bak_dir.mkdir(parents=True, exist_ok=True)
                 ts_bak = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
                 shutil.copy2(str(state_file), str(bak_dir / f"{user_id}_{ts_bak}.xml"))
                 # Prune old backups to keep last 7
+                def _safe_mtime(p: Path) -> float:
+                    try: return p.stat().st_mtime
+                    except OSError: return 0.0
                 for old in sorted(bak_dir.glob(f"{user_id}_*.xml"),
-                                  key=os.path.getmtime, reverse=True)[7:]:
+                                  key=_safe_mtime, reverse=True)[7:]:
                     try: old.unlink()
                     except: pass
             except Exception as e:
@@ -188,15 +219,22 @@ def _engine_thread(job_id: str, scenario_path: str, user_id: str,
             except (TypeError, ValueError):
                 return 0.0
 
+        spo2_val = _safe("OxygenSaturation")
+        sys_val  = _safe('SystolicArterialPressure')
+        dia_val  = _safe('DiastolicArterialPressure')
+
         vitals = {
             "heart_rate":     round(_safe("HeartRate"), 1),
-            "blood_pressure": f"{int(_safe('SystolicArterialPressure'))}/{int(_safe('DiastolicArterialPressure'))}",
+            "blood_pressure": (
+                f"{int(sys_val)}/{int(dia_val)}"
+                if sys_val > 0 and dia_val > 0 else None
+            ),
             "glucose":        round(_safe("Glucose-BloodConcentration"), 2),
             "respiration":    round(_safe("RespirationRate"), 1),
-            "spo2":           round(_safe("OxygenSaturation") * 100, 1),
+            "spo2":           round(spo2_val * 100, 1) if spo2_val > 0 else None,
         }
 
-        job["status"]     = "done"
+        job["status"] = "done"
         job["vitals"]     = vitals
         job["report_url"] = report_url
         job["dest_csv"]   = dest_csv
@@ -204,12 +242,20 @@ def _engine_thread(job_id: str, scenario_path: str, user_id: str,
     except Exception as e:
         job["status"] = "failed"
         job["error"]  = str(e)
+        meta_tmp = state_file.with_suffix(".meta.json.tmp")
+        if meta_tmp.exists():
+            try:
+                meta_tmp.unlink()
+            except Exception:
+                pass
     finally:
         try:
             from biogears_service.simulation.engine_runner import get_user_lock
             get_user_lock(user_id).release()
         except Exception:
             pass
+        # Prune old stream jobs on every completion to prevent unbounded memory growth
+        _prune_expired_streams()
 
 
 # ---------------------------------------------------------------------------
@@ -223,6 +269,15 @@ def start_stream(user_id: str, events: list) -> Dict[str, Any]:
     state_file = USER_STATES_DIR / f"{user_id}.xml"
     if not state_file.exists():
         raise FileNotFoundError(f"Twin '{user_id}' not found.")
+
+    # Validate events list
+    if not events:
+        raise ValueError("No events provided. At least one health event is required.")
+
+    # Sanitise user_id to prevent path traversal
+    import re as _re
+    if not _re.match(r'^[a-zA-Z0-9_\-\.]+$', user_id):
+        raise ValueError(f"Invalid user_id '{user_id}'.")
 
     # ── Concurrency Guard: Acquire User Lock ───────────────────────────────────
     from biogears_service.simulation.engine_runner import get_user_lock
@@ -252,31 +307,36 @@ def start_stream(user_id: str, events: list) -> Dict[str, Any]:
     from biogears_service.simulation.validator import validate_xml_schema
     schema_errors = validate_xml_schema(scenario_path)
     if schema_errors:
+        user_lock.release()
         raise ValueError("Generated scenario XML failed schema validation:\n" + "\n".join(schema_errors))
 
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     dest_csv = USER_HISTORY_DIR / user_id / f"vitals_{timestamp}.csv"
 
     job_id = str(uuid.uuid4())
-    _stream_jobs[job_id] = {
-        "status":     "pending",
-        "user_id":    user_id,
-        "csv_prefix": csv_prefix,
-        "dest_csv":   dest_csv,
-        "vitals":     None,
-        "report_url": None,
-        "error":      None,
-        "process":    None,
-    }
+    with _stream_jobs_lock:
+        _stream_jobs[job_id] = {
+            "status":     "pending",
+            "user_id":    user_id,
+            "csv_prefix": csv_prefix,
+            "dest_csv":   dest_csv,
+            "vitals":     None,
+            "report_url": None,
+            "error":      None,
+            "process":    None,
+            "created_at": time.time(),
+        }
 
     thread = threading.Thread(
         target=_engine_thread,
-        args=(job_id, scenario_path, user_id, csv_prefix, dest_csv, state_file),
+        args=(job_id, scenario_path, user_id, csv_prefix, dest_csv, state_file, sorted_events),
         daemon=True
     )
     thread.start()
 
-    return {"stream_id": job_id, "user_id": user_id}
+    sse_url = f"{BASE_URL}/stream/{job_id}"
+    logger.info(f"🎬 Streaming job {job_id} started for user {user_id}")
+    return {"stream_id": job_id, "user_id": user_id, "sse_url": sse_url}
 
 
 # ---------------------------------------------------------------------------

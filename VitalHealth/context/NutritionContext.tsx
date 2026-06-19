@@ -400,6 +400,17 @@ export function NutritionProvider({ children }: { children: React.ReactNode }) {
         console.log(`🍽️ Switched nutrition loaded for ${activeMemberId}`);
       } catch (err) {
         console.log("❌ Switched nutrition load error:", err);
+        // Dispatch load with default/empty state so loading state is resolved
+        dispatch({
+          type: "LOAD",
+          payload: {
+            foodEntries: [],
+            activityEntries: [],
+            mealReminders: defaultReminders,
+            selectedProfileId: "standard",
+            customCalorieTarget: null,
+          },
+        });
       }
       return;
     }
@@ -411,11 +422,24 @@ export function NutritionProvider({ children }: { children: React.ReactNode }) {
         ? doc(db, "users", currentUser.uid, "nutrition_config", "latest")
         : null;
 
-      const [foodFirebase, activityFirebase, configDoc] = await Promise.all([
-        fetchFoodEntriesFromFirebase(),
-        fetchActivityEntriesFromFirebase(),
-        configDocRef ? getDoc(configDocRef).catch(() => null) : Promise.resolve(null),
-      ]);
+      // Wrap Firebase requests in individual try-catch blocks or Promise.all with catch/fallbacks
+      // to make sure we still proceed to load from local storage even if Firestore is offline.
+      let foodFirebase: FoodEntry[] = [];
+      let activityFirebase: ActivityEntry[] = [];
+      let configDocSnap: any = null;
+
+      try {
+        const results = await Promise.all([
+          fetchFoodEntriesFromFirebase(),
+          fetchActivityEntriesFromFirebase(),
+          configDocRef ? getDoc(configDocRef) : Promise.resolve(null),
+        ]);
+        foodFirebase = results[0];
+        activityFirebase = results[1];
+        configDocSnap = results[2];
+      } catch (fbErr) {
+        console.log("⚠️ Firebase fetch error (offline fallback):", fbErr);
+      }
 
       const todayStr = new Date().toISOString().split('T')[0]; // ✅ ISO date, locale-safe
       const todayFirebaseFood = foodFirebase.filter(
@@ -453,7 +477,7 @@ export function NutritionProvider({ children }: { children: React.ReactNode }) {
         localActivity = Array.isArray(parsed) ? parsed : [];
       }
 
-      // Filter local to today only — use ISO date prefix for locale-safe comparison
+      // Filter local to today only
       localFood = localFood.filter(
         (f) => (f.timestamp || '').slice(0, 10) === todayStr
       );
@@ -461,52 +485,55 @@ export function NutritionProvider({ children }: { children: React.ReactNode }) {
         (a) => (a.timestamp || '').slice(0, 10) === todayStr
       );
 
-      // Sync food: upload missing, download missing
-      const localFoodIds = new Set(localFood.map((f) => f.id));
-      const firebaseFoodIds = new Set(todayFirebaseFood.map((f) => f.id));
+      // Only perform Firebase sync operations if we actually fetched Firebase data successfully
+      if (foodFirebase.length > 0 || activityFirebase.length > 0 || configDocSnap) {
+        // Sync food: upload missing, download missing
+        const localFoodIds = new Set(localFood.map((f) => f.id));
+        const firebaseFoodIds = new Set(todayFirebaseFood.map((f) => f.id));
 
-      for (const entry of localFood) {
-        if (!firebaseFoodIds.has(entry.id)) {
-          await syncAddFoodEntry(entry);
+        for (const entry of localFood) {
+          if (!firebaseFoodIds.has(entry.id)) {
+            await syncAddFoodEntry(entry).catch(() => {});
+          }
         }
-      }
 
-      for (const entry of todayFirebaseFood) {
-        if (!localFoodIds.has(entry.id)) {
-          localFood.push(entry);
+        for (const entry of todayFirebaseFood) {
+          if (!localFoodIds.has(entry.id)) {
+            localFood.push(entry);
+          }
         }
-      }
 
-      // Sync activity: upload missing, download missing
-      const localActivityIds = new Set(localActivity.map((a) => a.id));
-      const firebaseActivityIds = new Set(todayFirebaseActivity.map((a) => a.id));
+        // Sync activity: upload missing, download missing
+        const localActivityIds = new Set(localActivity.map((a) => a.id));
+        const firebaseActivityIds = new Set(todayFirebaseActivity.map((a) => a.id));
 
-      for (const entry of localActivity) {
-        if (!firebaseActivityIds.has(entry.id)) {
-          await syncAddActivityEntry(entry);
+        for (const entry of localActivity) {
+          if (!firebaseActivityIds.has(entry.id)) {
+            await syncAddActivityEntry(entry).catch(() => {});
+          }
         }
-      }
 
-      for (const entry of todayFirebaseActivity) {
-        if (!localActivityIds.has(entry.id)) {
-          localActivity.push(entry);
+        for (const entry of todayFirebaseActivity) {
+          if (!localActivityIds.has(entry.id)) {
+            localActivity.push(entry);
+          }
         }
-      }
 
-      // Sync config if firebase exists
-      if (configDoc && configDoc.exists()) {
-        const cfg = configDoc.data();
-        if (cfg.selectedProfileId) selectedProfileId = cfg.selectedProfileId;
-        if (cfg.customCalorieTarget !== undefined) customCalorieTarget = cfg.customCalorieTarget;
-        if (cfg.mealReminders) mealReminders = cfg.mealReminders;
-      } else {
-        const user = auth.currentUser;
-        if (user) {
-          await setDoc(doc(db, "users", user.uid, "nutrition_config", "latest"), {
-            selectedProfileId,
-            customCalorieTarget,
-            mealReminders,
-          }).catch(() => {});
+        // Sync config if firebase exists
+        if (configDocSnap && configDocSnap.exists()) {
+          const cfg = configDocSnap.data();
+          if (cfg.selectedProfileId) selectedProfileId = cfg.selectedProfileId;
+          if (cfg.customCalorieTarget !== undefined) customCalorieTarget = cfg.customCalorieTarget;
+          if (cfg.mealReminders) mealReminders = cfg.mealReminders;
+        } else {
+          const user = auth.currentUser;
+          if (user) {
+            await setDoc(doc(db, "users", user.uid, "nutrition_config", "latest"), {
+              selectedProfileId,
+              customCalorieTarget,
+              mealReminders,
+            }).catch(() => {});
+          }
         }
       }
 
@@ -529,11 +556,62 @@ export function NutritionProvider({ children }: { children: React.ReactNode }) {
         ),
         AsyncStorage.setItem(MEAL_REMINDER_KEY, JSON.stringify(mealReminders)),
         AsyncStorage.setItem(ACTIVITY_LOG_KEY, JSON.stringify(localActivity)),
-      ]);
+      ]).catch(() => {});
 
       console.log(`🍽️ Self nutrition synced and loaded`);
     } catch (err) {
       console.log("❌ Self nutrition sync error:", err);
+      // Fallback: try loading just AsyncStorage if everything else crashed
+      try {
+        const [dataRaw, remindersRaw, activityRaw] = await Promise.all([
+          AsyncStorage.getItem(NUTRITION_DATA_KEY),
+          AsyncStorage.getItem(MEAL_REMINDER_KEY),
+          AsyncStorage.getItem(ACTIVITY_LOG_KEY),
+        ]);
+        let localFood: FoodEntry[] = [];
+        let localActivity: ActivityEntry[] = [];
+        let selectedProfileId: HealthProfileId = "standard";
+        let customCalorieTarget: number | null = null;
+        let mealReminders = defaultReminders;
+
+        if (dataRaw) {
+          const data = safeJsonParse(dataRaw, { foodEntries: [], selectedProfileId: 'standard', customCalorieTarget: null });
+          localFood = safeArray<FoodEntry>(data.foodEntries);
+          selectedProfileId = (data.selectedProfileId ?? "standard") as HealthProfileId;
+          customCalorieTarget = data.customCalorieTarget !== undefined ? data.customCalorieTarget : null;
+        }
+        if (remindersRaw) {
+          const parsed = safeJsonParse<MealReminder[]>(remindersRaw, defaultReminders);
+          mealReminders = Array.isArray(parsed) ? parsed : defaultReminders;
+        }
+        if (activityRaw) {
+          const parsed = safeJsonParse<ActivityEntry[]>(activityRaw, []);
+          localActivity = Array.isArray(parsed) ? parsed : [];
+        }
+
+        dispatch({
+          type: "LOAD",
+          payload: {
+            foodEntries: localFood,
+            activityEntries: localActivity,
+            mealReminders,
+            selectedProfileId,
+            customCalorieTarget,
+          },
+        });
+      } catch (innerErr) {
+        // Absolute worst case: load empty state so the loading overlay doesn't hang
+        dispatch({
+          type: "LOAD",
+          payload: {
+            foodEntries: [],
+            activityEntries: [],
+            mealReminders: defaultReminders,
+            selectedProfileId: "standard",
+            customCalorieTarget: null,
+          },
+        });
+      }
     }
   }, [isSwitched, activeMemberId]);
 

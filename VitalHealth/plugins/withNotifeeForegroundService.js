@@ -29,8 +29,10 @@ module.exports = function withNotifeeForegroundService(config) {
       mainApplication.service.push(notifeeService);
     }
 
-    // Declare foregroundServiceType as dataSync for Android 14+ compatibility
-    notifeeService.$["android:foregroundServiceType"] = "dataSync";
+    // Declare foregroundServiceType as 'health' for Android 14+ compatibility.
+    // 'health' is required to access motion sensors (step counter, accelerometer)
+    // from a foreground service. Using 'dataSync' causes SecurityException on API 34+.
+    notifeeService.$["android:foregroundServiceType"] = "health";
     notifeeService.$["tools:replace"] = "android:foregroundServiceType";
 
     return config;

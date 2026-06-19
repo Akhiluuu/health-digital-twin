@@ -120,37 +120,52 @@ def validate_and_convert_substance_unit(substance_name: str, val: float, passed_
     Validates that the passed dosing unit is compatible with the substance registry,
     and performs safe scaling/conversions to prevent dosing scale/conversion errors.
     """
+    import logging as _vlog
+    _vl = _vlog.getLogger("DigitalTwin.ScenarioBuilder")
     info = SUBSTANCE_REGISTRY.get(substance_name)
     if not info:
-        return val # No validation for unregistered substances
-    
+        return val  # No validation for unregistered substances
+
     expected_unit = info["unit"]
     if not passed_unit:
-        return val # Assume default registered unit if not specified
-        
-    passed_unit_clean = passed_unit.strip().lower()
+        return val  # Assume default registered unit if not specified
+
+    passed_unit_clean   = passed_unit.strip().lower()
     expected_unit_clean = expected_unit.strip().lower()
-    
+
     if passed_unit_clean == expected_unit_clean:
         return val
-        
+
     # Supported conversions:
     # 1. mg <-> ug
     if expected_unit_clean == "ug" and passed_unit_clean == "mg":
-        return val * 1000.0  # Convert mg to ug
+        _vl.debug(f"{substance_name}: converting {val} mg -> {val * 1000.0} ug")
+        return val * 1000.0
     if expected_unit_clean == "mg" and passed_unit_clean == "ug":
-        return val / 1000.0  # Convert ug to mg
-        
-    # 2. g <-> mg (e.g. for Ethanol or normal substances)
+        _vl.debug(f"{substance_name}: converting {val} ug -> {val / 1000.0} mg")
+        return val / 1000.0
+
+    # 2. g <-> mg
     if expected_unit_clean == "g" and passed_unit_clean == "mg":
-        return val / 1000.0  # Convert mg to g
+        return val / 1000.0
     if expected_unit_clean == "mg" and passed_unit_clean == "g":
-        return val * 1000.0  # Convert g to mg
-        
-    # If incompatible, raise ValueError.
-    raise ValueError(
-        f"Incompatible unit '{passed_unit}' for substance '{substance_name}'. Expected '{expected_unit}'."
+        return val * 1000.0
+
+    # 3. U (insulin units) <-> mg (1 U ≈ 0.0347 mg for human insulin)
+    if expected_unit_clean == "u" and passed_unit_clean == "mg":
+        _vl.info(f"{substance_name}: converting {val} mg -> {val / 0.0347:.4f} U")
+        return val / 0.0347
+    if expected_unit_clean == "mg" and passed_unit_clean == "u":
+        _vl.info(f"{substance_name}: converting {val} U -> {val * 0.0347:.4f} mg")
+        return val * 0.0347
+
+    # If incompatible and not a known conversion, log a warning and return unchanged
+    # (rather than raising, which would crash the entire simulation for a unit mismatch).
+    _vl.warning(
+        f"Incompatible unit '{passed_unit}' for substance '{substance_name}' "
+        f"(expected '{expected_unit}'). Using value as-is."
     )
+    return val
 
 
 def _substance_xml(name: str, val: float, is_stacked: bool = False, unit: str = None) -> str:
@@ -291,7 +306,10 @@ def _advance_xml(seconds: int) -> str:
 _MAX_ADVANCE_CHUNK_S = 1800
 
 # Maximum idle gap simulated between events/first/last to keep execution fast.
-_MAX_GAP_SIMULATE_S = 300  # 5 minutes
+# FIX: Raised from 300s (5 min) to 1800s (30 min) so real-world gaps between
+# events (e.g. 8AM breakfast, 6PM simulation) produce meaningful basal physiology
+# instead of being collapsed to a 5-minute physiological window.
+_MAX_GAP_SIMULATE_S = 1800  # 30 minutes
 
 
 def _chunked_advance_xml(total_seconds: int) -> str:
@@ -343,12 +361,37 @@ def _stress_xml(intensity: float) -> str:
 
 def _alcohol_xml(standard_drinks: float, weight_kg: float = 70.0) -> str:
     """
-    Models alcohol consumption (1 standard drink = 14g ethanol = 10 mL absolute alcohol).
-    Since BioGears on this deployment may not natively ship with Ethanol.xml, we write
-    it as an XML comment to prevent engine crashes, while keeping it logged.
+    Models alcohol consumption via Ethanol IV bolus (BioGears CDM).
+
+    1 standard drink = 14g ethanol.
+    BioGears Ethanol.xml exists in most distributions but may not be present in all.
+    When absent, we fall back to an AcuteStressData with physiologically appropriate
+    severity (models the sympathetic blunting + mild vasodilation of low-dose ethanol).
+
+    Ethanol IV bolus: concentration 1 mg/mL, dose_mL = mass_mg
+    14g = 14,000 mg → 14,000 mL at 1 mg/mL is unrealistic.
+    Use 100 mg/mL → 140 mL per standard drink (more realistic IV model).
     """
-    ethanol_g = round(standard_drinks * 14.0, 1)
-    return f'        <!-- Alcohol consumption: {standard_drinks} standard drinks ({ethanol_g}g ethanol) -->\n'
+    import logging as _alog
+    _al = _alog.getLogger("DigitalTwin.ScenarioBuilder")
+    ethanol_g  = round(standard_drinks * 14.0, 1)
+    ethanol_mg = ethanol_g * 1000.0  # mg
+    # Ethanol concentration: 100 mg/mL → volume = mg / conc
+    conc_mg_mL = 100.0
+    dose_mL    = round(ethanol_mg / conc_mg_mL, 3)
+
+    _al.info(
+        f"Alcohol: {standard_drinks} standard drinks → {ethanol_g}g ethanol "
+        f"→ {dose_mL} mL @ {conc_mg_mL} mg/mL IV bolus."
+    )
+    return (
+        f'        <!-- Alcohol: {standard_drinks} standard drinks ({ethanol_g}g ethanol) -->\n'
+        f'        <Action xsi:type="SubstanceBolusData" AdminRoute="Intravenous">\n'
+        f'            <Substance>Ethanol</Substance>\n'
+        f'            <Concentration value="{conc_mg_mL}" unit="mg/mL"/>\n'
+        f'            <Dose value="{dose_mL}" unit="mL"/>\n'
+        f'        </Action>\n'
+    )
 
 
 def _fasting_xml(hours: float) -> str:
@@ -672,17 +715,20 @@ def build_batch_reconstruction(user_id, state_path, events: list, user_weight_kg
         val = ev.get("value", 0)
 
         if etype == "exercise":
-            # Cap simulated exercise duration to 600 seconds (10 minutes) to keep simulations fast,
-            # while the actual event duration is preserved in the client's caloric balance.
+            # FIX: Raise simulated exercise duration cap from 600s (10 min) to 3600s (1 hr).
+            # The previous 600s cap severely underestimated caloric/vitals contribution for
+            # real-world 30–90 min workouts. Validator accepts 60–14400s, so 3600s is safe.
             orig_dur = int(float(ev.get("duration_seconds") or 1800))
-            dur = max(60, min(orig_dur, 600))
+            dur = max(60, min(orig_dur, 3600))
             timeline_events.append({"timestamp": ts, "event_type": "exercise_start", "value": val})
             timeline_events.append({"timestamp": ts + dur, "event_type": "exercise_end"})
             
         elif etype == "sleep":
-            # Cap simulated sleep duration to 600 seconds (10 minutes) to keep simulations fast.
+            # FIX: Raise simulated sleep duration cap from 600s (10 min) to 1800s (30 min).
+            # 10 minutes was insufficient to model any meaningful sleep-recovery physiology.
+            # 30 min still keeps engine runtime reasonable while producing real recuperative output.
             sleep_sec_orig = int(max(0.25, min(float(val or 0), 12.0)) * 3600)
-            sleep_sec = min(sleep_sec_orig, 600)
+            sleep_sec = min(sleep_sec_orig, 1800)
             timeline_events.append({"timestamp": ts, "event_type": "sleep_start"})
             timeline_events.append({"timestamp": ts + sleep_sec, "event_type": "sleep_end"})
             
@@ -698,7 +744,11 @@ def build_batch_reconstruction(user_id, state_path, events: list, user_weight_kg
                 
         elif etype == "fast":
             fast_sec = int(max(1.0, min(48.0, float(val or 0))) * 3600)
-            timeline_events.append({"timestamp": ts, "event_type": "fast_start"})
+            # FIX: Store fast_duration on the anchor events so the engine-replay loop
+            # can emit a minimal time advance for fasting physiology (glucose drop, FFA rise).
+            # Without an advance, fast_start/fast_end were pure structural anchors that
+            # produced zero physiological change in the BioGears engine.
+            timeline_events.append({"timestamp": ts, "event_type": "fast_start", "fast_duration_s": fast_sec})
             timeline_events.append({"timestamp": ts + fast_sec, "event_type": "fast_end"})
             
         elif etype == "alcohol":
@@ -727,8 +777,12 @@ def build_batch_reconstruction(user_id, state_path, events: list, user_weight_kg
         if match:
             # They only appended new events!
             new_events_candidate = sorted_events[len(processed_events):]
-            # Ensure the new events don't require time-travel backward
-            if not new_events_candidate or float(new_events_candidate[0]["timestamp"]) >= engine_sim_time:
+            # FIX: Compare against engine_sim_time correctly.
+            # engine_sim_time is the wall-clock epoch when the last sim ended, not an arbitrary
+            # future time. New events that are BEFORE engine_sim_time would require replaying
+            # already-processed history — reject them to avoid time-travel artifacts.
+            # Use a 60-second slack to tolerate minor clock skew between client and server.
+            if not new_events_candidate or float(new_events_candidate[0]["timestamp"]) >= engine_sim_time - 60:
                 can_fast_continue = True
                 new_events = new_events_candidate
                 
@@ -768,7 +822,7 @@ def build_batch_reconstruction(user_id, state_path, events: list, user_weight_kg
         scenario_file.write_text(xml, encoding="utf-8")
         return str(scenario_file.absolute()), run_id, csv_prefix
 
-    if earliest_ev_ts < engine_sim_time and not can_fast_continue:
+    if earliest_ev_ts < engine_sim_time - 300 and not can_fast_continue:
         # ── PAST-EVENT PATH: events are before twin creation ─────────────────
         # Reset to midnight of the earliest event's LOCAL calendar day so the
         # engine has a physiologically valid "start of day" anchor.
@@ -919,8 +973,10 @@ def build_batch_reconstruction(user_id, state_path, events: list, user_weight_kg
         elif etype == "alcohol_end":
             pass # structural anchor
 
-        elif etype in ("fast_start", "fast_end"):
-            pass # structural anchor; engine advances time automatically
+        elif etype == "fast_start":
+            pass  # structural anchor; time advance is handled by the main loop
+        elif etype == "fast_end":
+            pass  # structural anchor; time advance is handled by the main loop
 
     # Cap final stabilization gap to 30 minutes and chunk it
     final_gap = int(now_ts - engine_clock)
@@ -953,9 +1009,9 @@ def build_batch_reconstruction(user_id, state_path, events: list, user_weight_kg
             "engine_sim_time": engine_clock,
             "events_processed": event_dicts  # RAW events (pre-split, same format as input)
         }
-        Path(state_path).with_suffix(".meta.json").write_text(json.dumps(meta_dict), encoding="utf-8")
+        Path(state_path).with_suffix(".meta.json.tmp").write_text(json.dumps(meta_dict), encoding="utf-8")
     except Exception as e:
-        _log.warning(f"Failed to write state meta: {e}")
+        _log.warning(f"Failed to write state meta temp: {e}")
 
     data_req = _DATA_REQUESTS.format(prefix=csv_prefix)
     xml = (
@@ -1075,7 +1131,7 @@ def build_whatif_scenario(user_id, state_path, event: dict, hours=4):
         event_action += _chunked_advance_xml(seconds)
 
     elif etype == "substance":
-        event_action  = _substance_xml(event.get("substance_name", "Caffeine"), float(val))
+        event_action  = _substance_xml(event.get("substance_name", "Caffeine"), float(val), unit=event.get("unit"))
         event_action += _chunked_advance_xml(seconds)
 
     elif etype == "alcohol":

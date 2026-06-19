@@ -70,6 +70,13 @@ export function LoadingOverlay() {
     isLoadingHyd,
   ]);
 
+  const [forceDismiss, setForceDismiss] = useState(false);
+
+  // Reset force dismissal when activeMemberId changes
+  useEffect(() => {
+    setForceDismiss(false);
+  }, [activeMemberId]);
+
   const isAuthScreen =
     segments[0] === "signin" ||
     segments[0] === "signup" ||
@@ -87,6 +94,19 @@ export function LoadingOverlay() {
       isLoadingNutr ||
       isLoadingHyd);
 
+  // Safety timeout: if any loading screen stays up for more than 8 seconds, force dismiss it
+  useEffect(() => {
+    if (showOverlay) {
+      const timer = setTimeout(() => {
+        console.warn("[LoadingOverlay] Safety timeout triggered: forcing overlay dismissal");
+        setForceDismiss(true);
+      }, 8000);
+      return () => clearTimeout(timer);
+    } else {
+      setForceDismiss(false);
+    }
+  }, [showOverlay]);
+
   // Animation refs
   const spinValue = useRef(new Animated.Value(0)).current;
   const pulseValue = useRef(new Animated.Value(1)).current;
@@ -95,7 +115,7 @@ export function LoadingOverlay() {
     let spinAnim: Animated.CompositeAnimation | null = null;
     let pulseAnim: Animated.CompositeAnimation | null = null;
 
-    if (showOverlay) {
+    if (showOverlay && !forceDismiss) {
       spinValue.setValue(0);
       pulseValue.setValue(1);
 
@@ -135,9 +155,9 @@ export function LoadingOverlay() {
       if (spinAnim) spinAnim.stop();
       if (pulseAnim) pulseAnim.stop();
     };
-  }, [showOverlay]);
+  }, [showOverlay, forceDismiss]);
 
-  if (!showOverlay) return null;
+  if (!showOverlay || forceDismiss) return null;
 
   const isDark = theme === "dark";
 

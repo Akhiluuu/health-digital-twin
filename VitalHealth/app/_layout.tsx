@@ -10,12 +10,17 @@ import "../tasks/stepTrackingTask";
 
 import { Stack, router } from "expo-router";
 import React, { useEffect, useRef, useState } from "react";
-import { ActivityIndicator, View } from "react-native";
+import { ActivityIndicator, View, LogBox } from "react-native";
 import * as SplashScreen from "expo-splash-screen";
 import notifee from "@notifee/react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { ErrorBoundary } from "../components/ErrorBoundary";
 import { LoadingOverlay } from "../components/LoadingOverlay";
+
+// Suppress known development-only third-party navigation / linking warnings
+LogBox.ignoreLogs([
+  "Looks like you have configured linking in multiple places",
+]);
 
 ///////////////////////////////////////////////////////////
 // CONTEXT PROVIDERS

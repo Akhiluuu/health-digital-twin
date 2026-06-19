@@ -128,30 +128,18 @@ async function sendSedentaryNotif(): Promise<void> {
 }
 
 export async function startAccelerometerTracking() {
-  if (_accelSub) return; // already running
+  // ⚠️ Accelerometer tracking is intentionally disabled in this task.
+  // The foregroundStepService (notifee) owns all sensor subscriptions.
+  // Running a THIRD accelerometer here (at 16ms = 62.5Hz) caused triple-
+  // sensor conflicts → excessive CPU/memory → OOM crashes on Android.
+  //
+  // This function is kept to avoid breaking callers, but is a no-op.
+  // The 1-second timer still runs so saveStepState persists in-memory data.
+  if (_accelSub) return;
   await loadPersistedState();
 
-  try {
-    const { Accelerometer } = require("expo-sensors");
-    Accelerometer.setUpdateInterval(16);
-    _accelSub = Accelerometer.addListener(
-      ({ x, y, z }: { x: number; y: number; z: number }) => {
-        const rawMag = Math.sqrt(x * x + y * y + z * z);
-        _lpFilter    = LP_ALPHA * _lpFilter + (1 - LP_ALPHA) * rawMag;
-        const accel  = Math.abs(rawMag - _lpFilter);
-        const now    = Date.now();
-        if (accel > STEP_THRESHOLD && now - _lastStepTime > MIN_STEP_INTERVAL) {
-          _lastStepTime  = now;
-          _lastMoveTime  = now;
-          _notifSent     = false;
-          _steps        += 1;
-        }
-      }
-    );
-  } catch (e) {
-    console.log("Accelerometer error:", e);
-  }
-
+  // ── Session-seconds counter + periodic persist ────────────────────────────
+  // Only persists data — does NOT subscribe to any hardware sensor.
   _timerInterval = setInterval(async () => {
     _sessionSecs += 1;
     if (Date.now() - _lastMoveTime >= SEDENTARY_MS) {
@@ -161,6 +149,9 @@ export async function startAccelerometerTracking() {
       await saveStepState(_steps, _sessionSecs, _lastMoveTime, _notifSent);
     }
   }, 1000);
+
+  // Mark as "started" with a sentinel so the guard at the top fires next time
+  _accelSub = { remove: () => {} };
 }
 
 export function stopAccelerometerTracking() {

@@ -1,7 +1,7 @@
-import React from "react";
-import { Tabs } from "expo-router";
+import React, { useEffect } from "react";
+import { Tabs, usePathname, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import { View } from "react-native";
+import { View, BackHandler } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useTheme } from "../../context/ThemeContext";
@@ -10,6 +10,32 @@ import { colors as themeColors } from "../../theme/colors";
 export default function TabLayout() {
   const { theme } = useTheme();
   const insets = useSafeAreaInsets();
+  const pathname = usePathname();
+  const router = useRouter();
+
+  useEffect(() => {
+    const onBackPress = () => {
+      // If we are on the main dashboard tab, exit the app instead of navigating back to welcome
+      if (pathname === "/" || pathname === "/(tabs)" || pathname === "/(tabs)/" || pathname === "/(tabs)/index") {
+        BackHandler.exitApp();
+        return true; // handled
+      } else if (
+        pathname === "/history" ||
+        pathname === "/twin" ||
+        pathname === "/documents" ||
+        pathname === "/ai-health" ||
+        pathname === "/insights"
+      ) {
+        // If they are on other tabs, navigate back to home tab
+        router.navigate("/(tabs)");
+        return true; // handled
+      }
+      return false; // let default back behavior run (e.g. for sub-screens)
+    };
+
+    const subscription = BackHandler.addEventListener("hardwareBackPress", onBackPress);
+    return () => subscription.remove();
+  }, [pathname]);
 
   const c = themeColors[theme as "light" | "dark"];
   const colors = {
