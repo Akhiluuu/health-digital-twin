@@ -24,12 +24,23 @@ export async function findUserByHealthId(healthId: string) {
       where("inviteCode", "==", input)
     );
 
-    const snapshot = await getDocs(q);
+    let snapshot = await getDocs(q);
+
+    ////////////////////////////////////////////////////////
+    // 🔁 FALLBACK: SEARCH BY HEALTH ID (INDEXED)
+    ////////////////////////////////////////////////////////
+    if (snapshot.empty) {
+      console.log("⚠️ Primary inviteCode search failed, trying healthId query...");
+      const q2 = query(
+        collection(db, "users"),
+        where("healthId", "==", input)
+      );
+      snapshot = await getDocs(q2);
+    }
 
     ////////////////////////////////////////////////////////
     // ✅ IF FOUND
     ////////////////////////////////////////////////////////
-
     if (!snapshot.empty) {
       const docSnap = snapshot.docs[0];
       const data = docSnap.data();
@@ -40,7 +51,7 @@ export async function findUserByHealthId(healthId: string) {
         uid: docSnap.id,
         firstName: data.firstName || "",
         lastName: data.lastName || "",
-        inviteCode: data.inviteCode || "",
+        inviteCode: data.inviteCode || data.healthId || "",
         bloodGroup: data.bloodGroup || "",
         gender: data.gender || "",
         profileImage: data.profileImage || "",
@@ -54,52 +65,8 @@ export async function findUserByHealthId(healthId: string) {
       };
     }
 
-    ////////////////////////////////////////////////////////
-    // 🔁 FALLBACK (FOR OLD DATA FORMAT)
-    ////////////////////////////////////////////////////////
-
-    console.log("⚠️ Primary search failed, trying fallback...");
-
-    const allUsers = await getDocs(collection(db, "users"));
-
-    let foundUser: any = null;
-
-    allUsers.forEach((docSnap) => {
-      const data = docSnap.data();
-
-      const rawId = data.inviteCode || data.healthId;
-      if (!rawId) return;
-
-      const dbId = rawId.toString().toUpperCase();
-
-      if (dbId === input) {
-        console.log("✅ Fallback match found:", docSnap.id);
-
-        foundUser = {
-          uid: docSnap.id,
-          firstName: data.firstName || "",
-          lastName: data.lastName || "",
-          inviteCode: rawId,
-          bloodGroup: data.bloodGroup || "",
-          gender: data.gender || "",
-          profileImage: data.profileImage || "",
-          phone: data.phone || "",
-          dateOfBirth: data.dateOfBirth || "",
-          height: data.height || "",
-          weight: data.weight || "",
-          allergies: data.allergies || [],
-          medications: data.medications || [],
-          emergencyContact: data.emergencyContact || {},
-        };
-      }
-    });
-
-    if (!foundUser) {
-      console.log("❌ No user found for:", input);
-      return null;
-    }
-
-    return foundUser;
+    console.log("❌ No user found for:", input);
+    return null;
 
   } catch (error) {
     console.log("❌ Search error:", error);

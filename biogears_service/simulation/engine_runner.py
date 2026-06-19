@@ -47,7 +47,7 @@ logger = logging.getLogger("DigitalTwin.Engine")
 
 # Default 24 hours — accommodates very long simulations on the VM.
 # You can override this via ENGINE_TIMEOUT_SECONDS env var.
-ENGINE_TIMEOUT_SECONDS   = int(os.environ.get("ENGINE_TIMEOUT_SECONDS", "86400"))
+ENGINE_TIMEOUT_SECONDS   = int(os.environ.get("ENGINE_TIMEOUT_SECONDS", "120"))
 ENGINE_HEARTBEAT_SECONDS = int(os.environ.get("ENGINE_HEARTBEAT_SECONDS", "30"))
 
 # BioGears output lines shown at INFO level (everything else at DEBUG)
@@ -177,11 +177,12 @@ def run_biogears(scenario_path: str, user_id: str = "unknown") -> EngineResult:
         )
         heartbeat_thread.start()
 
+        # ── Start watch-dog timer ────────────────────────────────────────────
+        timer = threading.Timer(ENGINE_TIMEOUT_SECONDS, proc.kill)
+        timer.start()
+
         # ── Stream stdout lines in real-time ─────────────────────────────────
         output_lines = []
-        timed_out    = False
-        deadline     = start_time + ENGINE_TIMEOUT_SECONDS
-
         try:
             for line in proc.stdout:
                 # BioGears uses \r to overwrite the progress bar in the same
@@ -203,13 +204,6 @@ def run_biogears(scenario_path: str, user_id: str = "unknown") -> EngineResult:
 
                 output_lines.append(line)
 
-                # Enforce deadline on each line read
-                if time.time() > deadline:
-                    proc.kill()
-                    proc.communicate()
-                    timed_out = True
-                    break
-
                 # Important lines → INFO, rest → DEBUG
                 stripped = line.strip()
                 if any(stripped.startswith(p) or p.lower() in stripped.lower()
@@ -221,10 +215,12 @@ def run_biogears(scenario_path: str, user_id: str = "unknown") -> EngineResult:
         except Exception as read_err:
             logger.warning(f"⚠️  Stream read error: {read_err}")
         finally:
+            timer.cancel()
             stop_heartbeat.set()
             heartbeat_thread.join(timeout=3)
 
         elapsed = round(time.time() - start_time, 1)
+        timed_out = elapsed >= ENGINE_TIMEOUT_SECONDS
 
         if timed_out:
             logger.error(f"⏰  [{user_id}] Engine TIMEOUT after {elapsed}s — killed.")

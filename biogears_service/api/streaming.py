@@ -102,6 +102,7 @@ def _engine_thread(job_id: str, scenario_path: str, user_id: str,
             else:
                 env["DYLD_LIBRARY_PATH"] = lib_path
 
+        start_time = time.time()
         proc = subprocess.Popen(
             command,
             stdout=subprocess.PIPE,
@@ -114,11 +115,24 @@ def _engine_thread(job_id: str, scenario_path: str, user_id: str,
         job["process"] = proc
         job["status"] = "running"
 
-        output_lines = []
-        for line in proc.stdout:
-            output_lines.append(line.rstrip())
+        from biogears_service.simulation.engine_runner import ENGINE_TIMEOUT_SECONDS
+        timer = threading.Timer(ENGINE_TIMEOUT_SECONDS, proc.kill)
+        timer.start()
 
-        proc.wait()
+        output_lines = []
+        try:
+            for line in proc.stdout:
+                output_lines.append(line.rstrip())
+        finally:
+            timer.cancel()
+
+        proc.wait(timeout=10)
+
+        elapsed = time.time() - start_time
+        if elapsed >= ENGINE_TIMEOUT_SECONDS:
+            job["status"] = "failed"
+            job["error"] = f"Engine timed out after {ENGINE_TIMEOUT_SECONDS}s — killed."
+            return
 
         # BioGears exits 0 even on XML parse errors or missing patient files.
         # Detect silent failures by scanning stdout for known failure strings.

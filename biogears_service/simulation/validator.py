@@ -121,6 +121,24 @@ def validate_registration(data: Dict[str, Any]) -> List[str]:
     if data.get("has_type1_diabetes") and data.get("has_type2_diabetes"):
         errors.append("Cannot have both Type 1 and Type 2 diabetes simultaneously.")
 
+    hba1c = data.get("hba1c")
+    if hba1c is not None:
+        try:
+            hval = float(hba1c)
+            if not (3.0 <= hval <= 20.0):
+                errors.append(f"'hba1c' must be between 3.0% and 20.0%, got {hval}.")
+        except (ValueError, TypeError):
+            errors.append(f"'hba1c' must be a valid number, got '{hba1c}'.")
+
+    vo2max = data.get("vo2max")
+    if vo2max is not None:
+        try:
+            vval = float(vo2max)
+            if not (10.0 <= vval <= 90.0):
+                errors.append(f"'vo2max' must be between 10.0 and 90.0 mL/kg/min, got {vval}.")
+        except (ValueError, TypeError):
+            errors.append(f"'vo2max' must be a valid number, got '{vo2max}'.")
+
     return errors
 
 

@@ -15,6 +15,31 @@ from biogears_service.simulation.config import BASE_DIR
 
 DB_PATH = BASE_DIR / "twins_database.json"
 _db_lock = threading.Lock()
+_file_lock_path = DB_PATH.with_suffix(".lock")
+
+
+class CrossProcessFileLock:
+    def __init__(self, lock_path: Path):
+        self.lock_path = lock_path
+        self.file_handle = None
+
+    def __enter__(self):
+        self.file_handle = open(self.lock_path, "w")
+        import fcntl
+        fcntl.flock(self.file_handle, fcntl.LOCK_EX)
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if self.file_handle:
+            import fcntl
+            try:
+                fcntl.flock(self.file_handle, fcntl.LOCK_UN)
+            except Exception:
+                pass
+            try:
+                self.file_handle.close()
+            except Exception:
+                pass
 
 
 def _load() -> Dict[str, Any]:
@@ -43,34 +68,38 @@ def _save(data: Dict[str, Any]) -> None:
 # ---------------------------------------------------------------------------
 
 def upsert_profile(user_id: str, metadata: Dict[str, Any]) -> None:
-    """Create or fully overwrite a profile record. Thread-safe."""
+    """Create or fully overwrite a profile record. Thread-safe and process-safe."""
     with _db_lock:
-        db = _load()
-        db[user_id] = metadata
-        _save(db)
+        with CrossProcessFileLock(_file_lock_path):
+            db = _load()
+            db[user_id] = metadata
+            _save(db)
 
 
 def get_profile(user_id: str) -> Optional[Dict[str, Any]]:
-    """Return a single profile dict, or None if not found. Thread-safe."""
+    """Return a single profile dict, or None if not found. Thread-safe and process-safe."""
     with _db_lock:
-        return _load().get(user_id)
+        with CrossProcessFileLock(_file_lock_path):
+            return _load().get(user_id)
 
 
 def delete_profile(user_id: str) -> bool:
-    """Remove a profile. Returns True if it existed, False otherwise. Thread-safe."""
+    """Remove a profile. Returns True if it existed, False otherwise. Thread-safe and process-safe."""
     with _db_lock:
-        db = _load()
-        if user_id in db:
-            del db[user_id]
-            _save(db)
-            return True
-        return False
+        with CrossProcessFileLock(_file_lock_path):
+            db = _load()
+            if user_id in db:
+                del db[user_id]
+                _save(db)
+                return True
+            return False
 
 
 def list_profiles() -> Dict[str, Any]:
-    """Return the entire database dict (keyed by user_id). Thread-safe."""
+    """Return the entire database dict (keyed by user_id). Thread-safe and process-safe."""
     with _db_lock:
-        return _load()
+        with CrossProcessFileLock(_file_lock_path):
+            return _load()
 
 
 def update_last_sleep_hours(user_id: str, events: list) -> None:

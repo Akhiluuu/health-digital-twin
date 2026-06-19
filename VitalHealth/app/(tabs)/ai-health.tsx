@@ -48,6 +48,7 @@ import {
   generateEmbedding,
   retrieveTopKChunks,
 } from "../../services/embeddingService";
+import { getApiKey } from "../../services/biogears";
 
 // ─── Voice Recognition ────────────────────────────────────────────────────────
 let Voice: any = null;
@@ -744,8 +745,13 @@ export default function AIHealthScreen() {
         const qEmb = await generateEmbedding(query);
         topChunks  = retrieveTopKChunks(qEmb, allChunks, TOP_K).map((r) => r.chunk.text);
       }
+      const apiKey = await getApiKey();
       const genRes = await fetch(`${baseUrl}/generate`, {
-        method: "POST", headers: { "Content-Type": "application/json" },
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(apiKey ? { "X-API-Key": apiKey } : {}),
+        },
         body: JSON.stringify({ query, chunks: topChunks, history, patient_context: { medicines: medicines || [], activeSymptoms: activeSymptoms || [], historySymptoms: historySymptoms || [] } }),
       });
       if (!genRes.ok) { const err = await genRes.json().catch(() => ({})); throw new Error(err.detail || `Generate failed: ${genRes.status}`); }

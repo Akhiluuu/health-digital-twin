@@ -24,8 +24,9 @@ import time as _time
 from pathlib import Path
 from typing import List, Optional
 
-from fastapi import FastAPI, HTTPException, UploadFile, File
+from fastapi import FastAPI, HTTPException, UploadFile, File, Depends, Security
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import APIKeyHeader
 from pydantic import BaseModel, Field
 
 from health_ai.embeddings.embedder import EmbeddingModel
@@ -37,7 +38,7 @@ from health_ai.core.character import (
     detect_urgent, DISCLAIMER, URGENT_NOTICE, OFF_TOPIC_RESPONSE,
     GREETING_RESPONSE, MAX_HISTORY_TURNS, FAREWELL_RESPONSE,
 )
-from health_ai.core.safety import apply_safety_layer
+from health_ai.core.safety import apply_safety_layer, detect_red_flags
 from health_ai.rag.context_builder import build_context
 from health_ai.core.logger import get_logger
 from health_ai.core.exceptions import (
@@ -67,6 +68,14 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Set env var DIGITAL_TWIN_API_KEY to require callers to pass an API key.
+API_KEY_ENV = os.environ.get("DIGITAL_TWIN_API_KEY", "")
+api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
+
+async def require_api_key(key: str = Depends(api_key_header)):
+    if API_KEY_ENV and key != API_KEY_ENV:
+        raise HTTPException(status_code=403, detail="Invalid or missing API key. Set X-API-Key header.")
 
 # ── Singletons ────────────────────────────────────────────────────────────────
 
@@ -992,7 +1001,7 @@ async def server_info():
     }
 
 
-@app.post("/upload-and-embed", response_model=UploadResponse, tags=["Documents"])
+@app.post("/upload-and-embed", response_model=UploadResponse, tags=["Documents"], dependencies=[Depends(require_api_key)])
 async def upload_and_embed(file: UploadFile = File(...)):
     filename = file.filename or "upload"
     ext      = Path(filename).suffix.lower()
@@ -1055,7 +1064,7 @@ async def upload_and_embed(file: UploadFile = File(...)):
             pass
 
 
-@app.post("/embed-query", response_model=EmbedQueryResponse, tags=["RAG"])
+@app.post("/embed-query", response_model=EmbedQueryResponse, tags=["RAG"], dependencies=[Depends(require_api_key)])
 async def embed_query(request: EmbedQueryRequest):
     try:
         vec = _embedder.embed_single(request.query)
@@ -1065,8 +1074,17 @@ async def embed_query(request: EmbedQueryRequest):
 
 
 
-@app.post("/generate", response_model=GenerateResponse, tags=["Generation"])
+@app.post("/generate", response_model=GenerateResponse, tags=["Generation"], dependencies=[Depends(require_api_key)])
 async def generate(request: GenerateRequest):
+
+    # ── Instant Emergency Short-Circuit Bypass (Bypass LLM completely) ────────
+    if detect_red_flags(request.query):
+        emergency_reply = (
+            "I detected critical symptoms or emergency keywords in your query. "
+            "For your safety, I have bypassed the AI text generation."
+            f"{URGENT_NOTICE}{DISCLAIMER}"
+        )
+        return GenerateResponse(response=emergency_reply, intent="urgent")
 
     if _llm is None or not _llm._loaded:
         raise HTTPException(status_code=503,
@@ -1137,27 +1155,27 @@ async def generate(request: GenerateRequest):
 # ── v2 compatibility routes ───────────────────────────────────────────────────
 
 
-@app.post("/generate/{profile_id}", response_model=GenerateResponse, tags=["v2 compat"])
+@app.post("/generate/{profile_id}", response_model=GenerateResponse, tags=["v2 compat"], dependencies=[Depends(require_api_key)])
 async def generate_compat(profile_id: str, request: GenerateRequest):
     log.info(f"v2 compat: /generate/{profile_id}")
     return await generate(request)
 
 
-@app.post("/query/{profile_id}", response_model=GenerateResponse, tags=["v2 compat"])
+@app.post("/query/{profile_id}", response_model=GenerateResponse, tags=["v2 compat"], dependencies=[Depends(require_api_key)])
 async def query_compat(profile_id: str, request: GenerateRequest):
     log.info(f"v2 compat: /query/{profile_id}")
     return await generate(request)
 
 
 @app.post("/upload-and-embed/{profile_id}", response_model=UploadResponse,
-          tags=["v2 compat"])
+          tags=["v2 compat"], dependencies=[Depends(require_api_key)])
 async def upload_compat(profile_id: str, file: UploadFile = File(...)):
     log.info(f"v2 compat: /upload-and-embed/{profile_id}")
     return await upload_and_embed(file)
 
 
 @app.post("/embed-query/{profile_id}", response_model=EmbedQueryResponse,
-          tags=["v2 compat"])
+          tags=["v2 compat"], dependencies=[Depends(require_api_key)])
 async def embed_query_compat(profile_id: str, request: EmbedQueryRequest):
     log.info(f"v2 compat: /embed-query/{profile_id}")
     return await embed_query(request)

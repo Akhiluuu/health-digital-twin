@@ -74,8 +74,8 @@ def compute_metrics(metadata: Dict[str, Any]) -> Dict[str, Any]:
     ethnicity = metadata.get("ethnicity", "Other")
     hba1c = metadata.get("hba1c")
 
-    if not weight or not height:
-        return {"error": "Weight and height not available in profile metadata."}
+    if not weight or not height or height <= 0 or weight <= 0:
+        return {"error": "Weight and height not available or invalid in profile metadata."}
 
     h_m = height / 100.0                  # metres
     bmi = round(weight / (h_m ** 2), 1)
@@ -92,7 +92,10 @@ def compute_metrics(metadata: Dict[str, Any]) -> Dict[str, Any]:
     ibw = round(ibw, 1)
 
     # % difference from ideal
-    weight_diff_pct = round((weight - ibw) / ibw * 100, 1)
+    if ibw > 0:
+        weight_diff_pct = round((weight - ibw) / ibw * 100, 1)
+    else:
+        weight_diff_pct = 0.0
 
     # ── BMI category ──────────────────────────────────────────────────────────
     # South Asian thresholds: WHO Expert Consultation, Lancet 2004
@@ -660,6 +663,8 @@ def compute_cvd_risk(metadata: Dict[str, Any]) -> Dict[str, Any]:
     ethnicity = str(metadata.get("ethnicity", "Other")).lower()
     weight  = float(metadata.get("weight", 70))
     height  = float(metadata.get("height", 170))
+    if height <= 0:
+        height = 170.0
     bmi     = weight / ((height / 100) ** 2)
 
     # ── Framingham point totals ──────────────────────────────────────────────
