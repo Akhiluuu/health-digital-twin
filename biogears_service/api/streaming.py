@@ -201,7 +201,7 @@ def _engine_thread(job_id: str, scenario_path: str, user_id: str,
                     except Exception as me:
                         logger.warning(f"⚠️ Meta sync skipped in streaming: {me}")
                 db.update_last_sleep_hours(user_id, events)
-                # Auto-backup
+                # Auto-backup before compressing
                 bak_dir = USER_STATES_DIR / "backups" / user_id
                 bak_dir.mkdir(parents=True, exist_ok=True)
                 ts_bak = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -210,10 +210,24 @@ def _engine_thread(job_id: str, scenario_path: str, user_id: str,
                 def _safe_mtime(p: Path) -> float:
                     try: return p.stat().st_mtime
                     except OSError: return 0.0
-                for old in sorted(bak_dir.glob(f"{user_id}_*.xml"),
-                                  key=_safe_mtime, reverse=True)[7:]:
+                all_baks = sorted(
+                    list(bak_dir.glob(f"{user_id}_*.xml")) + list(bak_dir.glob(f"{user_id}_*.xml.gz")),
+                    key=_safe_mtime, reverse=True
+                )
+                for old in all_baks[7:]:
                     try: old.unlink()
                     except: pass
+                # Compress state file in-place to save disk space
+                import gzip as _gzip
+                gz_path = state_file.with_suffix(".xml.gz")
+                try:
+                    with open(str(state_file), "rb") as f_in:
+                        with _gzip.open(str(gz_path), "wb") as f_out:
+                            shutil.copyfileobj(f_in, f_out)
+                    os.remove(str(state_file))
+                    logger.info(f"💾 [{user_id}] Compressed updated state file (streaming).")
+                except Exception as ce:
+                    logger.warning(f"⚠️ [{user_id}] State compression failed (streaming): {ce}")
             except Exception as e:
                 logger.warning(f"⚠️ State sync/backup skipped in streaming: {e}")
 
@@ -281,7 +295,8 @@ def start_stream(user_id: str, events: list) -> Dict[str, Any]:
     thread, and returns a stream_id the client can use to connect via SSE.
     """
     state_file = USER_STATES_DIR / f"{user_id}.xml"
-    if not state_file.exists():
+    gz_file = USER_STATES_DIR / f"{user_id}.xml.gz"
+    if not state_file.exists() and not gz_file.exists():
         raise FileNotFoundError(f"Twin '{user_id}' not found.")
 
     # Validate events list
@@ -298,6 +313,21 @@ def start_stream(user_id: str, events: list) -> Dict[str, Any]:
     user_lock = get_user_lock(user_id)
     if not user_lock.acquire(blocking=False):
         raise ValueError("A simulation job is already running for this user. Please wait for it to complete.")
+
+    # Transparently decompress state file AFTER acquiring the lock to prevent race conditions
+    # (two concurrent requests could both try to decompress the same .gz file)
+    if not state_file.exists() and gz_file.exists():
+        import gzip
+        logger.info(f"[{user_id}] Decompressing state file for streaming simulation (under lock)...")
+        try:
+            with gzip.open(str(gz_file), 'rb') as f_in:
+                with open(str(state_file), 'wb') as f_out:
+                    import shutil as _shutil
+                    _shutil.copyfileobj(f_in, f_out)
+            os.remove(str(gz_file))
+        except Exception as e:
+            user_lock.release()
+            raise FileNotFoundError(f"Failed to decompress twin state for '{user_id}': {e}")
 
     # Normalise events to dicts and assign timestamps
     now_ts = time.time()

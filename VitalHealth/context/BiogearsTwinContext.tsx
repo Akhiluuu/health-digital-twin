@@ -715,39 +715,47 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
       }
 
       if (!jobId) return;
-      
-      const statusRes = await BiogearsAPI.getJobStatus(jobId);
+
       const isCurrentActive = jobUserId === twinUserId;
+
+      // Show the simulation animation immediately upon finding a stored job —
+      // don't wait for the getJobStatus network call to complete first.
+      if (isCurrentActive) {
+        const immediateStartTime = startTime || Date.now();
+        setSimulationStatus('running');
+        setSimulationStartTime(immediateStartTime);
+        simStartRef.current = immediateStartTime;
+        setSimulationProgress('Reconnecting to running simulation...');
+        if (progressTickRef.current) clearInterval(progressTickRef.current);
+        progressTickRef.current = setInterval(() => {
+          const elapsed = Math.round((Date.now() - (simStartRef.current ?? Date.now())) / 1000);
+          const mins = Math.floor(elapsed / 60);
+          const secs = elapsed % 60;
+          const timeStr = mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
+          setSimulationProgress(`BioGears computing physiology... (${timeStr} elapsed)`);
+        }, 5000);
+      }
+
+      const statusRes = await BiogearsAPI.getJobStatus(jobId);
       
       if (statusRes.status === 'running' || statusRes.status === 'pending') {
         console.log(`[BiogearsTwin] Resuming active job: ${jobId} for user: ${jobUserId}`);
         
         if (isCurrentActive) {
-          setSimulationStatus('running');
-          
+          // Animation and timer already started immediately (before getJobStatus call).
+          // Just update the start time if we got a more accurate value from the server.
           const finalStartTime = startTime || Date.now();
           setSimulationStartTime(finalStartTime);
           simStartRef.current = finalStartTime;
-          
           setSimulationProgress('BioGears engine initialising...');
-          
-          if (progressTickRef.current) {
-            clearInterval(progressTickRef.current);
-          }
-          
-          progressTickRef.current = setInterval(() => {
-            const elapsed = Math.round((Date.now() - (simStartRef.current ?? Date.now())) / 1000);
-            const mins = Math.floor(elapsed / 60);
-            const secs = elapsed % 60;
-            const timeStr = mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
-            setSimulationProgress(`BioGears computing physiology... (${timeStr} elapsed)`);
-          }, 5000);
         }
 
         const result = await BiogearsAPI.pollUntilDone(jobId, 3000, 43_200_000);
         await finishSimulationSuccess(result, jobUserId, jobOwnerUid);
       } else if (statusRes.status === 'done') {
         console.log(`[BiogearsTwin] Active job ${jobId} finished while app was backgrounded/closed. Processing results.`);
+        // Clean up the immediate animation we started — finishSimulationSuccess will set the correct final state
+        if (progressTickRef.current) { clearInterval(progressTickRef.current); progressTickRef.current = null; }
         await finishSimulationSuccess(statusRes.result, jobUserId, jobOwnerUid);
       } else {
         console.log(`[BiogearsTwin] Active job ${jobId} status is ${statusRes.status}. Clearing active job.`);
@@ -757,6 +765,10 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
         await AsyncStorage.removeItem('biogears_active_job_owner_uid');
         
         if (isCurrentActive) {
+          // Clean up the immediate animation we started
+          if (progressTickRef.current) { clearInterval(progressTickRef.current); progressTickRef.current = null; }
+          simStartRef.current = null;
+          setSimulationStartTime(null);
           if (statusRes.status === 'failed') {
             setSimulationStatus('failed');
             setSimulationError(statusRes.error || 'Simulation failed');
@@ -1800,7 +1812,12 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
 
   const recheckTwinStatus = useCallback(async () => {
     if (!twinUserId) { setTwinStatus('unregistered'); return; }
-    setTwinStatus('checking');
+    // Don't interrupt an active registration or flash 'checking' if already confirmed ready
+    if (twinStatus === 'registering') return;
+    // Only show 'checking' spinner on first load or error state — not on re-checks when already green
+    if (twinStatus !== 'ready') {
+      setTwinStatus('checking');
+    }
     try {
       const remoteProfile = await BiogearsAPI.getTwinProfile(twinUserId);
       setTwinStatus('ready');
@@ -1901,7 +1918,7 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
         }
       }
     }
-  }, [twinUserId, profile, registerTwin]);
+  }, [twinUserId, twinStatus, profile, registerTwin]);
 
   // ── Add Event and Run Simulation Immediately ──────────────────────────────
 

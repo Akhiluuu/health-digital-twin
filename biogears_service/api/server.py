@@ -888,7 +888,15 @@ def health_check():
     checks["states_dir"]     = USER_STATES_DIR.exists()
     checks["history_dir"]    = USER_HISTORY_DIR.exists()
     checks["scenarios_dir"]  = SCENARIO_API_DIR.exists()
-    checks["twin_count"]     = len(list(USER_STATES_DIR.glob("*.xml"))) if USER_STATES_DIR.exists() else 0
+    twin_files = list(USER_STATES_DIR.glob("*.xml")) + list(USER_STATES_DIR.glob("*.xml.gz")) if USER_STATES_DIR.exists() else []
+    uids = set()
+    for f in twin_files:
+        name = f.name
+        if name.endswith(".xml.gz"):
+            uids.add(name[:-7])
+        elif name.endswith(".xml"):
+            uids.add(name[:-4])
+    checks["twin_count"]     = len(uids)
     with _jobs_lock:
         checks["persisted_jobs"] = len(_load_jobs())
     all_ok = all(v for k, v in checks.items() if isinstance(v, bool))
@@ -948,8 +956,20 @@ def get_all_profiles(
 
         stored = db.list_profiles()
 
-        for state_file in USER_STATES_DIR.glob("*.xml"):
-            uid = state_file.stem
+        # Find all files matching *.xml or *.xml.gz
+        state_files = list(USER_STATES_DIR.glob("*.xml")) + list(USER_STATES_DIR.glob("*.xml.gz"))
+        uids = set()
+        for f in state_files:
+            name = f.name
+            if name.endswith(".xml.gz"):
+                uid = name[:-7]
+            elif name.endswith(".xml"):
+                uid = name[:-4]
+            else:
+                continue
+            uids.add(uid)
+
+        for uid in uids:
             meta = stored.get(uid, {})
             conditions = meta.get("conditions", [])
 
@@ -969,11 +989,15 @@ def get_all_profiles(
             if is_smoker is not None and is_smoker != bool(meta.get("is_smoker")):
                 continue
 
+            state_file = USER_STATES_DIR / f"{uid}.xml"
+            gz_file = USER_STATES_DIR / f"{uid}.xml.gz"
+            active_file = state_file if state_file.exists() else gz_file
+
             profiles.append({
                 "user_id": uid,
                 "status": "Calibrated",
                 "last_active": datetime.datetime.fromtimestamp(
-                    state_file.stat().st_mtime
+                    active_file.stat().st_mtime
                 ).isoformat(),
                 "age": meta.get("age"),
                 "sex": meta.get("sex"),
@@ -994,15 +1018,17 @@ def get_all_profiles(
 def get_profile(user_id: str):
     """Returns stored demographic and clinical metadata for one twin."""
     state_file = USER_STATES_DIR / f"{user_id}.xml"
-    if not state_file.exists():
+    gz_file = USER_STATES_DIR / f"{user_id}.xml.gz"
+    if not state_file.exists() and not gz_file.exists():
         raise HTTPException(status_code=404, detail=f"Twin '{user_id}' not found.")
 
     meta = db.get_profile(user_id) or {}
+    active_file = state_file if state_file.exists() else gz_file
     return {
         "user_id": user_id,
         "status": "Calibrated",
         "last_active": datetime.datetime.fromtimestamp(
-            state_file.stat().st_mtime
+            active_file.stat().st_mtime
         ).isoformat(),
         "age": meta.get("age"),
         "sex": meta.get("sex"),
@@ -1025,8 +1051,15 @@ def delete_profile(user_id: str):
         raise HTTPException(status_code=400, detail="Invalid user_id format.")
     try:
         state_file = USER_STATES_DIR / f"{user_id}.xml"
+        gz_file = USER_STATES_DIR / f"{user_id}.xml.gz"
+        meta_file = USER_STATES_DIR / f"{user_id}.meta.json"
+        
         if state_file.exists():
             os.remove(str(state_file))
+        if gz_file.exists():
+            os.remove(str(gz_file))
+        if meta_file.exists():
+            os.remove(str(meta_file))
 
         history_folder = USER_HISTORY_DIR / user_id
         if history_folder.exists():
@@ -1077,6 +1110,7 @@ def _register_impl(data: RegistrationRequest):
 
     # ── 2. Overwrite existing twin if recalibrating (with backup/rollback) ──
     existing_state = USER_STATES_DIR / f"{data.user_id}.xml"
+    existing_gz = USER_STATES_DIR / f"{data.user_id}.xml.gz"
     existing_meta = USER_STATES_DIR / f"{data.user_id}.meta.json"
     history_folder = USER_HISTORY_DIR / data.user_id
 
@@ -1084,10 +1118,12 @@ def _register_impl(data: RegistrationRequest):
     bak_dir.mkdir(parents=True, exist_ok=True)
     
     xml_bak = bak_dir / f"{data.user_id}_calib_bak.xml"
+    gz_bak = bak_dir / f"{data.user_id}_calib_bak.xml.gz"
     meta_bak = bak_dir / f"{data.user_id}_calib_bak.meta.json"
     hist_bak = USER_HISTORY_DIR / f"{data.user_id}_calib_bak"
     
     has_xml_bak = False
+    has_gz_bak = False
     has_meta_bak = False
     has_hist_bak = False
 
@@ -1098,7 +1134,15 @@ def _register_impl(data: RegistrationRequest):
             has_xml_bak = True
         except Exception as e:
             logger.warning(f"Failed to backup existing state: {e}")
+    elif existing_gz.exists():
+        logger.info(f"⚠️ Compressed twin '{data.user_id}' already exists. Backing up before recalibrating.")
+        try:
+            shutil.copy2(str(existing_gz), str(gz_bak))
+            has_gz_bak = True
+        except Exception as e:
+            logger.warning(f"Failed to backup existing compressed state: {e}")
             
+    if existing_state.exists() or existing_gz.exists():
         if existing_meta.exists():
             try:
                 shutil.copy2(str(existing_meta), str(meta_bak))
@@ -1116,7 +1160,10 @@ def _register_impl(data: RegistrationRequest):
                 logger.warning(f"Failed to backup history folder: {e}")
 
         try:
-            os.remove(str(existing_state))
+            if existing_state.exists():
+                os.remove(str(existing_state))
+            if existing_gz.exists():
+                os.remove(str(existing_gz))
             if existing_meta.exists():
                 os.remove(str(existing_meta))
             if history_folder.exists():
@@ -1185,6 +1232,9 @@ def _register_impl(data: RegistrationRequest):
                 if has_xml_bak and xml_bak.exists():
                     try: os.remove(str(xml_bak))
                     except: pass
+                if has_gz_bak and gz_bak.exists():
+                    try: os.remove(str(gz_bak))
+                    except: pass
                 if has_meta_bak and meta_bak.exists():
                     try: os.remove(str(meta_bak))
                     except: pass
@@ -1204,6 +1254,12 @@ def _register_impl(data: RegistrationRequest):
                 logger.info(f"♻️ Rolled back state file to previous calibration.")
             except Exception as rb_err:
                 logger.warning(f"Failed to restore state file: {rb_err}")
+        elif has_gz_bak and gz_bak.exists():
+            try:
+                shutil.copy2(str(gz_bak), str(existing_gz))
+                logger.info(f"♻️ Rolled back compressed state file to previous calibration.")
+            except Exception as rb_err:
+                logger.warning(f"Failed to restore compressed state file: {rb_err}")
         if has_meta_bak and meta_bak.exists():
             try:
                 shutil.copy2(str(meta_bak), str(existing_meta))
@@ -1222,6 +1278,9 @@ def _register_impl(data: RegistrationRequest):
         # Cleanup backups
         if has_xml_bak and xml_bak.exists():
             try: os.remove(str(xml_bak))
+            except: pass
+        if has_gz_bak and gz_bak.exists():
+            try: os.remove(str(gz_bak))
             except: pass
         if has_meta_bak and meta_bak.exists():
             try: os.remove(str(meta_bak))
@@ -1981,18 +2040,23 @@ def backup_twin(user_id: str):
     Keeps the last 7 backups automatically.
     """
     state_file = USER_STATES_DIR / f"{user_id}.xml"
-    if not state_file.exists():
+    gz_file = USER_STATES_DIR / f"{user_id}.xml.gz"
+    if not state_file.exists() and not gz_file.exists():
         raise HTTPException(status_code=404, detail=f"Twin '{user_id}' not found.")
 
     backup_dir = USER_STATES_DIR / "backups" / user_id
     backup_dir.mkdir(parents=True, exist_ok=True)
 
     ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    dest = backup_dir / f"{user_id}_{ts}.xml"
-    shutil.copy2(str(state_file), str(dest))
+    if state_file.exists():
+        dest = backup_dir / f"{user_id}_{ts}.xml"
+        shutil.copy2(str(state_file), str(dest))
+    else:
+        dest = backup_dir / f"{user_id}_{ts}.xml.gz"
+        shutil.copy2(str(gz_file), str(dest))
 
     # Prune — keep only the 7 most recent backups
-    existing = sorted(backup_dir.glob(f"{user_id}_*.xml"), key=os.path.getmtime, reverse=True)
+    existing = sorted(list(backup_dir.glob(f"{user_id}_*.xml")) + list(backup_dir.glob(f"{user_id}_*.xml.gz")), key=os.path.getmtime, reverse=True)
     for old in existing[7:]:
         try: old.unlink()
         except: pass
@@ -2019,7 +2083,17 @@ def restore_twin(user_id: str, backup_filename: str = Query(...)):
                             detail=f"Backup '{backup_filename}' not found for twin '{user_id}'.")
 
     state_file = USER_STATES_DIR / f"{user_id}.xml"
-    shutil.copy2(str(backup_file), str(state_file))
+    gz_file = USER_STATES_DIR / f"{user_id}.xml.gz"
+    
+    # Remove both potential active state files before restoring to avoid conflict
+    if state_file.exists(): os.remove(str(state_file))
+    if gz_file.exists(): os.remove(str(gz_file))
+
+    if backup_filename.endswith(".gz"):
+        shutil.copy2(str(backup_file), str(gz_file))
+    else:
+        shutil.copy2(str(backup_file), str(state_file))
+
     logger.info(f"♻️ Twin {user_id} restored from backup: {backup_filename}")
     return {"status": "restored", "from_backup": backup_filename}
 
@@ -2030,7 +2104,7 @@ def list_backups(user_id: str):
     backup_dir = USER_STATES_DIR / "backups" / user_id
     if not backup_dir.exists():
         return {"backups": []}
-    files = sorted(backup_dir.glob(f"{user_id}_*.xml"), key=os.path.getmtime, reverse=True)
+    files = sorted(list(backup_dir.glob(f"{user_id}_*.xml")) + list(backup_dir.glob(f"{user_id}_*.xml.gz")), key=os.path.getmtime, reverse=True)
     return {
         "backups": [
             {

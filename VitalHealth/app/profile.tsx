@@ -613,17 +613,18 @@ export default function ProfileScreen() {
 
   useEffect(() => {
     if (calibrationJustSucceeded) {
-      // Always save flag in background
+      // Always dismiss the flag immediately and persist biogears_registered: true
+      dismissCalibrationSuccess();
       const calibratedProfile = { ...localProfile, biogears_registered: true };
       saveProfileData(calibratedProfile).catch(console.error);
+      setLocalProfile(calibratedProfile);
 
-      // Alert only if this screen is active/focused
+      // Show success modal only if this screen is active/focused
       if (isFocused) {
         setShowSuccessModal(true);
-        dismissCalibrationSuccess();
       }
     }
-  }, [calibrationJustSucceeded, isFocused, localProfile]);
+  }, [calibrationJustSucceeded]);
 
   const handleDeleteAccount = async (passwordForReauth?: string) => {
     const user = auth.currentUser;
@@ -989,7 +990,12 @@ export default function ProfileScreen() {
     isCalibratingLocalRef.current = true;
     try {
       closeModal(setEditMedicalModal);
-      await saveProfileData(localProfile);
+      // Save profile with biogears_registered: true BEFORE calling registerTwin.
+      // This ensures that if recheckTwinStatus fires concurrently and hits a server error,
+      // it sees the flag and correctly falls back to 'ready' instead of 'error'.
+      const profileToSave = { ...localProfile, biogears_registered: true };
+      await saveProfileData(profileToSave);
+      setLocalProfile(profileToSave);
 
       const generatedId = getTwinId(localProfile);
       const payload: BiogearsRegistrationPayload = {
