@@ -9,10 +9,10 @@ type Props = {
   onDone: (result: GameResult) => void;
 };
 
-const LETTERS = ["A", "B", "C", "F", "X", "H", "J", "L", "X", "P", "R", "S", "X", "T", "V"];
+const DISTRACTORS = ["A", "B", "C", "D", "E", "F", "G", "H", "J", "K", "L", "M", "N", "P", "Q", "R", "S", "T", "U", "V", "W", "Y", "Z"];
 const DISPLAY_DURATION = 900; // ms letter is visible
 const INTERVAL_DURATION = 600; // ms blank gap
-const TOTAL_TRIALS = LETTERS.length;
+const TOTAL_TRIALS = 15;
 
 export default function ContinuousPerformanceTest({ onDone }: Props) {
   const { theme } = useTheme();
@@ -36,6 +36,25 @@ export default function ContinuousPerformanceTest({ onDone }: Props) {
   const [currentLetter, setCurrentLetter] = useState("");
   const [isLetterVisible, setIsLetterVisible] = useState(false);
   const [hasResponded, setHasResponded] = useState(false);
+  const [letters] = useState<string[]>(() => {
+    const list: string[] = [];
+    for (let i = 0; i < TOTAL_TRIALS; i++) {
+      if (Math.random() < 0.25) { // 25% chance of X
+        list.push("X");
+      } else {
+        const idx = Math.floor(Math.random() * DISTRACTORS.length);
+        list.push(DISTRACTORS[idx]);
+      }
+    }
+    // Ensure there is at least one X and at least one non-X
+    if (!list.includes("X")) {
+      list[Math.floor(Math.random() * TOTAL_TRIALS)] = "X";
+    }
+    if (list.every(l => l === "X")) {
+      list[0] = "A";
+    }
+    return list;
+  });
 
   // Metrics
   const responseTimes = useRef<number[]>([]);
@@ -71,7 +90,7 @@ export default function ContinuousPerformanceTest({ onDone }: Props) {
       return;
     }
 
-    const letter = LETTERS[currentTrial];
+    const letter = letters[currentTrial];
     setCurrentLetter(letter);
     setIsLetterVisible(true);
     setHasResponded(false);
@@ -114,7 +133,7 @@ export default function ContinuousPerformanceTest({ onDone }: Props) {
     if (!isLetterVisible || hasResponded) return;
     setHasResponded(true);
     const rt = Date.now() - trialStartTime.current;
-    const letter = LETTERS[currentTrial];
+    const letter = letters[currentTrial];
 
     triggerHaptic("medium");
 
@@ -133,8 +152,8 @@ export default function ContinuousPerformanceTest({ onDone }: Props) {
       ? responseTimes.current.reduce((a, b) => a + b, 0) / responseTimes.current.length
       : 0;
 
-    const totalValidTargets = LETTERS.filter((l) => l !== "X").length;
-    const totalInhibitions = LETTERS.filter((l) => l === "X").length;
+    const totalValidTargets = letters.filter((l) => l !== "X").length;
+    const totalInhibitions = letters.filter((l) => l === "X").length;
     
     // Overall accuracy
     const accuracy = (correctTaps.current + correctInhibitions.current) / TOTAL_TRIALS;

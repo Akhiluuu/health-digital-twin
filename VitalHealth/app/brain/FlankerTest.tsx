@@ -16,22 +16,19 @@ type FlankerItem = {
   isCongruent: boolean;
 };
 
-const FLANKERS: FlankerItem[] = [
-  { display: "◀ ◀ ◀ ◀ ◀", target: "left", isCongruent: true },
-  { display: "▶ ▶ ▶ ▶ ▶", target: "right", isCongruent: true },
-  { display: "◀ ◀ ▶ ◀ ◀", target: "right", isCongruent: false },
-  { display: "▶ ▶ ◀ ▶ ▶", target: "left", isCongruent: false },
-  { display: "◀ ◀ ◀ ◀ ◀", target: "left", isCongruent: true },
-  { display: "▶ ▶ ◀ ▶ ▶", target: "left", isCongruent: false },
-  { display: "▶ ▶ ▶ ▶ ▶", target: "right", isCongruent: true },
-  { display: "◀ ◀ ▶ ◀ ◀", target: "right", isCongruent: false },
-  { display: "◀ ◀ ◀ ◀ ◀", target: "left", isCongruent: true },
-  { display: "◀ ◀ ▶ ◀ ◀", target: "right", isCongruent: false },
-  { display: "▶ ▶ ▶ ▶ ▶", target: "right", isCongruent: true },
-  { display: "▶ ▶ ◀ ▶ ▶", target: "left", isCongruent: false },
-];
+function makeFlankerItem(): FlankerItem {
+  const target: "left" | "right" = Math.random() < 0.5 ? "left" : "right";
+  const isCongruent = Math.random() < 0.5;
+  let display = "";
+  if (isCongruent) {
+    display = target === "left" ? "◀ ◀ ◀ ◀ ◀" : "▶ ▶ ▶ ▶ ▶";
+  } else {
+    display = target === "left" ? "▶ ▶ ◀ ▶ ▶" : "◀ ◀ ▶ ◀ ◀";
+  }
+  return { display, target, isCongruent };
+}
 
-const TOTAL_ROUNDS = FLANKERS.length;
+const TOTAL_ROUNDS = 12;
 
 export default function FlankerTest({ onDone }: Props) {
   const { theme } = useTheme();
@@ -52,6 +49,9 @@ export default function FlankerTest({ onDone }: Props) {
   const [phase, setPhase] = useState<"instructions" | "countdown" | "playing" | "done">("instructions");
   const [countdown, setCountdown] = useState(3);
   const [currentRound, setCurrentRound] = useState(0);
+  const [flankers] = useState<FlankerItem[]>(() =>
+    Array.from({ length: TOTAL_ROUNDS }, () => makeFlankerItem())
+  );
 
   const correctAnswers = useRef(0);
   const responseTimes = useRef<number[]>([]);
@@ -79,7 +79,7 @@ export default function FlankerTest({ onDone }: Props) {
     if (phase !== "playing") return;
 
     const rt = Date.now() - roundStartTime.current;
-    const item = FLANKERS[currentRound];
+    const item = flankers[currentRound];
     const isCorrect = direction === item.target;
 
     responseTimes.current.push(rt);
@@ -169,7 +169,7 @@ export default function FlankerTest({ onDone }: Props) {
     );
   }
 
-  const currentItem = FLANKERS[currentRound];
+  const currentItem = flankers[currentRound];
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>

@@ -15,25 +15,49 @@ type NodeItem = {
   y: number; // percentage of container height
 };
 
-const PART_A_NODES: NodeItem[] = [
-  { label: "1", x: 20, y: 25 },
-  { label: "2", x: 75, y: 15 },
-  { label: "3", x: 80, y: 55 },
-  { label: "4", x: 50, y: 35 },
-  { label: "5", x: 20, y: 65 },
-  { label: "6", x: 50, y: 75 },
-];
-
-const PART_B_NODES: NodeItem[] = [
-  { label: "1", x: 15, y: 20 },
-  { label: "A", x: 50, y: 15 },
-  { label: "2", x: 80, y: 30 },
-  { label: "B", x: 55, y: 45 },
-  { label: "3", x: 80, y: 75 },
-  { label: "C", x: 45, y: 80 },
-  { label: "4", x: 15, y: 70 },
-  { label: "D", x: 15, y: 45 },
-];
+function generateRandomNodes(labels: string[]): NodeItem[] {
+  const nodes: NodeItem[] = [];
+  const minDistance = 18; // minimum distance in percent to avoid overlap
+  
+  for (const label of labels) {
+    let bestX = 0;
+    let bestY = 0;
+    let found = false;
+    
+    for (let attempts = 0; attempts < 150; attempts++) {
+      const x = 10 + Math.random() * 75; // 10% to 85%
+      const y = 10 + Math.random() * 70; // 10% to 80%
+      
+      // Check distance to all existing nodes
+      let ok = true;
+      for (const node of nodes) {
+        const dx = node.x - x;
+        const dy = node.y - y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist < minDistance) {
+          ok = false;
+          break;
+        }
+      }
+      
+      if (ok) {
+        bestX = x;
+        bestY = y;
+        found = true;
+        break;
+      }
+    }
+    
+    // Fallback if we couldn't find a spot after 150 attempts
+    if (!found) {
+      bestX = 10 + Math.random() * 75;
+      bestY = 10 + Math.random() * 70;
+    }
+    
+    nodes.push({ label, x: Math.round(bestX), y: Math.round(bestY) });
+  }
+  return nodes;
+}
 
 const W_WIDTH = Dimensions.get("window").width;
 
@@ -60,6 +84,9 @@ export default function TrailMakingTest({ onDone }: Props) {
   const [clickedNodes, setClickedNodes] = useState<string[]>([]);
   const [wrongNode, setWrongNode] = useState<string | null>(null);
 
+  const [partANodes] = useState<NodeItem[]>(() => generateRandomNodes(["1", "2", "3", "4", "5", "6"]));
+  const [partBNodes] = useState<NodeItem[]>(() => generateRandomNodes(["1", "A", "2", "B", "3", "C", "4", "D"]));
+
   // Timers
   const startTime = useRef(0);
   const totalDuration = useRef(0);
@@ -82,7 +109,7 @@ export default function TrailMakingTest({ onDone }: Props) {
   }, [countdown, phase]);
 
   const handleNodePress = (node: NodeItem) => {
-    const activeNodes = phase === "partA" ? PART_A_NODES : PART_B_NODES;
+    const activeNodes = phase === "partA" ? partANodes : partBNodes;
     const currentTarget = activeNodes[currentIndex];
 
     if (node.label === currentTarget.label) {
@@ -204,7 +231,7 @@ export default function TrailMakingTest({ onDone }: Props) {
     );
   }
 
-  const nodes = phase === "partA" ? PART_A_NODES : PART_B_NODES;
+  const nodes = phase === "partA" ? partANodes : partBNodes;
   const targetLabel = nodes[currentIndex]?.label;
 
   return (

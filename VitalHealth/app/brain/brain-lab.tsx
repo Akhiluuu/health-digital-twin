@@ -11,7 +11,7 @@ import {
   Switch,
   Modal,
 } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
+import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
 
@@ -89,6 +89,59 @@ const DOMAINS = {
       { id: "switching", name: "Task Switching", desc: "Alternating verbal and numerical categorization." },
     ],
   },
+};
+
+const getDomainIcon = (key: string, size = 24, color = "#6366f1") => {
+  switch (key) {
+    case "attention":
+      return <Ionicons name="eye" size={size} color={color} />;
+    case "memory":
+      return <MaterialCommunityIcons name="brain" size={size} color={color} />;
+    case "processingSpeed":
+      return <Ionicons name="flash" size={size} color={color} />;
+    case "executiveFunction":
+      return <Ionicons name="shuffle" size={size} color={color} />;
+    default:
+      return <Ionicons name="help-circle" size={size} color={color} />;
+  }
+};
+
+const getAchievementColor = (id: string) => {
+  switch (id) {
+    case "first_test": return "#6366f1";
+    case "memory_master": return "#a855f7";
+    case "speed_demon": return "#0ea5e9";
+    case "focus_champion": return "#3b82f6";
+    case "flexible_thinker": return "#ec4899";
+    case "streak_3": return "#f97316";
+    case "streak_7": return "#eab308";
+    case "perfect_score": return "#ef4444";
+    default: return "#6366f1";
+  }
+};
+
+const getAchievementIcon = (id: string, size = 24, isUnlocked = false, activeColor = "#6366f1") => {
+  const color = isUnlocked ? activeColor : "#64748b";
+  switch (id) {
+    case "first_test":
+      return <MaterialCommunityIcons name="brain" size={size} color={color} />;
+    case "memory_master":
+      return <MaterialCommunityIcons name="puzzle" size={size} color={color} />;
+    case "speed_demon":
+      return <Ionicons name="flash" size={size} color={color} />;
+    case "focus_champion":
+      return <Ionicons name="eye" size={size} color={color} />;
+    case "flexible_thinker":
+      return <Ionicons name="shuffle" size={size} color={color} />;
+    case "streak_3":
+      return <Ionicons name="flame" size={size} color={color} />;
+    case "streak_7":
+      return <Ionicons name="trophy" size={size} color={color} />;
+    case "perfect_score":
+      return <Ionicons name="ribbon" size={size} color={color} />;
+    default:
+      return <Ionicons name="award" size={size} color={color} />;
+  }
 };
 
 const ASSESSMENT_STEPS = ["pattern", "reaction", "memory", "stroop"];
@@ -357,7 +410,7 @@ export default function BrainLab() {
           <LinearGradient colors={["#f59e0b", "#d97706"]} style={styles.streakBanner}>
             <Ionicons name="flame" size={24} color="#ffffff" />
             <Text style={styles.streakText}>
-              🔥 {currentStreak} DAY STREAK! Longest streak is {longestStreak} days.
+              {currentStreak} DAY STREAK! Longest streak is {longestStreak} days.
             </Text>
           </LinearGradient>
         )}
@@ -428,7 +481,9 @@ export default function BrainLab() {
                 }}
               >
                 <View style={styles.domainTop}>
-                  <Text style={styles.domainIcon}>{dom.icon}</Text>
+                  <View style={[styles.domainIconWrap, { backgroundColor: dom.color + "15" }]}>
+                    {getDomainIcon(key, 20, dom.color)}
+                  </View>
                   {trend.change !== 0 && (
                     <Text style={[styles.domainTrend, { color: trend.change > 0 ? colors.success : colors.error }]}>
                       {trend.change > 0 ? `+${trend.change}%` : `${trend.change}%`}
@@ -476,7 +531,9 @@ export default function BrainLab() {
                   !isUnlocked && { opacity: 0.4 },
                 ]}
               >
-                <Text style={styles.badgeIcon}>{a.icon}</Text>
+                <View style={[styles.badgeIconWrap, { backgroundColor: isUnlocked ? getAchievementColor(a.id) + "20" : colors.card2 }]}>
+                  {getAchievementIcon(a.id, 24, isUnlocked, getAchievementColor(a.id))}
+                </View>
                 <Text style={[styles.badgeTitle, { color: colors.text }]} numberOfLines={1}>
                   {a.title}
                 </Text>
@@ -559,7 +616,7 @@ export default function BrainLab() {
               }}
             >
               <View style={[styles.bigDomainIconWrap, { backgroundColor: dom.color + "15" }]}>
-                <Text style={styles.bigDomainIcon}>{dom.icon}</Text>
+                {getDomainIcon(key, 32, dom.color)}
               </View>
               <View style={styles.bigDomainBody}>
                 <Text style={[styles.bigDomainTitle, { color: colors.text }]}>{dom.title}</Text>
@@ -647,7 +704,9 @@ export default function BrainLab() {
     return (
       <View style={[styles.container, styles.center, { backgroundColor: colors.background }]}>
         <View style={[styles.resultsCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-          <Text style={styles.resultsBrain}>🏆</Text>
+          <View style={[styles.resultsIconWrap, { backgroundColor: "#eab30820" }]}>
+            <Ionicons name="trophy" size={54} color="#eab308" />
+          </View>
           <Text style={[styles.resultsTitle, { color: colors.text }]}>{singleTestResult.label} Results</Text>
           
           <View style={[styles.resultsScoreBadge, { backgroundColor: grade.color + "15" }]}>
@@ -858,7 +917,7 @@ const styles = StyleSheet.create({
   domainsGrid: { flexDirection: "row", flexWrap: "wrap", gap: 12 },
   domainCard: { width: (W - 52) / 2, borderRadius: 24, padding: 16, borderWidth: 1 },
   domainTop: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 8 },
-  domainIcon: { fontSize: 24 },
+  domainIconWrap: { width: 36, height: 36, borderRadius: 18, justifyContent: "center", alignItems: "center" },
   domainTrend: { fontSize: 11, fontWeight: "700" },
   domainName: { fontSize: 14, fontWeight: "800" },
   domainScience: { fontSize: 10, marginTop: 2, fontWeight: "500" },
@@ -879,7 +938,7 @@ const styles = StyleSheet.create({
 
   badgesScroll: { gap: 12, paddingRight: 20 },
   badgeCard: { width: 110, borderRadius: 20, padding: 12, borderWidth: 1, alignItems: "center", gap: 4 },
-  badgeIcon: { fontSize: 28 },
+  badgeIconWrap: { width: 44, height: 44, borderRadius: 22, justifyContent: "center", alignItems: "center", marginBottom: 6 },
   badgeTitle: { fontSize: 11, fontWeight: "800", textAlign: "center" },
   badgeDesc: { fontSize: 8, fontWeight: "600", textAlign: "center", lineHeight: 10 },
 
@@ -915,7 +974,7 @@ const styles = StyleSheet.create({
   subText: { fontSize: 18, fontWeight: "700" },
 
   resultsCard: { borderRadius: 28, padding: 28, borderWidth: 1, elevation: 4, width: W - 48, alignItems: "center" },
-  resultsBrain: { fontSize: 60, marginBottom: 12 },
+  resultsIconWrap: { width: 90, height: 90, borderRadius: 45, justifyContent: "center", alignItems: "center", marginBottom: 12 },
   resultsTitle: { fontSize: 20, fontWeight: "900", textAlign: "center", marginBottom: 16 },
   resultsScoreBadge: { borderRadius: 24, paddingHorizontal: 28, paddingVertical: 12, alignItems: "center", marginBottom: 24 },
   resultsScoreText: { fontSize: 44, fontWeight: "900" },

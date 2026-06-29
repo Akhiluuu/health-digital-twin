@@ -9,11 +9,9 @@ type Props = {
   onDone: (result: GameResult) => void;
 };
 
-// Sequence of 16 letters with some 2-Back targets (indices 2, 5, 8, 10, 13, 15)
-const SEQUENCE = ["A", "B", "A", "C", "D", "C", "E", "F", "E", "G", "E", "H", "B", "H", "D", "H"];
 const DISPLAY_TIME = 1500; // ms letter is visible
 const INTERVAL_TIME = 700; // ms blank gap
-const TOTAL_ROUNDS = SEQUENCE.length;
+const TOTAL_ROUNDS = 16;
 
 export default function NBackTest({ onDone }: Props) {
   const { theme } = useTheme();
@@ -37,6 +35,28 @@ export default function NBackTest({ onDone }: Props) {
   const [currentLetter, setCurrentLetter] = useState("");
   const [isVisible, setIsVisible] = useState(false);
   const [respondedThisRound, setRespondedThisRound] = useState(false);
+  const [sequence] = useState<string[]>(() => {
+    const pool = ["A", "B", "C", "D", "E", "F", "G", "H"];
+    const list: string[] = [];
+    for (let i = 0; i < TOTAL_ROUNDS; i++) {
+      if (i >= 2 && Math.random() < 0.35) {
+        // 35% chance to make it a match with 2 steps back
+        list.push(list[i - 2]);
+      } else {
+        // Get a letter, preferably not a match to control probability
+        let letter = pool[Math.floor(Math.random() * pool.length)];
+        if (i >= 2) {
+          let attempts = 0;
+          while (letter === list[i - 2] && attempts < 10) {
+            letter = pool[Math.floor(Math.random() * pool.length)];
+            attempts++;
+          }
+        }
+        list.push(letter);
+      }
+    }
+    return list;
+  });
 
   // Metrics
   const correctMatches = useRef(0);
@@ -67,12 +87,12 @@ export default function NBackTest({ onDone }: Props) {
   useEffect(() => {
     if (phase !== "playing") return;
 
-    if (currentIndex >= SEQUENCE.length) {
+    if (currentIndex >= sequence.length) {
       finishGame();
       return;
     }
 
-    const letter = SEQUENCE[currentIndex];
+    const letter = sequence[currentIndex];
     setCurrentLetter(letter);
     setIsVisible(true);
     setRespondedThisRound(false);
@@ -89,7 +109,7 @@ export default function NBackTest({ onDone }: Props) {
       setIsVisible(false);
 
       // Evaluate non-response at the end of the trial window
-      const isTarget = currentIndex >= 2 && SEQUENCE[currentIndex] === SEQUENCE[currentIndex - 2];
+      const isTarget = currentIndex >= 2 && sequence[currentIndex] === sequence[currentIndex - 2];
       if (!respondedThisRound) {
         if (isTarget) {
           missedMatches.current += 1;
@@ -114,7 +134,7 @@ export default function NBackTest({ onDone }: Props) {
     setRespondedThisRound(true);
 
     const rt = Date.now() - trialStartTime.current;
-    const isTarget = currentIndex >= 2 && SEQUENCE[currentIndex] === SEQUENCE[currentIndex - 2];
+    const isTarget = currentIndex >= 2 && sequence[currentIndex] === sequence[currentIndex - 2];
 
     triggerHaptic("medium");
 

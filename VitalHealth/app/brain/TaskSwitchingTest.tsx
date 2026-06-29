@@ -20,22 +20,7 @@ type CardItem = {
 const VOWELS = ["A", "E", "I", "O", "U"];
 const LETTERS = ["B", "D", "F", "G", "H", "J", "K", "L", "M", "N"];
 
-const TRIALS: CardItem[] = [
-  { text: "3G", number: 3, letter: "G", rule: "number", correctAnswer: "odd" },
-  { text: "6E", number: 6, letter: "E", rule: "letter", correctAnswer: "vowel" },
-  { text: "4K", number: 4, letter: "K", rule: "number", correctAnswer: "even" },
-  { text: "7A", number: 7, letter: "A", rule: "letter", correctAnswer: "vowel" },
-  { text: "2L", number: 2, letter: "L", rule: "number", correctAnswer: "even" },
-  { text: "9H", number: 9, letter: "H", rule: "letter", correctAnswer: "consonant" },
-  { text: "5B", number: 5, letter: "B", rule: "number", correctAnswer: "odd" },
-  { text: "8U", number: 8, letter: "U", rule: "letter", correctAnswer: "vowel" },
-  { text: "1N", number: 1, letter: "N", rule: "number", correctAnswer: "odd" },
-  { text: "3D", number: 3, letter: "D", rule: "letter", correctAnswer: "consonant" },
-  { text: "8M", number: 8, letter: "M", rule: "number", correctAnswer: "even" },
-  { text: "5O", number: 5, letter: "O", rule: "letter", correctAnswer: "vowel" },
-];
-
-const TOTAL_ROUNDS = TRIALS.length;
+const TOTAL_ROUNDS = 12;
 
 export default function TaskSwitchingTest({ onDone }: Props) {
   const { theme } = useTheme();
@@ -56,6 +41,30 @@ export default function TaskSwitchingTest({ onDone }: Props) {
   const [phase, setPhase] = useState<"instructions" | "countdown" | "playing" | "done">("instructions");
   const [countdown, setCountdown] = useState(3);
   const [currentRound, setCurrentRound] = useState(0);
+  const [trials] = useState<CardItem[]>(() => {
+    const vowels = ["A", "E", "I", "O", "U"];
+    const consonants = ["B", "D", "F", "G", "H", "J", "K", "L", "M", "N"];
+    const list: CardItem[] = [];
+    for (let i = 0; i < TOTAL_ROUNDS; i++) {
+      const num = Math.floor(Math.random() * 9) + 1; // 1-9
+      const isVowel = Math.random() < 0.5;
+      const letter = isVowel
+        ? vowels[Math.floor(Math.random() * vowels.length)]
+        : consonants[Math.floor(Math.random() * consonants.length)];
+      
+      const rule = Math.random() < 0.5 ? ("number" as const) : ("letter" as const);
+      let correctAnswer: CardItem["correctAnswer"];
+      if (rule === "number") {
+        correctAnswer = num % 2 === 1 ? "odd" : "even";
+      } else {
+        correctAnswer = isVowel ? "vowel" : "consonant";
+      }
+      
+      const text = `${num}${letter}`;
+      list.push({ text, number: num, letter, rule, correctAnswer });
+    }
+    return list;
+  });
 
   const correctAnswers = useRef(0);
   const responseTimes = useRef<number[]>([]);
@@ -82,7 +91,7 @@ export default function TaskSwitchingTest({ onDone }: Props) {
     if (phase !== "playing") return;
 
     const rt = Date.now() - roundStartTime.current;
-    const item = TRIALS[currentRound];
+    const item = trials[currentRound];
     const isCorrect = choice === item.correctAnswer;
 
     responseTimes.current.push(rt);
@@ -166,7 +175,7 @@ export default function TaskSwitchingTest({ onDone }: Props) {
     );
   }
 
-  const currentItem = TRIALS[currentRound];
+  const currentItem = trials[currentRound];
   const isNumberRule = currentItem.rule === "number";
   const ruleColor = isNumberRule ? colors.blueRule : colors.yellowRule;
 
