@@ -1,7 +1,7 @@
 # VitalHealth Digital Twin Server Operations Cheat Sheet
 
 ## Login
-ssh ubuntu@151.185.41.234
+ssh ubuntu@151.185.45.137
 
 ## Go to Project
 cd ~/health-digital-twin
@@ -51,8 +51,8 @@ curl http://localhost/health
 curl http://localhost/ai/health
 
 ## Public Checks
-curl http://151.185.41.234/health
-curl http://151.185.41.234/ai/health
+curl http://151.185.45.137/health
+curl http://151.185.45.137/ai/health
 
 ## Update Code
 cd ~/health-digital-twin
@@ -103,7 +103,7 @@ sudo systemctl restart digitaltwin
 journalctl -u digitaltwin -f
 
 ## Most Used Commands
-ssh ubuntu@151.185.41.234
+ssh ubuntu@151.185.45.137
 cd ~/health-digital-twin
 git pull origin main
 sudo systemctl restart digitaltwin healthbot

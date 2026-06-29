@@ -61,7 +61,7 @@ try {
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 // ── Production server — hardcoded, no user config needed ─────────────────────
-const PRODUCTION_AI_URL = "http://151.185.41.234/ai";
+const PRODUCTION_AI_URL = "http://151.185.45.137/ai";
 const KEY_CHAT_HISTORY  = "@hai_chat_history";
 const TOP_K             = 5;
 const MAX_SAVED_SESSIONS = 30;

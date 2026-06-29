@@ -211,7 +211,7 @@ export default function ServerConfigScreen() {
   // ── Quick-fill presets ────────────────────────────────────────────────────
   const presets = [
     { label: "Local Dev", value: "http://10.172.0.79:8000", icon: "laptop-outline" as const },
-    { label: "E2E Cloud", value: "http://151.185.41.234", icon: "cloud-outline" as const },
+    { label: "E2E Cloud", value: "http://151.185.45.137", icon: "cloud-outline" as const },
     { label: "HTTPS", value: "https://yourdomain.com", icon: "lock-closed-outline" as const },
   ];
 

@@ -10,7 +10,7 @@ import { db, auth } from "./firebase";
 // LOCAL DEV:  your laptop's Wi-Fi IP (e.g. 'http://10.172.0.79:8000')
 // PRODUCTION: change to your E2E Cloud URL (e.g. 'https://yourdomain.com')
 
-const DEFAULT_BASE_URL = 'http://151.185.41.234';
+const DEFAULT_BASE_URL = 'http://151.185.45.137';
 const BASE_URL_KEY = '@biogears_base_url';
 
 /** Strip redundant/wrong ports from a BioGears URL.
@@ -71,10 +71,10 @@ export async function getHeartRateBaseUrl(): Promise<string> {
       const u = new URL(biogearsUrl);
       return `${u.protocol}//${u.hostname}:5000`;
     } catch {
-      return 'http://151.185.41.234:5000';
+      return 'http://151.185.45.137:5000';
     }
   } catch {
-    return 'http://151.185.41.234:5000';
+    return 'http://151.185.45.137:5000';
   }
 }
 

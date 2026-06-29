@@ -23,7 +23,7 @@ import { colors } from "../theme/colors";
 const KEY_SERVER_IP   = "@hai_server_ip";
 const KEY_SERVER_PORT = "@hai_server_port";
 const DEFAULT_PORT    = "8000";
-const DEFAULT_AI_URL  = "http://151.185.41.234/ai";
+const DEFAULT_AI_URL  = "http://151.185.45.137/ai";
 
 type TestStatus = "idle" | "testing" | "ok" | "fail";
 
@@ -146,7 +146,7 @@ export default function AIServerConfigScreen() {
             <Ionicons name="globe-outline" size={20} color={c.sub} style={ss.icon} />
             <TextInput
               style={[ss.input, { color: c.text }]}
-              placeholder="e.g. http://151.185.41.234/ai"
+              placeholder="e.g. http://151.185.45.137/ai"
               placeholderTextColor={c.sub}
               value={ip}
               onChangeText={setIp}
