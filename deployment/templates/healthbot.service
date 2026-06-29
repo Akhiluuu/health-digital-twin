@@ -10,6 +10,9 @@ User={{USER}}
 Group={{GROUP}}
 WorkingDirectory={{PROJECT_DIR}}
 
+# Load all environment variables from .env
+EnvironmentFile={{PROJECT_DIR}}/.env
+
 # health_ai.* imports are resolved via the symlink:
 #   {{PROJECT_DIR}}/health_ai -> {{PROJECT_DIR}}/healthbot
 Environment=PYTHONPATH={{PROJECT_DIR}}

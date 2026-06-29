@@ -72,6 +72,30 @@ app.add_middleware(
 )
 
 # Set env var DIGITAL_TWIN_API_KEY to require callers to pass an API key.
+def _load_env_fallback():
+    for path in [
+        Path(".env"),
+        Path("../.env"),
+        Path("../../.env"),
+        Path(__file__).parent.parent.parent / ".env",
+        Path(__file__).parent.parent / ".env",
+    ]:
+        if path.exists() and path.is_file():
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    for line in f:
+                        line = line.strip()
+                        if line and not line.startswith("#") and "=" in line:
+                            k, v = line.split("=", 1)
+                            k = k.strip()
+                            v = v.strip().strip("'\"")
+                            if k and v and k not in os.environ:
+                                os.environ[k] = v
+            except Exception:
+                pass
+            break
+
+_load_env_fallback()
 API_KEY_ENV = os.environ.get("DIGITAL_TWIN_API_KEY", "")
 api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 http_bearer = HTTPBearer(auto_error=False)
