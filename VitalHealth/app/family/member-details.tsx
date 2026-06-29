@@ -427,6 +427,29 @@ export default function MemberDetailsScreen() {
       return;
     }
 
+    const birthDate = new Date(depDob.trim());
+    const age = Math.max(
+      1,
+      Math.floor((Date.now() - birthDate.getTime()) / (365.25 * 24 * 60 * 60 * 1000))
+    );
+
+    if (age < 18 || age > 80) {
+      Alert.alert("Registration Error", "Digital Twin calibration requires age to be between 18 and 80 years.");
+      return;
+    }
+
+    const h = parseFloat(depHeight);
+    if (isNaN(h) || h < 140 || h > 220) {
+      Alert.alert("Registration Error", "Digital Twin calibration requires height to be between 140 and 220 cm.");
+      return;
+    }
+
+    const w = parseFloat(depWeight);
+    if (isNaN(w) || w < 30 || w > 200) {
+      Alert.alert("Registration Error", "Digital Twin calibration requires weight to be between 30 and 200 kg.");
+      return;
+    }
+
     setEditLoading(true);
     try {
       const success = await updateDependentProfile(memberUid, {
@@ -453,12 +476,6 @@ export default function MemberDetailsScreen() {
         parseFloat(depWeight) !== parseFloat(String(member.weight || 0));
 
       if (isPhysiologyChanged) {
-        const birthDate = new Date(depDob.trim());
-        const age = Math.max(
-          1,
-          Math.floor((Date.now() - birthDate.getTime()) / (365.25 * 24 * 60 * 60 * 1000))
-        );
-
         await registerTwin({
           user_id: getTwinId({
             firstName: depFirstName.trim(),
@@ -466,8 +483,8 @@ export default function MemberDetailsScreen() {
             phone: member.phone || "",
           } as any),
           age,
-          weight: parseFloat(depWeight) || 20,
-          height: parseFloat(depHeight) || 100,
+          weight: w,
+          height: h,
           sex: depGender,
         });
         await setDoc(doc(db, "users", memberUid), { biogears_registered: true }, { merge: true });
@@ -477,9 +494,9 @@ export default function MemberDetailsScreen() {
       await loadHealthData();
       setEditModalVisible(false);
       Alert.alert("Success", "Profile updated successfully!");
-    } catch (e) {
+    } catch (e: any) {
       console.log("❌ Update profile error:", e);
-      Alert.alert("Error", "An error occurred while saving profile.");
+      Alert.alert("Error", e.message || "An error occurred while saving profile.");
     } finally {
       setEditLoading(false);
     }

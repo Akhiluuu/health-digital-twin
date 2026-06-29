@@ -47,7 +47,7 @@ logger = logging.getLogger("DigitalTwin.Engine")
 
 # Default 24 hours — accommodates very long simulations on the VM.
 # You can override this via ENGINE_TIMEOUT_SECONDS env var.
-ENGINE_TIMEOUT_SECONDS   = int(os.environ.get("ENGINE_TIMEOUT_SECONDS", "120"))
+ENGINE_TIMEOUT_SECONDS   = int(os.environ.get("ENGINE_TIMEOUT_SECONDS", "86400"))
 ENGINE_HEARTBEAT_SECONDS = int(os.environ.get("ENGINE_HEARTBEAT_SECONDS", "30"))
 
 # BioGears output lines shown at INFO level (everything else at DEBUG)

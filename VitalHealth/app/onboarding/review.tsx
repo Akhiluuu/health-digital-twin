@@ -136,23 +136,49 @@ export default function Review() {
       const name  = storedName  || signupName;
       const email = storedEmail || signupEmail;
 
+      // Parse biogears clinical fields passed from medical/history onboarding screens
+      const restingHR   = parseFloat(String(params.restingHR   || "")) || 72;
+      const systolicBP  = parseFloat(String(params.systolicBP  || "")) || 120;
+      const diastolicBP = parseFloat(String(params.diastolicBP || "")) || 80;
+      const bodyFatPct  = parseFloat(String(params.bodyFatPct  || "")) || 20;
+      const hasT1D      = (params.hasT1D    as string) === "true";
+      const hasT2D      = (params.hasT2D    as string) === "true";
+      const hasAnemia   = (params.hasAnemia as string) === "true";
+      const isSmoker    = (params.isSmoker  as string) === "true";
+      const fitnessMap: Record<string, string> = {
+        "Active": "active", "Sedentary": "sedentary", "Moderate": "moderate"
+      };
+
       const profileData = {
         firstName: (params.firstName as string) || name.split(" ")[0] || "",
-        lastName: (params.lastName as string) || name.split(" ").slice(1).join(" ") || "",
+        lastName:  (params.lastName  as string) || name.split(" ").slice(1).join(" ") || "",
         email,
-        phone: (params.phone as string) || "",
+        phone:       (params.phone       as string) || "",
         dateOfBirth: (params.dateOfBirth as string) || "",
-        gender: (params.gender as string) || "",
-        bloodGroup: (params.bloodGroup as string) || "",
+        gender:      (params.gender      as string) || "",
+        bloodGroup:  (params.bloodGroup  as string) || "",
         height: params.height ? `${params.height} cm` : "",
         weight: params.weight ? `${params.weight} kg` : "",
         allergies: params.allergies
-          ? (params.allergies as string).split(",").map(a => a.trim()).filter(Boolean)
+          ? (params.allergies as string).split(",").map((a: string) => a.trim()).filter(Boolean)
           : [],
-        // ✅ STEP 3: IMPORTANT FIX (PARAM NAME BUG)
-        medications: params.medications
-          ? (params.medications as string).split(",").map(m => m.trim()).filter(Boolean)
+        medications: params.currentMedications
+          ? (params.currentMedications as string).split(",").map((m: string) => m.trim()).filter(Boolean)
           : [],
+        // ✅ BioGears clinical fields from onboarding
+        biogears_resting_hr:         restingHR,
+        biogears_systolic_bp:        systolicBP,
+        biogears_diastolic_bp:       diastolicBP,
+        biogears_body_fat:           bodyFatPct / 100.0,
+        biogears_has_type1_diabetes: hasT1D,
+        biogears_has_type2_diabetes: hasT2D,
+        biogears_has_anemia:         hasAnemia,
+        biogears_is_smoker:          isSmoker,
+        biogears_ethnicity:          "Other",
+        biogears_fitness_level:      fitnessMap[customActivity] || "moderate",
+        biogears_hba1c:              (hasT1D || hasT2D) ? 7.5 : null,
+        biogears_vo2max:             null,
+        biogears_registered:         false,
       };
 
       // Save profile to Firebase
@@ -174,35 +200,23 @@ export default function Review() {
             const updatedHabits = {
               ...habitsObj,
               activity: customActivity,
-              foodHabits: {
-                ...habitsObj.foodHabits,
-                dietType: customDiet,
-              }
+              foodHabits: { ...habitsObj.foodHabits, dietType: customDiet },
             };
-            
-            // Save updated habits to AsyncStorage and Firestore
             await AsyncStorage.setItem(`@onboarding_habits_${user.uid}`, JSON.stringify(updatedHabits));
-            await updateDoc(doc(db, "users", user.uid), {
-              habits: updatedHabits,
-            });
+            await updateDoc(doc(db, "users", user.uid), { habits: updatedHabits });
 
             const heightVal = parseFloat(String(profileData.height || '').replace(/[^0-9.]/g, '')) || 175;
             const weightVal = parseFloat(String(profileData.weight || '').replace(/[^0-9.]/g, '')) || 70;
             const routine = buildDefaultRoutine(updatedHabits, {
-              gender: profileData.gender,
-              dateOfBirth: profileData.dateOfBirth,
-              height: heightVal,
-              weight: weightVal,
-              allergies: profileData.allergies,
+              gender: profileData.gender, dateOfBirth: profileData.dateOfBirth,
+              height: heightVal, weight: weightVal, allergies: profileData.allergies,
             });
-             // Save the routine then mark it as default using proper twinId slug
-             const twinId = getTwinId(profileData);
-             await BiogearsAPI.saveRoutine(twinId, routine, user.uid);
-             await BiogearsAPI.setDefaultRoutine(twinId, routine.id, user.uid, true);
-             console.log('✅ Custom default routine "My Saved State" created from onboarding habits');
+            const twinId = getTwinId(profileData);
+            await BiogearsAPI.saveRoutine(twinId, routine, user.uid);
+            await BiogearsAPI.setDefaultRoutine(twinId, routine.id, user.uid, true);
+            console.log('✅ Custom default routine created from onboarding habits');
           }
         } catch (routineErr) {
-          // Non-fatal — user can always set a default manually
           console.log('⚠️ Could not build default routine:', routineErr);
         }
       }

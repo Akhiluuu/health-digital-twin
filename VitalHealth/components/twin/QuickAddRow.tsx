@@ -134,49 +134,115 @@ export default function QuickAddRow({ addEventAndSimulate, twinStatus }: Props) 
     let extra: any = {};
 
     switch (shortcutEventType) {
-      case 'meal':
-        value = parseFloat(mealKcal) || 400;
+      case 'meal': {
+        const kcal = parseFloat(mealKcal);
+        if (isNaN(kcal) || kcal < 5 || kcal > 10000) {
+          Alert.alert('Validation Error', 'Meal calories must be between 5 and 10,000 kcal.');
+          return;
+        }
+        const carbs = parseFloat(mealCarbs) || 0;
+        const protein = parseFloat(mealProtein) || 0;
+        const fat = parseFloat(mealFat) || 0;
+        if (carbs < 0 || protein < 0 || fat < 0) {
+          Alert.alert('Validation Error', 'Macro nutrients cannot be negative.');
+          return;
+        }
+        value = kcal;
         extra = {
           meal_type: mealType,
-          carb_g: parseFloat(mealCarbs) || 0,
-          protein_g: parseFloat(mealProtein) || 0,
-          fat_g: parseFloat(mealFat) || 0,
+          carb_g: carbs,
+          protein_g: protein,
+          fat_g: fat,
         };
         break;
-      case 'water':
-        value = parseFloat(waterMl) || 250;
+      }
+      case 'water': {
+        const ml = parseFloat(waterMl);
+        if (isNaN(ml) || ml < 5 || ml > 10000) {
+          Alert.alert('Validation Error', 'Water volume must be between 5 and 10,000 mL.');
+          return;
+        }
+        value = ml;
         break;
-      case 'exercise':
-        const minutes = parseFloat(exDuration) || 30;
-        const intensity = parseFloat(exIntensity) || 0.5;
+      }
+      case 'exercise': {
+        const mins = parseFloat(exDuration);
+        if (isNaN(mins) || mins < 1 || mins > 240) {
+          Alert.alert('Validation Error', 'Workout duration must be between 1 and 240 minutes.');
+          return;
+        }
+        const intensity = parseFloat(exIntensity);
+        if (isNaN(intensity) || intensity < 0.1 || intensity > 1.0) {
+          Alert.alert('Validation Error', 'Workout intensity must be between 0.1 and 1.0.');
+          return;
+        }
         value = intensity;
         extra = {
-          duration_seconds: minutes * 60,
+          duration_seconds: mins * 60,
         };
         break;
-      case 'substance':
-        value = parseFloat(subDose) || 150;
+      }
+      case 'substance': {
+        const dose = parseFloat(subDose);
+        if (isNaN(dose) || dose <= 0) {
+          Alert.alert('Validation Error', 'Substance dose must be greater than 0.');
+          return;
+        }
+        const name = subName.trim();
+        if (!name) {
+          Alert.alert('Validation Error', 'Please specify the substance name.');
+          return;
+        }
+        value = dose;
         extra = {
-          substance_name: subName.trim() || 'Caffeine',
+          substance_name: name,
         };
         break;
-      case 'sleep':
-        value = parseFloat(sleepHours) || 8;
+      }
+      case 'sleep': {
+        const hours = parseFloat(sleepHours);
+        if (isNaN(hours) || hours < 0.25 || hours > 14.0) {
+          Alert.alert('Validation Error', 'Sleep duration must be between 0.25 and 14.0 hours.');
+          return;
+        }
+        value = hours;
         break;
-      case 'stress':
-        const strMinutes = parseFloat(stressDur) || 15;
-        const strLevel = parseFloat(stressLevel) || 0.3;
-        value = strLevel;
+      }
+      case 'stress': {
+        const mins = parseFloat(stressDur);
+        if (isNaN(mins) || mins < 1 || mins > 240) {
+          Alert.alert('Validation Error', 'Stress duration must be between 1 and 240 minutes.');
+          return;
+        }
+        const level = parseFloat(stressLevel);
+        if (isNaN(level) || level < 0.1 || level > 1.0) {
+          Alert.alert('Validation Error', 'Stress level must be between 0.1 and 1.0.');
+          return;
+        }
+        value = level;
         extra = {
-          duration_seconds: strMinutes * 60,
+          duration_seconds: mins * 60,
         };
         break;
-      case 'alcohol':
-        value = parseFloat(alcoholDrinks) || 1;
+      }
+      case 'alcohol': {
+        const drinks = parseFloat(alcoholDrinks);
+        if (isNaN(drinks) || drinks < 0.1 || drinks > 10.0) {
+          Alert.alert('Validation Error', 'Alcohol drinks must be between 0.1 and 10 standard drinks.');
+          return;
+        }
+        value = drinks;
         break;
-      case 'fast':
-        value = parseFloat(fastHours) || 16;
+      }
+      case 'fast': {
+        const hours = parseFloat(fastHours);
+        if (isNaN(hours) || hours < 1.0 || hours > 48.0) {
+          Alert.alert('Validation Error', 'Fasting duration must be between 1 and 48 hours.');
+          return;
+        }
+        value = hours;
         break;
+      }
     }
 
     const newShortcut = {

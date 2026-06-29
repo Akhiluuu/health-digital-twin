@@ -237,6 +237,30 @@ export default function AddMemberScreen() {
       return;
     }
 
+    // Calculate age from DOB for BioGears registration
+    const birthDate = new Date(depDob.trim());
+    const age = Math.max(
+      1,
+      Math.floor((Date.now() - birthDate.getTime()) / (365.25 * 24 * 60 * 60 * 1000))
+    );
+
+    if (age < 18 || age > 80) {
+      Alert.alert("Registration Error", "Digital Twin calibration requires age to be between 18 and 80 years.");
+      return;
+    }
+
+    const h = parseFloat(depHeight);
+    if (isNaN(h) || h < 140 || h > 220) {
+      Alert.alert("Registration Error", "Digital Twin calibration requires height to be between 140 and 220 cm.");
+      return;
+    }
+
+    const w = parseFloat(depWeight);
+    if (isNaN(w) || w < 30 || w > 200) {
+      Alert.alert("Registration Error", "Digital Twin calibration requires weight to be between 30 and 200 kg.");
+      return;
+    }
+
     setLoading(true);
     try {
       const result = await createDependentProfile({
@@ -257,13 +281,6 @@ export default function AddMemberScreen() {
 
       const { newId, fakePhoneSuffix, inviteCode } = result;
 
-      // Calculate age from DOB for BioGears registration
-      const birthDate = new Date(depDob.trim());
-      const age = Math.max(
-        1,
-        Math.floor((Date.now() - birthDate.getTime()) / (365.25 * 24 * 60 * 60 * 1000))
-      );
-
       await registerTwin({
         user_id: getTwinId({
           firstName: depFirstName.trim(),
@@ -271,8 +288,8 @@ export default function AddMemberScreen() {
           phone: fakePhoneSuffix,
         } as any),
         age,
-        weight: parseFloat(depWeight) || 20,
-        height: parseFloat(depHeight) || 100,
+        weight: w,
+        height: h,
         sex: depGender,
       });
 
@@ -284,9 +301,9 @@ export default function AddMemberScreen() {
         `${depFirstName}'s profile has been created with an independent Digital Twin.\n\nHealth ID: ${inviteCode}`,
         [{ text: "OK", onPress: () => router.back() }]
       );
-    } catch (e) {
+    } catch (e: any) {
       console.log("❌ Create profile error:", e);
-      Alert.alert("Error", "Profile saved, but twin registration failed. You can retry it later.");
+      Alert.alert("Error", e.message || "Profile saved, but twin registration failed. You can retry it later.");
     } finally {
       setLoading(false);
     }

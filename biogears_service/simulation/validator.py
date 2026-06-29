@@ -71,50 +71,50 @@ def validate_registration(data: Dict[str, Any]) -> List[str]:
 
     try:
         age = int(data.get("age", 0))
-        if not (1 <= age <= 120):
-            errors.append(f"'age' must be 1–120, got {age}.")
+        if age <= 0:
+            errors.append(f"'age' must be a positive integer, got {age}.")
     except (ValueError, TypeError):
         errors.append(f"'age' must be a valid integer, got '{data.get('age')}'.")
 
     try:
         weight = float(data.get("weight", 0))
-        if not (1.0 <= weight <= 500.0):
-            errors.append(f"'weight' must be 1–500 kg, got {weight}.")
+        if weight <= 0:
+            errors.append(f"'weight' must be a positive number, got {weight}.")
     except (ValueError, TypeError):
         errors.append(f"'weight' must be a valid number, got '{data.get('weight')}'.")
 
     try:
         height = float(data.get("height", 0))
-        if not (50.0 <= height <= 250.0):
-            errors.append(f"'height' must be 50–250 cm, got {height}.")
+        if height <= 0:
+            errors.append(f"'height' must be a positive number, got {height}.")
     except (ValueError, TypeError):
         errors.append(f"'height' must be a valid number, got '{data.get('height')}'.")
 
     try:
         body_fat = float(data.get("body_fat", 0.2))
-        if not (0.03 <= body_fat <= 0.70):
-            errors.append(f"'body_fat' must be a fraction 0.03–0.70, got {body_fat}.")
+        if not (0.0 <= body_fat <= 1.0):
+            errors.append(f"'body_fat' must be a decimal fraction between 0.0 and 1.0, got {body_fat}.")
     except (ValueError, TypeError):
         errors.append(f"'body_fat' must be a decimal fraction (e.g. 0.20), got '{data.get('body_fat')}'.")
 
     try:
         rhr = float(data.get("resting_hr", 72))
-        if not (30 <= rhr <= 200):
-            errors.append(f"'resting_hr' must be 30–200 bpm, got {rhr}.")
+        if rhr <= 0:
+            errors.append(f"'resting_hr' must be a positive number, got {rhr}.")
     except (ValueError, TypeError):
         errors.append(f"'resting_hr' must be a valid number, got '{data.get('resting_hr')}'.")
 
     try:
         systolic = float(data.get("systolic_bp", 114))
-        if not (70 <= systolic <= 220):
-            errors.append(f"'systolic_bp' must be 70–220 mmHg, got {systolic}.")
+        if systolic <= 0:
+            errors.append(f"'systolic_bp' must be a positive number, got {systolic}.")
     except (ValueError, TypeError):
         errors.append(f"'systolic_bp' must be a valid number, got '{data.get('systolic_bp')}'.")
 
     try:
         diastolic = float(data.get("diastolic_bp", 73.5))
-        if not (40 <= diastolic <= 140):
-            errors.append(f"'diastolic_bp' must be 40–140 mmHg, got {diastolic}.")
+        if diastolic <= 0:
+            errors.append(f"'diastolic_bp' must be a positive number, got {diastolic}.")
     except (ValueError, TypeError):
         errors.append(f"'diastolic_bp' must be a valid number, got '{data.get('diastolic_bp')}'.")
 
@@ -125,8 +125,8 @@ def validate_registration(data: Dict[str, Any]) -> List[str]:
     if hba1c is not None:
         try:
             hval = float(hba1c)
-            if not (3.0 <= hval <= 20.0):
-                errors.append(f"'hba1c' must be between 3.0% and 20.0%, got {hval}.")
+            if hval <= 0:
+                errors.append(f"'hba1c' must be a positive number, got {hval}.")
         except (ValueError, TypeError):
             errors.append(f"'hba1c' must be a valid number, got '{hba1c}'.")
 
@@ -134,8 +134,8 @@ def validate_registration(data: Dict[str, Any]) -> List[str]:
     if vo2max is not None:
         try:
             vval = float(vo2max)
-            if not (10.0 <= vval <= 90.0):
-                errors.append(f"'vo2max' must be between 10.0 and 90.0 mL/kg/min, got {vval}.")
+            if vval <= 0:
+                errors.append(f"'vo2max' must be a positive number, got {vval}.")
         except (ValueError, TypeError):
             errors.append(f"'vo2max' must be a valid number, got '{vo2max}'.")
 

@@ -6,7 +6,7 @@
 export type Difficulty = "easy" | "medium" | "hard";
 
 export type GameResult = {
-  game:      "pattern" | "reaction" | "memory" | "stroop";
+  game:      "pattern" | "reaction" | "memory" | "stroop" | "cpt" | "flanker" | "nback" | "symbol" | "trail" | "switching";
   score:     number;     // 0–100 normalised
   rawScore:  number;     // actual points earned
   accuracy:  number;     // 0–1
@@ -72,6 +72,18 @@ export function scoreMemorySpan(maxSpan: number): number {
 
 // ─── Build brain report from all game results ─────────────────────────────────
 export function buildReport(results: GameResult[]): BrainReport {
+  if (results.length === 0) {
+    return {
+      results: [],
+      overallScore: 0,
+      grade: "F",
+      gradeColor: "#ef4444",
+      dominantSkill: "None",
+      weakestSkill: "None",
+      insight: "No cognitive assessment data found.",
+    };
+  }
+
   const overallScore = Math.round(
     results.reduce((s, r) => s + r.score, 0) / results.length
   );
@@ -82,17 +94,29 @@ export function buildReport(results: GameResult[]): BrainReport {
   const worst  = results.reduce((a, b) => (a.score < b.score ? a : b));
 
   const insights: Record<string, string> = {
-    pattern:  "Your visual pattern recognition is your cognitive edge.",
-    reaction: "Your reflexes are sharp — excellent neural response speed.",
-    memory:   "Your working memory capacity stands out.",
-    stroop:   "Your cognitive control and focus are highly developed.",
+    pattern:   "Your visual pattern recognition is your cognitive edge.",
+    reaction:  "Your reflexes are sharp — excellent neural response speed.",
+    memory:    "Your sequence recall capacity stands out.",
+    stroop:    "Your cognitive control and focus are highly developed.",
+    cpt:       "Your sustained attention over time is outstanding.",
+    flanker:   "Your selective focus is brilliant under distraction.",
+    nback:     "Your working memory retention is superior.",
+    symbol:    "Your visual-motor processing speed is excellent.",
+    trail:     "Your set-shifting and executive control are highly optimal.",
+    switching: "Your mental adaptability and rule-shifting are supreme.",
   };
 
   const weakInsights: Record<string, string> = {
-    pattern:  "Visual pattern recognition needs more training.",
-    reaction: "Reaction speed has room to grow with practice.",
-    memory:   "Working memory can be improved with daily exercises.",
-    stroop:   "Cognitive control under interference needs work.",
+    pattern:   "Visual pattern recognition needs more training.",
+    reaction:  "Reaction speed has room to grow with practice.",
+    memory:    "Working memory can be improved with daily exercises.",
+    stroop:    "Cognitive control under interference needs work.",
+    cpt:       "Sustained concentration can be built with focus exercises.",
+    flanker:   "Selective attention can improve with mindfulness/attention training.",
+    nback:     "Working memory retention can be expanded with daily puzzles.",
+    symbol:    "Visual processing coordination can be enhanced.",
+    trail:     "Mental planning and sequencing can be improved.",
+    switching: "Task switching flexibility can be sharpened.",
   };
 
   return {
@@ -103,15 +127,21 @@ export function buildReport(results: GameResult[]): BrainReport {
     dominantSkill: best.label,
     weakestSkill:  worst.label,
     insight: overallScore >= 60
-      ? insights[best.game]
-      : weakInsights[worst.game],
+      ? insights[best.game] || "You show strong cognitive functions across domains."
+      : weakInsights[worst.game] || "Regular practice can improve cognitive skills.",
   };
 }
 
 // ─── Game labels ──────────────────────────────────────────────────────────────
 export const GAME_LABELS: Record<string, string> = {
-  pattern:  "Pattern Memory",
-  reaction: "Reaction Speed",
-  memory:   "Working Memory",
-  stroop:   "Stroop Focus",
+  pattern:   "Pattern Memory",
+  reaction:  "Reaction Speed",
+  memory:    "Working Memory",
+  stroop:    "Stroop Focus",
+  cpt:       "Sustained Attention",
+  flanker:   "Selective Attention",
+  nback:     "Working Memory",
+  symbol:    "Processing Speed",
+  trail:     "Executive Function",
+  switching: "Task Switching",
 };

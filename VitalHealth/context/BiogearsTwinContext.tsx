@@ -1769,10 +1769,7 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
     } catch (err: any) {
       console.log(`[BioGearsContext] Registration FAILED:`, err);
       setTwinStatus('error');
-      const detail = err.detail;
-      const msg = typeof detail === 'string'
-        ? detail
-        : (detail?.detail || detail?.message || err.message || 'Registration failed');
+      const msg = err.message || 'Registration failed';
       setTwinStatusError(msg);
       throw err;
     } finally {
@@ -1794,17 +1791,17 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
         const weight = parseKg(profile.weight);
         const height = parseCm(profile.height);
         const sex = profile.gender?.toLowerCase() === "female" ? "Female" : "Male";
-        const body_fat = profile.biogears_body_fat ?? 0.2;
+        const body_fat = profile.biogears_body_fat ?? 0.20;
         const resting_hr = profile.biogears_resting_hr ?? 72.0;
-        const systolic_bp = profile.biogears_systolic_bp ?? 114.0;
-        const diastolic_bp = profile.biogears_diastolic_bp ?? 73.5;
+        const systolic_bp = profile.biogears_systolic_bp ?? 120.0;
+        const diastolic_bp = profile.biogears_diastolic_bp ?? 80.0;
         const is_smoker = !!profile.biogears_is_smoker;
         const has_anemia = !!profile.biogears_has_anemia;
         const has_type1_diabetes = !!profile.biogears_has_type1_diabetes;
         const has_type2_diabetes = !!profile.biogears_has_type2_diabetes;
         const hba1c = profile.biogears_hba1c ?? null;
         const ethnicity = profile.biogears_ethnicity ?? 'Other';
-        const fitness_level = profile.biogears_fitness_level ?? 'sedentary';
+        const fitness_level = profile.biogears_fitness_level ?? 'moderate';
         const vo2max = profile.biogears_vo2max ?? null;
         const medications = profile.medications ?? [];
 

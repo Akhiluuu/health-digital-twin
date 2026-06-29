@@ -19,19 +19,32 @@ import { useTheme } from "../../context/ThemeContext";
 import { colors as globalColors } from "../../theme/colors";
 
 const COMMON_CONDITIONS = [
-  "Diabetes", "Hypertension", "Asthma", "Heart Disease",
-  "Thyroid", "Arthritis", "Migraine", "PCOD",
+  "Type 1 Diabetes", "Type 2 Diabetes", "Hypertension", "Asthma / COPD",
+  "Heart Disease", "Chronic Anemia", "Thyroid", "Arthritis",
+  "Migraine", "PCOD / PCOS", "Kidney Disease", "Obesity",
 ];
 
 const COMMON_FAMILY = [
   "Heart Disease", "Diabetes", "Cancer", "Stroke",
-  "Hypertension", "Mental Health", "Kidney Disease",
+  "Hypertension", "Mental Health", "Kidney Disease", "Obesity",
 ];
 
 const COMMON_MEDICATIONS = [
   "Aspirin", "Metformin", "Amlodipine", "Atorvastatin",
   "Levothyroxine", "Paracetamol", "Ibuprofen", "Losartan",
+  "Insulin", "Salbutamol", "Ramipril", "Omeprazole",
 ];
+
+/** Maps selected conditions to BioGears clinical fields */
+function conditionsToBiogearsFields(conditions: string[], extraText: string): Record<string, any> {
+  const all = [...conditions, ...extraText.split(",").map(s => s.trim())].map(s => s.toLowerCase());
+  return {
+    biogears_has_type1_diabetes: all.some(c => c.includes("type 1") || c.includes("t1d")),
+    biogears_has_type2_diabetes: all.some(c => c.includes("type 2") || c.includes("t2d") || (c.includes("diabetes") && !c.includes("type 1") && !c.includes("t1d"))),
+    biogears_has_anemia:         all.some(c => c.includes("anemia") || c.includes("anaemia")),
+    biogears_is_smoker:          all.some(c => c.includes("copd") || c.includes("asthma") || c.includes("smoker")),
+  };
+}
 
 export default function History() {
   const router = useRouter();
@@ -141,12 +154,22 @@ export default function History() {
         .filter(Boolean)
         .join(", ");
 
+      // Map selected conditions → BioGears clinical fields
+      const biogearsConditions = conditionsToBiogearsFields(selectedConditions, diseases);
+      const allConditionsList  = [...selectedConditions, ...diseases.split(",").map(s => s.trim()).filter(Boolean)];
+
       await updateDoc(doc(db, "users", user.uid), {
         history: {
           diseases, surgeries, familyHistory,
           selectedConditions, selectedFamily,
           medications: allMedications,
         },
+        // ✅ Write BioGears condition flags directly so they are available at calibration
+        ...biogearsConditions,
+        // Store full medication list for drug-interaction checking
+        medications: allMedications
+          ? allMedications.split(",").map((m: string) => m.trim()).filter(Boolean)
+          : [],
         updatedAt: new Date().toISOString(),
       });
 
@@ -158,6 +181,11 @@ export default function History() {
           selectedConditions:  JSON.stringify(selectedConditions),
           selectedFamily:      JSON.stringify(selectedFamily),
           currentMedications:  allMedications,
+          // Pass biogears flags to review so they appear in summary
+          hasT1D:    String(biogearsConditions.biogears_has_type1_diabetes),
+          hasT2D:    String(biogearsConditions.biogears_has_type2_diabetes),
+          hasAnemia: String(biogearsConditions.biogears_has_anemia),
+          isSmoker:  String(biogearsConditions.biogears_is_smoker),
         },
       });
     } catch (error: any) {

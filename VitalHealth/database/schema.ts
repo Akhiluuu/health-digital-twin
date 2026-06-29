@@ -136,6 +136,21 @@ export const initAllTables = async (): Promise<void> => {
         run_at           TEXT    NOT NULL
       );
 
+      -- ── Cognitive Sessions ──────────────────────────────────────────────────
+      CREATE TABLE IF NOT EXISTS cognitive_sessions (
+        id                       INTEGER PRIMARY KEY AUTOINCREMENT,
+        uid                      TEXT NOT NULL,
+        session_id               TEXT UNIQUE NOT NULL,
+        overall_score            INTEGER,
+        domain_attention         REAL,
+        domain_memory            REAL,
+        domain_processing_speed  REAL,
+        domain_executive_function REAL,
+        test_results_json        TEXT,
+        cognitive_age            REAL,
+        completed_at             TEXT NOT NULL
+      );
+
       -- ── Backup metadata ─────────────────────────────────────────────────────
       CREATE TABLE IF NOT EXISTS backup_meta (
         id             INTEGER PRIMARY KEY AUTOINCREMENT,

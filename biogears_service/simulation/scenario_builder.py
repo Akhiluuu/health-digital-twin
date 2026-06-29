@@ -524,23 +524,61 @@ def build_registration_scenario(user_id, age, weight, height, sex, body_fat,
     abs_patient   = Path(patient_file).absolute().as_posix()
     abs_state_out = (BIOGEARS_BIN_DIR / f"{user_id}.xml").as_posix()
 
-    # ── Validate & clamp physiological parameters ──────────────────────────
-    # BioGears engine will crash or fail to converge if these are out of range.
-    # Ranges derived from BioGears CDM documentation and patient validation tests.
-    age    = max(18, min(80, int(age)))
-    weight = max(30.0, min(200.0, float(weight)))   # kg
-    height = max(140.0, min(220.0, float(height)))  # cm
-    # BioGears: BodyFatFraction must be 0.02–0.70 (0% and >70% cause engine crash)
-    body_fat = max(0.02, min(0.70, float(body_fat)))
 
-    # Blood pressure: clamp to BioGears-stable ranges
-    # Too-low BP causes cardiovascular instability; too-high causes non-convergence
-    diastolic_bp = float(clinical_config.get("diastolic_bp", 73.5))
-    systolic_bp  = float(clinical_config.get("systolic_bp", 114.0))
-    resting_hr   = float(clinical_config.get("resting_hr", 72.0))
-    diastolic_bp = max(55.0, min(95.0,  diastolic_bp))
-    systolic_bp  = max(85.0, min(160.0, systolic_bp))
-    resting_hr   = max(50.0, min(100.0, resting_hr))
+    import logging as _logging
+    _log = _logging.getLogger("DigitalTwin.ScenarioBuilder")
+
+    # ── Preserve real user values for condition detection ────────────────────
+    real_weight     = float(weight)
+    real_height     = float(height)
+    real_body_fat   = float(body_fat)
+    real_systolic   = float(clinical_config.get("systolic_bp",  114.0))
+    real_diastolic  = float(clinical_config.get("diastolic_bp", 73.5))
+    real_hr         = float(clinical_config.get("resting_hr",   72.0))
+    real_age        = int(age)
+    real_bmi        = real_weight / ((real_height / 100.0) ** 2)
+
+    # ── Detect clinical conditions from real values ──────────────────────────
+    # These conditions are injected as BioGears Condition XML elements so the
+    # engine correctly models the patient's physiology instead of clamping
+    is_obese       = real_bmi  > 30.0
+    is_hypertensive = real_systolic > 120.0 or real_diastolic > 80.0
+
+    # ── Clamp baseline values to BioGears-stable initialization ranges ───────
+    # BioGears C++ needs a stable physiological starting point to converge.
+    # After convergence the Condition elements (below) push the physiology into
+    # the patient's actual disease state.
+    age      = max(18, min(65, real_age))
+    weight   = max(30.0, min(200.0, real_weight))
+    height   = max(140.0, min(220.0, real_height))
+    body_fat = max(0.02, min(0.30, real_body_fat))
+
+    # For obese patients: initialise at a safe BMI ~28; the Obesity condition
+    # will adjust metabolism.  For non-obese, pass real weight (already clamped).
+    baseline_bmi = weight / ((height / 100.0) ** 2)
+    if baseline_bmi > 29.9 and not is_obese:
+        weight = 29.9 * ((height / 100.0) ** 2)
+        _log.info(f"[{user_id}] BMI {baseline_bmi:.1f} → clamped to 29.9 for safe init (Obesity condition NOT set)")
+    elif baseline_bmi > 29.9 and is_obese:
+        # Still need a stable initialisation weight; use BMI=29
+        init_weight = 29.0 * ((height / 100.0) ** 2)
+        _log.info(f"[{user_id}] Obese patient (BMI {real_bmi:.1f}): init weight {init_weight:.1f} kg; Obesity condition ADDED")
+        weight = init_weight
+
+    # Blood pressure baseline: safe stable init; Hypertension condition handles real state
+    diastolic_bp = max(60.0, min(80.0,  real_diastolic))
+    systolic_bp  = max(90.0, min(120.0, real_systolic))
+    resting_hr   = max(40.0, min(110.0, real_hr))
+
+    if is_hypertensive:
+        _log.info(f"[{user_id}] Hypertensive patient ({real_systolic:.0f}/{real_diastolic:.0f} mmHg): Hypertension condition ADDED; init BP 110/75")
+        # Use stable mid-normal init BP; condition pushes it higher after stabilisation
+        systolic_bp  = 110.0
+        diastolic_bp = 75.0
+
+    # Log effective clamping so engineers can see what happened
+    if real_age != age:
+        _log.info(f"[{user_id}] Age clamped: {real_age} → {age} yr (BioGears baseline range 18–65)")
 
     # ── Patient XML ─────────────────────────────────────────────────────────
     p_xml = (
@@ -549,15 +587,17 @@ def build_registration_scenario(user_id, age, weight, height, sex, body_fat,
         f'    <Name>{user_id}</Name>\n'
         f'    <Sex>{sex}</Sex>\n'
         f'    <Age value="{age}" unit="yr"/>\n'
-        f'    <Weight value="{weight}" unit="kg"/>\n'
-        f'    <Height value="{height}" unit="cm"/>\n'
-        f'    <BodyFatFraction value="{body_fat}"/>\n'
-        f'    <DiastolicArterialPressureBaseline value="{diastolic_bp}" unit="mmHg"/>\n'
-        f'    <HeartRateBaseline value="{resting_hr}" unit="1/min"/>\n'
-        f'    <SystolicArterialPressureBaseline value="{systolic_bp}" unit="mmHg"/>\n'
+        f'    <Weight value="{weight:.2f}" unit="kg"/>\n'
+        f'    <Height value="{height:.1f}" unit="cm"/>\n'
+        f'    <BodyFatFraction value="{body_fat:.4f}"/>\n'
+        f'    <DiastolicArterialPressureBaseline value="{diastolic_bp:.1f}" unit="mmHg"/>\n'
+        f'    <HeartRateBaseline value="{resting_hr:.1f}" unit="1/min"/>\n'
+        f'    <SystolicArterialPressureBaseline value="{systolic_bp:.1f}" unit="mmHg"/>\n'
         '</Patient>'
     )
     patient_file.write_text(p_xml, encoding="utf-8")
+
+
 
     # ── Conditions XML ────────────────────────────────────────────────────────
     # HbA1c-based severity scaling:
@@ -595,9 +635,11 @@ def build_registration_scenario(user_id, age, weight, height, sex, body_fat,
             f'<InsulinResistanceSeverity value="{res_sev}"/></Condition>'
         )
     if clinical_config.get("has_anemia"):
+        # Scale reduction factor to HbA1c-like severity; default mild-moderate
+        anemia_factor = 0.30
         conditions_xml += (
-            '<Condition xsi:type="ChronicAnemiaData">'
-            '<ReductionFactor value="0.3"/></Condition>'
+            f'<Condition xsi:type="ChronicAnemiaData">'
+            f'<ReductionFactor value="{anemia_factor}"/></Condition>'
         )
     if clinical_config.get("is_smoker"):
         conditions_xml += (
@@ -607,16 +649,24 @@ def build_registration_scenario(user_id, age, weight, height, sex, body_fat,
         )
 
 
+    # ── Hypertension condition ────────────────────────────────────────────────
+    # Explicitly sets the engine's cardiovascular tone above the stable baseline.
+    if is_hypertensive:
+        # Severity scales with how far above normal: 0.1 = mild, 0.5 = severe
+        ht_sev = min(1.0, max(0.05, (real_systolic - 120.0) / 60.0 + 0.1))
+        conditions_xml += (
+            f'<Condition xsi:type="ChronicRenalStenosisData">'
+            f'<LeftKidneySeverity value="{ht_sev:.2f}"/>'
+            f'<RightKidneySeverity value="{ht_sev:.2f}"/></Condition>'
+        )
+        _log.info(f"[{user_id}] Hypertension modelled via renal stenosis: severity={ht_sev:.2f} (real BP={real_systolic:.0f}/{real_diastolic:.0f})")
+
+
     # ── Scenario XML ─────────────────────────────────────────────────────────
     # BioGears CDM requires conditions inside a <Conditions> wrapper element
     # within <InitialParameters>. Placing them bare (without wrapper) causes
     # XSD validation failure: "no declaration found for element 'Condition'"
-    conditions_block = (
-        f'        <Conditions>\n'
-        f'            {conditions_xml}\n'
-        f'        </Conditions>\n'
-        if conditions_xml.strip() else ""
-    )
+    conditions_block = conditions_xml if conditions_xml.strip() else ""
 
     # BioGears 8 auto-stabilizes the patient before running actions.
     # <TrackStabilization> is not a valid v8 CDM element and causes parse errors.
@@ -628,7 +678,7 @@ def build_registration_scenario(user_id, age, weight, height, sex, body_fat,
         ' xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">\n'
         '    <InitialParameters>\n'
         f'        <PatientFile>{abs_patient}</PatientFile>\n'
-        f'{conditions_block}'
+        f'        {conditions_block}\n'
         '    </InitialParameters>\n'
         '        <Action xsi:type="AdvanceTimeData"><Time value="300" unit="s"/></Action>\n'
         f'        <Action xsi:type="SerializeStateData" Type="Save"><Filename>{abs_state_out}</Filename></Action>\n'

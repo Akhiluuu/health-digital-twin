@@ -28,11 +28,21 @@ export interface UserProfile {
   healthId?: string;
   linkedMembers?: Record<string, LinkedMember>;
 
+  // ── Medical history (from onboarding step 4) ─────────────────────────────
+  history?: {
+    diseases?: string;
+    surgeries?: string;
+    familyHistory?: string;
+    selectedConditions?: string[];
+    selectedFamily?: string[];
+    medications?: string;
+  };
+
   // ── BioGears Digital Twin clinical fields ────────────────────────────────
   // Baseline vitals
   biogears_resting_hr?: number;       // bpm, default 72
-  biogears_systolic_bp?: number;      // mmHg, default 114
-  biogears_diastolic_bp?: number;     // mmHg, default 73.5
+  biogears_systolic_bp?: number;      // mmHg, default 120
+  biogears_diastolic_bp?: number;     // mmHg, default 80
   biogears_body_fat?: number;         // fraction 0–1, e.g. 0.20 = 20%
   // Clinical conditions
   biogears_is_smoker?: boolean;
@@ -42,7 +52,7 @@ export interface UserProfile {
   biogears_hba1c?: number | null;     // Glycated haemoglobin % e.g. 7.2
   // Extended fields
   biogears_ethnicity?: string;        // 'South Asian' | 'Other'
-  biogears_fitness_level?: string;    // 'sedentary' | 'active' | 'athlete'
+  biogears_fitness_level?: string;    // 'sedentary' | 'moderate' | 'active' | 'athlete'
   biogears_vo2max?: number | null;    // mL/kg/min
   // Registration status (local only — not synced to Firebase)
   biogears_registered?: boolean;      // whether twin has been calibrated
@@ -76,8 +86,8 @@ export const EMPTY_PROFILE: UserProfile = {
   linkedMembers: {},
   // BioGears defaults
   biogears_resting_hr: 72,
-  biogears_systolic_bp: 114,
-  biogears_diastolic_bp: 73.5,
+  biogears_systolic_bp: 120,
+  biogears_diastolic_bp: 80,
   biogears_body_fat: 0.20,
   biogears_is_smoker: false,
   biogears_has_anemia: false,
@@ -85,7 +95,7 @@ export const EMPTY_PROFILE: UserProfile = {
   biogears_has_type2_diabetes: false,
   biogears_hba1c: null,
   biogears_ethnicity: 'Other',
-  biogears_fitness_level: 'sedentary',
+  biogears_fitness_level: 'moderate',
   biogears_vo2max: null,
   biogears_registered: false,
   waterGoal: 2000,

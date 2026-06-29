@@ -244,15 +244,33 @@ export class BiogearsError extends Error {
     public detail?: any
   ) {
     let finalMessage = 'Unknown error';
-    if (typeof message === 'object' && message !== null) {
+    
+    // Check if we have structured detail info
+    if (detail) {
+      if (detail.detail && Array.isArray(detail.detail.validation_errors)) {
+        finalMessage = `Validation Errors:\n${detail.detail.validation_errors.map((e: string) => `• ${e}`).join('\n')}`;
+      } else if (Array.isArray(detail.validation_errors)) {
+        finalMessage = `Validation Errors:\n${detail.validation_errors.map((e: string) => `• ${e}`).join('\n')}`;
+      } else if (detail.detail && typeof detail.detail === 'string') {
+        finalMessage = detail.detail;
+      } else if (detail.message && typeof detail.message === 'string') {
+        finalMessage = detail.message;
+      } else if (detail.detail && typeof detail.detail === 'object') {
+        finalMessage = detail.detail.message || detail.detail.detail || JSON.stringify(detail.detail);
+      } else {
+        finalMessage = typeof detail === 'string' ? detail : JSON.stringify(detail);
+      }
+    } else if (typeof message === 'object' && message !== null) {
       finalMessage = message.message || message.detail || JSON.stringify(message);
     } else if (message) {
       finalMessage = String(message);
     }
+    
     super(finalMessage);
     this.name = 'BiogearsError';
   }
 }
+
 
 async function apiFetch<T>(path: string, options?: RequestInit, timeoutMs = 30000): Promise<T> {
   const url = await getUrl(path);

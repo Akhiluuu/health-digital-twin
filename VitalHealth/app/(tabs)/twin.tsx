@@ -626,7 +626,9 @@ export default function TwinScreen() {
 
   const addMeal = () => {
     const kcal = parseFloat(mealKcal);
-    if (!kcal || kcal <= 0) return Alert.alert('Enter calories', 'Please enter a calorie amount.');
+    if (isNaN(kcal) || kcal < 5 || kcal > 10000) {
+      return Alert.alert('Validation Error', 'Meal calories must be between 5 and 10,000 kcal.');
+    }
 
     // ── Macro normalization ───────────────────────────────────────────────────
     // BioGears validator REQUIRES carb_g / fat_g / protein_g when meal_type is
@@ -673,11 +675,15 @@ export default function TwinScreen() {
   };
 
   const addExercise = () => {
-    const dur = Math.max(1, parseInt(exDuration, 10) || 30) * 60;
+    const mins = parseInt(exDuration, 10);
+    if (isNaN(mins) || mins < 1 || mins > 240) {
+      return Alert.alert('Validation Error', 'Workout duration must be between 1 and 240 minutes (4 hours).');
+    }
+    const dur = mins * 60;
     addEvent({
       event_type: 'exercise', value: exIntensity, wallTime: exerciseTime,
       duration_seconds: dur,
-      displayLabel: `Exercise · ${Math.round(exIntensity * 100)}% intensity · ${exDuration}min`,
+      displayLabel: `Exercise · ${Math.round(exIntensity * 100)}% intensity · ${mins}min`,
       displayIcon: '🏃',
     });
   };
@@ -693,7 +699,9 @@ export default function TwinScreen() {
 
   const addWater = () => {
     const ml = parseFloat(waterMl);
-    if (!ml || ml <= 0) return Alert.alert('Enter amount', 'Please enter how much water.');
+    if (isNaN(ml) || ml < 5 || ml > 10000) {
+      return Alert.alert('Validation Error', 'Water volume must be between 5 and 10,000 mL.');
+    }
     addEvent({
       event_type: 'water', value: ml, wallTime: waterTime,
       displayLabel: `Water · ${ml} mL`,
@@ -703,8 +711,8 @@ export default function TwinScreen() {
 
   const addSubstance = () => {
     const dose = parseFloat(subDose);
-    if (!subName) return Alert.alert('Select substance');
-    if (!dose || dose <= 0) return Alert.alert('Enter dose', 'Please enter a dose.');
+    if (!subName) return Alert.alert('Validation Error', 'Please select a substance.');
+    if (isNaN(dose) || dose <= 0) return Alert.alert('Validation Error', 'Substance dose must be greater than 0.');
     addEvent({
       event_type: 'substance', value: dose, wallTime: subTime,
       substance_name: subName,
@@ -714,18 +722,24 @@ export default function TwinScreen() {
   };
 
   const addStress = () => {
-    const dur = Math.max(1, parseInt(stressDur, 10) || 15) * 60;
+    const mins = parseInt(stressDur, 10);
+    if (isNaN(mins) || mins < 1 || mins > 240) {
+      return Alert.alert('Validation Error', 'Stress duration must be between 1 and 240 minutes (4 hours).');
+    }
+    const dur = mins * 60;
     addEvent({
       event_type: 'stress', value: stressLevel, wallTime: stressTime,
       duration_seconds: dur,
-      displayLabel: `Stress · ${Math.round(stressLevel * 100)}% · ${stressDur}min`,
+      displayLabel: `Stress · ${Math.round(stressLevel * 100)}% · ${mins}min`,
       displayIcon: '🧘',
     });
   };
 
   const addAlcohol = () => {
     const drinks = parseFloat(alcoholDrinks);
-    if (!drinks || drinks <= 0) return Alert.alert('Enter drinks');
+    if (isNaN(drinks) || drinks <= 0 || drinks > 10) {
+      return Alert.alert('Validation Error', 'Alcohol drinks must be between 0.1 and 10 standard drinks.');
+    }
     addEvent({
       event_type: 'alcohol', value: drinks, wallTime: otherTime,
       displayLabel: `Alcohol · ${drinks} standard drink${drinks !== 1 ? 's' : ''}`,
