@@ -37,9 +37,17 @@ fi
 # Verify Nginx configuration
 info "Validating Nginx configuration syntax..."
 if sudo nginx -t; then
-    info "Nginx configuration is valid. Reloading Nginx service..."
+    info "Nginx configuration is valid. Applying Nginx changes..."
     sudo systemctl enable nginx
-    sudo systemctl reload nginx
+
+    if systemctl is-active --quiet nginx; then
+        info "Reloading existing Nginx service..."
+        sudo systemctl reload nginx
+    else
+        info "Starting Nginx service..."
+        sudo systemctl start nginx
+    fi
+
     ok "Nginx reverse proxy is successfully active."
 else
     # Rollback our link and reload to not break existing Nginx setup
