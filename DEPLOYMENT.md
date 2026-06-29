@@ -125,9 +125,9 @@ ssh ubuntu@YOUR_VM_IP
 git clone https://github.com/Akhiluuu/health-digital-twin.git
 cd health-digital-twin
 
-# 3. Run the automated setup script
-chmod +x deployment/setup.sh
-./deployment/setup.sh
+# 3. Run the automated deployment script
+chmod +x deployment/deploy.sh
+./deployment/deploy.sh
 ```
 
 > [!NOTE]  
@@ -139,22 +139,14 @@ At the end of setup, the script will output your generated `DIGITAL_TWIN_API_KEY
 
 ### Update Deployed Code
 
-To sync new updates onto the production server:
+To safely update the codebase, verify dependencies, and restart services with automated rollback fallback:
 
 ```bash
 ssh ubuntu@YOUR_VM_IP
 cd /home/ubuntu/health-digital-twin
 
-# Pull the latest main
-git pull origin main
-
-# Restart services to apply updates
-sudo systemctl restart digitaltwin
-sudo systemctl restart healthbot
-sudo systemctl restart nginx
-
-# Verify status of all services
-sudo systemctl status digitaltwin healthbot nginx
+# Run the automated secure update script
+./deployment/update.sh
 ```
 
 ---
@@ -197,8 +189,8 @@ sudo systemctl restart digitaltwin healthbot nginx
 ## Important Notes for Future Developers
 
 1.  **Multiple Virtual Environments**: BioGears and Healthbot use separate virtual environments (`venv` and `healthbot_venv`) to prevent dependency conflicts (different Pydantic/FastAPI requirements). Keep them isolated.
-2.  **`biogears_runtime/` is NOT in git** — The `setup.sh` script automatically downloads the correct Linux binary from official GitHub releases. Do not commit it.
-3.  **LLM Model Shards**: The Qwen2.5-14B model is split into 3 GGUF shards. The `setup.sh` script downloads them and verifies all 3 are fully downloaded before launching the service.
-4.  **`.env` is NOT in git** — Contains the API key. The `setup.sh` script generates this for you automatically.
+2.  **`biogears_runtime/` is NOT in git** — The `deploy.sh` script automatically downloads the correct Linux binary from official GitHub releases. Do not commit it.
+3.  **LLM Model Shards**: The Qwen2.5-14B model is split into 3 GGUF shards. The `deploy.sh` script downloads them and verifies all 3 are fully downloaded before launching the service.
+4.  **`.env` is NOT in git** — Contains the API key. The `deploy.sh` script generates this for you automatically.
 5.  **`clinical_data/`** — Stores active twin states (`.xml`) and CSV timeseries history. Back these up regularly.
 6.  **BioGears simulations take 10–20 seconds** — This is normal. The async endpoint (`/simulate/async`) + polling (`/jobs/{job_id}`) is the correct communication pattern. Do NOT set short request timeouts.

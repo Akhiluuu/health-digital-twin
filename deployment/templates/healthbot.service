@@ -6,18 +6,17 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=ubuntu
-Group=ubuntu
-WorkingDirectory=/home/ubuntu/health-digital-twin
+User={{USER}}
+Group={{GROUP}}
+WorkingDirectory={{PROJECT_DIR}}
 
-# health_ai.* imports are resolved via the symlink created by setup.sh:
-#   health-digital-twin/health_ai -> health-digital-twin/healthbot
-# This avoids renaming all source files while keeping the package name consistent.
-Environment=PYTHONPATH=/home/ubuntu/health-digital-twin
+# health_ai.* imports are resolved via the symlink:
+#   {{PROJECT_DIR}}/health_ai -> {{PROJECT_DIR}}/healthbot
+Environment=PYTHONPATH={{PROJECT_DIR}}
 
 # Start the healthbot on port 8001 using its dedicated venv
 # Single worker: GGUF LLM cannot be safely shared across processes
-ExecStart=/home/ubuntu/health-digital-twin/healthbot_venv/bin/uvicorn \
+ExecStart={{PROJECT_DIR}}/healthbot_venv/bin/uvicorn \
     healthbot.api.server:app \
     --host 127.0.0.1 \
     --port 8001 \

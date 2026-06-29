@@ -80,11 +80,15 @@ health-digital-twin/
 │   ├── states/                     # Serialized XML snapshots of patient vitals
 │   └── history/                    # Historical CSV output logs of simulations
 │
-├── deployment/                     # Production Deployment Configurations
-│   ├── setup.sh                    # Automated shell setup for Ubuntu 22.04 LTS
-│   ├── nginx.conf                  # Nginx proxy mapping port 80 to services
-│   ├── digitaltwin.service         # systemd configuration for BioGears API
-│   └── healthbot.service           # systemd configuration for Chatbot service
+├── deployment/                     # Production DevOps & Deployment Framework
+│   ├── deploy.sh                   # One-command modular setup entrypoint
+│   ├── migrate.sh                  # Automated VM-to-VM migration tool
+│   ├── update.sh                   # Secure application updates with auto-rollback
+│   ├── backup.sh / rollback.sh     # System state backup & restoration utilities
+│   ├── doctor.sh / verify.sh       # Comprehensive system diagnostics and testing
+│   ├── config/ / templates/        # Configuration library and service templates
+│   ├── install/                    # Modular installation step scripts (00-10)
+│   └── docs/                       # Production setup and operational guides
 │
 ├── requirements.txt                # Global Python dependencies for BioGears API
 └── twins_database.json             # Flat-file database containing user meta profiles
@@ -618,7 +622,7 @@ WantedBy=multi-user.target
 **Q: Nginx frequently returns "504 Gateway Timeout" during long simulation runs, even though the service logs show the simulation completed successfully. How do we fix this?**  
 **A:** This happens when Nginx's default read timeout (60 seconds) is shorter than the simulation runtime. When a simulation takes $90$ seconds, Nginx closes the client connection prematurely. Adding `proxy_read_timeout 600s;` within the Nginx location block resolves this, keeping the connection open until the simulation completes.
 
-**Q: Why does the setup script `setup.sh` compile two separate systemd configuration files instead of running both APIs under one process?**  
+**Q: Why does the deployment framework compile two separate systemd configuration files instead of running both APIs under one process?**  
 **A:** Running them separately improves reliability. If the LLM engine runs out of memory (OOM) or crashes due to GPU issues, the BioGears simulation backend remains unaffected. This isolation prevents a crash in the chatbot from bringing down the core physiological simulation services.
 
 ---

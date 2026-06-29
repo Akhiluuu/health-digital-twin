@@ -1,21 +1,21 @@
 [Unit]
 Description=BioGears Digital Twin API — VitalHealth
-Documentation=https://github.com/YOUR_ORG/health-digital-twin
+Documentation=https://github.com/Akhiluuu/health-digital-twin
 After=network-online.target
 Wants=network-online.target
 
 [Service]
 Type=simple
-User=ubuntu
-Group=ubuntu
-WorkingDirectory=/home/ubuntu/health-digital-twin
+User={{USER}}
+Group={{GROUP}}
+WorkingDirectory={{PROJECT_DIR}}
 
 # Load all environment variables from .env
-EnvironmentFile=/home/ubuntu/health-digital-twin/.env
+EnvironmentFile={{PROJECT_DIR}}/.env
 
 # 4 workers: leaves 4 cores free for BioGears simulation subprocess
 # Increase --workers if you add more RAM / dedicated simulation cores
-ExecStart=/home/ubuntu/health-digital-twin/venv/bin/uvicorn \
+ExecStart={{PROJECT_DIR}}/venv/bin/uvicorn \
     biogears_service.api.server:app \
     --host 127.0.0.1 \
     --port 8000 \
