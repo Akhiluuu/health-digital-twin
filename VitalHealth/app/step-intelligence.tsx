@@ -338,13 +338,13 @@ export default function StepIntelligenceScreen() {
                 {sedMins >= 60 ? "⚠️ Sedentary Alert"
                   : sedMins >= 30 ? "🟡 Getting Inactive"
                   : isTracking   ? "🟢 Movement Detected"
-                  :                "⏸ Tracking Paused"}
+                  :                "⏸ Recording Inactive"}
               </Text>
               <Text style={[s.sedSub, { color: colors.subText }]}>
                 {sedMins >= 60 ? `${sedMins} mins idle — you were notified`
                   : sedMins >= 30 ? `Alert in ${60 - sedMins} mins`
                   : isTracking   ? "Alert after 1 hr of no movement"
-                  :                "Tap START to begin counting steps"}
+                  :                "Tap START RECORDING to allow permissions and begin tracking"}
               </Text>
             </View>
           </View>
@@ -396,15 +396,31 @@ export default function StepIntelligenceScreen() {
 
       {/* FAB */}
       <View style={s.fabWrap}>
-        <TouchableOpacity style={s.fab} activeOpacity={0.85} onPress={isTracking ? stopTracking : startTracking}>
-          <LinearGradient
-            colors={isTracking ? ["#ef4444","#b91c1c"] : ["#22c55e","#15803d"]}
-            style={s.fabInner} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+        {isTracking ? (
+          <TouchableOpacity
+            style={s.fab}
+            activeOpacity={0.85}
+            onPress={() => Alert.alert("Step Recording Active", "Step recording runs continuously in the background to automatically track your daily steps.")}
           >
-            <Ionicons name={isTracking ? "stop-circle" : "walk"} size={24} color="#fff" />
-            <Text style={s.fabText}>{isTracking ? "STOP TRACKING" : "START TRACKING"}</Text>
-          </LinearGradient>
-        </TouchableOpacity>
+            <LinearGradient
+              colors={["#10b981", "#059669"]}
+              style={s.fabInner} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+            >
+              <Ionicons name="checkmark-circle" size={24} color="#fff" />
+              <Text style={s.fabText}>RECORDING ACTIVE</Text>
+            </LinearGradient>
+          </TouchableOpacity>
+        ) : (
+          <TouchableOpacity style={s.fab} activeOpacity={0.85} onPress={startTracking}>
+            <LinearGradient
+              colors={["#6366f1", "#4f46e5"]}
+              style={s.fabInner} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+            >
+              <Ionicons name="walk" size={24} color="#fff" />
+              <Text style={s.fabText}>START RECORDING</Text>
+            </LinearGradient>
+          </TouchableOpacity>
+        )}
       </View>
 
       {/* Goal modal */}

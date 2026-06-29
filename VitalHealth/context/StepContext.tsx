@@ -503,6 +503,26 @@ export const StepProvider: React.FC<{
         setDataSource(source);
       }
 
+      // Check if permissions are already allowed. If they are, auto-start/enable tracking
+      if (!savedTracking && m[userKeys.isTracking] !== '0') {
+        try {
+          const settings = await notifee.getNotificationSettings();
+          let physicalOk = false;
+          if (Platform.OS === 'android') {
+            physicalOk = true;
+          } else {
+            const pedoPerm = await Pedometer.getPermissionsAsync();
+            physicalOk = pedoPerm.granted;
+          }
+          if (settings.authorizationStatus >= 1 && physicalOk) {
+            savedTracking = true;
+            await AsyncStorage.setItem(userKeys.isTracking, '1');
+          }
+        } catch (e) {
+          // ignore
+        }
+      }
+
       stepsRef.current = savedSteps; setSteps(savedSteps);
       setIsTracking(savedTracking); isTrackingRef.current = savedTracking;
 
