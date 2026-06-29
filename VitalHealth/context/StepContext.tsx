@@ -11,7 +11,7 @@ import React, {
   createContext, useCallback, useContext, useEffect,
   useRef, useState, useMemo,
 } from 'react';
-import { AppState, AppStateStatus, Platform } from 'react-native';
+import { AppState, AppStateStatus, Platform, Alert, Linking } from 'react-native';
 import { useFamily } from './FamilyContext';
 import { syncStepsData, fetchStepsDataFromFirebase } from '../services/firebaseSync';
 import * as BackgroundFetch from 'expo-background-fetch';
@@ -395,8 +395,41 @@ export const StepProvider: React.FC<{
   // ── START TRACKING ─────────────────────────────────────────────────────────
   const startTracking = useCallback(async () => {
     if (isTrackingRef.current) return;
-    await notifee.requestPermission();
-    try { await Pedometer.requestPermissionsAsync(); } catch { /* ignore */ }
+
+    // 1. Request Notification Permission
+    const settings = await notifee.requestPermission();
+    if (settings.authorizationStatus === 0) {
+      Alert.alert(
+        "Notification Permission Required",
+        "VitalHealth needs notification permission to count steps and run the tracking service in the background.\n\nPlease enable notifications in App Settings.",
+        [
+          { text: "Cancel", style: "cancel" },
+          { text: "Open Settings", onPress: () => Linking.openSettings() }
+        ]
+      );
+      return;
+    }
+
+    // 2. Request Motion/Physical Activity Permission
+    let motionOk = false;
+    try {
+      const perm = await Pedometer.requestPermissionsAsync();
+      motionOk = perm.granted;
+    } catch (e) {
+      // ignore
+    }
+
+    if (!motionOk) {
+      Alert.alert(
+        "Motion Permission Required",
+        "VitalHealth needs Physical Activity/Motion sensor access to measure your steps.\n\nPlease enable Motion/Activity access in App Settings.",
+        [
+          { text: "Cancel", style: "cancel" },
+          { text: "Open Settings", onPress: () => Linking.openSettings() }
+        ]
+      );
+      return;
+    }
 
     const now = Date.now();
     await AsyncStorage.multiSet([

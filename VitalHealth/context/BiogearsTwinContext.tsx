@@ -688,11 +688,33 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
 
   const resumeActiveJob = async () => {
     try {
-      const jobId = await AsyncStorage.getItem('biogears_active_job');
+      let jobId = await AsyncStorage.getItem('biogears_active_job');
+      let jobUserId = await AsyncStorage.getItem('biogears_active_job_user_id') || twinUserId || '';
+      let jobOwnerUid = await AsyncStorage.getItem('biogears_active_job_owner_uid') || firestoreOwnerUid || '';
+      let startTimeStr = await AsyncStorage.getItem('biogears_active_job_start_time');
+      let startTime = startTimeStr ? parseInt(startTimeStr, 10) : null;
+
+      if (!jobId && twinUserId) {
+        try {
+          const activeJob = await BiogearsAPI.getActiveJobForUser(twinUserId);
+          if (activeJob && activeJob.job_id) {
+            jobId = activeJob.job_id;
+            jobUserId = twinUserId;
+            jobOwnerUid = firestoreOwnerUid || '';
+            startTime = activeJob.created_at ? activeJob.created_at * 1000 : Date.now();
+            
+            await AsyncStorage.setItem('biogears_active_job', jobId);
+            await AsyncStorage.setItem('biogears_active_job_user_id', jobUserId);
+            await AsyncStorage.setItem('biogears_active_job_owner_uid', jobOwnerUid);
+            await AsyncStorage.setItem('biogears_active_job_start_time', String(startTime));
+            console.log(`[BiogearsTwin] Restored active job from backend: ${jobId} for user: ${jobUserId}`);
+          }
+        } catch (apiErr) {
+          console.log('[BiogearsTwin] Failed to fetch active job from backend:', apiErr);
+        }
+      }
+
       if (!jobId) return;
-      
-      const jobUserId = await AsyncStorage.getItem('biogears_active_job_user_id') || twinUserId || '';
-      const jobOwnerUid = await AsyncStorage.getItem('biogears_active_job_owner_uid') || firestoreOwnerUid || '';
       
       const statusRes = await BiogearsAPI.getJobStatus(jobId);
       const isCurrentActive = jobUserId === twinUserId;
@@ -703,10 +725,9 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
         if (isCurrentActive) {
           setSimulationStatus('running');
           
-          const startTimeStr = await AsyncStorage.getItem('biogears_active_job_start_time');
-          const startTime = startTimeStr ? parseInt(startTimeStr, 10) : Date.now();
-          setSimulationStartTime(startTime);
-          simStartRef.current = startTime;
+          const finalStartTime = startTime || Date.now();
+          setSimulationStartTime(finalStartTime);
+          simStartRef.current = finalStartTime;
           
           setSimulationProgress('BioGears engine initialising...');
           

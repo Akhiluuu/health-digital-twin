@@ -369,6 +369,13 @@ export async function getJobStatus(jobId: string): Promise<BiogearsJob> {
 }
 
 /**
+ * Get active running/pending job for a specific user.
+ */
+export async function getActiveJobForUser(userId: string): Promise<{ job_id: string | null; status: string | null; user_id: string; created_at: number | null }> {
+  return apiFetch(`/jobs/active/${userId}`, undefined, 10_000);
+}
+
+/**
  * Poll until job completes. Resolves with result or rejects on failure/timeout.
  */
 export async function pollUntilDone(

@@ -1361,6 +1361,26 @@ def get_job_status(job_id: str):
     }
 
 
+@app.get("/jobs/active/{user_id}", dependencies=[Depends(require_api_key)],
+         summary="Get the active running or pending simulation job for a specific user if any")
+def get_active_job_for_user(user_id: str):
+    """
+    Returns the active running/pending job details (job_id, status, created_at) for the given user,
+    or None if no job is currently running or pending.
+    """
+    with _jobs_lock, CrossProcessFileLock(JOBS_STORE_PATH.with_suffix(".lock")):
+        jobs = _load_jobs()
+        for j_id, j_data in jobs.items():
+            if j_data.get("user_id") == user_id and j_data.get("status") in ("pending", "running"):
+                return {
+                    "job_id": j_id,
+                    "status": j_data["status"],
+                    "user_id": user_id,
+                    "created_at": j_data.get("created_at")
+                }
+    return {"job_id": None, "status": None, "user_id": user_id, "created_at": None}
+
+
 # ── 7. HISTORY ────────────────────────────────────────────────────────────────
 
 @app.get("/history/{user_id}", dependencies=[Depends(require_api_key)],
