@@ -81,14 +81,14 @@ Be concise, well-formatted, and always recommend professional medical consultati
 
 DISCLAIMER = (
     "\n\n---\n"
-    "⚕️ *Dr. Aria is an AI assistant, not a licensed doctor. "
+    "*Dr. Aria is an AI assistant, not a licensed doctor. "
     "This information is for educational purposes only. "
     "Always consult a qualified healthcare professional for medical advice, "
     "diagnosis, or treatment.*"
 )
 
 URGENT_NOTICE = (
-    "\n\n🚨 **URGENT — Please seek immediate medical attention.** "
+    "\n\n**URGENT — Please seek immediate medical attention.** "
     "Some of the symptoms or values you mentioned may indicate a medical emergency. "
     "Call emergency services (911 / 999 / 112) or go to the nearest hospital now. "
     "Do not wait."
@@ -107,27 +107,14 @@ _FAREWELL_KW = frozenset([
 ])
 
 GREETING_RESPONSE = (
-    "👋 Hello! I'm **Dr. Aria**, your personal health assistant.\n\n"
-    "I can help you with:\n"
-    "• 🧪 Reading and explaining your **lab reports**\n"
-    "• 💊 Understanding your **prescriptions**\n"
-    "• 🤒 Guidance on **symptoms** you're experiencing\n"
-    "• 📋 General **medical knowledge** questions\n\n"
-    "How may I help you today?"
+    "Good to see you. I'm **Dr. Aria**, your health assistant.\n\n"
+    "Ask me about your symptoms, medications, or lab results — "
+    "I'll give you a clear, honest answer. What's on your mind?"
 )
-GREETING_MESSAGE = (
-    "👋 Hello! I'm **Dr. Aria**, your personal health assistant.\n\n"
-    "I can help you with:\n"
-    "• 🧪 Reading and explaining your **lab reports**\n"
-    "• 💊 Understanding your **prescriptions**\n"
-    "• 🤒 Guidance on **symptoms** you're experiencing\n"
-    "• 📋 General **medical knowledge** questions\n\n"
-    "How may I help you today?"
-)
+GREETING_MESSAGE = GREETING_RESPONSE
 FAREWELL_RESPONSE = (
-    "👋 Take care and stay healthy! "
-    "Remember to keep up with your health checkups. "
-    "Come back anytime you need help — I'm always here! 😊"
+    "Take care of yourself. "
+    "Don't hesitate to come back if anything comes up — I'm always here."
 )
 # ── Context window ────────────────────────────────────────────────────────────
 
@@ -373,11 +360,11 @@ _HEALTH_KW = frozenset([
 ])
 
 OFF_TOPIC_RESPONSE = (
-    "\U0001fa7a I'm **Dr. Aria**, your personal health assistant. "
-    "I specialise in health-related topics — lab reports, prescriptions, "
-    "symptoms, and general medical information.\n\n"
+    "I'm **Dr. Aria**, your health assistant. "
+    "I specialise in health-related topics — symptoms, lab reports, prescriptions, "
+    "and general medical information.\n\n"
     "It looks like your question might be outside my area of expertise. "
-    "Please ask me something health-related and I'll do my best to help! 😊"
+    "Please ask me something health-related and I'll do my best to help."
 )
 
 

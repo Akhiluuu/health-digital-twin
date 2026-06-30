@@ -1,210 +1,305 @@
 // app/brain/SymbolMatchTest.tsx
+// ─────────────────────────────────────────────────────────────────────────────
+// Digit-Symbol Substitution Task (DSST)
+// Cognitive Domain: Processing Speed / Complex Visual Scanning
+// Penn Computerized Neurocognitive Battery Protocol
+// ─────────────────────────────────────────────────────────────────────────────
+
 import React, { useState, useEffect, useRef } from "react";
-import { StyleSheet, Text, TouchableOpacity, View, Animated } from "react-native";
+import {
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+  Dimensions,
+  Vibration,
+} from "react-native";
+import Svg, { Path, Circle, Rect, G } from "react-native-svg";
 import { useTheme } from "../../context/ThemeContext";
-import { useCognitive } from "../../context/CognitiveContext";
 import { GameResult } from "./brainEngine";
+
+const { width: W } = Dimensions.get("window");
+const GAME_DURATION_SEC = 90;
+
+type Phase = "instructions" | "playing" | "done";
 
 type Props = {
   onDone: (result: GameResult) => void;
 };
 
-const SYMBOLS = [
-  { symbol: "⭐️", digit: 1 },
-  { symbol: "🌀", digit: 2 },
-  { symbol: "🔺", digit: 3 },
-  { symbol: "🌙", digit: 4 },
-];
-
-const TOTAL_ROUNDS = 12;
-
-export default function SymbolMatchTest({ onDone }: Props) {
+export default function DigitSymbolSubstitutionTest({ onDone }: Props) {
   const { theme } = useTheme();
-  const { triggerHaptic, accessibilitySettings } = useCognitive();
-
   const isDark = theme === "dark";
+
   const colors = {
     background: isDark ? "#020617" : "#f8fafc",
     card: isDark ? "#0f172a" : "#ffffff",
-    text: isDark ? "#ffffff" : "#0f172a",
+    text: isDark ? "#ffffff" : "#020617",
     subText: isDark ? "#94a3b8" : "#475569",
+    accent: "#3b82f6",
     border: isDark ? "#1e293b" : "#e2e8f0",
-    accent: "#0ea5e9",
-    success: "#22c55e",
-    error: "#ef4444",
   };
 
-  const [phase, setPhase] = useState<"instructions" | "countdown" | "playing" | "done">("instructions");
-  const [countdown, setCountdown] = useState(3);
-  const [currentRound, setCurrentRound] = useState(0);
-  const [targetItem, setTargetItem] = useState<{ symbol: string; digit: number }>(SYMBOLS[0]);
+  const [phase, setPhase] = useState<Phase>("instructions");
+  const [legend, setLegend] = useState<Record<number, number>>({}); // digit maps to symbol index (1-9)
+  const [targetSymbolIdx, setTargetSymbolIdx] = useState(1);
+  const [timeLeft, setTimeLeft] = useState(GAME_DURATION_SEC);
+  const [correctCount, setCorrectCount] = useState(0);
+  const [totalCount, setTotalCount] = useState(0);
 
-  // Metrics
-  const correctMatches = useRef(0);
-  const responseTimes = useRef<number[]>([]);
-  const roundStartTime = useRef(0);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const scaleAnim = useRef(new Animated.Value(1)).current;
-
-  // Countdown timer
-  useEffect(() => {
-    if (phase !== "countdown") return;
-    if (countdown === 0) {
-      setPhase("playing");
-      nextRound();
-      return;
+  // Generate randomized legend mapping numbers 1-9 to unique symbol indices (1-9)
+  const generateLegend = () => {
+    const indices = [1, 2, 3, 4, 5, 6, 7, 8, 9].sort(() => Math.random() - 0.5);
+    const newLegend: Record<number, number> = {};
+    for (let i = 1; i <= 9; i++) {
+      newLegend[i] = indices[i - 1];
     }
-    const timer = setTimeout(() => {
-      setCountdown((c) => c - 1);
-      triggerHaptic("light");
-    }, 1000);
-    return () => clearTimeout(timer);
-  }, [countdown, phase]);
-
-  const nextRound = () => {
-    const randomIndex = Math.floor(Math.random() * SYMBOLS.length);
-    setTargetItem(SYMBOLS[randomIndex]);
-    roundStartTime.current = Date.now();
-
-    scaleAnim.setValue(0.7);
-    Animated.spring(scaleAnim, {
-      toValue: 1.0,
-      friction: 6,
-      useNativeDriver: true,
-    }).start();
+    setLegend(newLegend);
+    return newLegend;
   };
 
-  const handlePress = (digit: number) => {
+  const startTest = () => {
+    const activeLegend = generateLegend();
+    setPhase("playing");
+    setCorrectCount(0);
+    setTotalCount(0);
+    setTimeLeft(GAME_DURATION_SEC);
+    pickNextTarget(activeLegend);
+
+    timerRef.current = setInterval(() => {
+      setTimeLeft((prev) => {
+        if (prev <= 1) {
+          clearInterval(timerRef.current!);
+          setPhase("done");
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+  };
+
+  const pickNextTarget = (activeLegend: Record<number, number>) => {
+    const randomDigit = Math.floor(1 + Math.random() * 9);
+    setTargetSymbolIdx(activeLegend[randomDigit]);
+  };
+
+  const handleKeyPress = (num: number) => {
     if (phase !== "playing") return;
 
-    const rt = Date.now() - roundStartTime.current;
-    const isCorrect = digit === targetItem.digit;
+    // Check if the typed number maps to the current target symbol index
+    const correctSymbolIdx = legend[num];
+    const isCorrect = correctSymbolIdx === targetSymbolIdx;
 
-    responseTimes.current.push(rt);
+    try {
+      Vibration.vibrate(10);
+    } catch (_) {}
 
-    if (isCorrect) {
-      correctMatches.current += 1;
-      triggerHaptic("light");
-    } else {
-      triggerHaptic("warning");
-    }
+    if (isCorrect) setCorrectCount((c) => c + 1);
+    setTotalCount((t) => t + 1);
 
-    if (currentRound + 1 >= TOTAL_ROUNDS) {
-      finishGame();
-    } else {
-      setCurrentRound((r) => r + 1);
-      nextRound();
-    }
+    pickNextTarget(legend);
   };
 
-  const finishGame = () => {
-    setPhase("done");
-    const avgTime = responseTimes.current.length > 0
-      ? responseTimes.current.reduce((a, b) => a + b, 0) / responseTimes.current.length
-      : 0;
+  useEffect(() => {
+    if (phase !== "done") return;
 
-    const accuracy = correctMatches.current / TOTAL_ROUNDS;
-    let score = Math.round(accuracy * 100);
+    // Clinical scoring: 55+ correct in 90 seconds is 100%
+    const score = Math.max(10, Math.round(Math.min(100, (correctCount / 55) * 90 + 10)));
+    const accuracy = totalCount > 0 ? correctCount / totalCount : 0;
 
-    // Speed adjustment
-    if (avgTime > 1500) score -= 15;
-    else if (avgTime < 800 && score > 0) score += 5;
-    score = Math.max(10, Math.min(100, score));
+    setTimeout(() => {
+      onDone({
+        game: "symbol",
+        score,
+        rawScore: correctCount,
+        accuracy,
+        avgTimeMs: 0,
+        label: "Digit-Symbol Substitution",
+      });
+    }, 500);
+  }, [phase, correctCount, totalCount, onDone]);
 
-    onDone({
-      game: "symbol" as any,
-      score,
-      rawScore: correctMatches.current,
-      accuracy,
-      avgTimeMs: avgTime,
-      label: "Processing Speed",
-    });
+  useEffect(() => {
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+    };
+  }, []);
+
+  // Detailed custom SVG Symbol Drawings
+  const renderSymbol = (id: number, size = 30) => {
+    const strokeColor = isDark ? "#ffffff" : "#020617";
+    const center = size / 2;
+    const padding = size * 0.2;
+
+    switch (id) {
+      case 1: // Delta / Triangle Loop
+        return (
+          <Svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+            <Path
+              d={`M ${center},${padding} L ${size - padding},${size - padding} L ${padding},${size - padding} Z`}
+              fill="none"
+              stroke={strokeColor}
+              strokeWidth="2.5"
+            />
+            <Circle cx={center} cy={center + padding / 2} r="2" fill={strokeColor} />
+          </Svg>
+        );
+      case 2: // Diamond Cross
+        return (
+          <Svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+            <Path
+              d={`M ${center},${padding} L ${size - padding},${center} L ${center},${size - padding} L ${padding},${center} Z`}
+              fill="none"
+              stroke={strokeColor}
+              strokeWidth="2.5"
+            />
+            <Path d={`M ${center},${padding} L ${center},${size - padding}`} stroke={strokeColor} strokeWidth="1.5" />
+            <Path d={`M ${padding},${center} L ${size - padding},${center}`} stroke={strokeColor} strokeWidth="1.5" />
+          </Svg>
+        );
+      case 3: // Crescent Moon
+        return (
+          <Svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+            <Path
+              d={`M ${center - 2},${padding} Q ${center + 12},${center} ${center - 2},${size - padding} Q ${center + 4},${center} ${center - 2},${padding}`}
+              fill="none"
+              stroke={strokeColor}
+              strokeWidth="2.5"
+            />
+          </Svg>
+        );
+      case 4: // Multi-arm Asterisk
+        return (
+          <Svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+            <Path d={`M ${padding},${padding} L ${size - padding},${size - padding}`} stroke={strokeColor} strokeWidth="2.5" />
+            <Path d={`M ${size - padding},${padding} L ${padding},${size - padding}`} stroke={strokeColor} strokeWidth="2.5" />
+            <Path d={`M ${center},${padding} L ${center},${size - padding}`} stroke={strokeColor} strokeWidth="2.5" />
+          </Svg>
+        );
+      case 5: // Nested Concentric Squares
+        return (
+          <Svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+            <Rect x={padding} y={padding} width={size - 2 * padding} height={size - 2 * padding} fill="none" stroke={strokeColor} strokeWidth="2.5" />
+            <Rect x={center - 3} y={center - 3} width="6" height="6" fill={strokeColor} />
+          </Svg>
+        );
+      case 6: // Infinity Loop
+        return (
+          <Svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+            <Path
+              d={`M ${padding + 2},${center} Q ${padding + 2},${padding} ${center},${center} T ${size - padding - 2},${center} Q ${size - padding - 2},${size - padding} ${center},${center} Z`}
+              fill="none"
+              stroke={strokeColor}
+              strokeWidth="2.5"
+            />
+          </Svg>
+        );
+      case 7: // Shield
+        return (
+          <Svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+            <Path
+              d={`M ${padding},${padding} L ${size - padding},${padding} L ${size - padding},${center} Q ${size - padding},${size - padding} ${center},${size - padding} Q ${padding},${size - padding} ${padding},${center} Z`}
+              fill="none"
+              stroke={strokeColor}
+              strokeWidth="2.5"
+            />
+          </Svg>
+        );
+      case 8: // Hourglass Contour
+        return (
+          <Svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+            <Path
+              d={`M ${padding},${padding} L ${size - padding},${padding} L ${center},${center} L ${padding},${size - padding} L ${size - padding},${size - padding} Z`}
+              fill="none"
+              stroke={strokeColor}
+              strokeWidth="2.5"
+            />
+          </Svg>
+        );
+      case 9: // Clover shape
+        return (
+          <Svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+            <G transform={`translate(${center}, ${center}) scale(0.65)`}>
+              <Circle cx="0" cy="-10" r="8" fill="none" stroke={strokeColor} strokeWidth="3" />
+              <Circle cx="-10" cy="0" r="8" fill="none" stroke={strokeColor} strokeWidth="3" />
+              <Circle cx="10" cy="0" r="8" fill="none" stroke={strokeColor} strokeWidth="3" />
+              <Path d="M 0 0 L 0 16" stroke={strokeColor} strokeWidth="3" />
+            </G>
+          </Svg>
+        );
+      default:
+        return null;
+    }
   };
 
   if (phase === "instructions") {
     return (
       <View style={[styles.container, { backgroundColor: colors.background }]}>
+        <Text style={styles.gameTitle}>DIGIT-SYMBOL SUBSTITUTION (DSST)</Text>
         <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
-          <Text style={[styles.title, { color: colors.text }]}>Processing Speed</Text>
-          <Text style={[styles.scienceText, { color: colors.accent }]}>Symbol Match Test</Text>
-
-          <Text style={[styles.desc, { color: colors.subText, fontSize: accessibilitySettings.largeText ? 17 : 14 }]}>
-            Use the key grid at the top to match the target symbol with its correct digit number.{"\n\n"}
-            👉 Tap the button (1, 2, 3, or 4) corresponding to the target symbol as fast as possible.
+          <Text style={[styles.cardHeading, { color: colors.text }]}>Visual Scanning Speed</Text>
+          <Text style={[styles.cardBody, { color: colors.subText }]}>
+            A legend key is shown at the top mapping numbers <Text style={{ fontWeight: "800" }}>1 to 9</Text> to unique geometric symbols.{"\n"}{"\n"}
+            Use the numpad below to type the digit corresponding to the active <Text style={{ color: colors.accent, fontWeight: "900" }}>target symbol</Text> in the center.{"\n"}{"\n"}
+            Match as many as you can before the <Text style={{ color: colors.accent, fontWeight: "900" }}>90-second</Text> countdown timer expires!
           </Text>
-
-          <View style={styles.exampleContainer}>
-            <Text style={[styles.exampleText, { color: colors.subText }]}>Key Grid Mapping:</Text>
-            <View style={styles.gridRow}>
-              {SYMBOLS.map((s) => (
-                <View key={s.digit} style={styles.gridItem}>
-                  <Text style={styles.gridSym}>{s.symbol}</Text>
-                  <Text style={[styles.gridNum, { color: colors.accent }]}>{s.digit}</Text>
-                </View>
-              ))}
-            </View>
-          </View>
-
-          <TouchableOpacity
-            style={[styles.btn, { backgroundColor: colors.accent }]}
-            onPress={() => setPhase("countdown")}
-          >
-            <Text style={styles.btnText}>START TEST</Text>
+          <TouchableOpacity style={[styles.btn, { backgroundColor: colors.accent }]} onPress={startTest}>
+            <Text style={styles.btnText}>Start Assessment</Text>
           </TouchableOpacity>
         </View>
       </View>
     );
   }
 
-  if (phase === "countdown") {
-    return (
-      <View style={[styles.container, { backgroundColor: colors.background }, styles.center]}>
-        <Text style={[styles.countdownText, { color: colors.accent }]}>{countdown}</Text>
-        <Text style={[styles.subText, { color: colors.subText }]}>Get Ready...</Text>
-      </View>
-    );
-  }
+  // Calculate remaining timer ratio for progress bar
+  const timerRatio = timeLeft / GAME_DURATION_SEC;
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <View style={styles.progressRow}>
-        <Text style={[styles.progressText, { color: colors.subText }]}>
-          Round {currentRound + 1} of {TOTAL_ROUNDS}
-        </Text>
+      <Text style={styles.gameTitle}>DIGIT-SYMBOL MATCHING</Text>
+
+      {/* Timer progress bar & Count HUD */}
+      <View style={styles.hudRow}>
+        <Text style={[styles.hudText, { color: colors.text }]}>Time: {timeLeft}s</Text>
+        <Text style={[styles.hudText, { color: colors.accent }]}>Matches: {correctCount}</Text>
       </View>
 
-      {/* Key Mapping Header */}
-      <View style={[styles.keyHeader, { backgroundColor: colors.card, borderColor: colors.border }]}>
-        <Text style={[styles.keyTitle, { color: colors.subText }]}>REFERENCE KEY</Text>
-        <View style={styles.gridRow}>
-          {SYMBOLS.map((s) => (
-            <View key={s.digit} style={styles.keyGridItem}>
-              <Text style={styles.keyGridSym}>{s.symbol}</Text>
-              <View style={styles.divider} />
-              <Text style={[styles.keyGridNum, { color: colors.text }]}>{s.digit}</Text>
+      <View style={styles.timerBarBg}>
+        <View style={[styles.timerBarFill, { width: `${timerRatio * 100}%` }]} />
+      </View>
+
+      {/* Legend key container */}
+      <View style={[styles.legendCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        <Text style={[styles.legendLabel, { color: colors.subText }]}>LEGEND KEY</Text>
+        <View style={styles.legendGrid}>
+          {Object.entries(legend).map(([num, symId]) => (
+            <View key={num} style={styles.legendCell}>
+              <View style={styles.symbolIconWrapper}>{renderSymbol(symId, 28)}</View>
+              <Text style={[styles.legendNumber, { color: colors.text }]}>{num}</Text>
             </View>
           ))}
         </View>
       </View>
 
-      {/* Target display */}
-      <View style={styles.targetContainer}>
-        <Animated.Text style={[styles.targetSymbol, { transform: [{ scale: scaleAnim }] }]}>
-          {targetItem.symbol}
-        </Animated.Text>
-        <Text style={[styles.targetLabel, { color: colors.subText }]}>What is the correct digit?</Text>
+      {/* Target symbol display */}
+      <View style={[styles.targetCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        <Text style={[styles.legendLabel, { color: colors.subText }]}>TARGET SYMBOL</Text>
+        <View style={styles.targetSymbolContent}>
+          {renderSymbol(targetSymbolIdx, 54)}
+        </View>
       </View>
 
-      {/* Digit Selectors */}
-      <View style={styles.digitsRow}>
-        {[1, 2, 3, 4].map((num) => (
+      {/* On-screen Keypad */}
+      <View style={styles.numpad}>
+        {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((num) => (
           <TouchableOpacity
             key={num}
-            style={[styles.digitBtn, { backgroundColor: colors.card, borderColor: colors.border }]}
-            onPress={() => handlePress(num)}
-            activeOpacity={0.7}
+            style={[styles.numBtn, { backgroundColor: colors.card, borderColor: colors.border }]}
+            onPress={() => handleKeyPress(num)}
           >
-            <Text style={[styles.digitBtnText, { color: colors.accent }]}>{num}</Text>
+            <Text style={[styles.numBtnText, { color: colors.text }]}>{num}</Text>
           </TouchableOpacity>
         ))}
       </View>
@@ -213,34 +308,154 @@ export default function SymbolMatchTest({ onDone }: Props) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 24, justifyContent: "center" },
-  center: { alignItems: "center" },
-  card: { borderRadius: 28, padding: 28, borderWidth: 1, elevation: 4, shadowOpacity: 0.1, shadowRadius: 10, shadowOffset: { width: 0, height: 4 } },
-  title: { fontSize: 24, fontWeight: "900", textAlign: "center", marginBottom: 4 },
-  scienceText: { fontSize: 12, fontWeight: "700", textTransform: "uppercase", letterSpacing: 1.5, textAlign: "center", marginBottom: 20 },
-  desc: { lineHeight: 24, marginBottom: 20, textAlign: "center" },
-  exampleContainer: { alignItems: "center", padding: 16, borderRadius: 20, backgroundColor: "rgba(14, 165, 233, 0.08)", marginBottom: 28 },
-  exampleText: { fontSize: 12, fontWeight: "700", marginBottom: 12 },
-  gridRow: { flexDirection: "row", justifyContent: "space-around", width: "100%", gap: 8 },
-  gridItem: { alignItems: "center", padding: 8 },
-  gridSym: { fontSize: 28, marginBottom: 4 },
-  gridNum: { fontSize: 16, fontWeight: "900" },
-  btn: { borderRadius: 20, paddingVertical: 16, alignItems: "center" },
-  btnText: { color: "#ffffff", fontWeight: "900", fontSize: 16, letterSpacing: 1 },
-  countdownText: { fontSize: 100, fontWeight: "900", marginBottom: 16 },
-  subText: { fontSize: 18, fontWeight: "600" },
-  progressRow: { alignItems: "center", marginBottom: 24 },
-  progressText: { fontSize: 14, fontWeight: "700" },
-  keyHeader: { borderRadius: 20, padding: 16, borderWidth: 1, marginBottom: 32 },
-  keyTitle: { fontSize: 10, fontWeight: "800", letterSpacing: 2, textAlign: "center", marginBottom: 12 },
-  keyGridItem: { flex: 1, alignItems: "center", paddingVertical: 8, borderWidth: 1, borderColor: "transparent" },
-  keyGridSym: { fontSize: 24 },
-  divider: { height: 1, width: "60%", backgroundColor: "rgba(100,116,139,0.2)", marginVertical: 6 },
-  keyGridNum: { fontSize: 16, fontWeight: "800" },
-  targetContainer: { flex: 1, justifyContent: "center", alignItems: "center", marginBottom: 42 },
-  targetSymbol: { fontSize: 80, marginBottom: 12 },
-  targetLabel: { fontSize: 14, fontWeight: "600" },
-  digitsRow: { flexDirection: "row", justifyContent: "space-between", gap: 12, marginBottom: 30 },
-  digitBtn: { flex: 1, height: 70, borderRadius: 20, borderWidth: 2, justifyContent: "center", alignItems: "center", elevation: 2 },
-  digitBtnText: { fontSize: 26, fontWeight: "900" },
+  container: {
+    flex: 1,
+    paddingHorizontal: 24,
+    alignItems: "center",
+  },
+  gameTitle: {
+    fontSize: 11,
+    fontWeight: "900",
+    letterSpacing: 3,
+    color: "#3b82f6",
+    marginTop: 60,
+    marginBottom: 10,
+    textAlign: "center",
+  },
+  card: {
+    borderRadius: 28,
+    borderWidth: 1,
+    padding: 28,
+    width: "100%",
+    marginTop: 60,
+    elevation: 4,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+  },
+  cardHeading: {
+    fontSize: 22,
+    fontWeight: "900",
+    marginBottom: 16,
+  },
+  cardBody: {
+    fontSize: 14,
+    lineHeight: 24,
+    marginBottom: 32,
+  },
+  btn: {
+    borderRadius: 20,
+    paddingVertical: 16,
+    alignItems: "center",
+  },
+  btnText: {
+    color: "#ffffff",
+    fontSize: 15,
+    fontWeight: "900",
+    letterSpacing: 1,
+  },
+  hudRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    width: "100%",
+    marginBottom: 8,
+  },
+  hudText: {
+    fontSize: 13,
+    fontWeight: "800",
+  },
+  timerBarBg: {
+    height: 4,
+    width: "100%",
+    backgroundColor: "rgba(100,116,139,0.08)",
+    borderRadius: 2,
+    marginBottom: 16,
+  },
+  timerBarFill: {
+    height: "100%",
+    backgroundColor: "#3b82f6",
+    borderRadius: 2,
+  },
+  legendCard: {
+    width: "100%",
+    borderRadius: 24,
+    borderWidth: 1,
+    padding: 12,
+    alignItems: "center",
+    marginBottom: 20,
+    elevation: 2,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+  },
+  legendLabel: {
+    fontSize: 9,
+    fontWeight: "900",
+    letterSpacing: 1.5,
+    marginBottom: 8,
+  },
+  legendGrid: {
+    flexDirection: "row",
+    justifyContent: "space-around",
+    width: "100%",
+  },
+  legendCell: {
+    alignItems: "center",
+    gap: 4,
+  },
+  symbolIconWrapper: {
+    height: 30,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  legendNumber: {
+    fontSize: 12,
+    fontWeight: "900",
+  },
+  targetCard: {
+    width: 150,
+    height: 120,
+    borderRadius: 24,
+    borderWidth: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 24,
+    elevation: 2,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+  },
+  targetSymbolContent: {
+    height: 60,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  numpad: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    width: W - 48,
+    gap: 12,
+    justifyContent: "center",
+    marginBottom: 30,
+  },
+  numBtn: {
+    width: (W - 72) / 3,
+    height: 56,
+    borderRadius: 18,
+    borderWidth: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    elevation: 2,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+  },
+  numBtnText: {
+    fontSize: 20,
+    fontWeight: "900",
+  },
 });

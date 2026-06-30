@@ -1,332 +1,300 @@
 // app/brain/ReactionTest.tsx
 // ─────────────────────────────────────────────────────────────────────────────
-// Reaction Speed — wait for green, tap as fast as possible
-// Cognitive domain: Processing speed + inhibitory control (don't tap on red)
+// Motor Praxis Task (MP)
+// Cognitive Domain: Processing Speed / Sensorimotor Speed
+// Penn Computerized Neurocognitive Battery Protocol
 // ─────────────────────────────────────────────────────────────────────────────
 
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import {
-  Animated,
   StyleSheet,
   Text,
   TouchableOpacity,
-  Vibration,
   View,
+  Dimensions,
+  Animated,
+  Vibration,
 } from "react-native";
-
+import Svg, { Circle, Line } from "react-native-svg";
 import { useTheme } from "../../context/ThemeContext";
-import { GameResult, scoreReactionTime } from "./brainEngine";
+import { GameResult } from "./brainEngine";
 
-type Phase = "countdown" | "waiting" | "ready" | "tapped" | "toosoon" | "done";
+const { width: W, height: H } = Dimensions.get("window");
+const ROUNDS = 10;
+
+type Phase = "instructions" | "playing" | "done";
 
 type Props = {
   onDone: (result: GameResult) => void;
 };
 
-const ROUNDS          = 6;
-const MIN_WAIT_MS     = 1500;
-const MAX_WAIT_MS     = 4500;
-const TOO_SOON_DELAY  = 1500; // penalty wait before next round
-
-export default function ReactionTest({ onDone }: Props) {
+export default function MotorPraxisTest({ onDone }: Props) {
   const { theme } = useTheme();
-  
-  const colors = theme === "light"
-    ? {
-        background: "#f8fafc",
-        card: "#ffffff",
-        card2: "#f1f5f9",
-        text: "#020617",
-        subText: "#475569",
-        subText2: "#64748b",
-        border: "#e2e8f0",
-        border2: "#cbd5e1",
-        gameTag: "#38bdf8",
-        countdownText: "#020617",
-        hintText: "#64748b",
-        progressDotBg: "#cbd5e1",
-        progressDone: "#22c55e",
-        progressActive: "#38bdf8",
-        tapZoneWaiting: "#e2e8f0",
-        tapZoneReady: "#22c55e",
-        tapZoneTooSoon: "#ef4444",
-        tapZoneTapped: "#38bdf8",
-        tapZoneDefault: "#94a3b8",
-        tapZoneShadow: "#22c55e",
-        tapIconText: "#ffffff",
-        tapSubText: "rgba(0,0,0,0.4)",
-        speedLabel: "#f59e0b",
-        statValue: "#020617",
-        statLabel: "#64748b",
-        bgWaiting: "#f1f5f9",
-        bgReady: "#dcfce7",
-        bgTooSoon: "#fee2e2",
-        bgTapped: "#e0f2fe",
-        bgDefault: "#f1f5f9",
-      }
-    : {
-        background: "#020617",
-        card: "#0f172a",
-        card2: "#1e293b",
-        text: "#ffffff",
-        subText: "#94a3b8",
-        subText2: "#64748b",
-        border: "#334155",
-        border2: "#475569",
-        gameTag: "#38bdf8",
-        countdownText: "#ffffff",
-        hintText: "#64748b",
-        progressDotBg: "#1e293b",
-        progressDone: "#22c55e",
-        progressActive: "#38bdf8",
-        tapZoneWaiting: "#1e293b",
-        tapZoneReady: "#22c55e",
-        tapZoneTooSoon: "#ef4444",
-        tapZoneTapped: "#0ea5e9",
-        tapZoneDefault: "#0f172a",
-        tapZoneShadow: "#22c55e",
-        tapIconText: "#ffffff",
-        tapSubText: "rgba(255,255,255,0.4)",
-        speedLabel: "#f59e0b",
-        statValue: "#ffffff",
-        statLabel: "#475569",
-        bgWaiting: "#0f172a",
-        bgReady: "#052e16",
-        bgTooSoon: "#2d0707",
-        bgTapped: "#0d1f12",
-        bgDefault: "#0f172a",
-      };
+  const isDark = theme === "dark";
 
-  const [phase,       setPhase]       = useState<Phase>("countdown");
-  const [countdown,   setCountdown]   = useState(3);
-  const [round,       setRound]       = useState(0);
-  const [reactionMs,  setReactionMs]  = useState<number | null>(null);
-  const [allTimes,    setAllTimes]    = useState<number[]>([]);
-  const [tooSoonCount, setTooSoonCount] = useState(0);
+  const colors = {
+    background: isDark ? "#020617" : "#f8fafc",
+    card: isDark ? "#0f172a" : "#ffffff",
+    text: isDark ? "#ffffff" : "#020617",
+    subText: isDark ? "#94a3b8" : "#475569",
+    accent: "#6366f1",
+    targetOuter: "#ef4444",
+    targetInner: "#ffffff",
+    border: isDark ? "#1e293b" : "#e2e8f0",
+  };
 
-  const readyTimeRef  = useRef<number>(0);
-  const waitTimerRef  = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const scaleAnim     = useRef(new Animated.Value(0.8)).current;
-  const glowAnim      = useRef(new Animated.Value(0)).current;
+  const [phase, setPhase] = useState<Phase>("instructions");
+  const [round, setRound] = useState(0);
+  const [targetPos, setTargetPos] = useState({ x: W / 2 - 40, y: H / 3 });
+  const [targetSize, setTargetSize] = useState(90);
+  const [clickTimes, setClickTimes] = useState<number[]>([]);
 
-  const popIn = useCallback(() => {
-    Animated.spring(scaleAnim, {
-      toValue: 1,
-      useNativeDriver: true,
-      tension: 80,
-      friction: 6,
-    }).start();
-    Animated.timing(glowAnim, {
-      toValue: 1,
-      duration: 200,
-      useNativeDriver: false,
-    }).start();
-  }, [scaleAnim, glowAnim]);
+  const clickStartRef = useRef<number>(0);
+  const scaleAnim = useRef(new Animated.Value(0)).current;
+  const pulseAnim = useRef(new Animated.Value(1)).current;
 
-  const popOut = useCallback(() => {
-    scaleAnim.setValue(0.8);
-    glowAnim.setValue(0);
-  }, [scaleAnim, glowAnim]);
-
-  // ── Countdown ──────────────────────────────────────────────────────────────
+  // Pulse animation for the active target
   useEffect(() => {
-    if (phase !== "countdown") return;
-    if (countdown === 0) { beginRound(0); return; }
-    const t = setTimeout(() => setCountdown(c => c - 1), 1000);
-    return () => clearTimeout(t);
-  }, [phase, countdown]);
+    if (phase !== "playing") return;
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulseAnim, { toValue: 1.15, duration: 600, useNativeDriver: true }),
+        Animated.timing(pulseAnim, { toValue: 1.0, duration: 600, useNativeDriver: true }),
+      ])
+    ).start();
+  }, [phase, round]);
 
-  // ── Begin round — schedule the green light ────────────────────────────────
-  const beginRound = useCallback((r: number) => {
-    setRound(r);
-    setReactionMs(null);
-    popOut();
-    setPhase("waiting");
-
-    const delay = MIN_WAIT_MS + Math.random() * (MAX_WAIT_MS - MIN_WAIT_MS);
-    waitTimerRef.current = setTimeout(() => {
-      readyTimeRef.current = Date.now();
-      setPhase("ready");
-      popIn();
-      Vibration.vibrate(30);
-    }, delay);
-  }, [popIn, popOut]);
-
-  // cleanup on unmount
-  useEffect(() => () => { if (waitTimerRef.current) clearTimeout(waitTimerRef.current); }, []);
-
-  // ── User taps ─────────────────────────────────────────────────────────────
-  const handleTap = useCallback(() => {
-    if (phase === "waiting") {
-      // Tapped too early!
-      if (waitTimerRef.current) clearTimeout(waitTimerRef.current);
-      setPhase("toosoon");
-      setTooSoonCount(c => c + 1);
-      Vibration.vibrate([0, 80, 60, 80]);
-      setTimeout(() => beginRound(round), TOO_SOON_DELAY);
+  const startNextRound = useCallback((r: number) => {
+    if (r >= ROUNDS) {
+      setPhase("done");
       return;
     }
 
-    if (phase !== "ready") return;
+    setRound(r);
 
-    const elapsed = Date.now() - readyTimeRef.current;
-    setReactionMs(elapsed);
-    setAllTimes(prev => {
-      const next = [...prev, elapsed];
+    // Calculate new target size: starts at 90 and decreases progressively
+    // 90, 82, 74, 66, 58, 50, 42, 34, 26, 18
+    const newSize = Math.max(18, 90 - r * 8);
+    setTargetSize(newSize);
 
-      const nextRound = round + 1;
-      if (nextRound >= ROUNDS) {
-        // done — calculate result
-        const avg = next.reduce((a, b) => a + b, 0) / next.length;
-        const best = Math.min(...next);
-        const score = scoreReactionTime(avg);
+    // Precise safe-area boundaries to keep target accessible and within container limits
+    const padding = 50;
+    const minX = padding;
+    const maxX = W - newSize - padding;
+    const minY = 180;
+    const maxY = H - newSize - 200;
 
-        setTimeout(() => {
-          onDone({
-            game:     "reaction",
-            score,
-            rawScore: Math.round(avg),
-            accuracy: Math.max(0, 1 - tooSoonCount / ROUNDS),
-            avgTimeMs: avg,
-            label:   "Reaction Speed",
-          });
-        }, 800);
+    const newX = minX + Math.random() * (maxX - minX);
+    const newY = minY + Math.random() * (maxY - minY);
 
-        setPhase("done");
-      } else {
-        setPhase("tapped");
-        setTimeout(() => beginRound(nextRound), 900);
-      }
-      return next;
-    });
-  }, [phase, round, tooSoonCount, beginRound, onDone]);
+    setTargetPos({ x: newX, y: newY });
 
-  // ── Derived ───────────────────────────────────────────────────────────────
-  const avgTime = allTimes.length
-    ? Math.round(allTimes.reduce((a, b) => a + b, 0) / allTimes.length)
-    : null;
+    // Spring entry animation
+    scaleAnim.setValue(0.2);
+    Animated.spring(scaleAnim, {
+      toValue: 1,
+      tension: 180,
+      friction: 7,
+      useNativeDriver: true,
+    }).start();
 
-  const speedLabel = reactionMs
-    ? reactionMs < 200 ? "⚡ Lightning!"
-    : reactionMs < 300 ? "🔥 Fast!"
-    : reactionMs < 450 ? "👍 Good"
-    : reactionMs < 600 ? "🐢 Slow"
-    : "😴 Very Slow"
-    : null;
+    clickStartRef.current = Date.now();
+  }, [scaleAnim]);
 
-  const bgColor =
-    phase === "waiting"  ? colors.bgWaiting :
-    phase === "ready"    ? colors.bgReady :
-    phase === "toosoon"  ? colors.bgTooSoon :
-    phase === "tapped"   ? colors.bgTapped :
-    colors.bgDefault;
+  const handleTargetClick = () => {
+    const elapsed = Date.now() - clickStartRef.current;
+    try {
+      Vibration.vibrate(10);
+    } catch (_) {}
 
-  // ─────────────────────────────────────────────────────────────────────────
-  if (phase === "countdown") {
+    const nextTimes = [...clickTimes, elapsed];
+    setClickTimes(nextTimes);
+
+    const nextRound = round + 1;
+    if (nextRound >= ROUNDS) {
+      const avg = nextTimes.reduce((a, b) => a + b, 0) / nextTimes.length;
+      // Clinical sensorimotor speed scoring: elite is < 280ms, scaling down to 10
+      const score = Math.max(10, Math.round(Math.min(100, 100 - (avg - 260) / 10)));
+
+      setTimeout(() => {
+        onDone({
+          game: "reaction",
+          score,
+          rawScore: Math.round(avg),
+          accuracy: 1.0,
+          avgTimeMs: avg,
+          label: "Motor Praxis Task",
+        });
+      }, 500);
+      setPhase("done");
+    } else {
+      startNextRound(nextRound);
+    }
+  };
+
+  if (phase === "instructions") {
     return (
-      <View style={[s.full, { backgroundColor: colors.card }]}>
-        <Text style={[s.gameTag, { color: colors.gameTag }]}>REACTION SPEED</Text>
-        <Text style={[s.countdownNum, { color: colors.countdownText }]}>{countdown || "GO!"}</Text>
-        <Text style={[s.hint, { color: colors.hintText }]}>Wait for GREEN{"\n"}Tap as fast as you can{"\n"}Don't tap on RED — penalty!</Text>
+      <View style={[styles.container, { backgroundColor: colors.background }]}>
+        <Text style={styles.gameTitle}>MOTOR PRAXIS TASK (MP)</Text>
+        <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <Text style={[styles.cardHeading, { color: colors.text }]}>Sensorimotor Speed</Text>
+          <Text style={[styles.cardBody, { color: colors.subText }]}>
+            This task measures basic motor speed and coordination.{"\n"}{"\n"}
+            A target bullseye will appear in random locations on the screen. Tap it as fast as you can.{"\n"}{"\n"}
+            With each click, the target will become <Text style={{ color: colors.accent, fontWeight: "900" }}>smaller and harder to track</Text>. Maintain maximum focus!
+          </Text>
+          <TouchableOpacity
+            style={[styles.btn, { backgroundColor: colors.accent }]}
+            onPress={() => {
+              setPhase("playing");
+              startNextRound(0);
+            }}
+          >
+            <Text style={styles.btnText}>Start Assessment</Text>
+          </TouchableOpacity>
+        </View>
       </View>
     );
   }
 
+  // Calculate stats for HUD
+  const avgSoFar = clickTimes.length
+    ? Math.round(clickTimes.reduce((a, b) => a + b, 0) / clickTimes.length)
+    : 0;
+
   return (
-    <TouchableOpacity
-      activeOpacity={1}
-      style={[s.full, { backgroundColor: bgColor }]}
-      onPress={handleTap}
-    >
-      {/* Round dots */}
-      <View style={s.progressRow}>
-        {Array.from({ length: ROUNDS }).map((_, i) => (
-          <View
-            key={i}
-            style={[
-              s.progressDot,
-              { backgroundColor: colors.progressDotBg },
-              i < allTimes.length && { backgroundColor: colors.progressDone },
-              i === round && phase !== "done" && { backgroundColor: colors.progressActive, width: 24 },
-            ]}
-          />
-        ))}
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
+      {/* Sleek top HUD */}
+      <View style={[styles.hudHeader, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        <View style={styles.hudStat}>
+          <Text style={[styles.hudLabel, { color: colors.subText }]}>ROUND</Text>
+          <Text style={[styles.hudVal, { color: colors.text }]}>{round + 1} / {ROUNDS}</Text>
+        </View>
+        <View style={styles.hudStat}>
+          <Text style={[styles.hudLabel, { color: colors.subText }]}>SIZE</Text>
+          <Text style={[styles.hudVal, { color: colors.accent }]}>{Math.round(targetSize)}px</Text>
+        </View>
+        <View style={styles.hudStat}>
+          <Text style={[styles.hudLabel, { color: colors.subText }]}>AVG TIME</Text>
+          <Text style={[styles.hudVal, { color: colors.text }]}>{avgSoFar || "—"} ms</Text>
+        </View>
       </View>
 
-      {/* Central tap zone */}
-      <Animated.View style={[
-        s.tapZone,
-        {
-          transform: [{ scale: scaleAnim }],
-          backgroundColor:
-            phase === "ready"   ? colors.tapZoneReady :
-            phase === "toosoon" ? colors.tapZoneTooSoon :
-            phase === "tapped"  ? colors.tapZoneTapped :
-            phase === "waiting" ? colors.tapZoneWaiting :
-            colors.tapZoneDefault,
-          shadowColor:
-            phase === "ready" ? colors.tapZoneShadow : "transparent",
-          shadowRadius: 32,
-          shadowOpacity: 0.6,
-          elevation: phase === "ready" ? 20 : 0,
-        },
-      ]}>
-        <Text style={[s.tapIcon, { color: colors.tapIconText }]}>
-          {phase === "waiting"  ? "⏳" :
-           phase === "ready"    ? "TAP!" :
-           phase === "toosoon"  ? "TOO\nEARLY" :
-           phase === "tapped"   ? `${reactionMs}ms` :
-           phase === "done"     ? "✓" : ""}
-        </Text>
-        {phase === "waiting" && (
-          <Text style={[s.tapSub, { color: colors.tapSubText }]}>Wait for green...</Text>
-        )}
-      </Animated.View>
-
-      {/* Speed label */}
-      {speedLabel && phase === "tapped" && (
-        <Text style={[s.speedLabel, { color: colors.speedLabel }]}>{speedLabel}</Text>
+      {/* Target Render Area */}
+      {phase === "playing" && (
+        <Animated.View
+          style={[
+            styles.targetWrapper,
+            {
+              transform: [{ scale: scaleAnim }, { scale: pulseAnim }],
+              left: targetPos.x,
+              top: targetPos.y,
+              width: targetSize,
+              height: targetSize,
+            },
+          ]}
+        >
+          <TouchableOpacity
+            style={StyleSheet.absoluteFill}
+            onPress={handleTargetClick}
+            activeOpacity={0.6}
+          >
+            <Svg width="100%" height="100%" viewBox="0 0 100 100">
+              {/* Outer circle */}
+              <Circle cx="50" cy="50" r="45" fill={colors.targetOuter} />
+              {/* Middle white ring */}
+              <Circle cx="50" cy="50" r="30" fill={colors.targetInner} />
+              {/* Inner red bullseye */}
+              <Circle cx="50" cy="50" r="15" fill={colors.targetOuter} />
+              {/* Center point */}
+              <Circle cx="50" cy="50" r="4" fill={colors.targetInner} />
+              {/* Crosshair lines */}
+              <Line x1="50" y1="0" x2="50" y2="100" stroke={colors.targetInner} strokeWidth="1.5" strokeOpacity="0.4" />
+              <Line x1="0" y1="50" x2="100" y2="50" stroke={colors.targetInner} strokeWidth="1.5" strokeOpacity="0.4" />
+            </Svg>
+          </TouchableOpacity>
+        </Animated.View>
       )}
-
-      {/* Stats */}
-      <View style={s.statsRow}>
-        <View style={s.statBox}>
-          <Text style={[s.statVal, { color: colors.statValue }]}>{reactionMs ?? "—"}</Text>
-          <Text style={[s.statLabel, { color: colors.statLabel }]}>Last (ms)</Text>
-        </View>
-        <View style={s.statBox}>
-          <Text style={[s.statVal, { color: colors.statValue }]}>{avgTime ?? "—"}</Text>
-          <Text style={[s.statLabel, { color: colors.statLabel }]}>Avg (ms)</Text>
-        </View>
-        <View style={s.statBox}>
-          <Text style={[s.statVal, { color: colors.tapZoneTooSoon }]}>{tooSoonCount}</Text>
-          <Text style={[s.statLabel, { color: colors.statLabel }]}>Early taps</Text>
-        </View>
-      </View>
-    </TouchableOpacity>
+    </View>
   );
 }
 
-const s = StyleSheet.create({
-  full:          { flex: 1, justifyContent: "center", alignItems: "center" },
-  gameTag:       { fontSize: 11, fontWeight: "800", letterSpacing: 3, marginBottom: 24, position: "absolute", top: 60 },
-  countdownNum:  { fontSize: 88, fontWeight: "900", lineHeight: 96 },
-  hint:          { fontSize: 14, textAlign: "center", marginTop: 20, lineHeight: 24 },
-  progressRow:   { position: "absolute", top: 120, flexDirection: "row", gap: 8 },
-  progressDot:   { width: 8, height: 8, borderRadius: 4 },
-  tapZone: {
-    width: 200,
-    height: 200,
-    borderRadius: 100,
-    justifyContent: "center", 
-    alignItems: "center",
-    marginBottom: 48,
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
   },
-  tapIcon:    { fontSize: 28, fontWeight: "900", textAlign: "center", lineHeight: 34 },
-  tapSub:     { fontSize: 12, marginTop: 8 },
-  speedLabel: { fontSize: 20, fontWeight: "800", marginTop: -32, marginBottom: 32 },
-  statsRow:   { position: "absolute", bottom: 48, flexDirection: "row", gap: 32 },
-  statBox:    { alignItems: "center" },
-  statVal:    { fontSize: 22, fontWeight: "900" },
-  statLabel:  { fontSize: 11, marginTop: 2 },
+  gameTitle: {
+    fontSize: 11,
+    fontWeight: "900",
+    letterSpacing: 3,
+    color: "#6366f1",
+    marginTop: 60,
+    textAlign: "center",
+  },
+  card: {
+    marginHorizontal: 24,
+    borderRadius: 28,
+    borderWidth: 1,
+    padding: 28,
+    marginTop: 80,
+    elevation: 4,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+  },
+  cardHeading: {
+    fontSize: 22,
+    fontWeight: "900",
+    marginBottom: 16,
+  },
+  cardBody: {
+    fontSize: 14,
+    lineHeight: 24,
+    marginBottom: 32,
+  },
+  btn: {
+    borderRadius: 20,
+    paddingVertical: 16,
+    alignItems: "center",
+  },
+  btnText: {
+    color: "#ffffff",
+    fontSize: 15,
+    fontWeight: "900",
+    letterSpacing: 1,
+  },
+  hudHeader: {
+    flexDirection: "row",
+    justifyContent: "space-around",
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    position: "absolute",
+    top: 54,
+    left: 0,
+    right: 0,
+    elevation: 2,
+    zIndex: 10,
+  },
+  hudStat: {
+    alignItems: "center",
+  },
+  hudLabel: {
+    fontSize: 9,
+    fontWeight: "900",
+    letterSpacing: 1.5,
+    marginBottom: 2,
+  },
+  hudVal: {
+    fontSize: 15,
+    fontWeight: "900",
+  },
+  targetWrapper: {
+    position: "absolute",
+    elevation: 8,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 5 },
+    shadowOpacity: 0.35,
+    shadowRadius: 6,
+  },
 });

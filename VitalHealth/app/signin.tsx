@@ -18,7 +18,6 @@ import {
 import Svg, { Path, Line } from "react-native-svg";
 
 import {
-  fetchSignInMethodsForEmail,
   sendPasswordResetEmail,
   signInWithEmailAndPassword,
 } from "firebase/auth";
@@ -170,31 +169,55 @@ export default function SignIn() {
   };
 
   const handleForgotPassword = async () => {
-    if (!forgotEmail.trim()) {
+    const trimmedEmail = forgotEmail.trim();
+    if (!trimmedEmail) {
       Alert.alert("Input Required", "Please enter your email address.");
       return;
     }
+
+    // Basic email format check before hitting Firebase
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(trimmedEmail)) {
+      Alert.alert("Invalid Email", "Please enter a valid email address.");
+      return;
+    }
+
     setForgotLoading(true);
     try {
-      try {
-        const methods = await fetchSignInMethodsForEmail(auth, forgotEmail.trim());
-        if (methods.length === 0) {
-          Alert.alert("Account Not Found", "No account found with this email address.");
-          setForgotLoading(false);
-          return;
-        }
-      } catch (e) {
-        console.log("Enumeration protection warning during fetchSignInMethods:", e);
-      }
-      await sendPasswordResetEmail(auth, forgotEmail.trim());
+      // NOTE: fetchSignInMethodsForEmail is deprecated when Firebase Email Enumeration
+      // Protection is enabled (default for new projects). We call sendPasswordResetEmail
+      // directly — Firebase handles unknown emails gracefully in that mode.
+      await sendPasswordResetEmail(auth, trimmedEmail);
       setForgotModalVisible(false);
-      Alert.alert("Password Reset Sent", "A password reset link has been successfully sent to your email.");
+      setForgotEmail("");
+      Alert.alert(
+        "Reset Email Sent",
+        "If an account exists for " + trimmedEmail + ", a password reset link has been sent. Please check your inbox (and spam folder)."
+      );
     } catch (error: any) {
-      let errMsg = "Failed to send reset link.";
-      if (error.code === "auth/invalid-email" || error.message?.includes("invalid-email")) {
+      console.log("Forgot password error:", error.code, error.message);
+      let errMsg = "Failed to send reset link. Please try again.";
+      if (
+        error.code === "auth/invalid-email" ||
+        error.message?.includes("invalid-email")
+      ) {
         errMsg = "Please enter a valid email address.";
-      } else if (error.code === "auth/user-not-found" || error.message?.includes("user-not-found")) {
+      } else if (
+        error.code === "auth/user-not-found" ||
+        error.message?.includes("user-not-found")
+      ) {
+        // With enumeration protection off, this may still appear
         errMsg = "No account found with this email address.";
+      } else if (
+        error.code === "auth/network-request-failed" ||
+        error.message?.includes("network-request-failed")
+      ) {
+        errMsg = "Network error. Please check your connection and try again.";
+      } else if (
+        error.code === "auth/too-many-requests" ||
+        error.message?.includes("too-many-requests")
+      ) {
+        errMsg = "Too many requests. Please wait a moment and try again.";
       }
       Alert.alert("Reset Failed", errMsg);
     } finally {

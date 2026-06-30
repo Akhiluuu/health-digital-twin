@@ -11,7 +11,7 @@ import React, {
   createContext, useCallback, useContext, useEffect,
   useRef, useState, useMemo,
 } from 'react';
-import { AppState, AppStateStatus, Platform, Alert, Linking } from 'react-native';
+import { AppState, AppStateStatus, Platform, Alert, Linking, PermissionsAndroid } from 'react-native';
 import { useFamily } from './FamilyContext';
 import { syncStepsData, fetchStepsDataFromFirebase } from '../services/firebaseSync';
 import * as BackgroundFetch from 'expo-background-fetch';
@@ -19,7 +19,9 @@ import * as TaskManager from 'expo-task-manager';
 import {
   startNativeTracking,
   stopNativeTracking,
+  resetNativeSteps,
   getTodayStepsNative,
+  getWeeklyStepsNative,
   subscribeToStepUpdates,
   getDataSourceInfoNative,
   isNativeModuleAvailable,
@@ -119,6 +121,7 @@ interface StepContextValue {
   refreshFromNative: () => Promise<void>;
   // Weekly/monthly for history views
   weeklySteps: Array<{ date: string; steps: number }>;
+  refreshHistory: () => Promise<void>;
 }
 
 const StepContext = createContext<StepContextValue>({} as StepContextValue);
@@ -150,10 +153,15 @@ export const StepProvider: React.FC<{
   const goalRef       = useRef(10000);
   const isTrackingRef = useRef(false);
   const dirtyRef      = useRef(false);
-  const strideM       = 0.413 * (heightCm / 100);
+
+  // Validate weight and height inputs to prevent 0 or NaN calculations
+  const validWeight = weightKg && weightKg > 0 && !isNaN(weightKg) ? weightKg : 70;
+  const validHeight = heightCm && heightCm > 0 && !isNaN(heightCm) ? heightCm : 170;
+
+  const strideM       = 0.413 * (validHeight / 100);
 
   const distanceKm = parseFloat(((steps * strideM) / 1000).toFixed(2));
-  const calories   = Math.round(steps * 0.04 * (weightKg / 70));
+  const calories   = Math.round(steps * 0.04 * (validWeight / 70));
 
   // Timer refs
   const clockRef    = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -161,6 +169,7 @@ export const StepProvider: React.FC<{
   const sedRef      = useRef<ReturnType<typeof setInterval> | null>(null);
   const midnightRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const iosPollRef  = useRef<ReturnType<typeof setInterval> | null>(null);
+  const nativePollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const appStateRef = useRef<AppStateStatus>(AppState.currentState);
 
   // iOS sensor refs
@@ -208,6 +217,28 @@ export const StepProvider: React.FC<{
 
   const stopFlushLoop = useCallback(() => {
     if (flushRef.current) { clearInterval(flushRef.current); flushRef.current = null; }
+  }, []);
+
+  // ── Android native direct-poll (safety net: 3s interval) ─────────────────
+  const startNativePoll = useCallback(() => {
+    if (Platform.OS !== 'android') return;
+    if (nativePollRef.current) clearInterval(nativePollRef.current);
+    nativePollRef.current = setInterval(async () => {
+      if (!isTrackingRef.current) return;
+      try {
+        const { steps: nativeSteps, source } = await getTodayStepsNative();
+        if (nativeSteps > 0 && nativeSteps !== stepsRef.current) {
+          stepsRef.current = nativeSteps;
+          dirtyRef.current = true;
+          setSteps(nativeSteps);
+          setDataSource(source);
+        }
+      } catch { /* ignore */ }
+    }, 3000);
+  }, []);
+
+  const stopNativePoll = useCallback(() => {
+    if (nativePollRef.current) { clearInterval(nativePollRef.current); nativePollRef.current = null; }
   }, []);
 
   // ── Background task ────────────────────────────────────────────────────────
@@ -343,7 +374,7 @@ export const StepProvider: React.FC<{
     nativeUnsubRef.current?.();
     nativeUnsubRef.current = subscribeToStepUpdates((event) => {
       // Native service sends absolute daily step count
-      if (event.steps > stepsRef.current) {
+      if (event.steps !== stepsRef.current) {
         stepsRef.current = event.steps;
         dirtyRef.current = true;
         setSteps(event.steps);
@@ -358,10 +389,40 @@ export const StepProvider: React.FC<{
   }, []);
 
   // ── Pull steps from native DB on foreground resume ─────────────────────────
+  // ── Refresh history ────────────────────────────────────────────────────────
+  const refreshHistory = useCallback(async () => {
+    try {
+      if (Platform.OS === 'android') {
+        const data = await getWeeklyStepsNative();
+        const sorted = [...data].sort((a, b) => a.date.localeCompare(b.date));
+        setWeeklySteps(sorted.map(d => ({ date: d.date, steps: d.steps })));
+      } else {
+        const list: Array<{ date: string; steps: number }> = [];
+        for (let i = 6; i >= 0; i--) {
+          const start = new Date();
+          start.setDate(start.getDate() - i);
+          start.setHours(0, 0, 0, 0);
+          const end = new Date(start);
+          end.setHours(23, 59, 59, 999);
+          const dateStr = start.toISOString().slice(0, 10);
+          try {
+            const r = await Pedometer.getStepCountAsync(start, end);
+            list.push({ date: dateStr, steps: r?.steps ?? 0 });
+          } catch {
+            list.push({ date: dateStr, steps: 0 });
+          }
+        }
+        setWeeklySteps(list);
+      }
+    } catch (e) {
+      console.warn("⚠️ Failed to load weekly steps:", e);
+    }
+  }, []);
+
   const refreshFromNative = useCallback(async () => {
     if (Platform.OS !== 'android') return;
     const { steps: nativeSteps, source } = await getTodayStepsNative();
-    if (nativeSteps > stepsRef.current) {
+    if (nativeSteps !== stepsRef.current) {
       stepsRef.current = nativeSteps;
       dirtyRef.current = true;
       setSteps(nativeSteps);
@@ -381,9 +442,10 @@ export const StepProvider: React.FC<{
       stepsRef.current = 0; dirtyRef.current = false;
       setSteps(0);
       await AsyncStorage.multiSet([[userKeys.totalToday, '0'], [userKeys.date, todayStr()]]);
+      await refreshHistory().catch(() => {});
       scheduleMidnightReset();
     }, midnight.getTime() - now.getTime());
-  }, [doCloudSync, userKeys]);
+  }, [doCloudSync, userKeys, refreshHistory]);
 
   // ── setGoal ────────────────────────────────────────────────────────────────
   const setGoal = useCallback((g: number) => {
@@ -410,22 +472,61 @@ export const StepProvider: React.FC<{
       return;
     }
 
-    // 2. Request Motion/Physical Activity Permission
+    // 2. Request Motion/Physical Activity Permission (ACTIVITY_RECOGNITION)
+    // On Android 10+ (API 29+), this is a DANGEROUS runtime permission that MUST be
+    // explicitly requested. Without it, the step counter sensor returns 0 events silently.
     let motionOk = false;
     try {
-      const perm = await Pedometer.requestPermissionsAsync();
-      motionOk = perm.granted;
+      if (Platform.OS === 'android') {
+        // First check current state — if already granted skip the dialog
+        const alreadyGranted = await PermissionsAndroid.check(
+          PermissionsAndroid.PERMISSIONS.ACTIVITY_RECOGNITION
+        );
+        if (alreadyGranted) {
+          motionOk = true;
+        } else {
+          const result = await PermissionsAndroid.request(
+            PermissionsAndroid.PERMISSIONS.ACTIVITY_RECOGNITION,
+            {
+              title: 'Physical Activity Permission Required',
+              message:
+                'VitalHealth needs access to Physical Activity data to count your steps accurately using the device\'s built-in step counter sensor.\n\nWithout this permission, step counting will not work.',
+              buttonPositive: 'Allow',
+              buttonNegative: 'Deny',
+              buttonNeutral: 'Ask Me Later',
+            }
+          );
+          if (result === PermissionsAndroid.RESULTS.GRANTED) {
+            motionOk = true;
+          } else if (result === PermissionsAndroid.RESULTS.NEVER_ASK_AGAIN) {
+            // User chose "Don't ask again" — must redirect to Settings
+            Alert.alert(
+              'Physical Activity Permission Blocked',
+              'You have permanently denied the Physical Activity permission.\n\nTo enable step counting, please go to:\nSettings → Apps → VitalHealth → Permissions → Physical activity → Allow.',
+              [
+                { text: 'Cancel', style: 'cancel' },
+                { text: 'Open Settings', onPress: () => Linking.openSettings() },
+              ]
+            );
+            return;
+          }
+          // else: DENIED — fall through to motionOk === false alert below
+        }
+      } else {
+        const perm = await Pedometer.requestPermissionsAsync();
+        motionOk = perm.granted;
+      }
     } catch (e) {
-      // ignore
+      console.error('[StepContext] ACTIVITY_RECOGNITION permission request failed:', e);
     }
 
     if (!motionOk) {
       Alert.alert(
-        "Motion Permission Required",
-        "VitalHealth needs Physical Activity/Motion sensor access to measure your steps.\n\nPlease enable Motion/Activity access in App Settings.",
+        'Physical Activity Permission Required',
+        'VitalHealth needs Physical Activity sensor access to count your steps.\n\nPlease tap "Open Settings" and enable the Physical activity permission.',
         [
-          { text: "Cancel", style: "cancel" },
-          { text: "Open Settings", onPress: () => Linking.openSettings() }
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Open Settings', onPress: () => Linking.openSettings() },
         ]
       );
       return;
@@ -450,6 +551,8 @@ export const StepProvider: React.FC<{
       // Immediately pull current count from native DB
       await refreshFromNative();
       setDataSource('STEP_SENSOR');
+      // Start 3-second poll as backup in case NativeEventEmitter events are missed
+      startNativePoll();
     } else {
       await startIosSensors();
     }
@@ -459,12 +562,13 @@ export const StepProvider: React.FC<{
     startFlushLoop();
     scheduleMidnightReset();
     registerBgTask().catch(() => {});
-  }, [userKeys, userUid, startAndroidNativeSubscription, startIosSensors, refreshFromNative, startClock, startSedTimer, startFlushLoop, scheduleMidnightReset, registerBgTask]);
+  }, [userKeys, userUid, startAndroidNativeSubscription, startIosSensors, refreshFromNative, startClock, startSedTimer, startFlushLoop, scheduleMidnightReset, registerBgTask, startNativePoll]);
 
   // ── STOP TRACKING ──────────────────────────────────────────────────────────
   const stopTracking = useCallback(async () => {
     stopIosSensors();
     stopAndroidNativeSubscription();
+    stopNativePoll();
     stopClock();
     stopSedTimer();
     stopFlushLoop();
@@ -478,7 +582,7 @@ export const StepProvider: React.FC<{
     if (Platform.OS === 'android') {
       await stopNativeTracking();
     }
-  }, [stopIosSensors, stopAndroidNativeSubscription, stopClock, stopSedTimer, stopFlushLoop, doCloudSync, userKeys]);
+  }, [stopIosSensors, stopAndroidNativeSubscription, stopNativePoll, stopClock, stopSedTimer, stopFlushLoop, doCloudSync, userKeys]);
 
   // ── RESET TODAY ────────────────────────────────────────────────────────────
   const resetToday = useCallback(async () => {
@@ -490,97 +594,144 @@ export const StepProvider: React.FC<{
       [userKeys.sessionStart, String(Date.now())],
       [userKeys.isTracking,   '0'],
     ]);
+    if (Platform.OS === 'android') {
+      await resetNativeSteps();
+    }
     await syncStepsData({ steps: 0, goal: goalRef.current, isTracking: false, lastMoveTs: Date.now(), date: todayStr() }, isSwitched ? activeMemberId : undefined);
-  }, [stopTracking, userKeys, isSwitched, activeMemberId]);
+    await refreshHistory().catch(() => {});
+  }, [stopTracking, userKeys, isSwitched, activeMemberId, refreshHistory]);
 
   // ── RESTORE ON MOUNT / PROFILE SWITCH ─────────────────────────────────────
   useEffect(() => {
     let alive = true;
     const load = async () => {
-      // Clean up any prior subscriptions
-      stopIosSensors(); stopAndroidNativeSubscription(); stopClock(); stopSedTimer(); stopFlushLoop();
-      stepsRef.current = 0; isTrackingRef.current = false; dirtyRef.current = false;
-      setSteps(0); setSessionSecs(0); setIsTracking(false);
+      try {
+        // Clean up any prior subscriptions
+        stopIosSensors(); stopAndroidNativeSubscription(); stopNativePoll(); stopClock(); stopSedTimer(); stopFlushLoop();
+        stepsRef.current = 0; isTrackingRef.current = false; dirtyRef.current = false;
+        setSteps(0); setSessionSecs(0); setIsTracking(false);
 
-      const pairs = await AsyncStorage.multiGet([
-        userKeys.goal, userKeys.date, userKeys.totalToday, userKeys.isTracking, userKeys.sessionStart,
-      ]);
-      if (!alive) return;
-      const m = Object.fromEntries(pairs.map(([k, v]) => [k, v ?? '']));
-      const today = todayStr();
-      let savedSteps = 0, savedGoal = 10000, savedTracking = false, sessionStart = Date.now();
+        const pairs = await AsyncStorage.multiGet([
+          userKeys.goal, userKeys.date, userKeys.totalToday, userKeys.isTracking, userKeys.sessionStart,
+        ]).catch(() => []);
+        if (!alive) return;
+        const m = Object.fromEntries(pairs.map(([k, v]) => [k, v ?? '']));
+        const today = todayStr();
+        let savedSteps = 0, savedGoal = 10000, savedTracking = false, sessionStart = Date.now();
 
-      const fbData = await fetchStepsDataFromFirebase(today, isSwitched ? activeMemberId : undefined);
-      if (!alive) return;
+        const fbData = await fetchStepsDataFromFirebase(today, isSwitched ? activeMemberId : undefined)
+          .catch((err) => {
+            console.warn("⚠️ [StepContext] fetchStepsDataFromFirebase failed:", err);
+            return null;
+          });
+        if (!alive) return;
 
-      savedGoal = m[userKeys.goal] ? parseInt(m[userKeys.goal], 10) : (fbData?.goal ?? 10000);
-      setGoalState(savedGoal); goalRef.current = savedGoal;
+        savedGoal = m[userKeys.goal] ? parseInt(m[userKeys.goal], 10) : (fbData?.goal ?? 10000);
+        if (isNaN(savedGoal)) savedGoal = 10000;
+        setGoalState(savedGoal); goalRef.current = savedGoal;
 
-      if (m[userKeys.date] === today) {
-        savedSteps    = parseInt(m[userKeys.totalToday] || '0', 10);
-        savedTracking = m[userKeys.isTracking] === '1';
-        sessionStart  = parseInt(m[userKeys.sessionStart] || String(Date.now()), 10);
-        if (fbData && fbData.steps > savedSteps) {
-          savedSteps = fbData.steps;
-          await AsyncStorage.setItem(userKeys.totalToday, String(savedSteps));
-        }
-      } else if (fbData) {
-        savedSteps = fbData.steps; savedTracking = fbData.isTracking;
-        await AsyncStorage.multiSet([[userKeys.date, today], [userKeys.totalToday, String(savedSteps)], [userKeys.isTracking, savedTracking ? '1' : '0']]);
-      }
-
-      // On Android, always prefer native DB (most accurate)
-      if (Platform.OS === 'android') {
-        const { steps: nativeSteps, source } = await getTodayStepsNative();
-        if (nativeSteps > savedSteps) { savedSteps = nativeSteps; }
-        setDataSource(source);
-      }
-
-      // Check if permissions are already allowed. If they are, auto-start/enable tracking
-      if (!savedTracking && m[userKeys.isTracking] !== '0') {
-        try {
-          const settings = await notifee.getNotificationSettings();
-          let physicalOk = false;
-          if (Platform.OS === 'android') {
-            physicalOk = true;
-          } else {
-            const pedoPerm = await Pedometer.getPermissionsAsync();
-            physicalOk = pedoPerm.granted;
+        if (m[userKeys.date] === today) {
+          savedSteps    = parseInt(m[userKeys.totalToday] || '0', 10);
+          savedTracking = m[userKeys.isTracking] === '1';
+          sessionStart  = parseInt(m[userKeys.sessionStart] || String(Date.now()), 10);
+          if (fbData && fbData.steps > savedSteps) {
+            savedSteps = fbData.steps;
+            await AsyncStorage.setItem(userKeys.totalToday, String(savedSteps)).catch(() => {});
           }
-          if (settings.authorizationStatus >= 1 && physicalOk) {
-            savedTracking = true;
-            await AsyncStorage.setItem(userKeys.isTracking, '1');
-          }
-        } catch (e) {
-          // ignore
+        } else if (fbData) {
+          savedSteps = fbData.steps; savedTracking = fbData.isTracking;
+          await AsyncStorage.multiSet([[userKeys.date, today], [userKeys.totalToday, String(savedSteps)], [userKeys.isTracking, savedTracking ? '1' : '0']]).catch(() => {});
         }
-      }
 
-      stepsRef.current = savedSteps; setSteps(savedSteps);
-      setIsTracking(savedTracking); isTrackingRef.current = savedTracking;
+        if (isNaN(savedSteps)) savedSteps = 0;
 
-      if (savedTracking) {
-        startClock(Date.now() - sessionStart);
+        // On Android, always prefer native DB (most accurate)
         if (Platform.OS === 'android') {
-          await startNativeTracking(userUid);
-          startAndroidNativeSubscription();
-        } else {
-          await startIosSensors();
+          const nativeData = await getTodayStepsNative().catch((err) => {
+            console.warn("⚠️ [StepContext] getTodayStepsNative failed:", err);
+            return { steps: 0, source: 'SENSOR_FUSION' as const };
+          });
+          if (nativeData.steps > savedSteps) { savedSteps = nativeData.steps; }
+          setDataSource(nativeData.source);
         }
-        startSedTimer(); startFlushLoop(); scheduleMidnightReset();
+
+        // ── Permission gate before restoring tracking state ───────────────────
+        // CRITICAL: adb install -r and some OEM installs RESET runtime permissions
+        // but keep AsyncStorage. We must verify ACTIVITY_RECOGNITION is actually
+        // granted before starting the native service, otherwise sensors return 0.
+        if (savedTracking && Platform.OS === 'android') {
+          const permGranted = await PermissionsAndroid.check(
+            PermissionsAndroid.PERMISSIONS.ACTIVITY_RECOGNITION
+          );
+          if (!permGranted) {
+            // Permission was revoked (reinstall wipes runtime grants).
+            // Reset tracking state so the user explicitly presses Start,
+            // which will trigger the proper permission request dialog.
+            console.warn('⚠️ [StepContext] ACTIVITY_RECOGNITION revoked — resetting tracking state');
+            savedTracking = false;
+            await AsyncStorage.setItem(userKeys.isTracking, '0').catch(() => {});
+          }
+        }
+
+        // Auto-start gate: only restore tracking if savedTracking was explicitly '1'
+        // AND permission was not revoked above (checked via savedTracking flag).
+        if (!savedTracking && m[userKeys.isTracking] === '1') {
+          try {
+            const settings = await notifee.getNotificationSettings();
+            let physicalOk = false;
+            if (Platform.OS === 'android') {
+              physicalOk = await PermissionsAndroid.check(
+                PermissionsAndroid.PERMISSIONS.ACTIVITY_RECOGNITION
+              );
+            } else {
+              const pedoPerm = await Pedometer.getPermissionsAsync();
+              physicalOk = pedoPerm.granted;
+            }
+            if (settings.authorizationStatus >= 1 && physicalOk) {
+              savedTracking = true;
+              await AsyncStorage.setItem(userKeys.isTracking, '1').catch(() => {});
+            }
+          } catch (e) {
+            // ignore
+          }
+        }
+
+        stepsRef.current = savedSteps; setSteps(savedSteps);
+        setIsTracking(savedTracking); isTrackingRef.current = savedTracking;
+
+        if (savedTracking) {
+          startClock(Date.now() - sessionStart);
+          if (Platform.OS === 'android') {
+            await startNativeTracking(userUid).catch((err) => {
+              console.warn("⚠️ [StepContext] startNativeTracking failed:", err);
+            });
+            startAndroidNativeSubscription();
+            startNativePoll();
+          } else {
+            await startIosSensors().catch((err) => {
+              console.warn("⚠️ [StepContext] startIosSensors failed:", err);
+            });
+          }
+          startSedTimer(); startFlushLoop(); scheduleMidnightReset();
+        }
+
+        // Get data source info
+        const info = await getDataSourceInfoNative().catch(() => null);
+        if (info) setDataSource(info.activeSource);
+
+        registerBgTask().catch(() => {});
+        await refreshHistory().catch(() => {});
+      } catch (err) {
+        console.error("🔴 [StepContext] Fatal error during load steps context:", err);
+        setSteps(0);
+        setIsTracking(false);
       }
-
-      // Get data source info
-      const info = await getDataSourceInfoNative();
-      if (info) setDataSource(info.activeSource);
-
-      registerBgTask().catch(() => {});
     };
 
     load();
     return () => {
       alive = false;
-      stopIosSensors(); stopAndroidNativeSubscription(); stopClock(); stopSedTimer(); stopFlushLoop();
+      stopIosSensors(); stopAndroidNativeSubscription(); stopNativePoll(); stopClock(); stopSedTimer(); stopFlushLoop();
       if (midnightRef.current) clearTimeout(midnightRef.current);
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -614,7 +765,7 @@ export const StepProvider: React.FC<{
     <StepContext.Provider value={{
       steps, calories, distanceKm, goal, sessionSecs,
       isTracking, dataSource, lastSyncAt, weeklySteps,
-      setGoal, startTracking, stopTracking, resetToday, refreshFromNative,
+      setGoal, startTracking, stopTracking, resetToday, refreshFromNative, refreshHistory,
     }}>
       {children}
     </StepContext.Provider>

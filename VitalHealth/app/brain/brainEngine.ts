@@ -94,29 +94,29 @@ export function buildReport(results: GameResult[]): BrainReport {
   const worst  = results.reduce((a, b) => (a.score < b.score ? a : b));
 
   const insights: Record<string, string> = {
-    pattern:   "Your visual pattern recognition is your cognitive edge.",
-    reaction:  "Your reflexes are sharp — excellent neural response speed.",
-    memory:    "Your sequence recall capacity stands out.",
-    stroop:    "Your cognitive control and focus are highly developed.",
-    cpt:       "Your sustained attention over time is outstanding.",
-    flanker:   "Your selective focus is brilliant under distraction.",
-    nback:     "Your working memory retention is superior.",
-    symbol:    "Your visual-motor processing speed is excellent.",
-    trail:     "Your set-shifting and executive control are highly optimal.",
-    switching: "Your mental adaptability and rule-shifting are supreme.",
+    pattern:   "Your matrix reasoning and spatial patterns logic are your cognitive edge.",
+    reaction:  "Your sensorimotor praxis and speed of coordinate tracking are excellent.",
+    memory:    "Your visual object learning and memory retention are top-tier.",
+    stroop:    "Your emotional recognition accuracy and speed are highly advanced.",
+    cpt:       "Your visual vigilant attention and reaction speed are highly optimal.",
+    flanker:   "Your decision-making consistency under risk (BART) is highly adaptive.",
+    nback:     "Your fractal 2-Back working memory retrieval is superior.",
+    symbol:    "Your visual-motor complex scanning and digit-symbol coordination are excellent.",
+    trail:     "Your spatial judgement and line orientation alignment are supreme.",
+    switching: "Your mental adaptability and abstract rules classification are supreme.",
   };
 
   const weakInsights: Record<string, string> = {
-    pattern:   "Visual pattern recognition needs more training.",
-    reaction:  "Reaction speed has room to grow with practice.",
-    memory:    "Working memory can be improved with daily exercises.",
-    stroop:    "Cognitive control under interference needs work.",
-    cpt:       "Sustained concentration can be built with focus exercises.",
-    flanker:   "Selective attention can improve with mindfulness/attention training.",
-    nback:     "Working memory retention can be expanded with daily puzzles.",
-    symbol:    "Visual processing coordination can be enhanced.",
-    trail:     "Mental planning and sequencing can be improved.",
-    switching: "Task switching flexibility can be sharpened.",
+    pattern:   "Fluid abstract reasoning puzzles can help improve matrix logic.",
+    reaction:  "Focus on motor praxis coordination and clicking speed.",
+    memory:    "Visuospatial memory retention can be trained with visual recall.",
+    stroop:    "Social emotion recognition speed has room to improve.",
+    cpt:       "Working on lapses in vigilant focus will increase speed consistency.",
+    flanker:   "Improving decision control can optimize performance under risk.",
+    nback:     "Fractal n-back training can help expand working memory span.",
+    symbol:    "Digit-symbol coordination and scanning speed can be sharpened.",
+    trail:     "Spatial orientation alignment can be enhanced with practice.",
+    switching: "Cognitive flexibility and abstract matching can be improved.",
   };
 
   return {
@@ -134,14 +134,14 @@ export function buildReport(results: GameResult[]): BrainReport {
 
 // ─── Game labels ──────────────────────────────────────────────────────────────
 export const GAME_LABELS: Record<string, string> = {
-  pattern:   "Pattern Memory",
-  reaction:  "Reaction Speed",
-  memory:    "Working Memory",
-  stroop:    "Stroop Focus",
-  cpt:       "Sustained Attention",
-  flanker:   "Selective Attention",
-  nback:     "Working Memory",
-  symbol:    "Processing Speed",
-  trail:     "Executive Function",
-  switching: "Task Switching",
+  pattern:   "Matrix Reasoning Test",
+  reaction:  "Motor Praxis Task",
+  memory:    "Visual Object Learning Test",
+  stroop:    "Emotion Recognition Task",
+  cpt:       "Psychomotor Vigilance Test",
+  flanker:   "Balloon Analog Risk Test",
+  nback:     "Fractal 2-Back",
+  symbol:    "Digit-Symbol Substitution Task",
+  trail:     "Line Orientation Test",
+  switching: "Abstract Matching",
 };

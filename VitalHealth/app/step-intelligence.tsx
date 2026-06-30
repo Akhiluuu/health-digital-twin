@@ -95,9 +95,15 @@ export default function StepIntelligenceScreen() {
   const { weightKg, heightCm, profile } = useProfile();
   const {
     steps, calories, distanceKm, goal, sessionSecs,
-    isTracking, dataSource, lastSyncAt,
+    isTracking, dataSource, lastSyncAt, weeklySteps, refreshHistory,
     setGoal, startTracking, stopTracking, resetToday,
   } = useSteps();
+
+  const todayStr = () => new Date().toISOString().slice(0, 10);
+
+  useEffect(() => {
+    refreshHistory().catch(() => {});
+  }, [refreshHistory, steps]);
 
   // Derived from new API
   const usingFallback = dataSource === 'SENSOR_FUSION';
@@ -172,23 +178,23 @@ export default function StepIntelligenceScreen() {
 
       {/* Header */}
       <LinearGradient colors={colors.headerGradient} style={s.header}>
-        <TouchableOpacity style={[s.iconBtn, { backgroundColor: colors.border }]} onPress={() => router.back()}>
-          <Ionicons name="arrow-back" size={22} color={colors.text} />
+        <TouchableOpacity style={[s.iconBtn, { backgroundColor: "rgba(255, 255, 255, 0.12)" }]} onPress={() => router.back()}>
+          <Ionicons name="arrow-back" size={22} color="#ffffff" />
         </TouchableOpacity>
         <View style={{ alignItems: "center" }}>
-          <Text style={[s.headerTitle, { color: colors.text }]}>STEP INTELLIGENCE</Text>
-          <Text style={[s.headerSub, { color: colors.subText }]}>
+          <Text style={[s.headerTitle, { color: "#ffffff" }]}>STEP INTELLIGENCE</Text>
+          <Text style={[s.headerSub, { color: "rgba(255, 255, 255, 0.7)" }]}>
             {new Date().toLocaleDateString("en-IN", { weekday: "short", day: "numeric", month: "short" })}
           </Text>
         </View>
         <TouchableOpacity
-          style={[s.iconBtn, { backgroundColor: colors.border }]}
+          style={[s.iconBtn, { backgroundColor: "rgba(255, 255, 255, 0.12)" }]}
           onPress={() => Alert.alert("Reset Today", "Clear today's steps?", [
             { text: "Cancel", style: "cancel" },
             { text: "Reset",  style: "destructive", onPress: resetToday },
           ])}
         >
-          <Ionicons name="refresh" size={20} color={colors.subText} />
+          <Ionicons name="refresh" size={20} color="#ffffff" />
         </TouchableOpacity>
       </LinearGradient>
 
@@ -351,6 +357,62 @@ export default function StepIntelligenceScreen() {
           {isTracking && (
             <View style={[s.progressBg, { backgroundColor: colors.border, marginTop: 10 }]}>
               <View style={[s.progressFill, { width: `${Math.min(100, (sedMins / 60) * 100)}%`, backgroundColor: sedColor }]} />
+            </View>
+          )}
+        </View>
+
+        {/* Weekly steps history */}
+        <View style={[s.card, { backgroundColor: colors.card }]}>
+          <Text style={[s.cardTitle, { color: colors.subText }]}>WEEKLY HISTORY</Text>
+          {weeklySteps && weeklySteps.length > 0 ? (
+            <View>
+              {/* Stats Summary */}
+              <View style={s.historySummaryRow}>
+                <View>
+                  <Text style={[s.historySummaryVal, { color: colors.text }]}>
+                    {Math.round(weeklySteps.reduce((acc, curr) => acc + curr.steps, 0)).toLocaleString("en-IN")}
+                  </Text>
+                  <Text style={[s.historySummaryLbl, { color: colors.subText }]}>Total Steps (7d)</Text>
+                </View>
+                <View style={{ alignItems: "flex-end" }}>
+                  <Text style={[s.historySummaryVal, { color: colors.text }]}>
+                    {Math.round(weeklySteps.reduce((acc, curr) => acc + curr.steps, 0) / weeklySteps.length).toLocaleString("en-IN")}
+                  </Text>
+                  <Text style={[s.historySummaryLbl, { color: colors.subText }]}>Daily Average</Text>
+                </View>
+              </View>
+
+              {/* Bar Chart */}
+              <View style={s.chartContainer}>
+                {weeklySteps.map((day, idx) => {
+                  const maxSteps = Math.max(...weeklySteps.map(d => d.steps), 1000);
+                  const barHeight = Math.max(10, (day.steps / maxSteps) * 80);
+                  const isToday = day.date === todayStr();
+                  const dayName = new Date(day.date).toLocaleDateString("en-IN", { weekday: "short" }).toUpperCase();
+
+                  return (
+                    <View key={day.date} style={s.chartColumn}>
+                      <Text style={[s.chartBarValue, { color: isToday ? zone.color : colors.subText }]}>
+                        {day.steps >= 1000 ? `${(day.steps / 1000).toFixed(1)}k` : day.steps}
+                      </Text>
+                      <View style={[s.chartBarBg, { backgroundColor: colors.border }]}>
+                        <LinearGradient
+                          colors={isToday ? [zone.color, zone.color + "88"] : ["#6366f1", "#4f46e5"]}
+                          style={[s.chartBarFill, { height: barHeight }]}
+                        />
+                      </View>
+                      <Text style={[s.chartDayLabel, { color: isToday ? zone.color : colors.subText, fontWeight: isToday ? "bold" : "normal" }]}>
+                        {dayName}
+                      </Text>
+                    </View>
+                  );
+                })}
+              </View>
+            </View>
+          ) : (
+            <View style={s.noHistoryContainer}>
+              <Ionicons name="stats-chart-outline" size={24} color={colors.subText} style={{ marginBottom: 8 }} />
+              <Text style={[s.noHistoryText, { color: colors.subText }]}>No step history recorded yet.</Text>
             </View>
           )}
         </View>
@@ -556,4 +618,17 @@ const s = StyleSheet.create({
   cancelText:      { fontWeight: "700" },
   saveBtn:         { flex: 1, padding: 15, borderRadius: 18, alignItems: "center" },
   saveText:        { fontWeight: "900" },
+
+  // Weekly history styles
+  historySummaryRow: { flexDirection: "row", justifyContent: "space-between", marginBottom: 16, paddingHorizontal: 4 },
+  historySummaryVal: { fontSize: 18, fontWeight: "900" },
+  historySummaryLbl: { fontSize: 9, letterSpacing: 0.5, marginTop: 2 },
+  chartContainer: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-end", height: 110, paddingTop: 10, paddingBottom: 5 },
+  chartColumn: { alignItems: "center", flex: 1 },
+  chartBarValue: { fontSize: 8, fontWeight: "700", marginBottom: 4 },
+  chartBarBg: { width: 14, height: 80, borderRadius: 7, overflow: "hidden", justifyContent: "flex-end" },
+  chartBarFill: { width: "100%", borderRadius: 7 },
+  chartDayLabel: { fontSize: 8, marginTop: 6, letterSpacing: 0.5 },
+  noHistoryContainer: { alignItems: "center", justifyContent: "center", paddingVertical: 24 },
+  noHistoryText: { fontSize: 12 },
 });

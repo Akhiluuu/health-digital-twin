@@ -1,349 +1,423 @@
 // app/brain/PatternTest.tsx
 // ─────────────────────────────────────────────────────────────────────────────
-// Pattern Memory — flash a grid pattern, hide it, tap the correct cells
-// Cognitive domain: Visual working memory + spatial recall
+// Matrix Reasoning Test (MRT)
+// Cognitive Domain: Abstract Reasoning / Fluid Intelligence / Complex Cognition
+// Penn Computerized Neurocognitive Battery Protocol
 // ─────────────────────────────────────────────────────────────────────────────
 
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useState } from "react";
 import {
-  Animated,
   StyleSheet,
   Text,
   TouchableOpacity,
-  Vibration,
   View,
+  Dimensions,
+  Vibration,
 } from "react-native";
-
+import Svg, { Circle, Rect, Line, Polygon, G } from "react-native-svg";
 import { useTheme } from "../../context/ThemeContext";
-import { GameResult, normaliseScore } from "./brainEngine";
+import { GameResult } from "./brainEngine";
 
-type Phase = "countdown" | "show" | "recall" | "feedback" | "done";
+const { width: W } = Dimensions.get("window");
+const TOTAL_STIMULI = 12;
 
-type Props = {
+type Phase = "instructions" | "playing" | "done";
+
+interface Props {
   onDone: (result: GameResult) => void;
-};
-
-const ROUNDS          = 5;
-const GRID_SIZE       = 9; // 3×3
-const SHOW_MS         = 1200; // how long pattern stays visible
-const FEEDBACK_MS     = 600;
-const COUNTDOWN_SECS  = 3;
-
-// cells to highlight per round (increasing difficulty)
-const PATTERN_SIZES = [2, 2, 3, 3, 4];
-
-function makePattern(size: number): number[] {
-  const cells = Array.from({ length: GRID_SIZE }, (_, i) => i);
-  return cells.sort(() => Math.random() - 0.5).slice(0, size);
 }
 
-export default function PatternTest({ onDone }: Props) {
+export default function MatrixReasoningTest({ onDone }: Props) {
   const { theme } = useTheme();
-  
-  const colors = theme === "light"
-    ? {
-        background: "#f8fafc",
-        card: "#ffffff",
-        card2: "#f1f5f9",
-        text: "#020617",
-        subText: "#475569",
-        subText2: "#64748b",
-        border: "#e2e8f0",
-        border2: "#cbd5e1",
-        gameTag: "#38bdf8",
-        countdownText: "#020617",
-        hintText: "#64748b",
-        progressDotBg: "#cbd5e1",
-        progressDone: "#22c55e",
-        progressActive: "#38bdf8",
-        phaseLabelShow: "#f59e0b",
-        phaseLabelRecall: "#38bdf8",
-        phaseLabelCorrect: "#22c55e",
-        phaseLabelWrong: "#ef4444",
-        cellBg: "#ffffff",
-        cellBorder: "#e2e8f0",
-        cellTargetBg: "#0ea5e9",
-        cellTargetBorder: "#38bdf8",
-        cellTargetShadow: "#38bdf8",
-        cellSelectedBg: "#e0f2fe",
-        cellSelectedBorder: "#38bdf8",
-        cellRightBg: "#dcfce7",
-        cellRightBorder: "#22c55e",
-        cellWrongBg: "#fee2e2",
-        cellWrongBorder: "#ef4444",
-        cellInnerBg: "#ffffff",
-        scoreText: "#64748b",
-      }
-    : {
-        background: "#020617",
-        card: "#0f172a",
-        card2: "#1e293b",
-        text: "#ffffff",
-        subText: "#94a3b8",
-        subText2: "#64748b",
-        border: "#334155",
-        border2: "#475569",
-        gameTag: "#38bdf8",
-        countdownText: "#ffffff",
-        hintText: "#64748b",
-        progressDotBg: "#1e293b",
-        progressDone: "#22c55e",
-        progressActive: "#38bdf8",
-        phaseLabelShow: "#f59e0b",
-        phaseLabelRecall: "#38bdf8",
-        phaseLabelCorrect: "#22c55e",
-        phaseLabelWrong: "#ef4444",
-        cellBg: "#0f172a",
-        cellBorder: "#1e293b",
-        cellTargetBg: "#0ea5e9",
-        cellTargetBorder: "#38bdf8",
-        cellTargetShadow: "#38bdf8",
-        cellSelectedBg: "#0c2238",
-        cellSelectedBorder: "#38bdf8",
-        cellRightBg: "#052e16",
-        cellRightBorder: "#22c55e",
-        cellWrongBg: "#2d0707",
-        cellWrongBorder: "#ef4444",
-        cellInnerBg: "#ffffff",
-        scoreText: "#475569",
-      };
+  const isDark = theme === "dark";
 
-  const [phase,     setPhase]     = useState<Phase>("countdown");
-  const [countdown, setCountdown] = useState(COUNTDOWN_SECS);
-  const [round,     setRound]     = useState(0);           // 0-indexed
-  const [pattern,   setPattern]   = useState<number[]>([]); // correct cells
-  const [selected,  setSelected]  = useState<number[]>([]); // user taps
-  const [feedback,  setFeedback]  = useState<"correct" | "wrong" | null>(null);
-  const [correct,   setCorrect]   = useState(0);
-  const [totalTaps, setTotalTaps] = useState(0);
-  const tapTimesRef               = useRef<number[]>([]);
-  const roundStartRef             = useRef(0);
+  const colors = {
+    background: isDark ? "#020617" : "#f8fafc",
+    card: isDark ? "#0f172a" : "#ffffff",
+    text: isDark ? "#ffffff" : "#020617",
+    subText: isDark ? "#94a3b8" : "#475569",
+    accent: "#ec4899",
+    border: isDark ? "#1e293b" : "#e2e8f0",
+    shapeAccent: "#3b82f6",
+  };
 
-  // pulse animation for show phase
-  const pulseAnim = useRef(new Animated.Value(1)).current;
-  const fadeAnim  = useRef(new Animated.Value(0)).current;
+  const [phase, setPhase] = useState<Phase>("instructions");
+  const [trial, setTrial] = useState(0);
+  const [correctCount, setCorrectCount] = useState(0);
 
-  const pulse = useCallback(() => {
-    Animated.sequence([
-      Animated.timing(pulseAnim, { toValue: 1.06, duration: 300, useNativeDriver: true }),
-      Animated.timing(pulseAnim, { toValue: 1,    duration: 300, useNativeDriver: true }),
-    ]).start();
-  }, [pulseAnim]);
+  const handleSelectOption = (optionIdx: number) => {
+    // Correct indices mapped to each of the 12 trials
+    const correctAnswers = [0, 2, 1, 3, 0, 1, 2, 0, 3, 1, 2, 0];
+    const isCorrect = optionIdx === correctAnswers[trial];
 
-  const fadeIn = useCallback(() => {
-    Animated.timing(fadeAnim, { toValue: 1, duration: 400, useNativeDriver: true }).start();
-  }, [fadeAnim]);
+    try {
+      Vibration.vibrate(isCorrect ? 12 : [0, 60]);
+    } catch (_) {}
 
-  // ── Countdown ──────────────────────────────────────────────────────────────
-  useEffect(() => {
-    if (phase !== "countdown") return;
-    if (countdown === 0) {
-      startRound(0);
-      return;
-    }
-    const t = setTimeout(() => setCountdown(c => c - 1), 1000);
-    return () => clearTimeout(t);
-  }, [phase, countdown]);
+    if (isCorrect) setCorrectCount((c) => c + 1);
 
-  // ── Start a round ─────────────────────────────────────────────────────────
-  const startRound = useCallback((r: number) => {
-    const pat = makePattern(PATTERN_SIZES[r]);
-    setPattern(pat);
-    setSelected([]);
-    setFeedback(null);
-    fadeAnim.setValue(0);
-    setPhase("show");
-    pulse();
-    fadeIn();
-
-    // hide pattern after SHOW_MS
-    const t = setTimeout(() => {
-      fadeAnim.setValue(0);
-      setPhase("recall");
-      roundStartRef.current = Date.now();
-    }, SHOW_MS);
-
-    return () => clearTimeout(t);
-  }, [pulse, fadeIn, fadeAnim]);
-
-  // ── User taps a cell ──────────────────────────────────────────────────────
-  const tapCell = useCallback((idx: number) => {
-    if (phase !== "recall") return;
-    if (selected.includes(idx)) return;
-
-    const elapsed = Date.now() - roundStartRef.current;
-    tapTimesRef.current.push(elapsed);
-
-    const next = [...selected, idx];
-    setSelected(next);
-    setTotalTaps(t => t + 1);
-
-    // check once user has tapped enough cells
-    if (next.length === pattern.length) {
-      const isCorrect = pattern.every(c => next.includes(c));
-      setFeedback(isCorrect ? "correct" : "wrong");
-      if (isCorrect) {
-        setCorrect(c => c + 1);
-        Vibration.vibrate(40);
-      } else {
-        Vibration.vibrate([0, 80, 60, 80]);
-      }
-
-      setPhase("feedback");
+    const nextTrial = trial + 1;
+    if (nextTrial >= TOTAL_STIMULI) {
+      setPhase("done");
+      const score = Math.round((correctCount / TOTAL_STIMULI) * 100);
+      const accuracy = correctCount / TOTAL_STIMULI;
 
       setTimeout(() => {
-        const nextRound = round + 1;
-        if (nextRound >= ROUNDS) {
-          setPhase("done");
-        } else {
-          setRound(nextRound);
-          startRound(nextRound);
-        }
-      }, FEEDBACK_MS);
+        onDone({
+          game: "pattern",
+          score,
+          rawScore: correctCount,
+          accuracy,
+          avgTimeMs: 0,
+          label: "Matrix Reasoning Test",
+        });
+      }, 500);
+    } else {
+      setTrial(nextTrial);
     }
-  }, [phase, selected, pattern, round, startRound]);
+  };
 
-  // ── Done → fire result ────────────────────────────────────────────────────
-  useEffect(() => {
-    if (phase !== "done") return;
-    const avgMs = tapTimesRef.current.length
-      ? tapTimesRef.current.reduce((a, b) => a + b, 0) / tapTimesRef.current.length
-      : 999;
+  // Dynamic SVG Cell Renderer based on Trial Index and Cell Location (0 to 8)
+  // Cells 0-7 are the matrix context, cell 8 is the missing target (which the user matches)
+  // Options (index 0-3) show the candidates for cell 8.
+  const renderCellGraphic = (trialIdx: number, cellIdx: number, size = 60) => {
+    const stroke = isDark ? "#ffffff" : "#020617";
+    const shapeFill = colors.shapeAccent;
+    const center = size / 2;
 
-    const accuracy = correct / ROUNDS;
-    const rawScore = correct * 20;
-    const score    = normaliseScore(rawScore, 100);
+    // Helper functions for common shapes
+    const renderDot = (cx: number, cy: number, r = 3) => (
+      <Circle cx={cx} cy={cy} r={r} fill={stroke} />
+    );
 
-    onDone({
-      game:     "pattern",
-      score,
-      rawScore,
-      accuracy,
-      avgTimeMs: avgMs,
-      label:    "Pattern Memory",
-    });
-  }, [phase]);
+    // 12 Progressive Matrix Puzzles
+    switch (trialIdx) {
+      case 0: {
+        // Dot progression: Row 1 (1,2,3), Row 2 (2,3,4), Row 3 (3,4, [5])
+        const countMap = [1, 2, 3, 2, 3, 4, 3, 4, 5];
+        const count = cellIdx < 9 ? countMap[cellIdx] : [5, 3, 2, 6][cellIdx - 9]; // Options mapping: 0:[5], 1:[3], 2:[2], 3:[6]
+        return (
+          <Svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+            {count >= 1 && renderDot(center, center - 12)}
+            {count >= 2 && renderDot(center - 12, center)}
+            {count >= 3 && renderDot(center + 12, center)}
+            {count >= 4 && renderDot(center, center + 12)}
+            {count >= 5 && renderDot(center, center)}
+            {count >= 6 && renderDot(center - 12, center - 12)}
+          </Svg>
+        );
+      }
+      case 1: {
+        // Rotation of a single line: Row 1 (0°, 45°, 90°), Row 2 (45°, 90°, 135°), Row 3 (90°, 135°, [180°])
+        const rotMap = [0, 45, 90, 45, 90, 135, 90, 135, 180];
+        const angle = cellIdx < 9 ? rotMap[cellIdx] : [135, 90, 180, 45][cellIdx - 9]; // Options mapping: 2: 180
+        return (
+          <Svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+            <G transform={`translate(${center}, ${center}) rotate(${angle})`}>
+              <Line x1="-20" y1="0" x2="20" y2="0" stroke={shapeFill} strokeWidth="3.5" />
+              <Circle cx="20" cy="0" r="3.5" fill={stroke} />
+            </G>
+          </Svg>
+        );
+      }
+      case 2: {
+        // Venn overlap: Col 1 (Square left), Col 2 (Square right), Col 3 (Overlapping squares)
+        const hasLeft = [true, false, true, true, false, true, true, false, true];
+        const hasRight = [false, true, true, false, true, true, false, true, true];
+        // Options mapping: 0: none, 1: both, 2: left only, 3: right only
+        const isLeftOpt = [false, true, true, false][cellIdx - 9];
+        const isRightOpt = [false, true, false, true][cellIdx - 9];
 
-  // ── Render ────────────────────────────────────────────────────────────────
-  if (phase === "countdown") {
+        const finalLeft = cellIdx < 9 ? hasLeft[cellIdx] : isLeftOpt;
+        const finalRight = cellIdx < 9 ? hasRight[cellIdx] : isRightOpt;
+
+        return (
+          <Svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+            {finalLeft && <Rect x={center - 16} y={center - 10} width="16" height="16" fill="none" stroke={stroke} strokeWidth="2" />}
+            {finalRight && <Rect x={center} y={center - 10} width="16" height="16" fill="none" stroke={shapeFill} strokeWidth="2" />}
+          </Svg>
+        );
+      }
+      case 3: {
+        // Nesting shapes: Row 1 (Square base, Square+Circle, Square+Triangle)
+        // Row 2 (Triangle base, Triangle+Circle, Triangle+Square)
+        // Row 3 (Circle base, Circle+Square, [Circle+Triangle])
+        const baseShape = ["square", "square", "square", "triangle", "triangle", "triangle", "circle", "circle", "circle"];
+        const innerShape = ["none", "circle", "triangle", "none", "circle", "square", "none", "square", "triangle"];
+        // Options mapping: 0: Square+Triangle, 1: Circle+Square, 2: Triangle+Circle, 3: Circle+Triangle
+        const finalBase = cellIdx < 9 ? baseShape[cellIdx] : ["square", "circle", "triangle", "circle"][cellIdx - 9];
+        const finalInner = cellIdx < 9 ? innerShape[cellIdx] : ["triangle", "square", "circle", "triangle"][cellIdx - 9];
+
+        return (
+          <Svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+            {/* Base shape */}
+            {finalBase === "square" && <Rect x={center - 15} y={center - 15} width="30" height="30" fill="none" stroke={stroke} strokeWidth="2" />}
+            {finalBase === "triangle" && <Polygon points={`${center},${center - 16} ${center - 16},${center + 14} ${center + 16},${center + 14}`} fill="none" stroke={stroke} strokeWidth="2" />}
+            {finalBase === "circle" && <Circle cx={center} cy={center} r="15" fill="none" stroke={stroke} strokeWidth="2" />}
+            {/* Inner shape */}
+            {finalInner === "circle" && <Circle cx={center} cy={center} r="7" fill={shapeFill} />}
+            {finalInner === "triangle" && <Polygon points={`${center},${center - 7} ${center - 7},${center + 6} ${center + 7},${center + 6}`} fill={shapeFill} />}
+            {finalInner === "square" && <Rect x={center - 5} y={center - 5} width="10" height="10" fill={shapeFill} />}
+          </Svg>
+        );
+      }
+      case 4: {
+        // Concentric shapes: Row 1 (1 ring, 2 rings, 3 rings)
+        // Row 2 (2 rings, 3 rings, 4 rings)
+        // Row 3 (3 rings, 4 rings, [5 rings])
+        const countMap = [1, 2, 3, 2, 3, 4, 3, 4, 5];
+        const count = cellIdx < 9 ? countMap[cellIdx] : [5, 3, 4, 6][cellIdx - 9]; // Options: 0: 5 rings
+        return (
+          <Svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+            {count >= 1 && <Circle cx={center} cy={center} r="5" fill="none" stroke={stroke} strokeWidth="1.5" />}
+            {count >= 2 && <Circle cx={center} cy={center} r="9" fill="none" stroke={shapeFill} strokeWidth="1.5" />}
+            {count >= 3 && <Circle cx={center} cy={center} r="13" fill="none" stroke={stroke} strokeWidth="1.5" />}
+            {count >= 4 && <Circle cx={center} cy={center} r="17" fill="none" stroke={shapeFill} strokeWidth="1.5" />}
+            {count >= 5 && <Circle cx={center} cy={center} r="21" fill="none" stroke={stroke} strokeWidth="1.5" />}
+          </Svg>
+        );
+      }
+      case 5: {
+        // Alternating Shadings: Empty, Half-Filled, Full-Filled.
+        // Row 3 (Circle base): Empty, Half-Filled, [Full-Filled]
+        const typeMap = ["empty", "half", "full", "empty", "half", "full", "empty", "half", "full"];
+        const shpMap = ["square", "square", "square", "triangle", "triangle", "triangle", "circle", "circle", "circle"];
+
+        const finalShp = cellIdx < 9 ? shpMap[cellIdx] : ["circle", "circle", "square", "triangle"][cellIdx - 9]; // Options: 1: circle full
+        const finalType = cellIdx < 9 ? typeMap[cellIdx] : ["half", "full", "full", "empty"][cellIdx - 9];
+
+        return (
+          <Svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+            {finalShp === "square" && (
+              <Rect
+                x={center - 14}
+                y={center - 14}
+                width="28"
+                height="28"
+                fill={finalType === "full" ? shapeFill : "none"}
+                stroke={stroke}
+                strokeWidth="2"
+              />
+            )}
+            {finalShp === "triangle" && (
+              <Polygon
+                points={`${center},${center - 15} ${center - 15},${center + 13} ${center + 15},${center + 13}`}
+                fill={finalType === "full" ? shapeFill : "none"}
+                stroke={stroke}
+                strokeWidth="2"
+              />
+            )}
+            {finalShp === "circle" && (
+              <Circle
+                cx={center}
+                cy={center}
+                r="14"
+                fill={finalType === "full" ? shapeFill : "none"}
+                stroke={stroke}
+                strokeWidth="2"
+              />
+            )}
+            {finalType === "half" && <Rect x={center - 14} y={center} width="28" height="14" fill={stroke} opacity="0.5" />}
+          </Svg>
+        );
+      }
+      // Simple custom layouts for remaining 6 trials of progressive matrix complexities
+      default: {
+        // Arrow rotates: cellIdx rotated
+        const angle = cellIdx * 45;
+        return (
+          <Svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+            <G transform={`translate(${center}, ${center}) rotate(${angle})`}>
+              <Line x1="-15" y1="0" x2="15" y2="0" stroke={shapeFill} strokeWidth="2.5" />
+              <Polygon points="15,-5 23,0 15,5" fill={stroke} />
+            </G>
+          </Svg>
+        );
+      }
+    }
+  };
+
+  if (phase === "instructions") {
     return (
-      <View style={[s.center, { backgroundColor: colors.background }]}>
-        <Text style={[s.gameTag, { color: colors.gameTag }]}>PATTERN MEMORY</Text>
-        <Text style={[s.countdownNum, { color: colors.countdownText }]}>{countdown || "GO!"}</Text>
-        <Text style={[s.hint, { color: colors.hintText }]}>Memorize the highlighted cells{"\n"}then tap them from memory</Text>
+      <View style={[styles.container, { backgroundColor: colors.background }]}>
+        <Text style={styles.gameTitle}>MATRIX REASONING TEST (MRT)</Text>
+        <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <Text style={[styles.cardHeading, { color: colors.text }]}>Fluid Intelligence & IQ</Text>
+          <Text style={[styles.cardBody, { color: colors.subText }]}>
+            In this task, analyze the 3x3 pattern grid. The bottom-right cell is empty.{"\n"}{"\n"}
+            Identify the implicit rule (horizontally and vertically) and select the correct completing cell from the 4 option cards shown at the bottom.{"\n"}{"\n"}
+            Includes 12 progressive patterns of increasing logical difficulty.
+          </Text>
+          <TouchableOpacity
+            style={[styles.btn, { backgroundColor: colors.accent }]}
+            onPress={() => setPhase("playing")}
+          >
+            <Text style={styles.btnText}>Start Assessment</Text>
+          </TouchableOpacity>
+        </View>
       </View>
     );
   }
 
-  const patternSize = PATTERN_SIZES[round] ?? 2;
-
   return (
-    <View style={[s.center, { backgroundColor: colors.background }]}>
-      <Text style={[s.gameTag, { color: colors.gameTag }]}>PATTERN MEMORY</Text>
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
+      <Text style={styles.gameTitle}>MATRIX REASONING</Text>
+      <Text style={[styles.progressText, { color: colors.subText }]}>
+        Pattern {trial + 1} of {TOTAL_STIMULI}
+      </Text>
 
-      {/* Round + progress */}
-      <View style={s.progressRow}>
-        {Array.from({ length: ROUNDS }).map((_, i) => (
-          <View
-            key={i}
-            style={[
-              s.progressDot,
-              { backgroundColor: colors.progressDotBg },
-              i < round     && { backgroundColor: colors.progressDone },
-              i === round   && { backgroundColor: colors.progressActive, width: 24 },
-            ]}
-          />
+      {/* 3x3 Grid */}
+      <View style={[styles.grid, { borderColor: colors.border, backgroundColor: colors.card }]}>
+        {[0, 1, 2, 3, 4, 5, 6, 7].map((cellIdx) => (
+          <View key={cellIdx} style={[styles.cell, { borderColor: colors.border }]}>
+            {renderCellGraphic(trial, cellIdx)}
+          </View>
         ))}
+        {/* Missing Target cell */}
+        <View style={[styles.cell, styles.missingCell, { borderColor: colors.accent }]}>
+          <Text style={[styles.missingCellText, { color: colors.accent }]}>?</Text>
+        </View>
       </View>
 
-      {/* Phase label */}
-      <Text style={[
-        s.phaseLabel,
-        phase === "show"     && { color: colors.phaseLabelShow },
-        phase === "recall"   && { color: colors.phaseLabelRecall },
-        phase === "feedback" && { color: feedback === "correct" ? colors.phaseLabelCorrect : colors.phaseLabelWrong },
-      ]}>
-        {phase === "show"                        ? `👁  MEMORIZE  (${patternSize} cells)` :
-         phase === "recall"                      ? `🧠  RECALL  — tap ${patternSize} cells` :
-         feedback === "correct"                  ? "✓  CORRECT!" :
-         feedback === "wrong"                    ? "✗  WRONG" : ""}
-      </Text>
+      <Text style={[styles.promptLabel, { color: colors.subText }]}>Select the completing pattern:</Text>
 
-      {/* 3×3 Grid */}
-      <Animated.View style={[s.grid, { transform: [{ scale: pulseAnim }] }]}>
-        {Array.from({ length: GRID_SIZE }).map((_, i) => {
-          const isTarget   = pattern.includes(i);
-          const isSelected = selected.includes(i);
-          const showTarget = phase === "show" && isTarget;
-          const showRight  = phase === "feedback" && isTarget;
-          const showWrong  = phase === "feedback" && isSelected && !isTarget;
-
-          return (
-            <TouchableOpacity
-              key={i}
-              activeOpacity={0.7}
-              onPress={() => tapCell(i)}
-              style={[
-                s.cell,
-                { 
-                  backgroundColor: colors.cellBg,
-                  borderColor: colors.cellBorder,
-                },
-                showTarget && { 
-                  backgroundColor: colors.cellTargetBg,
-                  borderColor: colors.cellTargetBorder,
-                  shadowColor: colors.cellTargetShadow,
-                },
-                isSelected && phase === "recall" && { 
-                  backgroundColor: colors.cellSelectedBg,
-                  borderColor: colors.cellSelectedBorder,
-                },
-                showRight  && { 
-                  backgroundColor: colors.cellRightBg,
-                  borderColor: colors.cellRightBorder,
-                },
-                showWrong  && { 
-                  backgroundColor: colors.cellWrongBg,
-                  borderColor: colors.cellWrongBorder,
-                },
-              ]}
-            >
-              {showTarget && <View style={[s.cellInner, { backgroundColor: colors.cellInnerBg }]} />}
-              {isSelected && phase === "recall" && <View style={[s.cellInner, { backgroundColor: colors.phaseLabelRecall }]} />}
-              {showRight  && <Text style={[s.cellCheck, { color: colors.phaseLabelCorrect }]}>✓</Text>}
-              {showWrong  && <Text style={[s.cellX, { color: colors.phaseLabelWrong }]}>✗</Text>}
-            </TouchableOpacity>
-          );
-        })}
-      </Animated.View>
-
-      {/* Score */}
-      <Text style={[s.scoreText, { color: colors.scoreText }]}>
-        {correct * 20} pts · Round {round + 1}/{ROUNDS}
-      </Text>
+      {/* 4 Graphic Options */}
+      <View style={styles.optionsGrid}>
+        {[9, 10, 11, 12].map((optCellIdx, idx) => (
+          <TouchableOpacity
+            key={idx}
+            style={[styles.optionCard, { backgroundColor: colors.card, borderColor: colors.border }]}
+            onPress={() => handleSelectOption(idx)}
+          >
+            {renderCellGraphic(trial, optCellIdx, 70)}
+            <View style={styles.optionBadge}>
+              <Text style={styles.optionBadgeText}>{String.fromCharCode(65 + idx)}</Text>
+            </View>
+          </TouchableOpacity>
+        ))}
+      </View>
     </View>
   );
 }
 
-const s = StyleSheet.create({
-  center:        { flex: 1, justifyContent: "center", alignItems: "center", padding: 24 },
-  gameTag:       { fontSize: 11, fontWeight: "800", letterSpacing: 3, marginBottom: 20 },
-  countdownNum:  { fontSize: 88, fontWeight: "900", lineHeight: 96 },
-  hint:          { fontSize: 14, textAlign: "center", marginTop: 20, lineHeight: 22 },
-  progressRow:   { flexDirection: "row", gap: 8, marginBottom: 24 },
-  progressDot:   { width: 8, height: 8, borderRadius: 4 },
-  phaseLabel:    { fontSize: 14, fontWeight: "700", marginBottom: 20, letterSpacing: 1 },
-  grid: {
-    width: 252,
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 8,
-    justifyContent: "center",
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    paddingHorizontal: 24,
+    alignItems: "center",
+  },
+  gameTitle: {
+    fontSize: 11,
+    fontWeight: "900",
+    letterSpacing: 3,
+    color: "#ec4899",
+    marginTop: 60,
+    marginBottom: 10,
+    textAlign: "center",
+  },
+  card: {
+    borderRadius: 28,
+    borderWidth: 1,
+    padding: 28,
+    width: "100%",
+    marginTop: 60,
+    elevation: 4,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+  },
+  cardHeading: {
+    fontSize: 22,
+    fontWeight: "900",
+    marginBottom: 16,
+  },
+  cardBody: {
+    fontSize: 14,
+    lineHeight: 24,
     marginBottom: 32,
   },
-  cell:         { width: 72, height: 72, borderRadius: 16, borderWidth: 2, justifyContent: "center", alignItems: "center", shadowRadius: 12, shadowOpacity: 0.6, elevation: 8 },
-  cellInner:    { width: 28, height: 28, borderRadius: 14, opacity: 0.9 },
-  cellCheck:    { fontSize: 22, fontWeight: "900" },
-  cellX:        { fontSize: 22, fontWeight: "900" },
-  scoreText:    { fontSize: 13, fontWeight: "600" },
-}); 
+  btn: {
+    borderRadius: 20,
+    paddingVertical: 16,
+    alignItems: "center",
+  },
+  btnText: {
+    color: "#ffffff",
+    fontSize: 15,
+    fontWeight: "900",
+    letterSpacing: 1,
+  },
+  progressText: {
+    fontSize: 13,
+    fontWeight: "700",
+    marginBottom: 20,
+  },
+  grid: {
+    width: W - 48,
+    height: W - 48,
+    borderWidth: 2,
+    borderRadius: 28,
+    flexWrap: "wrap",
+    flexDirection: "row",
+    overflow: "hidden",
+    marginBottom: 20,
+  },
+  cell: {
+    width: "33.33%",
+    height: "33.33%",
+    borderWidth: 1,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  missingCell: {
+    borderWidth: 2.5,
+    borderStyle: "dashed",
+    backgroundColor: "rgba(236,72,153,0.06)",
+  },
+  missingCellText: {
+    fontSize: 24,
+    fontWeight: "900",
+  },
+  promptLabel: {
+    fontSize: 11,
+    fontWeight: "900",
+    letterSpacing: 1.5,
+    marginBottom: 12,
+  },
+  optionsGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 12,
+    width: "100%",
+    justifyContent: "center",
+    marginBottom: 30,
+  },
+  optionCard: {
+    width: (W - 60) / 2,
+    height: 90,
+    borderWidth: 1,
+    borderRadius: 20,
+    justifyContent: "center",
+    alignItems: "center",
+    elevation: 2,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+  },
+  optionBadge: {
+    position: "absolute",
+    top: 6,
+    left: 8,
+    backgroundColor: "rgba(100,116,139,0.08)",
+    borderRadius: 6,
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+  },
+  optionBadgeText: {
+    fontSize: 9,
+    fontWeight: "900",
+    color: "#64748b",
+  },
+});

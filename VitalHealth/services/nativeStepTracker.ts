@@ -66,6 +66,17 @@ export async function stopNativeTracking(): Promise<void> {
 }
 
 /**
+ * Reset native step tracking data.
+ */
+export async function resetNativeSteps(): Promise<void> {
+  if (Platform.OS !== 'android') return;
+  if (!StepTrackerModule) return;
+  if (typeof StepTrackerModule.resetSteps === 'function') {
+    StepTrackerModule.resetSteps();
+  }
+}
+
+/**
  * Get today's step count from native DB (Android) or Pedometer API (iOS).
  */
 export async function getTodayStepsNative(): Promise<{ steps: number; source: DataSource }> {

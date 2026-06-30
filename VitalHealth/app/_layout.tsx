@@ -123,8 +123,10 @@ const StepProviderWrapper: React.FC<{ children: React.ReactNode }> = ({
   children,
 }) => {
   const { activeProfile } = useFamily();
-  const weightKg = activeProfile?.weight ? parseFloat(String(activeProfile.weight).replace(/[^0-9.]/g, '')) : 70;
-  const heightCm = activeProfile?.height ? parseFloat(String(activeProfile.height).replace(/[^0-9.]/g, '')) : 170;
+  const parsedWeight = activeProfile?.weight ? parseFloat(String(activeProfile.weight).replace(/[^0-9.]/g, '')) : 70;
+  const parsedHeight = activeProfile?.height ? parseFloat(String(activeProfile.height).replace(/[^0-9.]/g, '')) : 170;
+  const weightKg = parsedWeight && parsedWeight > 0 && !isNaN(parsedWeight) ? parsedWeight : 70;
+  const heightCm = parsedHeight && parsedHeight > 0 && !isNaN(parsedHeight) ? parsedHeight : 170;
   return (
     <StepProvider weightKg={weightKg} heightCm={heightCm}>
       {children}

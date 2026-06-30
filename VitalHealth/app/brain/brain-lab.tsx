@@ -49,44 +49,44 @@ type ScreenState =
 const DOMAINS = {
   attention: {
     title: "Attention",
-    science: "Inhibitory & Selective Focus",
+    science: "Vigilance & Risk Decision Control",
     color: "#6366f1",
     icon: "🎯",
     tests: [
-      { id: "stroop", name: "Stroop Focus", desc: "Measures interference control and focus inhibition." },
-      { id: "cpt", name: "Sustained Attention", desc: "A-X Continuous Performance Test of focus endurance." },
-      { id: "flanker", name: "Selective Focus", desc: "Flanker task ignoring visual side distractors." },
+      { id: "cpt", name: "Psychomotor Vigilance Test", desc: "Vigilant attention reaction speed with millisecond feedback." },
+      { id: "flanker", name: "Balloon Analog Risk Test", desc: "Risk taking and decision making assessment with inflating balloons." },
+      { id: "symbol", name: "Digit-Symbol Substitution Task", desc: "Complex scanning and coordination matching numbers to symbols." },
     ],
   },
   memory: {
     title: "Memory",
-    science: "Working Memory Capacity",
+    science: "Visual Learning & Spatial Memory",
     color: "#a855f7",
     icon: "🧩",
     tests: [
-      { id: "pattern", name: "Pattern Recall", desc: "Grid-based visuospatial sequence memory." },
-      { id: "memory", name: "Working Memory", desc: "Numerical sequence span test." },
-      { id: "nback", name: "N-Back Recall", desc: "2-Back working memory retrieval task." },
+      { id: "memory", name: "Visual Object Learning Test", desc: "Assesses memory for complex shapes and figures." },
+      { id: "nback", name: "Fractal 2-Back", desc: "Working memory retrieval task using a sequence of 62 fractals." },
+      { id: "trail", name: "Line Orientation Test", desc: "Spatial judgment aligning movable lines parallel to target lines." },
     ],
   },
   processingSpeed: {
     title: "Processing Speed",
-    science: "Neural Response Time",
+    science: "Sensorimotor & Recognition Speed",
     color: "#0ea5e9",
     icon: "⚡",
     tests: [
-      { id: "reaction", name: "Reaction Speed", desc: "Visual stimulus reaction speed test." },
-      { id: "symbol", name: "Symbol Matching", desc: "Digit symbol substitution visual search speed." },
+      { id: "reaction", name: "Motor Praxis Task", desc: "Sensorimotor response speed clicking squares of decreasing size." },
+      { id: "stroop", name: "Emotion Recognition Task", desc: "Categorize emotional expressions across 40 trials." },
     ],
   },
   executiveFunction: {
     title: "Executive Function",
-    science: "Cognitive set-shifting",
+    science: "Abstraction & Fluid Reasoning",
     color: "#ec4899",
     icon: "🔀",
     tests: [
-      { id: "trail", name: "Trail Making", desc: "Part A & B set shifting connect the dots." },
-      { id: "switching", name: "Task Switching", desc: "Alternating verbal and numerical categorization." },
+      { id: "switching", name: "Abstract Matching", desc: "Cognitive flexibility categorizing shapes by shifting rules." },
+      { id: "pattern", name: "Matrix Reasoning Test", desc: "Raven's progressive matrix pattern completion." },
     ],
   },
 };
@@ -140,7 +140,7 @@ const getAchievementIcon = (id: string, size = 24, isUnlocked = false, activeCol
     case "perfect_score":
       return <Ionicons name="ribbon" size={size} color={color} />;
     default:
-      return <Ionicons name="award" size={size} color={color} />;
+      return <Ionicons name="star" size={size} color={color} />;
   }
 };
 

@@ -514,7 +514,7 @@ export default function AIHealthScreen() {
 
   // Chat
   const [messages, setMessages] = useState<Message[]>([
-    { id: "welcome", text: "👋 Connecting to Dr. Aria…", sender: "system", timestamp: new Date() },
+    { id: "welcome", text: "__welcome__", sender: "ai", timestamp: new Date() },
   ]);
   const [input, setInput]       = useState("");
   const [loading, setLoading]   = useState(false);
@@ -636,10 +636,10 @@ export default function AIHealthScreen() {
       const res  = await fetch(`${getAiBaseUrl()}/greeting`);
       if (!res.ok) throw new Error();
       const data = await res.json();
-      const text = data.message || "👋 Hello! I'm **Dr. Aria**, your personal health assistant. How may I help you today?";
+      const text = data.message || "Good to see you. I'm **Dr. Aria**, your health assistant.\n\nAsk me about your symptoms, medications, or lab results — I'll give you a clear, honest answer. What's on your mind?";
       setMessages([{ id: "welcome", text, sender: "ai", timestamp: new Date() }]);
     } catch {
-      setMessages([{ id: "welcome", text: "👋 Hello! I'm **Dr. Aria**, your personal health assistant. How can I help you today?", sender: "ai", timestamp: new Date() }]);
+      setMessages([{ id: "welcome", text: "Good to see you. I'm **Dr. Aria**, your health assistant.\n\nAsk me about your symptoms, medications, or lab results — I'll give you a clear, honest answer. What's on your mind?", sender: "ai", timestamp: new Date() }]);
     }
   };
 
@@ -797,10 +797,18 @@ export default function AIHealthScreen() {
   const getUserBubbleBorder = () => c.accent;
   const getAiBubbleBorder   = () => c.border;
 
-  // ── Message renderer ────────────────────────────────────────────────────────
+  const SUGGESTIONS = [
+    { label: "Heart health",    icon: "heart-outline" as const,        query: "How's my heart health?" },
+    { label: "My symptoms",     icon: "bandage-outline" as const,       query: "Explain my symptoms" },
+    { label: "Medications",     icon: "medkit-outline" as const,        query: "Check my medications" },
+    { label: "Lab results",     icon: "flask-outline" as const,         query: "Read my lab results" },
+  ];
 
-  const renderMessage = ({ item }: { item: Message }) => {
-    const isUser = item.sender === "user"; const isSystem = item.sender === "system";
+  const renderMessage = ({ item, index }: { item: Message; index: number }) => {
+    const isUser   = item.sender === "user";
+    const isSystem = item.sender === "system";
+    const isWelcome = item.id === "welcome" && !isUser;
+
     if (isSystem) return (
       <View style={styles.sysRow}>
         <View style={[styles.sysPill, { backgroundColor: c.card, borderColor: c.border }]}>
@@ -808,6 +816,60 @@ export default function AIHealthScreen() {
         </View>
       </View>
     );
+
+    // ── Premium Welcome Card ──────────────────────────────────────────────────
+    if (isWelcome) {
+      const displayText = item.text === "__welcome__"
+        ? "Good to see you. I'm **Dr. Aria**, your health assistant.\n\nAsk me about your symptoms, medications, or lab results — I'll give you a clear, honest answer."
+        : item.text;
+      return (
+        <View style={[styles.welcomeCard, { backgroundColor: c.card, borderColor: c.border }]}>
+          {/* Header row */}
+          <View style={styles.welcomeHeader}>
+            <View style={[styles.welcomeAvatar, { backgroundColor: theme === 'dark' ? '#1a2e5a' : '#eff6ff', borderColor: theme === 'dark' ? '#2a4070' : '#bfdbfe' }]}>
+              <Ionicons name="medkit" size={26} color={c.accent} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.welcomeName, { color: c.text }]}>Dr. Aria</Text>
+              <View style={styles.welcomeBadgeRow}>
+                <View style={[styles.welcomeBadge, { backgroundColor: connected ? '#10b98120' : '#ef444420' }]}>
+                  <View style={[styles.welcomeBadgeDot, { backgroundColor: connected ? '#10b981' : '#ef4444' }]} />
+                  <Text style={[styles.welcomeBadgeTxt, { color: connected ? '#10b981' : '#ef4444' }]}>
+                    {connected ? 'Online' : 'Connecting…'}
+                  </Text>
+                </View>
+                <Text style={[styles.welcomeRole, { color: c.sub }]}>AI Health Assistant</Text>
+              </View>
+            </View>
+          </View>
+
+          {/* Divider */}
+          <View style={[styles.welcomeDivider, { backgroundColor: c.border }]} />
+
+          {/* Greeting text */}
+          <RichText text={displayText} style={[styles.welcomeText, { color: c.text }]} />
+
+          {/* Suggestion chips */}
+          <Text style={[styles.welcomeChipLabel, { color: c.sub }]}>Suggested questions</Text>
+          <View style={styles.welcomeChips}>
+            {SUGGESTIONS.map(({ label, icon, query }) => (
+              <TouchableOpacity
+                key={label}
+                style={[styles.welcomeChip, { backgroundColor: theme === 'dark' ? '#0b1329' : '#f1f5f9', borderColor: c.border }]}
+                onPress={() => doSend(query)}
+              >
+                <Ionicons name={icon} size={12} color={c.accent} />
+                <Text style={[styles.welcomeChipTxt, { color: c.accent }]}>{label}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          <Text style={[styles.welcomeTime, { color: c.sub }]}>{fmtTime(item.timestamp.getTime())}</Text>
+        </View>
+      );
+    }
+
+    // ── Regular message bubble ────────────────────────────────────────────────
     const userTextColor = theme === "light" ? "#ffffff" : "#0b1329";
     const userTimeColor = theme === "light" ? "rgba(255,255,255,0.7)" : "rgba(11,19,41,0.7)";
 
@@ -815,7 +877,7 @@ export default function AIHealthScreen() {
       <View style={[styles.messageRow, { justifyContent: isUser ? "flex-end" : "flex-start" }]}>
         {!isUser && (
           <View style={[styles.avatar, { backgroundColor: theme === 'light' ? '#eff6ff' : '#1e294b', borderColor: c.border }]}>
-            <Text style={{ fontSize: 16 }}>👩‍⚕️</Text>
+            <Ionicons name="medkit" size={15} color={c.accent} />
           </View>
         )}
         <View style={[
@@ -945,6 +1007,24 @@ const styles = StyleSheet.create({
   ragBarTxt: { fontSize: 11, fontWeight: "600" },
   ragUploadBtn: { flexDirection: "row", alignItems: "center" },
   ragUploadTxt: { fontSize: 11, fontWeight: "600" },
+
+  // Welcome card
+  welcomeCard: { marginHorizontal: 4, marginBottom: 16, marginTop: 4, borderRadius: 20, borderWidth: 1, padding: 18, elevation: 2, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 8 },
+  welcomeHeader: { flexDirection: 'row', alignItems: 'center', gap: 14, marginBottom: 14 },
+  welcomeAvatar: { width: 54, height: 54, borderRadius: 27, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center' },
+  welcomeName: { fontSize: 18, fontWeight: '800', letterSpacing: 0.1 },
+  welcomeBadgeRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 3 },
+  welcomeBadge: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 20 },
+  welcomeBadgeDot: { width: 6, height: 6, borderRadius: 3 },
+  welcomeBadgeTxt: { fontSize: 11, fontWeight: '700' },
+  welcomeRole: { fontSize: 11, fontWeight: '500' },
+  welcomeDivider: { height: 1, marginBottom: 14 },
+  welcomeText: { fontSize: 15, lineHeight: 23, marginBottom: 16 },
+  welcomeChipLabel: { fontSize: 10, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 8 },
+  welcomeChips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 12 },
+  welcomeChip: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 12, paddingVertical: 7, borderRadius: 20, borderWidth: 1 },
+  welcomeChipTxt: { fontSize: 12, fontWeight: '600' },
+  welcomeTime: { fontSize: 10, alignSelf: 'flex-end' },
 
   messagesList: { paddingHorizontal: 16, paddingBottom: 24, paddingTop: 16 },
   messageRow: { flexDirection: "row", alignItems: "flex-end", marginBottom: 12 },
