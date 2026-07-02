@@ -28,7 +28,7 @@ _URGENT_KEYWORDS = frozenset([
 # Disclaimer appended to EVERY response
 DISCLAIMER = (
     "\n\n---\n"
-    "⚕️ *Dr. Aria is an AI assistant, not a licensed doctor. "
+    "*Dr. Aria is an AI assistant, not a licensed doctor. "
     "This information is for educational purposes only. "
     "Always consult a qualified healthcare professional for medical advice, "
     "diagnosis, or treatment.*"
@@ -36,7 +36,7 @@ DISCLAIMER = (
 
 # Appended ONLY when urgent keywords are detected
 URGENT_NOTICE = (
-    "\n\n🚨 **URGENT — Please seek immediate medical attention.** "
+    "\n\n**URGENT — Please seek immediate medical attention.** "
     "Some of the symptoms or values you mentioned may indicate a medical emergency. "
     "Call emergency services or go to the nearest hospital now. "
     "Do not wait."

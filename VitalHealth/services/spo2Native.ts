@@ -1,5 +1,7 @@
 import { NativeModules, NativeEventEmitter, Platform } from "react-native";
 
+import { warn, error } from "../utils/logger";
+
 const { Spo2Module } = NativeModules;
 
 // Interface for SpO2 measurement frames
@@ -46,11 +48,11 @@ export function isNativeSpo2Available(): boolean {
 // Start native CameraX SpO2 measurement loop
 export function startSpo2Measurement(uid: string = "self"): void {
   if (Platform.OS !== "android") {
-    console.warn("SpO2 camera measurement is only supported on Android");
+    warn("SpO2 camera measurement is only supported on Android");
     return;
   }
   if (!Spo2Module) {
-    console.error("Spo2Module not linked/compiled in this build");
+    error("Spo2Module not linked/compiled in this build");
     return;
   }
   Spo2Module.startMeasurement(uid);

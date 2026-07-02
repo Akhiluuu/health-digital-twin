@@ -36,6 +36,8 @@ import type {
   VitalsTrendResponse,
   CaloricBalanceResponse,
 } from '../services/biogears';
+import { log, warn, error } from "../utils/logger";
+
 import {
   saveSimulationResult,
   getLastSimulation,
@@ -313,7 +315,7 @@ function detectConflicts(
  * Helper to build step exercise event for BioGears simulation / caloric balance
  */
 function buildStepExerciseEvent(steps: number, weightKg: number, heightCm: number): BiogearsHealthEvent | null {
-  if (steps <= 0) return null;
+  if (isNaN(steps) || steps <= 0 || isNaN(weightKg) || weightKg <= 0 || isNaN(heightCm) || heightCm <= 0) return null;
   const strideM = 0.413 * (heightCm / 100);
   const distanceM = steps * strideM;
   // Assume a walking speed of 1.34 m/s (3 mph)
@@ -345,26 +347,32 @@ function buildStepExerciseEvent(steps: number, weightKg: number, heightCm: numbe
  * Computes a local estimate of Basal Metabolic Rate and daily calorie burn
  */
 function computeLocalCaloricBalanceFallback(profile: any, todayEvents: RoutineEvent[], steps: number): CaloricBalanceResponse {
-  const weightVal = profile ? parseFloat(String(profile.weight || '').replace(/[^0-9.]/g, '')) : 70;
-  const heightVal = profile ? parseFloat(String(profile.height || '').replace(/[^0-9.]/g, '')) : 170;
-  const ageVal = profile ? parseInt(String(profile.age || '').replace(/[^0-9]/g, '')) : 30;
+  const parsedSteps = isNaN(steps) || steps < 0 ? 0 : steps;
+  const weightVal = parseKg(profile?.weight);
+  const heightVal = parseCm(profile?.height);
+  const ageVal = parseAge(profile?.dateOfBirth || profile?.age);
   const isMale = (profile?.gender || 'male').toLowerCase() === 'male';
 
+  const safeWeight = isNaN(weightVal) || weightVal <= 0 ? 70.0 : weightVal;
+  const safeHeight = isNaN(heightVal) || heightVal <= 0 ? 170.0 : heightVal;
+  const safeAge = isNaN(ageVal) || ageVal <= 0 ? 30 : ageVal;
+
   // Mifflin-St Jeor BMR
-  let bmr = 10 * weightVal + 6.25 * heightVal - 5 * ageVal;
+  let bmr = 10 * safeWeight + 6.25 * safeHeight - 5 * safeAge;
   if (isMale) {
     bmr += 5;
   } else {
     bmr -= 161;
   }
   bmr = Math.round(bmr);
+  if (isNaN(bmr) || bmr <= 0) bmr = 1500;
 
   // Exercise Kcal
   let exerciseKcal = 0;
   let mealKcal = 0;
 
   // Add step exercise kcal
-  const stepEvent = buildStepExerciseEvent(steps, weightVal, heightVal);
+  const stepEvent = buildStepExerciseEvent(parsedSteps, safeWeight, safeHeight);
   const eventsForBurn: any[] = [...todayEvents];
   if (stepEvent) {
     eventsForBurn.push({
@@ -377,23 +385,32 @@ function computeLocalCaloricBalanceFallback(profile: any, todayEvents: RoutineEv
   }
 
   eventsForBurn.forEach(ev => {
+    const rawVal = parseFloat(String(ev.value));
+    const val = isNaN(rawVal) ? 0.5 : rawVal;
+    const rawDur = parseFloat(String(ev.duration_seconds));
+    const dur = isNaN(rawDur) || rawDur <= 0 ? 1800 : rawDur;
+
     if (ev.event_type === 'exercise') {
-      const mets = 3 + (ev.value || 0.5) * 9;
-      const durHrs = (ev.duration_seconds || 1800) / 3600;
-      exerciseKcal += mets * weightVal * durHrs;
+      // METs approx
+      const mets = 3 + Math.max(0.05, Math.min(1.0, val)) * 9;
+      const durHrs = dur / 3600;
+      exerciseKcal += mets * safeWeight * durHrs;
     } else if (ev.event_type === 'meal') {
-      mealKcal += (ev.value || 0);
+      mealKcal += isNaN(rawVal) ? 0 : rawVal;
     }
   });
+
+  if (isNaN(exerciseKcal) || exerciseKcal < 0) exerciseKcal = 0;
+  if (isNaN(mealKcal) || mealKcal < 0) mealKcal = 0;
 
   const totalBurn = Math.round(bmr + exerciseKcal);
   const balance = Math.round(mealKcal - totalBurn);
 
   return {
-    bmr_kcal_day: bmr,
-    estimated_burn_kcal: totalBurn,
-    meal_intake_kcal: Math.round(mealKcal),
-    caloric_balance: balance,
+    bmr_kcal_day: isNaN(bmr) ? 1500 : bmr,
+    estimated_burn_kcal: isNaN(totalBurn) ? 2000 : totalBurn,
+    meal_intake_kcal: isNaN(mealKcal) ? 0 : Math.round(mealKcal),
+    caloric_balance: isNaN(balance) ? -2000 : balance,
     balance_status: balance > 100 ? "Surplus" : (balance < -100 ? "Deficit" : "Balanced"),
     note: "Local estimated balance. Sync with engine for physiological details.",
   };
@@ -481,7 +498,7 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
     } catch (err: any) {
       // Silently ignore network errors — the substance list is non-critical
       // and the server may simply not be reachable on this network.
-      console.log('[BioGears] Substances unavailable (server unreachable) — will use defaults.');
+      log('[BioGears] Substances unavailable (server unreachable) — will use defaults.');
     } finally {
       substanceFetchingRef.current = false;
     }
@@ -600,7 +617,7 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
 
           // Self-heal SQLite simulation_history table from synced sessions
           if (syncedSessions && syncedSessions.length > 0) {
-            console.log(`[BiogearsTwin] Self-healing SQLite simulation_history with ${syncedSessions.length} sessions`);
+            log(`[BiogearsTwin] Self-healing SQLite simulation_history with ${syncedSessions.length} sessions`);
             for (const s of syncedSessions) {
               if (!active) return;
               if (s.vitals_snapshot) {
@@ -628,7 +645,7 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
                 if (active) setLastAnomalies(labels.map(l => ({ label: l, severity: 'warning', value: 0, normal_range: '' })));
               } catch { /* ignore */ }
             }
-            console.log('[BiogearsTwin] Loaded cached vitals from local DB (offline fallback)');
+            log('[BiogearsTwin] Loaded cached vitals from local DB (offline fallback)');
           } else {
             setLastVitals(null);
             setLastAnomalies([]);
@@ -637,7 +654,7 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
           if (!active) return;
           await refreshAnalytics(true, syncedSessions);
         } catch (e) {
-          console.error('[BiogearsTwin] Sync & load error:', e);
+          error('[BiogearsTwin] Sync & load error:', e);
         } finally {
           if (active) setIsTwinLoading(false);
         }
@@ -648,7 +665,7 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
 
     const appStateSub = AppState.addEventListener('change', (nextAppState) => {
       if (nextAppState === 'active') {
-        console.log('[BiogearsTwin] App foregrounded. Resuming/checking active job...');
+        log('[BiogearsTwin] App foregrounded. Resuming/checking active job...');
         resumeActiveJobRef.current();
       }
     });
@@ -707,10 +724,10 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
             await AsyncStorage.setItem('biogears_active_job_user_id', jobUserId);
             await AsyncStorage.setItem('biogears_active_job_owner_uid', jobOwnerUid);
             await AsyncStorage.setItem('biogears_active_job_start_time', String(startTime));
-            console.log(`[BiogearsTwin] Restored active job from backend: ${jobId} for user: ${jobUserId}`);
+            log(`[BiogearsTwin] Restored active job from backend: ${jobId} for user: ${jobUserId}`);
           }
         } catch (apiErr) {
-          console.log('[BiogearsTwin] Failed to fetch active job from backend:', apiErr);
+          log('[BiogearsTwin] Failed to fetch active job from backend:', apiErr);
         }
       }
 
@@ -739,7 +756,7 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
       const statusRes = await BiogearsAPI.getJobStatus(jobId);
       
       if (statusRes.status === 'running' || statusRes.status === 'pending') {
-        console.log(`[BiogearsTwin] Resuming active job: ${jobId} for user: ${jobUserId}`);
+        log(`[BiogearsTwin] Resuming active job: ${jobId} for user: ${jobUserId}`);
         
         if (isCurrentActive) {
           // Animation and timer already started immediately (before getJobStatus call).
@@ -753,12 +770,12 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
         const result = await BiogearsAPI.pollUntilDone(jobId, 3000, 43_200_000);
         await finishSimulationSuccess(result, jobUserId, jobOwnerUid);
       } else if (statusRes.status === 'done') {
-        console.log(`[BiogearsTwin] Active job ${jobId} finished while app was backgrounded/closed. Processing results.`);
+        log(`[BiogearsTwin] Active job ${jobId} finished while app was backgrounded/closed. Processing results.`);
         // Clean up the immediate animation we started — finishSimulationSuccess will set the correct final state
         if (progressTickRef.current) { clearInterval(progressTickRef.current); progressTickRef.current = null; }
         await finishSimulationSuccess(statusRes.result, jobUserId, jobOwnerUid);
       } else {
-        console.log(`[BiogearsTwin] Active job ${jobId} status is ${statusRes.status}. Clearing active job.`);
+        log(`[BiogearsTwin] Active job ${jobId} status is ${statusRes.status}. Clearing active job.`);
         await AsyncStorage.removeItem('biogears_active_job');
         await AsyncStorage.removeItem('biogears_active_job_start_time');
         await AsyncStorage.removeItem('biogears_active_job_user_id');
@@ -778,7 +795,7 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
         }
       }
     } catch (err: any) {
-      console.log('Failed to resume active job:', err);
+      log('Failed to resume active job:', err);
       if (progressTickRef.current) {
         clearInterval(progressTickRef.current);
         progressTickRef.current = null;
@@ -806,7 +823,7 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
 
   const finishSimulationSuccess = async (result: any, jobUserId?: string, jobOwnerUid?: string) => {
     if (!result) {
-      console.error('[BiogearsTwin] finishSimulationSuccess called with null result');
+      error('[BiogearsTwin] finishSimulationSuccess called with null result');
       setSimulationStatus('failed');
       setSimulationError('Simulation returned no data');
       return;
@@ -844,7 +861,7 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
         result.anomalies || [],
         jobEvents.length,
         new Date().toISOString()
-      ).catch(err => console.warn('[BiogearsTwin] Local save failed (non-fatal):', err));
+      ).catch(err => warn('[BiogearsTwin] Local save failed (non-fatal):', err));
     }
 
     if (isCurrentActive) {
@@ -985,7 +1002,7 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
         // 1. Check if habits are stored in the synced Firestore profile
         if (profile && (profile as any).habits) {
           habits = (profile as any).habits;
-          console.log('[BiogearsTwin] Found habits on profile from Firestore');
+          log('[BiogearsTwin] Found habits on profile from Firestore');
         } else if (!isSwitched) {
           // 2. Fallback to AsyncStorage for offline / new onboarding completions
           const user = auth.currentUser;
@@ -993,15 +1010,15 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
           if (habitsKey) {
             const raw = await AsyncStorage.getItem(habitsKey);
             if (raw) {
-              try { habits = JSON.parse(raw); } catch { console.log('[BiogearsTwin] Habits JSON corrupted in AsyncStorage'); habits = null; }
-              if (habits) console.log('[BiogearsTwin] Found habits in local AsyncStorage');
+              try { habits = JSON.parse(raw); } catch { log('[BiogearsTwin] Habits JSON corrupted in AsyncStorage'); habits = null; }
+              if (habits) log('[BiogearsTwin] Found habits in local AsyncStorage');
             }
           }
         }
 
         if (habits) {
-          const heightVal = profile ? parseFloat(String(profile.height || '').replace(/[^0-9.]/g, '')) : 175;
-          const weightVal = profile ? parseFloat(String(profile.weight || '').replace(/[^0-9.]/g, '')) : 70;
+          const heightVal = parseCm(profile?.height);
+          const weightVal = parseKg(profile?.weight);
           const routine = buildDefaultRoutine(habits, {
             gender: profile ? profile.gender : 'Male',
             dateOfBirth: profile ? profile.dateOfBirth : '1995-01-01',
@@ -1011,11 +1028,11 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
           await BiogearsAPI.saveRoutine(twinUserId, routine, firestoreOwnerUid);
           await BiogearsAPI.setDefaultRoutine(twinUserId, routine.id, firestoreOwnerUid, true);
           setSavedRoutines([routine]);
-          console.log('[BiogearsTwin] ✅ Auto-generated default routine "My Saved State" from habits');
+          log('[BiogearsTwin] ✅ Auto-generated default routine "My Saved State" from habits');
           return;
         }
       } catch (e) {
-        console.log('[BiogearsTwin] Could not auto-generate default routine:', e);
+        log('[BiogearsTwin] Could not auto-generate default routine:', e);
       }
     }
 
@@ -1062,7 +1079,7 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
 
       // Delete all other duplicate onboarding/default routines
       if (toDelete.length > 0) {
-        console.log(`[BiogearsTwin] Cleaning up ${toDelete.length} duplicate onboarding routine(s).`);
+        log(`[BiogearsTwin] Cleaning up ${toDelete.length} duplicate onboarding routine(s).`);
         for (const dup of toDelete) {
           await BiogearsAPI.deleteRoutine(twinUserId, dup.id, firestoreOwnerUid);
         }
@@ -1096,7 +1113,7 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
     });
 
     if (duplicatesToRemove.length > 0) {
-      console.log(`[BiogearsTwin] Cleaned up ${duplicatesToRemove.length} duplicate routine(s).`);
+      log(`[BiogearsTwin] Cleaned up ${duplicatesToRemove.length} duplicate routine(s).`);
       for (const dup of duplicatesToRemove) {
         await BiogearsAPI.deleteRoutine(twinUserId, dup.id, firestoreOwnerUid);
       }
@@ -1108,7 +1125,7 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
     // Ensure at least one routine is default if list is not empty
     const hasDefault = r.some(routine => routine.isDefault);
     if (r.length > 0 && !hasDefault) {
-      console.log('[BiogearsTwin] No default routine found. Auto-designating first routine as default.');
+      log('[BiogearsTwin] No default routine found. Auto-designating first routine as default.');
       r[0].isDefault = true;
       await BiogearsAPI.saveRoutine(twinUserId, r[0], firestoreOwnerUid);
       await BiogearsAPI.setDefaultRoutine(twinUserId, r[0].id, firestoreOwnerUid, true);
@@ -1121,7 +1138,7 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
     if (!twinUserId) return [];
     try {
       const s = await BiogearsAPI.loadSessionsMeta(twinUserId);
-      const localHistory = await getSimulationHistory(twinUserId, 30).catch(() => []);
+      const localHistory = await getSimulationHistory(twinUserId, 10000).catch(() => []);
 
       const mergedMap = new Map<string, LocalSessionMeta>();
 
@@ -1145,6 +1162,10 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
             spo2: rec.spo2 ?? undefined,
             core_temperature: rec.core_temperature ?? undefined,
             cardiac_output: rec.cardiac_output ?? undefined,
+            map: rec.map ?? undefined,
+            stroke_volume: rec.stroke_volume ?? undefined,
+            tidal_volume: rec.tidal_volume ?? undefined,
+            exercise_level: rec.exercise_level ?? undefined,
           },
           has_anomaly: rec.has_anomaly === 1,
           event_count: rec.event_count ?? 0,
@@ -1168,7 +1189,7 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
       setSessions(mergedList);
       return mergedList;
     } catch (err) {
-      console.warn('[BiogearsTwin] refreshSessions error:', err);
+      warn('[BiogearsTwin] refreshSessions error:', err);
       return [];
     }
   }, [twinUserId]);
@@ -1339,8 +1360,8 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
       }));
 
       // Append steps exercise
-      const weightVal = profile ? parseFloat(String(profile.weight || '').replace(/[^0-9.]/g, '')) : 70;
-      const heightVal = profile ? parseFloat(String(profile.height || '').replace(/[^0-9.]/g, '')) : 170;
+      const weightVal = parseKg(profile?.weight);
+      const heightVal = parseCm(profile?.height);
       const stepEvent = buildStepExerciseEvent(steps, weightVal || 70, heightVal || 170);
       if (stepEvent) {
         eventsForBurn.push(stepEvent);
@@ -1367,7 +1388,7 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
 
       // Fallback for vitalsTrends if API failed or empty
       if (!activeTrends || !activeTrends.sessions || activeTrends.sessions.length === 0) {
-        console.log(`[BiogearsTwin] Constructing local fallback for vitals trends from ${targetSessions.length} sessions...`);
+        log(`[BiogearsTwin] Constructing local fallback for vitals trends from ${targetSessions.length} sessions...`);
         activeTrends = getVitalsTrendsFallback(targetSessions);
       }
 
@@ -1405,7 +1426,7 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
       };
       await syncBiogearsAnalytics(cacheObj, firestoreOwnerUid);
     } catch (err) {
-      console.error('Failed to fetch analytics:', err);
+      error('Failed to fetch analytics:', err);
 
       const lastRecordOffline = await getLastSimulation(twinUserId).catch(() => null);
       const vitalsForFallbackOffline = lastRecordOffline ? recordToVitals(lastRecordOffline) : null;
@@ -1455,7 +1476,7 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
     if (!twinUserId || twinStatus === 'unregistered' || twinStatus === 'checking') return;
 
     const timer = setTimeout(() => {
-      console.log('[BiogearsTwin] Steps or todayEvents changed. Refreshing analytics (debounced)...');
+      log('[BiogearsTwin] Steps or todayEvents changed. Refreshing analytics (debounced)...');
       refreshAnalyticsRef.current();
     }, 2000);
 
@@ -1478,8 +1499,8 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
   const updateCaloricBalance = useCallback(async () => {
     if (!profile) return;
     
-    const weightVal = parseFloat(String(profile.weight || '').replace(/[^0-9.]/g, '')) || 70;
-    const heightVal = parseFloat(String(profile.height || '').replace(/[^0-9.]/g, '')) || 170;
+    const weightVal = parseKg(profile?.weight);
+    const heightVal = parseCm(profile?.height);
     const stepEvent = buildStepExerciseEvent(steps, weightVal, heightVal);
     const eventsForBurn: BiogearsHealthEvent[] = todayEvents.map(e => ({
       event_type: e.event_type,
@@ -1504,7 +1525,7 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
         setCaloricBalance(bal);
         return;
       } catch (err) {
-        console.log('[BiogearsTwin] Failed to get BioGears caloric balance, using local fallback:', err);
+        log('[BiogearsTwin] Failed to get BioGears caloric balance, using local fallback:', err);
       }
     }
 
@@ -1786,21 +1807,21 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
 
   const registerTwin = useCallback(async (payload: BiogearsRegistrationPayload) => {
     if (isRegisteringRef.current) {
-      console.log('[BioGearsContext] Registration already in progress. Ignoring duplicate call.');
+      log('[BioGearsContext] Registration already in progress. Ignoring duplicate call.');
       return;
     }
     isRegisteringRef.current = true;
-    console.log(`[BioGearsContext] Registering Twin: ${payload.user_id}...`);
+    log(`[BioGearsContext] Registering Twin: ${payload.user_id}...`);
     setTwinStatus('registering');
     setTwinStatusError(null);
     try {
       await BiogearsAPI.registerTwin(payload);
-      console.log(`[BioGearsContext] Registration SUCCESS for ${payload.user_id}`);
+      log(`[BioGearsContext] Registration SUCCESS for ${payload.user_id}`);
       setTwinStatus('ready');
       setCalibrationJustSucceeded(true);
       await scheduleInactivityReminder().catch(() => {});
     } catch (err: any) {
-      console.log(`[BioGearsContext] Registration FAILED:`, err);
+      log(`[BioGearsContext] Registration FAILED:`, err);
       setTwinStatus('error');
       const msg = err.message || 'Registration failed';
       setTwinStatusError(msg);
@@ -1866,11 +1887,11 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
 
         if (!matches) {
           if (isRecalibratingRef.current) {
-            console.log('[BiogearsTwin] Background auto-calibration already in progress. Skipping duplicate run.');
+            log('[BiogearsTwin] Background auto-calibration already in progress. Skipping duplicate run.');
             return;
           }
           isRecalibratingRef.current = true;
-          console.log('[BiogearsTwin] Demographics mismatch detected. Auto-recalibrating remote digital twin...');
+          log('[BiogearsTwin] Demographics mismatch detected. Auto-recalibrating remote digital twin...');
           const payload: BiogearsRegistrationPayload = {
             user_id: twinUserId,
             age,
@@ -1894,10 +1915,10 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
           
           registerTwin(payload)
             .then(() => {
-              console.log('[BiogearsTwin] Background auto-calibration completed successfully.');
+              log('[BiogearsTwin] Background auto-calibration completed successfully.');
             })
             .catch(err => {
-              console.error('[BiogearsTwin] Background auto-calibration failed:', err);
+              error('[BiogearsTwin] Background auto-calibration failed:', err);
             })
             .finally(() => {
               isRecalibratingRef.current = false;
@@ -1964,8 +1985,8 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
         notes: e.notes,
       }));
 
-      const weightVal = profile ? parseFloat(String(profile.weight || '').replace(/[^0-9.]/g, '')) : 70;
-      const heightVal = profile ? parseFloat(String(profile.height || '').replace(/[^0-9.]/g, '')) : 170;
+      const weightVal = parseKg(profile?.weight);
+      const heightVal = parseCm(profile?.height);
       const stepEvent = buildStepExerciseEvent(steps, weightVal || 70, heightVal || 170);
       if (stepEvent) {
         events.push(stepEvent);
@@ -2020,7 +2041,7 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
       throw new Error('Twin not registered');
     }
     if (simulationStatus === 'running' || simulationStatus === 'queued') {
-      console.warn('Simulation already in progress');
+      warn('Simulation already in progress');
       return;
     }
     if (todayEvents.length === 0) {
@@ -2047,8 +2068,8 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
         notes: e.notes,
       }));
 
-      const weightVal = profile ? parseFloat(String(profile.weight || '').replace(/[^0-9.]/g, '')) : 70;
-      const heightVal = profile ? parseFloat(String(profile.height || '').replace(/[^0-9.]/g, '')) : 170;
+      const weightVal = parseKg(profile?.weight);
+      const heightVal = parseCm(profile?.height);
       const stepEvent = buildStepExerciseEvent(steps, weightVal || 70, heightVal || 170);
       if (stepEvent) {
         events.push(stepEvent);
@@ -2105,7 +2126,7 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
   const runMultiDayCatchup = useCallback(async (days: number) => {
     if (!twinUserId) return;
     if (simulationStatus === 'running' || simulationStatus === 'queued') {
-      console.warn('Simulation already in progress');
+      warn('Simulation already in progress');
       return;
     }
     const defaultRoutine = savedRoutines.find(r => r.isDefault) || savedRoutines[0];
@@ -2355,8 +2376,8 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
         throw new Error("No onboarding habits found. Please complete onboarding first.");
       }
 
-      const heightVal = profile ? parseFloat(String(profile.height || '').replace(/[^0-9.]/g, '')) : 175;
-      const weightVal = profile ? parseFloat(String(profile.weight || '').replace(/[^0-9.]/g, '')) : 70;
+      const heightVal = parseCm(profile?.height);
+      const weightVal = parseKg(profile?.weight);
       const routine = buildDefaultRoutine(habits, {
         gender: profile ? profile.gender : 'Male',
         dateOfBirth: profile ? profile.dateOfBirth : '1995-01-01',

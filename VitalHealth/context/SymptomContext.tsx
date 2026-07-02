@@ -33,6 +33,8 @@ import {
 
 import { useFamily } from "./FamilyContext";
 
+import { log } from "../utils/logger";
+
 const ACTIVE_KEY  = "vitaltwin_active_symptoms";
 const HISTORY_KEY = "vitaltwin_symptom_history";
 
@@ -200,7 +202,7 @@ export function SymptomsProvider({ children }: { children: React.ReactNode }) {
     setIsLoadingMember(true);
     try {
       if (isSwitched && activeMemberId && activeMemberId !== "self") {
-        console.log("🩺 Loading symptoms from Firebase for member:", activeMemberId);
+        log("🩺 Loading symptoms from Firebase for member:", activeMemberId);
 
         const firebaseActive  = await fetchSymptomsFromFirebase(activeMemberId);
         const firebaseHistory = await fetchSymptomHistoryFromFirebase(activeMemberId);
@@ -217,12 +219,12 @@ export function SymptomsProvider({ children }: { children: React.ReactNode }) {
         setActiveSymptoms(filteredActive);
         setHistorySymptoms(normalizedHistory);
 
-        console.log(
+        log(
           `🩺 Member symptoms loaded — active: ${filteredActive.length}, history: ${normalizedHistory.length}`
         );
       } else {
         // ── Self: merge local AsyncStorage + own Firebase ──
-        console.log("🔄 Syncing own symptoms from Firebase...");
+        log("🔄 Syncing own symptoms from Firebase...");
 
         const activeRaw  = await AsyncStorage.getItem(ACTIVE_KEY);
         const historyRaw = await AsyncStorage.getItem(HISTORY_KEY);
@@ -230,8 +232,8 @@ export function SymptomsProvider({ children }: { children: React.ReactNode }) {
 
         let localActive: Symptom[] = [];
         let localHistory: HistorySymptom[] = [];
-        try { if (activeRaw)  localActive  = JSON.parse(activeRaw);  } catch { console.log('[SymptomContext] activeRaw corrupted'); }
-        try { if (historyRaw) localHistory = JSON.parse(historyRaw); } catch { console.log('[SymptomContext] historyRaw corrupted'); }
+        try { if (activeRaw)  localActive  = JSON.parse(activeRaw);  } catch { log('[SymptomContext] activeRaw corrupted'); }
+        try { if (historyRaw) localHistory = JSON.parse(historyRaw); } catch { log('[SymptomContext] historyRaw corrupted'); }
         if (!Array.isArray(localActive))  localActive  = [];
         if (!Array.isArray(localHistory)) localHistory = [];
 
@@ -256,10 +258,10 @@ export function SymptomsProvider({ children }: { children: React.ReactNode }) {
         await AsyncStorage.setItem(ACTIVE_KEY,  JSON.stringify(mergedActive));
         await AsyncStorage.setItem(HISTORY_KEY, JSON.stringify(mergedHistory));
 
-        console.log("✅ Own symptoms synced successfully");
+        log("✅ Own symptoms synced successfully");
       }
     } catch (error) {
-      console.log("❌ refreshSymptoms error:", error);
+      log("❌ refreshSymptoms error:", error);
     } finally {
       if (isMountedRef.current) setIsLoadingMember(false);
     }
@@ -324,7 +326,7 @@ export function SymptomsProvider({ children }: { children: React.ReactNode }) {
       try {
         await scheduleSymptomHourly(name.trim());
       } catch (err) {
-        console.log("❌ Symptom notification scheduling failed:", err);
+        log("❌ Symptom notification scheduling failed:", err);
       }
 
       syncWithRetry(() => syncAddSymptom({ ...newSymptom }), "AddSymptom");
@@ -375,13 +377,13 @@ export function SymptomsProvider({ children }: { children: React.ReactNode }) {
         await AsyncStorage.setItem(ACTIVE_KEY, JSON.stringify(updatedActive));
         const existingHistory = await AsyncStorage.getItem(HISTORY_KEY);
         let parsedHistory: any[] = [];
-        try { if (existingHistory) { const p = JSON.parse(existingHistory); if (Array.isArray(p)) parsedHistory = p; } } catch { console.log('[SymptomContext] historyStorage corrupted'); }
+        try { if (existingHistory) { const p = JSON.parse(existingHistory); if (Array.isArray(p)) parsedHistory = p; } } catch { log('[SymptomContext] historyStorage corrupted'); }
         await AsyncStorage.setItem(HISTORY_KEY, JSON.stringify([resolved, ...parsedHistory]));
 
         await cancelSymptomNotification();
         syncWithRetry(() => syncResolveSymptom(id, resolvedAt, duration), "ResolveSymptom");
       } catch (err) {
-        console.log("❌ Resolve error:", err);
+        log("❌ Resolve error:", err);
       }
     },
     [activeSymptoms, isSwitched, activeMemberId]

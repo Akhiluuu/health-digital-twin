@@ -4,6 +4,8 @@
 
 import { db } from "./index";
 
+import { log } from "../utils/logger";
+
 ///////////////////////////////////////////////////////////
 // TYPES
 ///////////////////////////////////////////////////////////
@@ -21,7 +23,7 @@ export type HydrationEntry = {
 ///////////////////////////////////////////////////////////
 
 export async function initHydrationHistoryDB() {
-  console.log("💧 Hydration history DB ready (shared vital_health.db)");
+  log("💧 Hydration history DB ready (shared vital_health.db)");
 }
 
 ///////////////////////////////////////////////////////////
@@ -39,9 +41,9 @@ export async function addHydrationEntry(
        VALUES (?, ?, ?, ?)`,
       [amount, total, Date.now(), source]
     );
-    console.log(`💧 History entry saved: +${amount}ml (total: ${total}ml)`);
+    log(`💧 History entry saved: +${amount}ml (total: ${total}ml)`);
   } catch (err) {
-    console.log("❌ Hydration history insert error:", err);
+    log("❌ Hydration history insert error:", err);
   }
 }
 
@@ -59,7 +61,7 @@ export function getTodayHydrationHistory(): HydrationEntry[] {
     );
     return rows as HydrationEntry[];
   } catch (err) {
-    console.log("❌ Hydration history fetch error:", err);
+    log("❌ Hydration history fetch error:", err);
     return [];
   }
 }
@@ -76,9 +78,9 @@ export async function clearTodayHydrationHistory() {
       `DELETE FROM hydration_history WHERE timestamp >= ?`,
       [startOfDay.getTime()]
     );
-    console.log("💧 Today's hydration history cleared");
+    log("💧 Today's hydration history cleared");
   } catch (err) {
-    console.log("❌ Hydration history clear error:", err);
+    log("❌ Hydration history clear error:", err);
   }
 }
 

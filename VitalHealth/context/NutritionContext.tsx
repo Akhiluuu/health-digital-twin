@@ -13,6 +13,8 @@ import { auth, db } from "../services/firebase";
 import { doc, getDoc, setDoc } from "firebase/firestore";
 import { useFamily } from "./FamilyContext";
 import { useBiogearsTwin } from "./BiogearsTwinContext";
+import { log, error } from "../utils/logger";
+
 import {
   syncAddFoodEntry,
   syncDeleteFoodEntry,
@@ -397,9 +399,9 @@ export function NutritionProvider({ children }: { children: React.ReactNode }) {
             customCalorieTarget,
           },
         });
-        console.log(`🍽️ Switched nutrition loaded for ${activeMemberId}`);
+        log(`🍽️ Switched nutrition loaded for ${activeMemberId}`);
       } catch (err) {
-        console.log("❌ Switched nutrition load error:", err);
+        log("❌ Switched nutrition load error:", err);
         // Dispatch load with default/empty state so loading state is resolved
         dispatch({
           type: "LOAD",
@@ -438,7 +440,7 @@ export function NutritionProvider({ children }: { children: React.ReactNode }) {
         activityFirebase = results[1];
         configDocSnap = results[2];
       } catch (fbErr) {
-        console.log("⚠️ Firebase fetch error (offline fallback):", fbErr);
+        log("⚠️ Firebase fetch error (offline fallback):", fbErr);
       }
 
       const todayStr = new Date().toISOString().split('T')[0]; // ✅ ISO date, locale-safe
@@ -558,9 +560,9 @@ export function NutritionProvider({ children }: { children: React.ReactNode }) {
         AsyncStorage.setItem(ACTIVITY_LOG_KEY, JSON.stringify(localActivity)),
       ]).catch(() => {});
 
-      console.log(`🍽️ Self nutrition synced and loaded`);
+      log(`🍽️ Self nutrition synced and loaded`);
     } catch (err) {
-      console.log("❌ Self nutrition sync error:", err);
+      log("❌ Self nutrition sync error:", err);
       // Fallback: try loading just AsyncStorage if everything else crashed
       try {
         const [dataRaw, remindersRaw, activityRaw] = await Promise.all([
@@ -694,11 +696,11 @@ export function NutritionProvider({ children }: { children: React.ReactNode }) {
     // foodEntries change, not when todayEvents change).
     // The ref prevents re-triggering on todayEvents changes.
     setTodayEvents(((prev: any[]) => {
-      const nonFoodEvents = prev.filter((ev: any) => !ev.id.startsWith("food_"));
+      const nonFoodEvents = prev.filter((ev: any) => !ev.id.startsWith("food_") && ev.event_type !== 'meal');
       const newEvents = [...nonFoodEvents, ...mappedMealEvents].sort(
         (a: any, b: any) => (a.timestamp || 0) - (b.timestamp || 0)
       );
-      console.log("[NutritionContext] Syncing food entries to BioGears twin:", mappedMealEvents.length, "meals");
+      log("[NutritionContext] Syncing food entries to BioGears twin:", mappedMealEvents.length, "meals");
       return newEvents;
     }) as any);
   // ⚠️ CRITICAL: DO NOT add todayEvents or setTodayEvents to this dependency array.
@@ -716,17 +718,17 @@ export function NutritionProvider({ children }: { children: React.ReactNode }) {
         selectedProfileId: state.selectedProfileId,
         customCalorieTarget: state.customCalorieTarget,
       })
-    ).catch(console.error);
+    ).catch(error);
   }, [state.foodEntries, state.selectedProfileId, state.customCalorieTarget, state.loaded, isSwitched]);
 
   useEffect(() => {
     if (!state.loaded || isSwitched) return;
-    AsyncStorage.setItem(MEAL_REMINDER_KEY, JSON.stringify(state.mealReminders)).catch(console.error);
+    AsyncStorage.setItem(MEAL_REMINDER_KEY, JSON.stringify(state.mealReminders)).catch(error);
   }, [state.mealReminders, state.loaded, isSwitched]);
 
   useEffect(() => {
     if (!state.loaded || isSwitched) return;
-    AsyncStorage.setItem(ACTIVITY_LOG_KEY, JSON.stringify(state.activityEntries)).catch(console.error);
+    AsyncStorage.setItem(ACTIVITY_LOG_KEY, JSON.stringify(state.activityEntries)).catch(error);
   }, [state.activityEntries, state.loaded, isSwitched]);
 
   // Persist config to Firestore for switched family members
@@ -743,11 +745,17 @@ export function NutritionProvider({ children }: { children: React.ReactNode }) {
   const selectedProfile = useMemo(() => {
     const baseProfile = healthProfiles.find((p) => p.id === state.selectedProfileId) ?? healthProfiles[0];
     if (state.customCalorieTarget !== null) {
+      const ratio = state.customCalorieTarget / baseProfile.recommendations.calories;
       return {
         ...baseProfile,
         recommendations: {
-          ...baseProfile.recommendations,
           calories: state.customCalorieTarget,
+          protein: Math.round((baseProfile.recommendations.protein ?? 0) * ratio),
+          carbs: Math.round((baseProfile.recommendations.carbs ?? 0) * ratio),
+          fat: Math.round((baseProfile.recommendations.fat ?? 0) * ratio),
+          sugar: Math.round((baseProfile.recommendations.sugar ?? 0) * ratio),
+          sodium: Math.round((baseProfile.recommendations.sodium ?? 0) * ratio),
+          fiber: Math.round((baseProfile.recommendations.fiber ?? 0) * ratio),
         },
       };
     }
@@ -791,7 +799,7 @@ export function NutritionProvider({ children }: { children: React.ReactNode }) {
 
     const syncTarget = isSwitched && activeMemberId && activeMemberId !== "self" ? activeMemberId : undefined;
     await syncAddFoodEntry(fullEntry, syncTarget).catch(
-      (err: unknown) => console.log("⚠️ syncAddFoodEntry failed:", err)
+      (err: unknown) => log("⚠️ syncAddFoodEntry failed:", err)
     );
   }, [isSwitched, activeMemberId]);
 
@@ -815,7 +823,7 @@ export function NutritionProvider({ children }: { children: React.ReactNode }) {
 
     const syncTarget = isSwitched && activeMemberId && activeMemberId !== "self" ? activeMemberId : undefined;
     await syncAddActivityEntry(fullEntry, syncTarget).catch(
-      (err: unknown) => console.log("⚠️ syncAddActivityEntry failed:", err)
+      (err: unknown) => log("⚠️ syncAddActivityEntry failed:", err)
     );
   }, [isSwitched, activeMemberId]);
 
@@ -882,10 +890,10 @@ export function NutritionProvider({ children }: { children: React.ReactNode }) {
 
     const syncTarget = isSwitched && activeMemberId && activeMemberId !== "self" ? activeMemberId : undefined;
     await syncClearFoodEntries(syncTarget).catch(
-      (err: unknown) => console.log("⚠️ syncClearFoodEntries failed:", err)
+      (err: unknown) => log("⚠️ syncClearFoodEntries failed:", err)
     );
     await syncClearActivityEntries(syncTarget).catch(
-      (err: unknown) => console.log("⚠️ syncClearActivityEntries failed:", err)
+      (err: unknown) => log("⚠️ syncClearActivityEntries failed:", err)
     );
   }, [isSwitched, activeMemberId, state.selectedProfileId, state.customCalorieTarget]);
 

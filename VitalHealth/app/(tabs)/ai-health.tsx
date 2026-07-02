@@ -897,46 +897,68 @@ export default function AIHealthScreen() {
   return (
     <View style={{ flex: 1, backgroundColor: c.bg }}>
       <StatusBar style={theme === "dark" ? "light" : "dark"} backgroundColor={c.bg} />
-      <Header title="Dr. Aria" showSOS={true} />
 
-      {/* Sub-header toolbar for connection status and quick actions */}
-      <View style={[styles.subHeader, { backgroundColor: c.card, borderBottomColor: c.border, marginTop: headerH }]}>
-        <View style={styles.subHeaderLeft}>
-          <View style={[styles.statusDot, { backgroundColor: connected ? "#10b981" : "#ef4444" }]} />
-          <Text style={[styles.statusText, { color: connected ? "#10b981" : "#ef4444" }]}>
-            {connected ? "Active" : "Offline"}
-          </Text>
-        </View>
+      {/* Unified Custom Header */}
+      <View
+        style={[
+          styles.customHeader,
+          {
+            backgroundColor: theme === "dark" ? "rgba(17, 29, 58, 0.96)" : "rgba(255, 255, 255, 0.96)",
+            borderBottomColor: c.border,
+            paddingTop: insets.top,
+            height: 56 + insets.top,
+          },
+        ]}
+      >
+        <View style={styles.headerContent}>
+          {/* Left: Chatbot Identity & Status */}
+          <View style={styles.headerLeft}>
+            <View style={[styles.miniAvatar, { backgroundColor: theme === 'dark' ? '#1a2e5a' : '#eff6ff' }]}>
+              <Ionicons name="medkit" size={16} color={c.accent} />
+            </View>
+            <View>
+              <Text style={[styles.headerTitle, { color: c.text }]}>Dr. Aria</Text>
+              <View style={styles.headerStatusRow}>
+                <View style={[styles.headerStatusDot, { backgroundColor: connected ? "#10b981" : "#ef4444" }]} />
+                <Text style={[styles.headerStatusText, { color: connected ? "#10b981" : "#ef4444" }]}>
+                  {connected ? "Active" : "Offline"}
+                </Text>
+              </View>
+            </View>
+          </View>
 
-        <View style={styles.subHeaderRight}>
-          <TouchableOpacity style={[styles.toolBtn, { backgroundColor: theme === 'light' ? '#f1f5f9' : '#1e294b' }]} onPress={() => setShowHistory(true)}>
-            <Ionicons name="chatbubble-ellipses-outline" size={16} color={c.accent} />
-            <Text style={[styles.toolBtnTxt, { color: c.text }]}>History</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={[styles.toolBtn, { backgroundColor: theme === 'light' ? '#f1f5f9' : '#1e294b', marginLeft: 8 }]} onPress={handleNewChat}>
-            <Ionicons name="refresh-outline" size={16} color={c.accent} />
-            <Text style={[styles.toolBtnTxt, { color: c.text }]}>Reset</Text>
-          </TouchableOpacity>
+          {/* Right: Actions */}
+          <View style={styles.headerActions}>
+            {allChunks.length > 0 && (
+              <TouchableOpacity
+                style={[styles.actionIconBtn, { backgroundColor: theme === 'light' ? '#f1f5f9' : '#1e294b' }]}
+                onPress={() => setShowAllChunks(true)}
+              >
+                <Ionicons name="document-text-outline" size={16} color={c.accent} />
+                {modelLoading && (
+                  <ActivityIndicator size="small" color={c.accent} style={styles.headerSpinner} />
+                )}
+              </TouchableOpacity>
+            )}
+            <TouchableOpacity
+              style={[styles.actionIconBtn, { backgroundColor: theme === 'light' ? '#f1f5f9' : '#1e294b' }]}
+              onPress={() => setShowHistory(true)}
+            >
+              <Ionicons name="chatbubble-ellipses-outline" size={16} color={c.accent} />
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.actionIconBtn, { backgroundColor: theme === 'light' ? '#f1f5f9' : '#1e294b' }]}
+              onPress={handleNewChat}
+            >
+              <Ionicons name="refresh-outline" size={16} color={c.accent} />
+            </TouchableOpacity>
+
+          </View>
         </View>
       </View>
 
-      {/* RAG bar */}
-      {allChunks.length > 0 && (
-        <View style={[styles.ragBar, { backgroundColor: theme === 'light' ? '#f1f5f9' : '#0e172e', borderBottomColor: c.border }]}>
-          <TouchableOpacity style={{ flexDirection: "row", alignItems: "center" }} onPress={() => setShowAllChunks(true)}>
-            <Ionicons name="document-text-outline" size={14} color={c.accent} style={{ marginRight: 6 }} />
-            <Text style={[styles.ragBarTxt, { color: c.accent }]}>On-device RAG · {allChunks.length} chunks</Text>
-            {modelLoading && <ActivityIndicator size="small" color={c.accent} style={{ marginLeft: 8 }} />}
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.ragUploadBtn} onPress={() => handleUpload("pdf")}>
-            <Ionicons name="cloud-upload-outline" size={14} color={c.sub} style={{ marginRight: 4 }} />
-            <Text style={[styles.ragUploadTxt, { color: c.sub }]}>Upload</Text>
-          </TouchableOpacity>
-        </View>
-      )}
-
       {/* Chat + input */}
-      <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === "ios" ? "padding" : "height"} keyboardVerticalOffset={Platform.OS === "ios" ? 90 : 0}>
+      <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === "ios" ? "padding" : "height"} keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 0}>
         <View style={[styles.container, { backgroundColor: c.bg }]}>
           <FlatList
             ref={listRef} data={messages} renderItem={renderMessage}
@@ -944,7 +966,7 @@ export default function AIHealthScreen() {
             showsVerticalScrollIndicator={false} onTouchStart={Keyboard.dismiss} keyboardShouldPersistTaps="handled"
           />
 
-          <View style={[styles.inputContainer, { backgroundColor: c.card, borderTopColor: c.border }]}>
+          <View style={[styles.inputContainer, { backgroundColor: c.card, borderColor: c.border }]}>
             <TouchableOpacity onPress={handleFile} style={styles.iconButton}>
               <Ionicons name="attach-outline" size={24} color={c.accent} />
             </TouchableOpacity>
@@ -990,26 +1012,75 @@ export default function AIHealthScreen() {
   );
 }
 
-// ─── Styles ───────────────────────────────────────────────────────────────────
-
 const styles = StyleSheet.create({
   safe: { flex: 1 }, flex: { flex: 1 }, container: { flex: 1 },
 
-  subHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 16, paddingVertical: 10, borderBottomWidth: 1, zIndex: 10 },
-  subHeaderLeft: { flexDirection: "row", alignItems: "center", gap: 8 },
-  statusDot: { width: 8, height: 8, borderRadius: 4 },
-  statusText: { fontSize: 12, fontWeight: "700", textTransform: "uppercase", letterSpacing: 0.5 },
-  subHeaderRight: { flexDirection: "row", alignItems: "center" },
-  toolBtn: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8 },
-  toolBtnTxt: { fontSize: 11, fontWeight: "600" },
+  // Unified Custom Header Styles
+  customHeader: {
+    borderBottomWidth: 1,
+    zIndex: 999,
+    justifyContent: "flex-end",
+  },
+  headerContent: {
+    height: 56,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 16,
+  },
+  headerLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  miniAvatar: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  headerTitle: {
+    fontSize: 16,
+    fontWeight: "700",
+    letterSpacing: 0.1,
+  },
+  headerStatusRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    marginTop: 2,
+  },
+  headerStatusDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
+  headerStatusText: {
+    fontSize: 10,
+    fontWeight: "600",
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
+  headerActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  actionIconBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  headerSpinner: {
+    position: "absolute",
+  },
 
-  ragBar: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingHorizontal: 16, paddingVertical: 8, borderBottomWidth: 1 },
-  ragBarTxt: { fontSize: 11, fontWeight: "600" },
-  ragUploadBtn: { flexDirection: "row", alignItems: "center" },
-  ragUploadTxt: { fontSize: 11, fontWeight: "600" },
 
   // Welcome card
-  welcomeCard: { marginHorizontal: 4, marginBottom: 16, marginTop: 4, borderRadius: 20, borderWidth: 1, padding: 18, elevation: 2, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 8 },
+  welcomeCard: { marginHorizontal: 16, marginBottom: 24, marginTop: 16, borderRadius: 24, borderWidth: 1, padding: 22, elevation: 3, shadowColor: '#000', shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.05, shadowRadius: 8 },
   welcomeHeader: { flexDirection: 'row', alignItems: 'center', gap: 14, marginBottom: 14 },
   welcomeAvatar: { width: 54, height: 54, borderRadius: 27, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center' },
   welcomeName: { fontSize: 18, fontWeight: '800', letterSpacing: 0.1 },
@@ -1027,23 +1098,38 @@ const styles = StyleSheet.create({
   welcomeTime: { fontSize: 10, alignSelf: 'flex-end' },
 
   messagesList: { paddingHorizontal: 16, paddingBottom: 24, paddingTop: 16 },
-  messageRow: { flexDirection: "row", alignItems: "flex-end", marginBottom: 12 },
+  messageRow: { flexDirection: "row", alignItems: "flex-end", marginBottom: 16 },
   avatar: { width: 32, height: 32, borderRadius: 16, borderWidth: 1, alignItems: "center", justifyContent: "center", marginRight: 10, marginBottom: 4 },
-  messageBubble: { maxWidth: "80%", paddingHorizontal: 16, paddingVertical: 12, borderRadius: 20, borderWidth: 1 },
+  messageBubble: { maxWidth: "80%", paddingHorizontal: 18, paddingVertical: 14, borderRadius: 20, borderWidth: 1 },
   userBubble: { borderBottomRightRadius: 6, marginLeft: 8 },
   aiBubble: { borderBottomLeftRadius: 6 },
-  messageText: { fontSize: 16, lineHeight: 22 },
+  messageText: { fontSize: 16, lineHeight: 24 },
   messageTime: { fontSize: 10, marginTop: 6, alignSelf: "flex-end" },
   sysRow: { alignItems: "center", marginVertical: 12 },
   sysPill: { borderRadius: 16, paddingHorizontal: 16, paddingVertical: 6, borderWidth: 1 },
   sysTxt: { fontSize: 12, fontStyle: "italic", fontWeight: "500" },
 
-  inputContainer: { flexDirection: "row", alignItems: "center", paddingHorizontal: 16, paddingVertical: 12, borderTopWidth: 1, gap: 10, paddingBottom: Platform.OS === "ios" ? 30 : 12 },
-  iconButton: { width: 44, height: 44, borderRadius: 22, justifyContent: "center", alignItems: "center" },
-  recordingBtn: { backgroundColor: "#ef4444", borderRadius: 22 },
-  inputWrapper: { flex: 1, borderRadius: 22, minHeight: 44, maxHeight: 120, justifyContent: "center", borderWidth: 1 },
-  input: { fontSize: 16, paddingHorizontal: 18, paddingTop: 12, paddingBottom: 12, textAlignVertical: "center" },
-  sendButton: { width: 44, height: 44, borderRadius: 22, justifyContent: "center", alignItems: "center" },
+  inputContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 8,
+    paddingVertical: 8,
+    borderWidth: 1,
+    borderRadius: 28,
+    marginHorizontal: 16,
+    marginBottom: Platform.OS === "ios" ? 28 : 16,
+    gap: 8,
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 6,
+  },
+  iconButton: { width: 40, height: 40, borderRadius: 20, justifyContent: "center", alignItems: "center" },
+  recordingBtn: { backgroundColor: "#ef4444", borderRadius: 20 },
+  inputWrapper: { flex: 1, borderRadius: 20, minHeight: 40, maxHeight: 120, justifyContent: "center", borderWidth: 0 },
+  input: { fontSize: 16, paddingHorizontal: 12, paddingTop: 8, paddingBottom: 8, textAlignVertical: "center" },
+  sendButton: { width: 40, height: 40, borderRadius: 20, justifyContent: "center", alignItems: "center" },
 
   // FIX: Added missing iconBtn and iconBtnTxt styles used in DocViewerModal and AllChunksModal
   iconBtn: {

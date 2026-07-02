@@ -3,12 +3,14 @@
 
 import { db } from "./index";
 
+import { log } from "../utils/logger";
+
 ///////////////////////////////////////////////////////////
 // INIT — no-op: table created by initAllTables in schema.ts
 ///////////////////////////////////////////////////////////
 
 export async function initHydrationDB() {
-  console.log("💧 Hydration DB ready (shared vital_health.db)");
+  log("💧 Hydration DB ready (shared vital_health.db)");
 }
 
 ///////////////////////////////////////////////////////////
@@ -33,9 +35,9 @@ export async function addWater(amount: number) {
         [today, amount]
       );
     }
-    console.log("💧 Water added:", amount);
+    log("💧 Water added:", amount);
   } catch (error) {
-    console.log("❌ Add water error:", error);
+    log("❌ Add water error:", error);
   }
 }
 
@@ -61,9 +63,9 @@ export async function addWaterFromNotification(amount: number) {
         [today, amount]
       );
     }
-    console.log("✅ Water added from notification:", amount);
+    log("✅ Water added from notification:", amount);
   } catch (error) {
-    console.log("❌ Background hydration error:", error);
+    log("❌ Background hydration error:", error);
   }
 }
 
@@ -80,7 +82,7 @@ export async function getTodayWater() {
     );
     return result?.amount || 0;
   } catch (error) {
-    console.log("❌ Get hydration error:", error);
+    log("❌ Get hydration error:", error);
     return 0;
   }
 }
@@ -98,7 +100,7 @@ export async function getHydrationHistory(days: number = 7): Promise<{ date: str
       [days]
     )) || [];
   } catch (error) {
-    console.log("❌ Hydration history error:", error);
+    log("❌ Hydration history error:", error);
     return [];
   }
 }

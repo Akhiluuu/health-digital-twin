@@ -20,7 +20,6 @@ interface HeaderProps {
   title?: string;
   showBack?: boolean;
   showProfile?: boolean;
-  showSOS?: boolean;
   onBack?: () => void;
 }
 
@@ -28,7 +27,6 @@ export default function Header({
   title = "VitalHealth",
   showBack = false,
   showProfile = true,
-  showSOS = true,
   onBack,
 }: HeaderProps) {
   const router = useRouter();
@@ -125,18 +123,8 @@ export default function Header({
           </Text>
         </View>
 
-        {/* RIGHT: SOS Button */}
-        {showSOS ? (
-          <TouchableOpacity
-            style={styles.sosButton}
-            activeOpacity={0.8}
-            onPress={() => router.push("/sos")}
-          >
-            <Text style={styles.sosText}>SOS</Text>
-          </TouchableOpacity>
-        ) : (
-          <View style={styles.placeholder} />
-        )}
+        {/* RIGHT: SOS Button Removed */}
+        <View style={styles.placeholder} />
       </View>
     </View>
   );

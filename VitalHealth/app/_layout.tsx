@@ -341,7 +341,6 @@ export default function RootLayout() {
                           <Stack.Screen name="rest"                 options={{ animation: 'slide_from_right', gestureEnabled: true, fullScreenGestureEnabled: true }} />
                           <Stack.Screen name="profile"              options={{ animation: 'slide_from_right', gestureEnabled: true, fullScreenGestureEnabled: true }} />
                           <Stack.Screen name="spo2"                 options={{ animation: 'slide_from_right', gestureEnabled: true, fullScreenGestureEnabled: true }} />
-                          <Stack.Screen name="sos"                  options={{ animation: 'slide_from_bottom', gestureDirection: 'vertical', gestureEnabled: true }} />
                           <Stack.Screen name="step-intelligence"    options={{ animation: 'slide_from_right', gestureEnabled: true, fullScreenGestureEnabled: true }} />
                           <Stack.Screen name="calorie-intelligence" options={{ animation: 'slide_from_right', gestureEnabled: true, fullScreenGestureEnabled: true }} />
                           <Stack.Screen name="heart-scanner"        options={{ animation: 'slide_from_right', gestureEnabled: true, fullScreenGestureEnabled: true }} />
@@ -351,7 +350,6 @@ export default function RootLayout() {
                           <Stack.Screen name="settings-server"           options={{ animation: 'slide_from_right', gestureEnabled: true, fullScreenGestureEnabled: true }} />
                           <Stack.Screen name="settings-ai"               options={{ animation: 'slide_from_right', gestureEnabled: true, fullScreenGestureEnabled: true }} />
                           <Stack.Screen name="settings-about"            options={{ animation: 'slide_from_right', gestureEnabled: true, fullScreenGestureEnabled: true }} />
-                          <Stack.Screen name="settings-contacts"         options={{ animation: 'slide_from_right', gestureEnabled: true, fullScreenGestureEnabled: true }} />
                           <Stack.Screen name="settings-data"             options={{ animation: 'slide_from_right', gestureEnabled: true, fullScreenGestureEnabled: true }} />
                           <Stack.Screen name="settings-help"             options={{ animation: 'slide_from_right', gestureEnabled: true, fullScreenGestureEnabled: true }} />
                           <Stack.Screen name="settings-language"         options={{ animation: 'slide_from_right', gestureEnabled: true, fullScreenGestureEnabled: true }} />

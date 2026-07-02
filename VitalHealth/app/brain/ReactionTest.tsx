@@ -198,6 +198,7 @@ export default function MotorPraxisTest({ onDone }: Props) {
             style={StyleSheet.absoluteFill}
             onPress={handleTargetClick}
             activeOpacity={0.6}
+            hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}
           >
             <Svg width="100%" height="100%" viewBox="0 0 100 100">
               {/* Outer circle */}

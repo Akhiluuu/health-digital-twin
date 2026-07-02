@@ -1,6 +1,8 @@
 import { db } from "./firebase";
 import { doc, setDoc, collection, getDocs, writeBatch } from "firebase/firestore";
 
+import { log } from "../utils/logger";
+
 export const createUserProfile = async (uid: string, data: any) => {
   await setDoc(doc(db, "users", uid), {
     profile: data,
@@ -52,7 +54,7 @@ export const deleteUserFirestoreData = async (uid: string) => {
     try {
       await deleteSubcollection(sub);
     } catch (e) {
-      console.log(`⚠️ Failed to delete subcollection ${sub}:`, e);
+      log(`⚠️ Failed to delete subcollection ${sub}:`, e);
     }
   }
 };

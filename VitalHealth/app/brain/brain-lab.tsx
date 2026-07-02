@@ -144,7 +144,12 @@ const getAchievementIcon = (id: string, size = 24, isUnlocked = false, activeCol
   }
 };
 
-const ASSESSMENT_STEPS = ["pattern", "reaction", "memory", "stroop"];
+const getTestDomain = (gameId: string): keyof typeof DOMAINS => {
+  if (DOMAINS.attention.tests.some((t) => t.id === gameId)) return "attention";
+  if (DOMAINS.memory.tests.some((t) => t.id === gameId)) return "memory";
+  if (DOMAINS.processingSpeed.tests.some((t) => t.id === gameId)) return "processingSpeed";
+  return "executiveFunction";
+};
 
 export default function BrainLab() {
   const router = useRouter();
@@ -191,11 +196,13 @@ export default function BrainLab() {
   const [activeTestResults, setActiveTestResults] = useState<GameResult[]>([]);
   const [singleTestResult, setSingleTestResult] = useState<GameResult | null>(null);
   const [assessmentIndex, setAssessmentIndex] = useState(0);
+  const [assessmentSteps, setAssessmentSteps] = useState<string[]>(["pattern", "reaction", "memory", "stroop"]);
   const [fullReportData, setFullReportData] = useState<any>(null);
   
   // Modals / Settings
   const [showSettings, setShowSettings] = useState(false);
   const [chartTab, setChartTab] = useState<"week" | "month">("week");
+  const [dashboardTab, setDashboardTab] = useState<"dashboard" | "history">("dashboard");
 
   const fadeAnim = useRef(new Animated.Value(1)).current;
 
@@ -266,22 +273,18 @@ export default function BrainLab() {
     setActiveTestResults(updatedResults);
 
     const nextIndex = assessmentIndex + 1;
-    if (nextIndex < ASSESSMENT_STEPS.length) {
+    if (nextIndex < assessmentSteps.length) {
       setAssessmentIndex(nextIndex);
-      const nextTest = ASSESSMENT_STEPS[nextIndex];
+      const nextTest = assessmentSteps[nextIndex];
       setSelectedTestId(nextTest);
       transitionState("calibration");
     } else {
-      // Calculate overall assessment scores
+      // Calculate overall assessment scores using the dynamically resolved domains
       const domainScores = {
-        attention: Math.round((updatedResults.find((r) => r.game === "stroop")?.score || 75)),
-        memory: Math.round(
-          ((updatedResults.find((r) => r.game === "pattern")?.score || 75) +
-            (updatedResults.find((r) => r.game === "memory")?.score || 75)) /
-            2
-        ),
-        processingSpeed: Math.round((updatedResults.find((r) => r.game === "reaction")?.score || 75)),
-        executiveFunction: Math.round((updatedResults.find((r) => r.game === "stroop")?.score || 75)), // Stroop maps also to EF
+        attention: Math.round(updatedResults.find((r) => getTestDomain(r.game) === "attention")?.score || 75),
+        memory: Math.round(updatedResults.find((r) => getTestDomain(r.game) === "memory")?.score || 75),
+        processingSpeed: Math.round(updatedResults.find((r) => getTestDomain(r.game) === "processingSpeed")?.score || 75),
+        executiveFunction: Math.round(updatedResults.find((r) => getTestDomain(r.game) === "executiveFunction")?.score || 75),
       };
 
       const overallScore = Math.round(
@@ -294,7 +297,7 @@ export default function BrainLab() {
 
       const mappedResults: CognitiveTestResult[] = updatedResults.map((r) => ({
         name: r.label,
-        domain: r.game === "stroop" ? "attention" : r.game === "reaction" ? "processingSpeed" : "memory",
+        domain: getTestDomain(r.game),
         score: r.score,
         accuracy: r.accuracy,
         responseTime: r.avgTimeMs,
@@ -309,9 +312,24 @@ export default function BrainLab() {
   };
 
   const startFullAssessment = () => {
+    // Select one random test from each of the 4 cognitive domains
+    const attentionTests = DOMAINS.attention.tests;
+    const memoryTests = DOMAINS.memory.tests;
+    const speedTests = DOMAINS.processingSpeed.tests;
+    const execTests = DOMAINS.executiveFunction.tests;
+
+    const randomAttention = attentionTests[Math.floor(Math.random() * attentionTests.length)].id;
+    const randomMemory = memoryTests[Math.floor(Math.random() * memoryTests.length)].id;
+    const randomSpeed = speedTests[Math.floor(Math.random() * speedTests.length)].id;
+    const randomExec = execTests[Math.floor(Math.random() * execTests.length)].id;
+
+    // Shuffle the 4 selected tests so even the sequence/order is randomized
+    const steps = [randomAttention, randomMemory, randomSpeed, randomExec].sort(() => Math.random() - 0.5);
+
+    setAssessmentSteps(steps);
     setActiveTestResults([]);
     setAssessmentIndex(0);
-    setSelectedTestId(ASSESSMENT_STEPS[0]);
+    setSelectedTestId(steps[0]);
     transitionState("calibration");
   };
 
@@ -352,10 +370,7 @@ export default function BrainLab() {
 
   // ── Render Dynamic Chart ──
   const renderChart = () => {
-    const data = chartTab === "week" ? sessions.slice(0, 7).reverse() : sessions.slice(0, 15).reverse();
-    const maxVal = 100;
-    
-    if (data.length === 0) {
+    if (sessions.length === 0) {
       return (
         <View style={[styles.chartContainer, styles.center, { backgroundColor: colors.card, borderColor: colors.border }]}>
           <Text style={[styles.chartFallbackText, { color: colors.subText }]}>
@@ -365,17 +380,48 @@ export default function BrainLab() {
       );
     }
 
+    // Group sessions by day using local date key to avoid duplicate date columns on the timeline
+    const dailyMap = new Map<string, { totalScore: number; count: number; completedAt: string }>();
+    
+    sessions.forEach((s) => {
+      // Create a localized date string (e.g. "29 Jun") as the map key
+      const dateStr = new Date(s.completedAt).toLocaleDateString(undefined, {
+        day: "numeric",
+        month: "short",
+      });
+      const existing = dailyMap.get(dateStr);
+      if (!existing) {
+        dailyMap.set(dateStr, {
+          totalScore: s.overallScore,
+          count: 1,
+          completedAt: s.completedAt,
+        });
+      } else {
+        existing.totalScore += s.overallScore;
+        existing.count += 1;
+      }
+    });
+
+    // Convert map to array and sort chronologically (oldest to newest)
+    const groupedData = Array.from(dailyMap.entries()).map(([dateStr, val]) => ({
+      dateLabel: dateStr,
+      overallScore: Math.round(val.totalScore / val.count),
+      completedAt: val.completedAt,
+    }));
+
+    groupedData.sort((a, b) => new Date(a.completedAt).getTime() - new Date(b.completedAt).getTime());
+
+    // Slice to show the last 7 or 15 unique days of assessment
+    const data = chartTab === "week" ? groupedData.slice(-7) : groupedData.slice(-15);
+    const maxVal = 100;
+
     return (
       <View style={[styles.chartContainer, { backgroundColor: colors.card, borderColor: colors.border }]}>
         <View style={styles.chartBarWrapper}>
           {data.map((s, idx) => {
             const heightPct = (s.overallScore / maxVal) * 100;
-            const barDate = new Date(s.completedAt).toLocaleDateString(undefined, {
-              day: "numeric",
-              month: "short",
-            });
             return (
-              <View key={s.id} style={styles.chartColumn}>
+              <View key={idx} style={styles.chartColumn}>
                 <View style={[styles.chartBarTrack, { backgroundColor: colors.card2 }]}>
                   <View
                     style={[
@@ -385,13 +431,115 @@ export default function BrainLab() {
                   />
                 </View>
                 <Text style={[styles.chartDate, { color: colors.subText }]} numberOfLines={1}>
-                  {barDate}
+                  {s.dateLabel}
                 </Text>
               </View>
             );
           })}
         </View>
       </View>
+    );
+  };
+
+  const renderHistoryLogs = () => {
+    return (
+      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+        <View style={styles.historyHeaderRow}>
+          <Text style={[styles.historyHeaderTitle, { color: colors.text }]}>PAST ASSESSMENTS</Text>
+          <Text style={[styles.historyHeaderCount, { color: colors.subText }]}>{sessions.length} completed</Text>
+        </View>
+
+        {sessions.length > 0 ? (
+          sessions.map((item) => {
+            const formattedDate = new Date(item.completedAt).toLocaleString("en-IN", {
+              day: "numeric",
+              month: "short",
+              year: "numeric",
+              hour: "2-digit",
+              minute: "2-digit",
+            });
+            const grade = getGrade(item.overallScore);
+
+            return (
+              <View key={item.id} style={[styles.historyItemCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                <View style={styles.historyItemHeader}>
+                  <View>
+                    <Text style={[styles.historyItemDate, { color: colors.text }]}>{formattedDate}</Text>
+                    <Text style={[styles.historyItemAge, { color: colors.subText }]}>Cognitive Age: {item.cognitiveAge} yrs</Text>
+                  </View>
+                  <View style={[styles.historyItemGradeBadge, { backgroundColor: grade.color + "15", borderColor: grade.color }]}>
+                    <Text style={[styles.historyItemGradeText, { color: grade.color }]}>{grade.label} ({item.overallScore})</Text>
+                  </View>
+                </View>
+
+                <View style={[styles.divider, { backgroundColor: colors.border }]} />
+
+                {/* Domain scores row */}
+                <View style={styles.historyDomainsContainer}>
+                  <View style={styles.historyDomainStat}>
+                    <Text style={[styles.historyDomainLabel, { color: colors.subText2 }]}>Attention</Text>
+                    <Text style={[styles.historyDomainVal, { color: "#6366f1" }]}>{Math.round(item.domainScores.attention)}</Text>
+                  </View>
+                  <View style={styles.historyDomainStat}>
+                    <Text style={[styles.historyDomainLabel, { color: colors.subText2 }]}>Memory</Text>
+                    <Text style={[styles.historyDomainVal, { color: "#a855f7" }]}>{Math.round(item.domainScores.memory)}</Text>
+                  </View>
+                  <View style={styles.historyDomainStat}>
+                    <Text style={[styles.historyDomainLabel, { color: colors.subText2 }]}>Speed</Text>
+                    <Text style={[styles.historyDomainVal, { color: "#0ea5e9" }]}>{Math.round(item.domainScores.processingSpeed)}</Text>
+                  </View>
+                  <View style={styles.historyDomainStat}>
+                    <Text style={[styles.historyDomainLabel, { color: colors.subText2 }]}>Exec Fn</Text>
+                    <Text style={[styles.historyDomainVal, { color: "#ec4899" }]}>{Math.round(item.domainScores.executiveFunction)}</Text>
+                  </View>
+                </View>
+
+                {/* Individual test results dropdown/details */}
+                {item.testResults && item.testResults.length > 0 && (
+                  <View style={[styles.historyTestsContainer, { backgroundColor: colors.card2 }]}>
+                    <Text style={[styles.historyTestsTitle, { color: colors.subText }]}>TEST RECORDS</Text>
+                    {item.testResults.map((tr, idx) => {
+                      const displayAcc = tr.accuracy <= 1 ? Math.round(tr.accuracy * 100) : Math.round(tr.accuracy);
+                      return (
+                        <View key={idx} style={styles.historyTestRow}>
+                          <View style={{ flex: 1 }}>
+                            <Text style={[styles.historyTestName, { color: colors.text }]} numberOfLines={1}>
+                              {tr.name}
+                            </Text>
+                            <Text style={[styles.historyTestDetail, { color: colors.subText }]}>
+                              Acc: {displayAcc}% · RT: {Math.round(tr.responseTime)}ms
+                            </Text>
+                          </View>
+                          <Text style={[styles.historyTestScore, { color: colors.accent }]}>Score: {tr.score}</Text>
+                        </View>
+                      );
+                    })}
+                  </View>
+                )}
+              </View>
+            );
+          })
+        ) : (
+          <View style={[styles.emptyHistoryWrap, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <Ionicons name="journal-outline" size={48} color={colors.subText} style={{ marginBottom: 12 }} />
+            <Text style={[styles.emptyHistoryTitle, { color: colors.text }]}>No Assessments Yet</Text>
+            <Text style={[styles.emptyHistoryDesc, { color: colors.subText }]}>
+              Complete a cognitive assessment to calibrate your twin and begin recording data.
+            </Text>
+            <TouchableOpacity style={styles.heroButton} onPress={startFullAssessment}>
+              <LinearGradient
+                colors={["#4f46e5", "#6366f1"]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={styles.heroBtnGrad}
+              >
+                <Text style={styles.heroBtnText}>TAKE ASSESSMENT</Text>
+              </LinearGradient>
+            </TouchableOpacity>
+          </View>
+        )}
+        <View style={{ height: 40 }} />
+      </ScrollView>
     );
   };
 
@@ -403,7 +551,31 @@ export default function BrainLab() {
     const gradeDetails = latestSession ? getGrade(latestSession.overallScore) : null;
 
     return (
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+      <View style={{ flex: 1, backgroundColor: colors.background }}>
+        {/* Tab Selector */}
+        <View style={[styles.tabBarContainer, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
+          <TouchableOpacity 
+            onPress={() => setDashboardTab("dashboard")} 
+            style={[styles.tabBarItem, dashboardTab === "dashboard" && { borderBottomColor: colors.accent, borderBottomWidth: 2 }]}
+          >
+            <Ionicons name="apps-outline" size={16} color={dashboardTab === "dashboard" ? colors.accent : colors.subText} />
+            <Text style={[styles.tabBarText, { color: dashboardTab === "dashboard" ? colors.accent : colors.subText, fontWeight: dashboardTab === "dashboard" ? "bold" : "600" }]}>
+              Dashboard
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity 
+            onPress={() => setDashboardTab("history")} 
+            style={[styles.tabBarItem, dashboardTab === "history" && { borderBottomColor: colors.accent, borderBottomWidth: 2 }]}
+          >
+            <Ionicons name="time-outline" size={16} color={dashboardTab === "history" ? colors.accent : colors.subText} />
+            <Text style={[styles.tabBarText, { color: dashboardTab === "history" ? colors.accent : colors.subText, fontWeight: dashboardTab === "history" ? "bold" : "600" }]}>
+              Assessment History
+            </Text>
+          </TouchableOpacity>
+        </View>
+
+        {dashboardTab === "dashboard" ? (
+          <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         
         {/* Streak banner */}
         {currentStreak > 0 && (
@@ -593,7 +765,11 @@ export default function BrainLab() {
         </TouchableOpacity>
 
         <View style={{ height: 40 }} />
-      </ScrollView>
+          </ScrollView>
+        ) : (
+          renderHistoryLogs()
+        )}
+      </View>
     );
   };
 
@@ -664,7 +840,7 @@ export default function BrainLab() {
   // ── Render Active Game ──
   const renderPlayingTest = () => {
     const handleDoneCallback = (result: GameResult) => {
-      if (screenState === "playing_test" && activeTestResults.length > 0) {
+      if (screenState === "playing_test") {
         handleAssessmentStepDone(result);
       } else {
         handleSingleTestDone(result);
@@ -1006,4 +1182,34 @@ const styles = StyleSheet.create({
   settingRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: "rgba(100,116,139,0.08)", marginBottom: 12 },
   settingLabel: { fontSize: 14, fontWeight: "800" },
   settingDesc: { fontSize: 11, marginTop: 2 },
+
+  // Tab selector styles
+  tabBarContainer: { flexDirection: "row", borderBottomWidth: 1, marginBottom: 16 },
+  tabBarItem: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, paddingVertical: 12 },
+  tabBarText: { fontSize: 13 },
+
+  // History styles
+  historyHeaderRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 16 },
+  historyHeaderTitle: { fontSize: 11, fontWeight: "900", letterSpacing: 2 },
+  historyHeaderCount: { fontSize: 12 },
+  historyItemCard: { borderRadius: 20, padding: 16, borderWidth: 1, marginBottom: 16 },
+  historyItemHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  historyItemDate: { fontSize: 14, fontWeight: "800" },
+  historyItemAge: { fontSize: 12, marginTop: 2 },
+  historyItemGradeBadge: { borderStyle: "solid", borderWidth: 1, borderRadius: 16, paddingHorizontal: 12, paddingVertical: 4 },
+  historyItemGradeText: { fontSize: 11, fontWeight: "700" },
+  divider: { height: 1, marginVertical: 12 },
+  historyDomainsContainer: { flexDirection: "row", justifyContent: "space-between", marginVertical: 4 },
+  historyDomainStat: { alignItems: "center", flex: 1 },
+  historyDomainLabel: { fontSize: 9, fontWeight: "800", textTransform: "uppercase", letterSpacing: 0.5 },
+  historyDomainVal: { fontSize: 16, fontWeight: "900", marginTop: 2 },
+  historyTestsContainer: { borderRadius: 12, padding: 12, marginTop: 12, gap: 10 },
+  historyTestsTitle: { fontSize: 8, fontWeight: "900", letterSpacing: 1 },
+  historyTestRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  historyTestName: { fontSize: 12, fontWeight: "800" },
+  historyTestDetail: { fontSize: 10, marginTop: 1 },
+  historyTestScore: { fontSize: 12, fontWeight: "800" },
+  emptyHistoryWrap: { borderRadius: 20, padding: 32, borderWidth: 1, alignItems: "center", justifyContent: "center" },
+  emptyHistoryTitle: { fontSize: 16, fontWeight: "800", marginBottom: 4 },
+  emptyHistoryDesc: { fontSize: 12, textAlign: "center", marginBottom: 20 },
 });

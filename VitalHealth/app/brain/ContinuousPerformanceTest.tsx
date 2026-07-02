@@ -176,6 +176,33 @@ export default function PsychomotorVigilanceTest({ onDone }: Props) {
 
   const isLapse = phase === "showing_result" && timerMs > LAPSE_THRESHOLD_MS;
 
+  if (phase === "instructions") {
+    return (
+      <View style={[styles.container, { backgroundColor: colors.background }]}>
+        <Text style={styles.gameTitle}>PSYCHOMOTOR VIGILANCE TEST (PVT)</Text>
+        <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <Text style={[styles.cardHeading, { color: colors.text }]}>Attention & Vigilance</Text>
+          <Text style={[styles.cardBody, { color: colors.subText }]}>
+            This test measures visual reaction speed and sustained attention.{"\n"}{"\n"}
+            1. Focus on the red reticle at the center.{"\n"}
+            2. When the digital timer starts counting up, tap anywhere on the screen as fast as possible.{"\n"}
+            3. Do not tap before the timer starts (Early Tap penalty).{"\n"}{"\n"}
+            React quickly! Slow responses (&gt;355 ms) count as attention lapses.
+          </Text>
+          <TouchableOpacity
+            style={[styles.btn, { backgroundColor: colors.accent }]}
+            onPress={() => {
+              setPhase("waiting");
+              startNextRound(0);
+            }}
+          >
+            <Text style={styles.btnText}>Start Assessment</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  }
+
   return (
     <TouchableOpacity
       activeOpacity={1}

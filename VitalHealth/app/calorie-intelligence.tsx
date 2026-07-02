@@ -129,16 +129,19 @@ const DonutChart = ({
 };
 
 // ─── Stat Row ─────────────────────────────────────────────────────────────────
-const StatRow = ({ icon, label, value, unit, color, colors }: any) => (
-  <View style={[sr.row, { borderBottomColor: colors.border }]}>
-    <View style={[sr.iconWrap, { backgroundColor: color + "22" }]}>
-      <Ionicons name={icon} size={18} color={color} />
+const StatRow = ({ icon, label, value, unit, color, colors }: any) => {
+  const displayVal = typeof value === 'number' && isNaN(value) ? '--' : (typeof value === 'number' ? Math.round(value).toLocaleString("en-IN") : value);
+  return (
+    <View style={[sr.row, { borderBottomColor: colors.border }]}>
+      <View style={[sr.iconWrap, { backgroundColor: color + "22" }]}>
+        <Ionicons name={icon} size={18} color={color} />
+      </View>
+      <Text style={[sr.label, { color: colors.sub }]}>{label}</Text>
+      <Text style={[sr.value, { color }]}>{displayVal}</Text>
+      <Text style={[sr.unit, { color: colors.sub + "80" }]}>{unit}</Text>
     </View>
-    <Text style={[sr.label, { color: colors.sub }]}>{label}</Text>
-    <Text style={[sr.value, { color }]}>{value}</Text>
-    <Text style={[sr.unit, { color: colors.sub + "80" }]}>{unit}</Text>
-  </View>
-);
+  );
+};
 const sr = StyleSheet.create({
   row:     { flexDirection: "row", alignItems: "center", paddingVertical: 10, gap: 10, borderBottomWidth: 1 },
   iconWrap:{ width: 36, height: 36, borderRadius: 18, justifyContent: "center", alignItems: "center" },

@@ -18,6 +18,8 @@ import {
 } from "firebase/firestore";
 import { auth, db } from "./firebase";
 
+import { log } from "../utils/logger";
+
 // ── Pending sync queue ───────────────────────────────────────────
 // Stores failed syncs and retries when auth is ready or with exponential backoff.
 // ✅ Module-level design: intentional singleton — survives component unmounts.
@@ -28,7 +30,7 @@ const scheduleRetry = (fn: () => Promise<void>, retryCount: number) => {
   const baseDelay = 1000; // 1 second
   const maxDelay = 30000; // 30 seconds max delay
   const delay = Math.min(maxDelay, Math.pow(2, retryCount) * baseDelay + Math.random() * 1000);
-  console.log(`⏳ [firebaseSync] Scheduling retry #${retryCount} in ${Math.round(delay)}ms...`);
+  log(`⏳ [firebaseSync] Scheduling retry #${retryCount} in ${Math.round(delay)}ms...`);
   setTimeout(() => {
     pendingSyncs.push(fn);
     flushPendingSyncs();
@@ -40,13 +42,13 @@ const flushPendingSyncs = async () => {
   // (prevents duplicate syncs if auth fires multiple times rapidly)
   if (isFlushing || pendingSyncs.length === 0) return;
   isFlushing = true;
-  console.log(`🔄 Flushing ${pendingSyncs.length} pending Firebase syncs...`);
+  log(`🔄 Flushing ${pendingSyncs.length} pending Firebase syncs...`);
   // Capture current queue before draining — any new pushes during the flush
   // (e.g. syncAddSymptom re-queuing itself on failure) will not be in toFlush
   // and will be picked up in the NEXT flush cycle.
   const toFlush = pendingSyncs.splice(0, pendingSyncs.length);
   for (const fn of toFlush) {
-    try { await fn(); } catch (e) { console.log("⚠️ Pending sync failed:", e); }
+    try { await fn(); } catch (e) { log("⚠️ Pending sync failed:", e); }
   }
   isFlushing = false;
 };
@@ -57,7 +59,7 @@ let lastFlushedForUid: string | null = null;
 auth.onAuthStateChanged((user) => {
   if (user && user.uid !== lastFlushedForUid) {
     lastFlushedForUid = user.uid;
-    console.log("🔥 Auth ready — flushing pending syncs for:", user.uid);
+    log("🔥 Auth ready — flushing pending syncs for:", user.uid);
     setTimeout(flushPendingSyncs, 1000);
   }
   if (!user) {
@@ -136,11 +138,11 @@ export const getUserId = async (): Promise<string | null> => {
     if (cached) {
       let parsed: any = null;
       try { parsed = JSON.parse(cached); } catch { return null; }
-      if (parsed && parsed.uid) { console.log('🔑 Using cached auth uid:', parsed.uid); return parsed.uid; }
+      if (parsed && parsed.uid) { log('🔑 Using cached auth uid:', parsed.uid); return parsed.uid; }
       return null;
     }
   } catch (e) {
-    console.log("⚠️ AsyncStorage auth cache read error:", e);
+    log("⚠️ AsyncStorage auth cache read error:", e);
   }
 
   return null;
@@ -181,7 +183,7 @@ export async function syncAddMedicine(
   if (!(await isVitalsSyncEnabled())) return;
   try {
     const uid = targetUid || await getUserId();
-    if (!uid) { console.log("⚠️ No auth user for syncAddMedicine"); return; }
+    if (!uid) { log("⚠️ No auth user for syncAddMedicine"); return; }
 
     await setDoc(doc(medicinesCol(uid), String(medicine.id)), {
       ...medicine,
@@ -190,9 +192,9 @@ export async function syncAddMedicine(
       takenToday:  false,
     });
 
-    console.log("✅ Medicine synced to Firebase:", medicine.name);
+    log("✅ Medicine synced to Firebase:", medicine.name);
   } catch (e) {
-    console.log("⚠️ syncAddMedicine failed (non-critical):", e);
+    log("⚠️ syncAddMedicine failed (non-critical):", e);
   }
 }
 
@@ -205,9 +207,9 @@ export async function syncDeleteMedicine(id: number, targetUid?: string): Promis
     if (!uid) return;
 
     await deleteDoc(doc(medicinesCol(uid), String(id)));
-    console.log("✅ Medicine deleted from Firebase:", id);
+    log("✅ Medicine deleted from Firebase:", id);
   } catch (e) {
-    console.log("⚠️ syncDeleteMedicine failed (non-critical):", e);
+    log("⚠️ syncDeleteMedicine failed (non-critical):", e);
   }
 }
 
@@ -227,9 +229,9 @@ export async function syncDeleteAllMedicines(targetUid?: string): Promise<void> 
       batch.delete(docSnap.ref);
     });
     await batch.commit();
-    console.log("✅ All medicines deleted from Firebase");
+    log("✅ All medicines deleted from Firebase");
   } catch (e) {
-    console.log("⚠️ syncDeleteAllMedicines failed (non-critical):", e);
+    log("⚠️ syncDeleteAllMedicines failed (non-critical):", e);
   }
 }
 
@@ -248,9 +250,9 @@ export async function syncMarkMedicineTaken(id: number, targetUid?: string): Pro
       updatedAt:  serverTimestamp(),
     }, { merge: true });
 
-    console.log("✅ Medicine marked taken in Firebase:", id);
+    log("✅ Medicine marked taken in Firebase:", id);
   } catch (e) {
-    console.log("⚠️ syncMarkMedicineTaken failed (non-critical):", e);
+    log("⚠️ syncMarkMedicineTaken failed (non-critical):", e);
   }
 }
 
@@ -271,7 +273,7 @@ export async function syncUpdateMedicineNotificationId(
       updatedAt: serverTimestamp(),
     }, { merge: true });
   } catch (e) {
-    console.log("⚠️ syncUpdateMedicineNotificationId failed (non-critical):", e);
+    log("⚠️ syncUpdateMedicineNotificationId failed (non-critical):", e);
   }
 }
 
@@ -302,9 +304,9 @@ export async function syncAddMedicineHistory(entry: {
       syncedAt: serverTimestamp(),
     });
 
-    console.log("✅ Medicine history synced to Firebase:", entry.medicineName, entry.status);
+    log("✅ Medicine history synced to Firebase:", entry.medicineName, entry.status);
   } catch (e) {
-    console.log("⚠️ syncAddMedicineHistory failed (non-critical):", e);
+    log("⚠️ syncAddMedicineHistory failed (non-critical):", e);
   }
 }
 
@@ -319,10 +321,10 @@ export async function fetchMedicineHistoryFromFirebase(): Promise<any[]> {
 
     const snap = await getDocs(medicineHistCol(uid));
     const results = snap.docs.map(d => d.data());
-    console.log("✅ Fetched medicine history from Firebase:", results.length, "records");
+    log("✅ Fetched medicine history from Firebase:", results.length, "records");
     return results;
   } catch (e) {
-    console.log("⚠️ fetchMedicineHistoryFromFirebase failed:", e);
+    log("⚠️ fetchMedicineHistoryFromFirebase failed:", e);
     return [];
   }
 }
@@ -349,23 +351,23 @@ export async function syncAddSymptom(
   retryCount: number = 0
 ): Promise<void> {
   if (!(await isVitalsSyncEnabled())) return;
-  console.log("🔄 syncAddSymptom called:", symptom.name, "id:", symptom.id, "target:", targetUid, "retryCount:", retryCount);
+  log("🔄 syncAddSymptom called:", symptom.name, "id:", symptom.id, "target:", targetUid, "retryCount:", retryCount);
   try {
     const uid = targetUid || await getUserId();
-    console.log("🔑 syncAddSymptom uid:", uid ?? "NULL");
+    log("🔑 syncAddSymptom uid:", uid ?? "NULL");
 
     if (!uid) {
-      console.log("⚠️ No auth — queuing symptom:", symptom.name);
+      log("⚠️ No auth — queuing symptom:", symptom.name);
       if (retryCount < 5) {
         pendingSyncs.push(() => syncAddSymptom(symptom, targetUid, retryCount + 1));
       } else {
-        console.log("🛑 syncAddSymptom retry limit reached (5 attempts). Dropping pending sync.");
+        log("🛑 syncAddSymptom retry limit reached (5 attempts). Dropping pending sync.");
       }
       return;
     }
 
     const path = `users/${uid}/symptoms/${String(symptom.id)}`;
-    console.log("📝 Writing to Firestore:", path);
+    log("📝 Writing to Firestore:", path);
 
     await setDoc(doc(symptomsCol(uid), String(symptom.id)), {
       ...symptom,
@@ -374,13 +376,13 @@ export async function syncAddSymptom(
       updatedAt: serverTimestamp(),
     });
 
-    console.log("✅ Symptom synced to Firebase:", symptom.name);
+    log("✅ Symptom synced to Firebase:", symptom.name);
   } catch (e: any) {
-    console.log("❌ syncAddSymptom FAILED:", e?.code, e?.message ?? e);
+    log("❌ syncAddSymptom FAILED:", e?.code, e?.message ?? e);
     if (retryCount < 5) {
       scheduleRetry(() => syncAddSymptom(symptom, targetUid, retryCount + 1), retryCount + 1);
     } else {
-      console.log("🛑 syncAddSymptom retry limit reached (5 attempts). Dropping pending sync.");
+      log("🛑 syncAddSymptom retry limit reached (5 attempts). Dropping pending sync.");
     }
   }
 }
@@ -404,7 +406,7 @@ export async function syncResolveSymptom(
       if (retryCount < 5) {
         pendingSyncs.push(() => syncResolveSymptom(id, resolvedAt, duration, targetUid, retryCount + 1));
       } else {
-        console.log("🛑 syncResolveSymptom retry limit reached (5 attempts). Dropping pending sync.");
+        log("🛑 syncResolveSymptom retry limit reached (5 attempts). Dropping pending sync.");
       }
       return;
     }
@@ -415,7 +417,7 @@ export async function syncResolveSymptom(
     const snap = await getDoc(symptomRef);
 
     if (!snap.exists()) {
-      console.log("⚠️ Symptom not found:", id);
+      log("⚠️ Symptom not found:", id);
       return;
     }
 
@@ -438,23 +440,23 @@ export async function syncResolveSymptom(
     try {
       await deleteDoc(symptomRef);
     } catch (e) {
-      console.log("⚠️ Delete failed, retrying later:", e);
+      log("⚠️ Delete failed, retrying later:", e);
       if (retryCount < 5) {
         scheduleRetry(() => syncResolveSymptom(id, resolvedAt, duration, targetUid, retryCount + 1), retryCount + 1);
       } else {
-        console.log("🛑 syncResolveSymptom retry limit reached (5 attempts). Dropping pending sync.");
+        log("🛑 syncResolveSymptom retry limit reached (5 attempts). Dropping pending sync.");
       }
     }
 
-    console.log("🔥 Removed from active + added to history:", id);
+    log("🔥 Removed from active + added to history:", id);
   } catch (e) {
-    console.log("⚠️ syncResolveSymptom failed:", e);
+    log("⚠️ syncResolveSymptom failed:", e);
 
     // ✅ retry later
     if (retryCount < 5) {
       scheduleRetry(() => syncResolveSymptom(id, resolvedAt, duration, targetUid, retryCount + 1), retryCount + 1);
     } else {
-      console.log("🛑 syncResolveSymptom retry limit reached (5 attempts). Dropping pending sync.");
+      log("🛑 syncResolveSymptom retry limit reached (5 attempts). Dropping pending sync.");
     }
   }
 }
@@ -468,9 +470,9 @@ export async function syncDeleteSymptom(id: number, targetUid?: string): Promise
     if (!uid) return;
 
     await deleteDoc(doc(symptomsCol(uid), String(id)));
-    console.log("✅ Symptom deleted from Firebase:", id);
+    log("✅ Symptom deleted from Firebase:", id);
   } catch (e) {
-    console.log("⚠️ syncDeleteSymptom failed (non-critical):", e);
+    log("⚠️ syncDeleteSymptom failed (non-critical):", e);
   }
 }
 
@@ -493,9 +495,9 @@ export async function syncUpdateSymptom(
       updatedAt: serverTimestamp(),
     }, { merge: true });
 
-    console.log("✅ Symptom updated in Firebase:", id);
+    log("✅ Symptom updated in Firebase:", id);
   } catch (e) {
-    console.log("⚠️ syncUpdateSymptom failed (non-critical):", e);
+    log("⚠️ syncUpdateSymptom failed (non-critical):", e);
   }
 }
 
@@ -515,9 +517,9 @@ export async function syncClearSymptomHistory(targetUid?: string): Promise<void>
     const batch = writeBatch(db);
     snap.forEach((docSnap) => { batch.delete(docSnap.ref); });
     await batch.commit();
-    console.log("✅ Symptom history cleared from Firebase");
+    log("✅ Symptom history cleared from Firebase");
   } catch (e) {
-    console.log("⚠️ syncClearSymptomHistory failed (non-critical):", e);
+    log("⚠️ syncClearSymptomHistory failed (non-critical):", e);
   }
 }
 
@@ -551,9 +553,9 @@ export async function syncAddSymptomHistory(
       syncedAt: serverTimestamp(),
     });
 
-    console.log("✅ Symptom history synced to Firebase:", symptom.name);
+    log("✅ Symptom history synced to Firebase:", symptom.name);
   } catch (e) {
-    console.log("⚠️ syncAddSymptomHistory failed (non-critical):", e);
+    log("⚠️ syncAddSymptomHistory failed (non-critical):", e);
   }
 }
 
@@ -569,7 +571,7 @@ export async function fetchSymptomsFromFirebase(uid?: string): Promise<any[]> {
     const snap = await getDocs(symptomsCol(userId));
     return snap.docs.map(d => d.data());
   } catch (e) {
-    console.log("⚠️ fetchSymptomsFromFirebase failed:", e);
+    log("⚠️ fetchSymptomsFromFirebase failed:", e);
     return [];
   }
 }
@@ -590,7 +592,7 @@ export async function fetchSymptomHistoryFromFirebase(uid?: string): Promise<any
     const snap = await getDocs(symptomHistCol(userId));
     return snap.docs.map(d => d.data());
   } catch (e) {
-    console.log("⚠️ fetchSymptomHistoryFromFirebase failed:", e);
+    log("⚠️ fetchSymptomHistoryFromFirebase failed:", e);
     return [];
   }
 }
@@ -611,7 +613,7 @@ export async function fetchMedicinesFromFirebase(uid?: string): Promise<any[]> {
     const snap = await getDocs(medicinesCol(userId));
     return snap.docs.map(d => d.data());
   } catch (e) {
-    console.log("⚠️ fetchMedicinesFromFirebase failed:", e);
+    log("⚠️ fetchMedicinesFromFirebase failed:", e);
     return [];
   }
 }
@@ -643,9 +645,9 @@ export async function syncAddHydration(
       ...entry,
       syncedAt: serverTimestamp(),
     });
-    console.log(`✅ Hydration synced to Firebase: +${entry.amount}ml`);
+    log(`✅ Hydration synced to Firebase: +${entry.amount}ml`);
   } catch (e) {
-    console.log("⚠️ syncAddHydration failed:", e);
+    log("⚠️ syncAddHydration failed:", e);
   }
 }
 
@@ -657,9 +659,9 @@ export async function syncClearHydration(targetUid?: string): Promise<void> {
     const batch = writeBatch(db);
     snap.forEach((d) => batch.delete(d.ref));
     await batch.commit();
-    console.log("✅ Hydration cleared in Firebase");
+    log("✅ Hydration cleared in Firebase");
   } catch (e) {
-    console.log("⚠️ syncClearHydration failed:", e);
+    log("⚠️ syncClearHydration failed:", e);
   }
 }
 
@@ -670,7 +672,7 @@ export async function fetchHydrationFromFirebase(uid?: string): Promise<any[]> {
     const snap = await getDocs(hydrationCol(userId));
     return snap.docs.map(d => d.data());
   } catch (e) {
-    console.log("⚠️ fetchHydrationFromFirebase failed:", e);
+    log("⚠️ fetchHydrationFromFirebase failed:", e);
     return [];
   }
 }
@@ -705,9 +707,9 @@ export async function syncAddFoodEntry(
       ...entry,
       syncedAt: serverTimestamp(),
     });
-    console.log(`✅ Food entry synced to Firebase: ${entry.foodName}`);
+    log(`✅ Food entry synced to Firebase: ${entry.foodName}`);
   } catch (e) {
-    console.log("⚠️ syncAddFoodEntry failed:", e);
+    log("⚠️ syncAddFoodEntry failed:", e);
   }
 }
 
@@ -716,9 +718,9 @@ export async function syncDeleteFoodEntry(id: string, targetUid?: string): Promi
     const uid = targetUid || await getUserId();
     if (!uid) return;
     await deleteDoc(doc(nutritionCol(uid), id));
-    console.log(`✅ Food entry deleted from Firebase: ${id}`);
+    log(`✅ Food entry deleted from Firebase: ${id}`);
   } catch (e) {
-    console.log("⚠️ syncDeleteFoodEntry failed:", e);
+    log("⚠️ syncDeleteFoodEntry failed:", e);
   }
 }
 
@@ -730,9 +732,9 @@ export async function syncClearFoodEntries(targetUid?: string): Promise<void> {
     const batch = writeBatch(db);
     snap.forEach((d) => batch.delete(d.ref));
     await batch.commit();
-    console.log("✅ All food entries cleared in Firebase");
+    log("✅ All food entries cleared in Firebase");
   } catch (e) {
-    console.log("⚠️ syncClearFoodEntries failed:", e);
+    log("⚠️ syncClearFoodEntries failed:", e);
   }
 }
 
@@ -743,7 +745,7 @@ export async function fetchFoodEntriesFromFirebase(uid?: string): Promise<any[]>
     const snap = await getDocs(nutritionCol(userId));
     return snap.docs.map(d => d.data());
   } catch (e) {
-    console.log("⚠️ fetchFoodEntriesFromFirebase failed:", e);
+    log("⚠️ fetchFoodEntriesFromFirebase failed:", e);
     return [];
   }
 }
@@ -774,9 +776,9 @@ export async function syncAddActivityEntry(
       ...entry,
       syncedAt: serverTimestamp(),
     });
-    console.log(`✅ Activity entry synced to Firebase: ${entry.activityName}`);
+    log(`✅ Activity entry synced to Firebase: ${entry.activityName}`);
   } catch (e) {
-    console.log("⚠️ syncAddActivityEntry failed:", e);
+    log("⚠️ syncAddActivityEntry failed:", e);
   }
 }
 
@@ -785,9 +787,9 @@ export async function syncDeleteActivityEntry(id: string, targetUid?: string): P
     const uid = targetUid || await getUserId();
     if (!uid) return;
     await deleteDoc(doc(activityCol(uid), id));
-    console.log(`✅ Activity entry deleted from Firebase: ${id}`);
+    log(`✅ Activity entry deleted from Firebase: ${id}`);
   } catch (e) {
-    console.log("⚠️ syncDeleteActivityEntry failed:", e);
+    log("⚠️ syncDeleteActivityEntry failed:", e);
   }
 }
 
@@ -799,9 +801,9 @@ export async function syncClearActivityEntries(targetUid?: string): Promise<void
     const batch = writeBatch(db);
     snap.forEach((d) => batch.delete(d.ref));
     await batch.commit();
-    console.log("✅ All activity entries cleared in Firebase");
+    log("✅ All activity entries cleared in Firebase");
   } catch (e) {
-    console.log("⚠️ syncClearActivityEntries failed:", e);
+    log("⚠️ syncClearActivityEntries failed:", e);
   }
 }
 
@@ -812,7 +814,7 @@ export async function fetchActivityEntriesFromFirebase(uid?: string): Promise<an
     const snap = await getDocs(activityCol(userId));
     return snap.docs.map(d => d.data());
   } catch (e) {
-    console.log("⚠️ fetchActivityEntriesFromFirebase failed:", e);
+    log("⚠️ fetchActivityEntriesFromFirebase failed:", e);
     return [];
   }
 }
@@ -840,9 +842,9 @@ export async function syncStepsData(
       ...data,
       syncedAt: serverTimestamp(),
     });
-    console.log(`✅ Steps synced to Firebase: ${data.steps} steps`);
+    log(`✅ Steps synced to Firebase: ${data.steps} steps`);
   } catch (e) {
-    console.log("⚠️ syncStepsData failed:", e);
+    log("⚠️ syncStepsData failed:", e);
   }
 }
 
@@ -853,8 +855,20 @@ export async function fetchStepsDataFromFirebase(date: string, uid?: string): Pr
     const snap = await getDoc(doc(stepsCol(userId), date));
     return snap.exists() ? snap.data() : null;
   } catch (e) {
-    console.log("⚠️ fetchStepsDataFromFirebase failed:", e);
+    log("⚠️ fetchStepsDataFromFirebase failed:", e);
     return null;
+  }
+}
+
+export async function fetchAllStepsFromFirebase(uid?: string): Promise<any[]> {
+  try {
+    const userId = uid || await getUserId();
+    if (!userId) return [];
+    const snap = await getDocs(stepsCol(userId));
+    return snap.docs.map(d => d.data());
+  } catch (e) {
+    log("⚠️ fetchAllStepsFromFirebase failed:", e);
+    return [];
   }
 }
 
@@ -872,9 +886,9 @@ export async function syncBiogearsAnalytics(analytics: any, targetUid?: string):
       ...analytics,
       updatedAt: serverTimestamp(),
     });
-    console.log("✅ BioGears analytics cached in Firestore");
+    log("✅ BioGears analytics cached in Firestore");
   } catch (e) {
-    console.log("⚠️ syncBiogearsAnalytics failed:", e);
+    log("⚠️ syncBiogearsAnalytics failed:", e);
   }
 }
 
@@ -885,7 +899,7 @@ export async function fetchBiogearsAnalyticsFromFirebase(uid?: string): Promise<
     const snap = await getDoc(doc(biogearsCol(userId), "latest"));
     return snap.exists() ? snap.data() : null;
   } catch (e) {
-    console.log("⚠️ fetchBiogearsAnalyticsFromFirebase failed:", e);
+    log("⚠️ fetchBiogearsAnalyticsFromFirebase failed:", e);
     return null;
   }
 }

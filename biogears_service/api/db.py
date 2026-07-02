@@ -66,7 +66,14 @@ def get_connection():
             _db_initialized = True
         return conn, True
     else:
-        conn = sqlite3.connect(str(SQLITE_PATH))
+        conn = sqlite3.connect(str(SQLITE_PATH), timeout=30.0)
+        try:
+            conn.execute("PRAGMA journal_mode=WAL;")
+            conn.execute("PRAGMA synchronous=NORMAL;")
+        except Exception as pragma_err:
+            import logging
+            logging.getLogger(__name__).warning(f"⚠️ Failed to set SQLite PRAGMAs: {pragma_err}")
+
         if not _db_initialized:
             with conn:
                 # Core profiles table
@@ -113,9 +120,42 @@ def write_audit_log(conn, is_pg: bool, user_id: str, action: str, performed_by: 
 
 
 # ---------------------------------------------------------------------------
+# Retry Decorator for SQLite Database Operations
+# ---------------------------------------------------------------------------
+import time
+import random
+from functools import wraps
+
+def with_sqlite_retry(max_retries=5, initial_backoff=0.05):
+    def decorator(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            backoff = initial_backoff
+            for attempt in range(max_retries):
+                try:
+                    return func(*args, **kwargs)
+                except sqlite3.OperationalError as e:
+                    err_msg = str(e).lower()
+                    if ("locked" in err_msg or "busy" in err_msg) and attempt < max_retries - 1:
+                        sleep_time = backoff * (1.0 + random.random())
+                        import logging
+                        logging.getLogger(__name__).warning(
+                            f"⚠️ Database locked/busy during {func.__name__} (attempt {attempt + 1}/{max_retries}). "
+                            f"Retrying in {sleep_time:.3f}s... Error: {e}"
+                        )
+                        time.sleep(sleep_time)
+                        backoff *= 2
+                    else:
+                        raise
+        return wrapper
+    return decorator
+
+
+# ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
 
+@with_sqlite_retry()
 def upsert_profile(user_id: str, metadata: Dict[str, Any]) -> None:
     """Create or fully overwrite a profile record."""
     conn, is_pg = get_connection()
@@ -144,6 +184,7 @@ def upsert_profile(user_id: str, metadata: Dict[str, Any]) -> None:
         conn.close()
 
 
+@with_sqlite_retry()
 def get_profile(user_id: str) -> Optional[Dict[str, Any]]:
     """Return a single profile dict, or None if not found."""
     conn, is_pg = get_connection()
@@ -173,6 +214,7 @@ def get_profile(user_id: str) -> Optional[Dict[str, Any]]:
     return None
 
 
+@with_sqlite_retry()
 def delete_profile(user_id: str) -> bool:
     """Remove a profile. Returns True if it existed, False otherwise."""
     conn, is_pg = get_connection()
@@ -200,6 +242,7 @@ def delete_profile(user_id: str) -> bool:
         conn.close()
 
 
+@with_sqlite_retry()
 def list_profiles() -> Dict[str, Any]:
     """Return the entire database dict (keyed by user_id)."""
     conn, is_pg = get_connection()

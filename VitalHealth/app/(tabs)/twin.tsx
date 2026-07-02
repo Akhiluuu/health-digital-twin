@@ -21,6 +21,7 @@ import Svg, { Path } from 'react-native-svg';
 import { useBiogearsTwin } from '../../context/BiogearsTwinContext';
 import { useTheme } from '../../context/ThemeContext';
 import { useFamily } from '../../context/FamilyContext';
+import { useNutrition } from '../../context/NutritionContext';
 import { colors as themeColors } from '../../theme/colors';
 import Header from '../components/Header';
 import CircadianClock from '../../components/twin/CircadianClock';
@@ -303,6 +304,7 @@ export default function TwinScreen() {
     dismissCalibrationSuccess,
   } = useBiogearsTwin();
    const { activeProfile: profile, isSwitched } = useFamily();
+   const { addFoodEntry } = useNutrition();
   const isFocused = useIsFocused();
   const [showSuccessModal, setShowSuccessModal] = useState(false);
 
@@ -400,6 +402,49 @@ export default function TwinScreen() {
   const [mode, setMode] = useState<'dashboard' | 'routine'>((params.mode as any) || 'dashboard');
   const [dashTab, setDashTab] = useState<DashTab>('overview');  // dashboard inner tab
   const fabAnim = useRef(new Animated.Value(params.mode === 'routine' ? 1 : 0)).current;
+
+  // Simulation History Filters
+  const [simSearch, setSimSearch] = useState('');
+  const [simAnomalyFilter, setSimAnomalyFilter] = useState<'all' | 'normal' | 'anomaly'>('all');
+  const [simDateFilter, setSimDateFilter] = useState<'all' | 'today' | 'week' | 'month'>('all');
+
+  const filteredSessions = React.useMemo(() => {
+    return sessions.filter(s => {
+      // 1. Search text filter
+      if (simSearch.trim()) {
+        const query = simSearch.toLowerCase();
+        const matchesName = (s.name || '').toLowerCase().includes(query);
+        const matchesInsight = (s.ai_insights || []).some(insight => insight.toLowerCase().includes(query));
+        const matchesEvents = String(s.event_count || 0).includes(query);
+        if (!matchesName && !matchesInsight && !matchesEvents) {
+          return false;
+        }
+      }
+
+      // 2. Anomaly filter
+      if (simAnomalyFilter === 'anomaly' && !s.has_anomaly) return false;
+      if (simAnomalyFilter === 'normal' && s.has_anomaly) return false;
+
+      // 3. Date filter
+      if (simDateFilter !== 'all' && s.timestamp) {
+        const simTime = new Date(s.timestamp).getTime();
+        const now = Date.now();
+        if (simDateFilter === 'today') {
+          const startOfToday = new Date();
+          startOfToday.setHours(0,0,0,0);
+          if (simTime < startOfToday.getTime()) return false;
+        } else if (simDateFilter === 'week') {
+          const sevenDaysAgo = now - 7 * 24 * 60 * 60 * 1000;
+          if (simTime < sevenDaysAgo) return false;
+        } else if (simDateFilter === 'month') {
+          const thirtyDaysAgo = now - 30 * 24 * 60 * 60 * 1000;
+          if (simTime < thirtyDaysAgo) return false;
+        }
+      }
+
+      return true;
+    });
+  }, [sessions, simSearch, simAnomalyFilter, simDateFilter]);
 
   // ── Simulation elapsed timer ───────────────────────────────────────────────
   const [elapsedSecs, setElapsedSecs] = useState(0);
@@ -663,10 +708,30 @@ export default function TwinScreen() {
       ? 'Custom'
       : MEAL_TYPES.find(m => m.value === mealType)?.label ?? mealType;
 
+    const finalMacros = mealMacros ?? {
+      carb_g: Math.round(kcal * 0.40 / 4),
+      fat_g: Math.round(kcal * 0.30 / 9),
+      protein_g: Math.round(kcal * 0.30 / 4),
+    };
+
+    // Sync with NutritionContext
+    addFoodEntry({
+      foodId: 'custom',
+      foodName: `${mealLabel} Meal`,
+      calories: kcal,
+      protein: finalMacros.protein_g,
+      carbs: finalMacros.carb_g,
+      fat: finalMacros.fat_g,
+      sugar: 0,
+      sodium: 0,
+      fiber: 0,
+      mealId: mealType === 'custom' ? 'snacks' : mealType,
+    });
+
     addEvent({
       event_type: 'meal', value: kcal, wallTime: mealTime,
       meal_type: finalMealType,
-      ...(mealMacros ?? {}),
+      ...finalMacros,
       displayLabel: `${mealLabel} Meal · ${kcal} kcal`,
       displayIcon: '🍽️',
     });
@@ -907,6 +972,20 @@ export default function TwinScreen() {
     const { base } = parseDisplayAmount(selectedCsvFood.display_amount);
     const multiplier = csvFoodAmount / base;
     const scaled = scaleNutrients(selectedCsvFood, multiplier);
+
+    // Sync with NutritionContext
+    addFoodEntry({
+      foodId: selectedCsvFood.food.toLowerCase().replace(/[^a-z0-9]/g, '_'),
+      foodName: selectedCsvFood.food,
+      calories: scaled.calories,
+      protein: scaled.protein,
+      carbs: scaled.carbs,
+      fat: scaled.fat,
+      sugar: 0,
+      sodium: 0,
+      fiber: 0,
+      mealId: 'snacks',
+    });
 
     addEvent({
       event_type: 'meal',
@@ -1859,30 +1938,97 @@ export default function TwinScreen() {
       {sessions.length > 0 ? (
         <>
           <View style={ss.rowBetween}>
-            <Text style={[ss.section, { color: c.text }]}>Recent Simulations</Text>
+            <Text style={[ss.section, { color: c.text }]}>Simulation History</Text>
             <TouchableOpacity onPress={handleUndo}>
               <Text style={{ color: '#ef4444', fontSize: 12 }}>⏪ Undo Last</Text>
             </TouchableOpacity>
           </View>
-          {sessions.slice(0, 5).map(s => (
-            <TouchableOpacity key={s.session_id}
-              style={[ss.sessionCard, { backgroundColor: c.card }]}
-              onPress={() => router.push(`/session/${s.session_id}`)}>
-              <View style={[ss.sessionDot, { backgroundColor: s.has_anomaly ? '#ef444420' : '#10b98120' }]}>
-                <Ionicons name={s.has_anomaly ? 'warning' : 'checkmark-circle'} size={22} color={s.has_anomaly ? '#ef4444' : '#10b981'} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={[ss.sessionName, { color: c.text }]}>{s.name || 'Simulation'}</Text>
-                <Text style={[ss.sessionMeta, { color: c.sub }]}>
-                  {s.timestamp ? new Date(s.timestamp).toLocaleDateString('en-IN') : 'Recent'} · {s.event_count ?? 0} events
-                </Text>
-                {s.ai_insights?.[0] && (
-                  <Text style={[ss.sessionInsight, { color: c.sub }]} numberOfLines={1}>{s.ai_insights[0]}</Text>
-                )}
-              </View>
-              <Ionicons name="chevron-forward" size={16} color={c.sub} />
-            </TouchableOpacity>
-          ))}
+
+          {/* Search Bar */}
+          <View style={[ss.searchContainer, { backgroundColor: c.card, borderColor: c.border }]}>
+            <Ionicons name="search" size={16} color={c.sub} style={{ marginRight: 8 }} />
+            <TextInput
+              value={simSearch}
+              onChangeText={setSimSearch}
+              placeholder="Search by name, date or event count..."
+              placeholderTextColor={c.sub}
+              style={{ flex: 1, color: c.text, fontSize: 13, paddingVertical: 8 }}
+            />
+            {simSearch.length > 0 && (
+              <TouchableOpacity onPress={() => setSimSearch('')}>
+                <Ionicons name="close-circle" size={16} color={c.sub} />
+              </TouchableOpacity>
+            )}
+          </View>
+
+          {/* Filter Pills */}
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingBottom: 16, paddingTop: 4 }}>
+            {/* Anomaly Pills */}
+            <View style={{ flexDirection: 'row', gap: 6, marginRight: 12, borderRightWidth: 1, borderRightColor: c.border, paddingRight: 12 }}>
+              {(['all', 'normal', 'anomaly'] as const).map(type => (
+                <TouchableOpacity
+                  key={type}
+                  style={[
+                    ss.filterPill,
+                    { backgroundColor: c.card, borderColor: c.border },
+                    simAnomalyFilter === type && { backgroundColor: c.active, borderColor: c.active }
+                  ]}
+                  onPress={() => setSimAnomalyFilter(type)}
+                >
+                  <Text style={[ss.filterPillText, { color: simAnomalyFilter === type ? '#fff' : c.sub }]}>
+                    {type === 'all' ? 'All Results' : type === 'normal' ? 'Normal' : 'Anomalies ⚠️'}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            {/* Date Pills */}
+            <View style={{ flexDirection: 'row', gap: 6 }}>
+              {(['all', 'today', 'week', 'month'] as const).map(dateRange => (
+                <TouchableOpacity
+                  key={dateRange}
+                  style={[
+                    ss.filterPill,
+                    { backgroundColor: c.card, borderColor: c.border },
+                    simDateFilter === dateRange && { backgroundColor: c.active, borderColor: c.active }
+                  ]}
+                  onPress={() => setSimDateFilter(dateRange)}
+                >
+                  <Text style={[ss.filterPillText, { color: simDateFilter === dateRange ? '#fff' : c.sub }]}>
+                    {dateRange === 'all' ? 'All Time' : dateRange === 'today' ? 'Today' : dateRange === 'week' ? '7 Days' : '30 Days'}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </ScrollView>
+
+          {filteredSessions.length > 0 ? (
+            filteredSessions.map(s => (
+              <TouchableOpacity key={s.session_id}
+                style={[ss.sessionCard, { backgroundColor: c.card }]}
+                onPress={() => router.push(`/session/${s.session_id}`)}>
+                <View style={[ss.sessionDot, { backgroundColor: s.has_anomaly ? '#ef444420' : '#10b98120' }]}>
+                  <Ionicons name={s.has_anomaly ? 'warning' : 'checkmark-circle'} size={22} color={s.has_anomaly ? '#ef4444' : '#10b981'} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[ss.sessionName, { color: c.text }]}>{s.name || 'Simulation'}</Text>
+                  <Text style={[ss.sessionMeta, { color: c.sub }]}>
+                    {s.timestamp ? new Date(s.timestamp).toLocaleDateString('en-IN') : 'Recent'} · {s.event_count ?? 0} events
+                  </Text>
+                  {s.ai_insights?.[0] && (
+                    <Text style={[ss.sessionInsight, { color: c.sub }]} numberOfLines={1}>{s.ai_insights[0]}</Text>
+                  )}
+                </View>
+                <Ionicons name="chevron-forward" size={16} color={c.sub} />
+              </TouchableOpacity>
+            ))
+          ) : (
+            <View style={[ss.emptyCard, { backgroundColor: c.card, paddingVertical: 40 }]}>
+              <Ionicons name="search-outline" size={32} color={c.sub} style={{ marginBottom: 8 }} />
+              <Text style={[ss.emptyTitle, { color: c.text, fontSize: 14 }]}>No Matching Simulations</Text>
+              <Text style={[ss.emptySub, { color: c.sub, fontSize: 12 }]}>Try adjusting your search query or filters.</Text>
+            </View>
+          )}
         </>
       ) : (
         <View style={[ss.emptyCard, { backgroundColor: c.card }]}>
@@ -2827,5 +2973,26 @@ const ss = StyleSheet.create({
   emptyRoutineBtnTxtSecondary: {
     fontWeight: '700',
     fontSize: 13,
+  },
+  searchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 12,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    marginBottom: 10,
+    marginTop: 4,
+  },
+  filterPill: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  filterPillText: {
+    fontSize: 11,
+    fontWeight: '700',
   },
 });

@@ -5,6 +5,8 @@
 
 import { db } from "./index";
 
+import { log } from "../utils/logger";
+
 export interface UserProfile {
   uid: string;
   firstName: string;
@@ -64,9 +66,9 @@ export async function saveUserProfile(profile: Partial<UserProfile> & { uid: str
         profile.biogears_user_id ?? "",
       ]
     );
-    console.log("✅ User profile saved locally:", profile.uid);
+    log("✅ User profile saved locally:", profile.uid);
   } catch (error) {
-    console.log("❌ saveUserProfile error:", error);
+    log("❌ saveUserProfile error:", error);
   }
 }
 
@@ -79,7 +81,7 @@ export async function getLocalProfile(uid: string): Promise<UserProfile | null> 
       [uid]
     )) ?? null;
   } catch (error) {
-    console.log("❌ getLocalProfile error:", error);
+    log("❌ getLocalProfile error:", error);
     return null;
   }
 }
@@ -92,7 +94,7 @@ export async function getAnyLocalProfile(): Promise<UserProfile | null> {
       "SELECT * FROM user_profile ORDER BY registered_at DESC LIMIT 1"
     )) ?? null;
   } catch (error) {
-    console.log("❌ getAnyLocalProfile error:", error);
+    log("❌ getAnyLocalProfile error:", error);
     return null;
   }
 }
@@ -106,7 +108,7 @@ export async function markBiogearsRegistered(uid: string, biogearsUserId: string
       [biogearsUserId, uid]
     );
   } catch (error) {
-    console.log("❌ markBiogearsRegistered error:", error);
+    log("❌ markBiogearsRegistered error:", error);
   }
 }
 
@@ -115,8 +117,8 @@ export async function markBiogearsRegistered(uid: string, biogearsUserId: string
 export async function deleteLocalProfile(uid: string): Promise<void> {
   try {
     await db.runAsync("DELETE FROM user_profile WHERE uid = ?", [uid]);
-    console.log("🗑 Local profile deleted:", uid);
+    log("🗑 Local profile deleted:", uid);
   } catch (error) {
-    console.log("❌ deleteLocalProfile error:", error);
+    log("❌ deleteLocalProfile error:", error);
   }
 }

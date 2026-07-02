@@ -119,7 +119,7 @@ export default function DataSharing() {
         { backgroundColor: colors.bg },
       ]}
     >
-      <Header title="Data Sharing" showBack={true} showProfile={false} showSOS={false} />
+      <Header title="Data Sharing" showBack={true} showProfile={false} />
 
       {loading ? (
         <View style={styles.loadingContainer}>

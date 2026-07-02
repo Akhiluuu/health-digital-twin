@@ -89,13 +89,13 @@ export default function StepIntelligenceScreen() {
   const { theme } = useTheme();
 
   const colors = theme === "light"
-    ? { background: "#f8fafc", card: "#ffffff", text: "#020617", subText: "#64748b", border: "#e2e8f0", headerGradient: ["#6366f1","#4f46e5"] as const }
-    : { background: "#0D0D0F", card: "rgba(255,255,255,0.04)", text: "#ffffff", subText: "rgba(255,255,255,0.4)", border: "rgba(255,255,255,0.08)", headerGradient: ["#0f0c29","#302b63"] as const };
+    ? { background: "#f8fafc", card: "#ffffff", text: "#020617", subText: "#64748b", border: "#e2e8f0", accent: "#6366f1", headerGradient: ["#6366f1","#4f46e5"] as const }
+    : { background: "#0D0D0F", card: "rgba(255,255,255,0.04)", text: "#ffffff", subText: "rgba(255,255,255,0.4)", border: "rgba(255,255,255,0.08)", accent: "#6366f1", headerGradient: ["#0f0c29","#302b63"] as const };
 
   const { weightKg, heightCm, profile } = useProfile();
   const {
     steps, calories, distanceKm, goal, sessionSecs,
-    isTracking, dataSource, lastSyncAt, weeklySteps, refreshHistory,
+    isTracking, dataSource, lastSyncAt, weeklySteps, monthlySteps, yearlySteps, refreshHistory,
     setGoal, startTracking, stopTracking, resetToday,
   } = useSteps();
 
@@ -121,6 +121,9 @@ export default function StepIntelligenceScreen() {
   const [goalModalOpen, setGoalModalOpen] = useState(false);
   const [goalInput,     setGoalInput]     = useState(goal.toString());
   const [sedMins,       setSedMins]       = useState(0);
+  const [activeTab,     setActiveTab]     = useState<'overview' | 'history'>('overview');
+  const [historyFilter, setHistoryFilter] = useState<'weekly' | 'monthly' | 'yearly'>('weekly');
+  const [overviewFilter, setOverviewFilter] = useState<'weekly' | 'monthly' | 'yearly'>('weekly');
 
   const pulseAnim  = useRef(new Animated.Value(1)).current;
   const lastMoveTs = useRef(Date.now());
@@ -173,6 +176,195 @@ export default function StepIntelligenceScreen() {
   const sedColor   = sedMins >= 60 ? "#ef4444" : sedMins >= 30 ? "#f59e0b" : "#22c55e";
   const strideM    = heightCm > 0 ? (0.413 * (heightCm / 100)).toFixed(2) : "0.76";
 
+  const renderHistoryLogs = () => {
+    const dataToRender =
+      historyFilter === "weekly"
+        ? weeklySteps
+        : historyFilter === "monthly"
+        ? monthlySteps
+        : yearlySteps;
+
+    const listData = [...dataToRender].sort((a, b) => b.date.localeCompare(a.date));
+    const chartData = [...dataToRender].sort((a, b) => a.date.localeCompare(b.date));
+
+    const maxSteps = Math.max(...chartData.map((d) => d.steps), 1000);
+
+    const chartTitle =
+      historyFilter === "weekly"
+        ? "WEEKLY TREND"
+        : historyFilter === "monthly"
+        ? "MONTHLY TREND"
+        : "YEARLY TREND";
+
+    const recordCountText = `${dataToRender.length} ${
+      historyFilter === "weekly" ? "days" : historyFilter === "monthly" ? "days" : "months"
+    }`;
+
+    // Reuse and render the beautiful bar chart with appropriate scaling
+    const chartContent = (
+      <View style={s.chartContainer}>
+        {chartData.map((item, idx) => {
+          const barHeight = Math.max(5, (item.steps / maxSteps) * 80);
+          let label = "";
+          let isHighlight = false;
+
+          if (historyFilter === "weekly" || historyFilter === "monthly") {
+            isHighlight = item.date === todayStr();
+            const [y, m, d] = item.date.split("-").map(Number);
+            label = new Date(y, m - 1, d).toLocaleDateString("en-IN", { weekday: "short" }).toUpperCase();
+          } else {
+            // Yearly - show month name
+            const [y, m] = item.date.split("-").map(Number);
+            label = new Date(y, m - 1, 2).toLocaleDateString("en-IN", { month: "short" }).toUpperCase();
+          }
+
+          return (
+            <View
+              key={item.date || idx}
+              style={[
+                s.chartColumn,
+                {
+                  width: historyFilter === "monthly" ? 32 : "auto",
+                  minWidth: historyFilter === "monthly" ? 30 : 20,
+                  marginHorizontal: historyFilter === "monthly" ? 4 : 0,
+                },
+              ]}
+            >
+              <Text style={[s.chartBarValue, { color: isHighlight ? colors.accent : colors.subText, fontSize: 7 }]}>
+                {item.steps >= 1000 ? `${(item.steps / 1000).toFixed(0)}k` : item.steps}
+              </Text>
+              <View style={[s.chartBarBg, { width: historyFilter === "monthly" ? 8 : 12, backgroundColor: colors.border }]}>
+                <LinearGradient
+                  colors={isHighlight ? [colors.accent, colors.accent + "88"] : ["#6366f1", "#4f46e5"]}
+                  style={[s.chartBarFill, { height: barHeight }]}
+                />
+              </View>
+              <Text style={[s.chartDayLabel, { color: isHighlight ? colors.accent : colors.subText, fontSize: 7 }]}>
+                {label}
+              </Text>
+            </View>
+          );
+        })}
+      </View>
+    );
+
+    return (
+      <View style={s.historyContainer}>
+        {/* Filter Tabs Header */}
+        <View style={s.filterHeader}>
+          {(["weekly", "monthly", "yearly"] as const).map((filter) => (
+            <TouchableOpacity
+              key={filter}
+              style={[
+                s.filterBtn,
+                { backgroundColor: colors.card, borderColor: colors.border },
+                historyFilter === filter && { backgroundColor: colors.accent, borderColor: colors.accent }
+              ]}
+              onPress={() => setHistoryFilter(filter)}
+            >
+              <Text style={[s.filterBtnText, { color: historyFilter === filter ? "#fff" : colors.subText }]}>
+                {filter.toUpperCase()}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+
+        {/* Visual Chart Card */}
+        {dataToRender.length > 0 && (
+          <View style={[s.card, { backgroundColor: colors.card, marginBottom: 12 }]}>
+            <Text style={[s.cardTitle, { color: colors.subText }]}>{chartTitle}</Text>
+            {historyFilter === "monthly" ? (
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingRight: 20 }}>
+                {chartContent}
+              </ScrollView>
+            ) : (
+              chartContent
+            )}
+          </View>
+        )}
+
+        <View style={s.historyHeaderRow}>
+          <Text style={[s.historyHeaderTitle, { color: colors.text }]}>
+            {historyFilter === "weekly"
+              ? "WEEKLY STEP RECORD"
+              : historyFilter === "monthly"
+              ? "30-DAY STEP RECORD"
+              : "12-MONTH STEP RECORD"}
+          </Text>
+          <Text style={[s.historyHeaderCount, { color: colors.subText }]}>{recordCountText}</Text>
+        </View>
+
+        {listData.length > 0 ? (
+          listData.map((item, idx) => {
+            let formattedDate = "";
+            let p = 0;
+            let itemZone = { label: "IDLE", color: "#475569", icon: "sleep" };
+
+            if (historyFilter === "weekly" || historyFilter === "monthly") {
+              const [y, m, d] = item.date.split("-").map(Number);
+              const localDate = new Date(y, m - 1, d);
+              formattedDate = localDate.toLocaleDateString("en-IN", {
+                weekday: "short",
+                day: "numeric",
+                month: "short",
+              });
+              p = item.steps / goal;
+              itemZone = getZone(item.steps, goal);
+            } else {
+              // Yearly
+              const [y, m] = item.date.split("-").map(Number);
+              const localDate = new Date(y, m - 1, 2);
+              formattedDate = localDate.toLocaleDateString("en-IN", {
+                month: "long",
+                year: "numeric",
+              });
+              // monthly goal = daily goal * 30
+              p = item.steps / (goal * 30);
+              itemZone = getZone(item.steps / 30, goal);
+            }
+
+            return (
+              <View key={item.date || idx} style={[s.historyItemCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                <View style={s.historyItemHeader}>
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+                    <View style={[s.historyIconWrap, { backgroundColor: itemZone.color + "15" }]}>
+                      <MaterialCommunityIcons name={itemZone.icon as any} size={18} color={itemZone.color} />
+                    </View>
+                    <View>
+                      <Text style={[s.historyItemDate, { color: colors.text }]}>{formattedDate}</Text>
+                      <Text style={[s.historyItemZone, { color: itemZone.color }]}>{itemZone.label}</Text>
+                    </View>
+                  </View>
+                  <View style={{ alignItems: "flex-end" }}>
+                    <Text style={[s.historyItemSteps, { color: colors.text }]}>
+                      {item.steps.toLocaleString("en-IN")}
+                    </Text>
+                    <Text style={[s.historyItemGoalText, { color: colors.subText }]}>
+                      {Math.round(p * 100)}% of goal
+                    </Text>
+                  </View>
+                </View>
+
+                {/* Progress bar mirror */}
+                <View style={[s.historyProgressBg, { backgroundColor: colors.border }]}>
+                  <View style={[s.historyProgressFill, { width: `${Math.min(100, p * 100)}%`, backgroundColor: itemZone.color }]} />
+                </View>
+              </View>
+            );
+          })
+        ) : (
+          <View style={[s.emptyHistoryWrap, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <Ionicons name="walk-outline" size={48} color={colors.subText} style={{ marginBottom: 12 }} />
+            <Text style={[s.emptyHistoryTitle, { color: colors.text }]}>No Step History Yet</Text>
+            <Text style={[s.emptyHistoryDesc, { color: colors.subText }]}>
+              Keep walking to record daily step metrics on your digital twin.
+            </Text>
+          </View>
+        )}
+      </View>
+    );
+  };
+
   return (
     <View style={[s.root, { backgroundColor: colors.background }]}>
 
@@ -200,15 +392,39 @@ export default function StepIntelligenceScreen() {
 
       <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false}>
 
-        {/* Tracking banner */}
-        {isTracking && (
-          <View style={[s.banner, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <Ionicons name="radio" size={13} color="#22c55e" />
-            <Text style={[s.bannerText, { color: colors.text }]}>
-              {sourceLabel}
+        {/* Segmented Control Tab Bar */}
+        <View style={[s.tabBarContainer, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
+          <TouchableOpacity 
+            onPress={() => setActiveTab("overview")} 
+            style={[s.tabBarItem, activeTab === "overview" && { borderBottomColor: colors.accent, borderBottomWidth: 2 }]}
+          >
+            <Ionicons name="stats-chart-outline" size={16} color={activeTab === "overview" ? colors.accent : colors.subText} />
+            <Text style={[s.tabBarText, { color: activeTab === "overview" ? colors.accent : colors.subText, fontWeight: activeTab === "overview" ? "bold" : "600" }]}>
+              Overview
             </Text>
-          </View>
-        )}
+          </TouchableOpacity>
+          <TouchableOpacity 
+            onPress={() => setActiveTab("history")} 
+            style={[s.tabBarItem, activeTab === "history" && { borderBottomColor: colors.accent, borderBottomWidth: 2 }]}
+          >
+            <Ionicons name="time-outline" size={16} color={activeTab === "history" ? colors.accent : colors.subText} />
+            <Text style={[s.tabBarText, { color: activeTab === "history" ? colors.accent : colors.subText, fontWeight: activeTab === "history" ? "bold" : "600" }]}>
+              History Logs
+            </Text>
+          </TouchableOpacity>
+        </View>
+
+        {activeTab === "overview" ? (
+          <>
+            {/* Tracking banner */}
+            {isTracking && (
+              <View style={[s.banner, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                <Ionicons name="radio" size={13} color="#22c55e" />
+                <Text style={[s.bannerText, { color: colors.text }]}>
+                  {sourceLabel}
+                </Text>
+              </View>
+            )}
 
         {/* Sync status */}
         <View style={[s.syncRow, { backgroundColor: colors.card, borderColor: colors.border }]}>
@@ -363,58 +579,113 @@ export default function StepIntelligenceScreen() {
 
         {/* Weekly steps history */}
         <View style={[s.card, { backgroundColor: colors.card }]}>
-          <Text style={[s.cardTitle, { color: colors.subText }]}>WEEKLY HISTORY</Text>
-          {weeklySteps && weeklySteps.length > 0 ? (
-            <View>
-              {/* Stats Summary */}
-              <View style={s.historySummaryRow}>
-                <View>
-                  <Text style={[s.historySummaryVal, { color: colors.text }]}>
-                    {Math.round(weeklySteps.reduce((acc, curr) => acc + curr.steps, 0)).toLocaleString("en-IN")}
+          <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+            <Text style={[s.cardTitle, { color: colors.subText, marginBottom: 0 }]}>
+              {overviewFilter === "weekly" ? "WEEKLY HISTORY" : overviewFilter === "monthly" ? "30-DAY HISTORY" : "YEARLY HISTORY"}
+            </Text>
+            <View style={{ flexDirection: "row", gap: 4 }}>
+              {(["weekly", "monthly", "yearly"] as const).map((filter) => (
+                <TouchableOpacity
+                  key={filter}
+                  onPress={() => setOverviewFilter(filter)}
+                  style={{
+                    paddingHorizontal: 8,
+                    paddingVertical: 4,
+                    borderRadius: 4,
+                    backgroundColor: overviewFilter === filter ? colors.accent : colors.border,
+                  }}
+                >
+                  <Text style={{ fontSize: 9, fontWeight: "bold", color: overviewFilter === filter ? "#fff" : colors.subText }}>
+                    {filter.toUpperCase()}
                   </Text>
-                  <Text style={[s.historySummaryLbl, { color: colors.subText }]}>Total Steps (7d)</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+          {(() => {
+            const dataToUse = overviewFilter === "weekly" ? weeklySteps : overviewFilter === "monthly" ? monthlySteps : yearlySteps;
+            if (!dataToUse || dataToUse.length === 0) {
+              return (
+                <View style={s.noHistoryContainer}>
+                  <Ionicons name="stats-chart-outline" size={24} color={colors.subText} style={{ marginBottom: 8 }} />
+                  <Text style={[s.noHistoryText, { color: colors.subText }]}>No step history recorded yet.</Text>
                 </View>
-                <View style={{ alignItems: "flex-end" }}>
-                  <Text style={[s.historySummaryVal, { color: colors.text }]}>
-                    {Math.round(weeklySteps.reduce((acc, curr) => acc + curr.steps, 0) / weeklySteps.length).toLocaleString("en-IN")}
-                  </Text>
-                  <Text style={[s.historySummaryLbl, { color: colors.subText }]}>Daily Average</Text>
-                </View>
-              </View>
+              );
+            }
+            
+            const total = dataToUse.reduce((acc, curr) => acc + curr.steps, 0);
+            const avg = total / dataToUse.length;
+            const maxSteps = Math.max(...dataToUse.map(d => d.steps), 1000);
 
-              {/* Bar Chart */}
-              <View style={s.chartContainer}>
-                {weeklySteps.map((day, idx) => {
-                  const maxSteps = Math.max(...weeklySteps.map(d => d.steps), 1000);
+            const chartContent = (
+              <View style={[s.chartContainer, overviewFilter === "monthly" && { minWidth: 600 }]}>
+                {dataToUse.map((day, idx) => {
                   const barHeight = Math.max(10, (day.steps / maxSteps) * 80);
-                  const isToday = day.date === todayStr();
-                  const dayName = new Date(day.date).toLocaleDateString("en-IN", { weekday: "short" }).toUpperCase();
+                  let isToday = false;
+                  let label = "";
+
+                  if (overviewFilter === "weekly" || overviewFilter === "monthly") {
+                    isToday = day.date === todayStr();
+                    const [y, m, d] = day.date.split("-").map(Number);
+                    const localDate = new Date(y, m - 1, d);
+                    label = localDate.toLocaleDateString("en-IN", { weekday: "short" }).toUpperCase();
+                  } else {
+                    const [y, m] = day.date.split("-").map(Number);
+                    const localDate = new Date(y, m - 1, 2);
+                    label = localDate.toLocaleDateString("en-IN", { month: "short" }).toUpperCase();
+                  }
 
                   return (
                     <View key={day.date} style={s.chartColumn}>
-                      <Text style={[s.chartBarValue, { color: isToday ? zone.color : colors.subText }]}>
-                        {day.steps >= 1000 ? `${(day.steps / 1000).toFixed(1)}k` : day.steps}
+                      <Text style={[s.chartBarValue, { color: isToday ? colors.accent : colors.subText, fontSize: 8 }]}>
+                        {day.steps >= 1000 ? `${(day.steps / 1000).toFixed(0)}k` : day.steps}
                       </Text>
                       <View style={[s.chartBarBg, { backgroundColor: colors.border }]}>
                         <LinearGradient
-                          colors={isToday ? [zone.color, zone.color + "88"] : ["#6366f1", "#4f46e5"]}
-                          style={[s.chartBarFill, { height: barHeight }]}
+                           colors={isToday ? [colors.accent, colors.accent + "88"] : ["#6366f1", "#4f46e5"]}
+                           style={[s.chartBarFill, { height: barHeight }]}
                         />
                       </View>
-                      <Text style={[s.chartDayLabel, { color: isToday ? zone.color : colors.subText, fontWeight: isToday ? "bold" : "normal" }]}>
-                        {dayName}
+                      <Text style={[s.chartDayLabel, { color: isToday ? colors.accent : colors.subText, fontWeight: isToday ? "bold" : "normal", fontSize: 8 }]}>
+                        {label}
                       </Text>
                     </View>
                   );
                 })}
               </View>
-            </View>
-          ) : (
-            <View style={s.noHistoryContainer}>
-              <Ionicons name="stats-chart-outline" size={24} color={colors.subText} style={{ marginBottom: 8 }} />
-              <Text style={[s.noHistoryText, { color: colors.subText }]}>No step history recorded yet.</Text>
-            </View>
-          )}
+            );
+
+            return (
+              <View>
+                <View style={s.historySummaryRow}>
+                  <View>
+                    <Text style={[s.historySummaryVal, { color: colors.text }]}>
+                      {Math.round(total).toLocaleString("en-IN")}
+                    </Text>
+                    <Text style={[s.historySummaryLbl, { color: colors.subText }]}>
+                      {overviewFilter === "weekly" ? "Total Steps (7d)" : overviewFilter === "monthly" ? "Total Steps (30d)" : "Total Steps (12m)"}
+                    </Text>
+                  </View>
+                  <View style={{ alignItems: "flex-end" }}>
+                    <Text style={[s.historySummaryVal, { color: colors.text }]}>
+                      {Math.round(avg).toLocaleString("en-IN")}
+                    </Text>
+                    <Text style={[s.historySummaryLbl, { color: colors.subText }]}>
+                      {overviewFilter === "yearly" ? "Monthly Average" : "Daily Average"}
+                    </Text>
+                  </View>
+                </View>
+
+                {overviewFilter === "monthly" ? (
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 10 }}>
+                    {chartContent}
+                  </ScrollView>
+                ) : (
+                  chartContent
+                )}
+              </View>
+            );
+          })()}
         </View>
 
         {/* Activity zones */}
@@ -452,6 +723,10 @@ export default function StepIntelligenceScreen() {
           <Text style={[s.tip, { color: colors.subText }]}>• Stand up every 30–60 mins to reduce sedentary risk</Text>
           <Text style={[s.tip, { color: colors.subText }]}>• Tracking survives screen-off, lock, swipe-away</Text>
         </View>
+          </>
+        ) : (
+          renderHistoryLogs()
+        )}
 
         <View style={{ height: 120 }} />
       </ScrollView>
@@ -631,4 +906,30 @@ const s = StyleSheet.create({
   chartDayLabel: { fontSize: 8, marginTop: 6, letterSpacing: 0.5 },
   noHistoryContainer: { alignItems: "center", justifyContent: "center", paddingVertical: 24 },
   noHistoryText: { fontSize: 12 },
+
+  // Tab selector styles
+  tabBarContainer: { flexDirection: "row", borderRadius: 16, overflow: "hidden", borderBottomWidth: 1, marginBottom: 16 },
+  tabBarItem: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, paddingVertical: 12 },
+  tabBarText: { fontSize: 13 },
+
+  // History styles
+  historyContainer: { gap: 12, marginBottom: 20 },
+  historyHeaderRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 4 },
+  historyHeaderTitle: { fontSize: 11, fontWeight: "900", letterSpacing: 2 },
+  historyHeaderCount: { fontSize: 12 },
+  historyItemCard: { borderRadius: 20, padding: 16, borderWidth: 1 },
+  historyItemHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  historyIconWrap: { width: 36, height: 36, borderRadius: 18, justifyContent: "center", alignItems: "center" },
+  historyItemDate: { fontSize: 14, fontWeight: "800" },
+  historyItemZone: { fontSize: 10, fontWeight: "800", textTransform: "uppercase", letterSpacing: 1, marginTop: 2 },
+  historyItemSteps: { fontSize: 18, fontWeight: "900" },
+  historyItemGoalText: { fontSize: 10, marginTop: 2 },
+  historyProgressBg: { height: 6, borderRadius: 3, marginTop: 12, overflow: "hidden" },
+  historyProgressFill: { height: "100%", borderRadius: 3 },
+  emptyHistoryWrap: { borderRadius: 20, padding: 32, borderWidth: 1, alignItems: "center", justifyContent: "center" },
+  emptyHistoryTitle: { fontSize: 16, fontWeight: "800", marginBottom: 4 },
+  emptyHistoryDesc: { fontSize: 12, textAlign: "center" },
+  filterHeader: { flexDirection: "row", justifyContent: "space-between", marginBottom: 12, gap: 8 },
+  filterBtn: { flex: 1, paddingVertical: 10, borderRadius: 12, alignItems: "center", justifyContent: "center", borderWidth: 1 },
+  filterBtnText: { fontSize: 11, fontWeight: "800", letterSpacing: 0.5 },
 });

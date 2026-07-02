@@ -5,7 +5,7 @@
 // Penn Computerized Neurocognitive Battery Protocol
 // ─────────────────────────────────────────────────────────────────────────────
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   StyleSheet,
   Text,
@@ -27,6 +27,190 @@ interface Props {
   onDone: (result: GameResult) => void;
 }
 
+interface MatrixTrial {
+  type: "count" | "rotation" | "concentric" | "nesting" | "shading";
+  contextCells: any[];
+  options: any[];
+  correctOptionIndex: number;
+}
+
+// Generate pool of 12 progressive randomized matrix reasoning puzzles
+const generateMatrixTrials = (): MatrixTrial[] => {
+  const trials: MatrixTrial[] = [];
+  const types: Array<MatrixTrial["type"]> = ["count", "rotation", "concentric", "nesting", "shading"];
+  
+  for (let t = 0; t < 12; t++) {
+    const type = types[t % types.length];
+    let contextCells: any[] = [];
+    let correctCell: any = null;
+    let distractorCells: any[] = [];
+    
+    if (type === "count") {
+      const steps = [-1, 1];
+      const stepX = steps[Math.floor(Math.random() * steps.length)];
+      const stepY = steps[Math.floor(Math.random() * steps.length)];
+      
+      let startCount = 3;
+      for (let s = 1; s <= 6; s++) {
+        let ok = true;
+        for (let r = 0; r < 3; r++) {
+          for (let c = 0; c < 3; c++) {
+            const val = s + r * stepY + c * stepX;
+            if (val < 1 || val > 6) ok = false;
+          }
+        }
+        if (ok) {
+          startCount = s;
+          break;
+        }
+      }
+      
+      const getCount = (r: number, c: number) => startCount + r * stepY + c * stepX;
+      
+      for (let idx = 0; idx < 8; idx++) {
+        const r = Math.floor(idx / 3);
+        const c = idx % 3;
+        contextCells.push({ count: getCount(r, c) });
+      }
+      correctCell = { count: getCount(2, 2) };
+      
+      const countsUsed = new Set<number>([correctCell.count]);
+      while (distractorCells.length < 3) {
+        const distCount = Math.floor(Math.random() * 6) + 1;
+        if (!countsUsed.has(distCount)) {
+          countsUsed.add(distCount);
+          distractorCells.push({ count: distCount });
+        }
+      }
+      
+    } else if (type === "rotation") {
+      const shapes: Array<"line" | "arrow" | "triangle"> = ["line", "arrow", "triangle"];
+      const chosenShape = shapes[Math.floor(Math.random() * shapes.length)];
+      
+      const startAngle = [0, 45, 90, 135][Math.floor(Math.random() * 4)];
+      const steps = [-90, -45, 45, 90];
+      const stepX = steps[Math.floor(Math.random() * steps.length)];
+      const stepY = steps[Math.floor(Math.random() * steps.length)];
+      
+      const getAngle = (r: number, c: number) => ((startAngle + r * stepY + c * stepX) % 360 + 360) % 360;
+      
+      for (let idx = 0; idx < 8; idx++) {
+        const r = Math.floor(idx / 3);
+        const c = idx % 3;
+        contextCells.push({ angle: getAngle(r, c), shape: chosenShape });
+      }
+      correctCell = { angle: getAngle(2, 2), shape: chosenShape };
+      
+      const anglesUsed = new Set<number>([correctCell.angle]);
+      while (distractorCells.length < 3) {
+        const distAngle = ((correctCell.angle + [45, 90, 135, 180, 225, 270][Math.floor(Math.random() * 6)]) % 360 + 360) % 360;
+        if (!anglesUsed.has(distAngle)) {
+          anglesUsed.add(distAngle);
+          distractorCells.push({ angle: distAngle, shape: chosenShape });
+        }
+      }
+      
+    } else if (type === "concentric") {
+      const shapes: Array<"circle" | "square"> = ["circle", "square"];
+      const chosenShape = shapes[Math.floor(Math.random() * shapes.length)];
+      
+      const steps = [-1, 1];
+      const stepX = steps[Math.floor(Math.random() * steps.length)];
+      const stepY = steps[Math.floor(Math.random() * steps.length)];
+      
+      let startCount = 3;
+      for (let s = 1; s <= 5; s++) {
+        let ok = true;
+        for (let r = 0; r < 3; r++) {
+          for (let c = 0; c < 3; c++) {
+            const val = s + r * stepY + c * stepX;
+            if (val < 1 || val > 5) ok = false;
+          }
+        }
+        if (ok) {
+          startCount = s;
+          break;
+        }
+      }
+      
+      const getCount = (r: number, c: number) => startCount + r * stepY + c * stepX;
+      
+      for (let idx = 0; idx < 8; idx++) {
+        const r = Math.floor(idx / 3);
+        const c = idx % 3;
+        contextCells.push({ count: getCount(r, c), shape: chosenShape });
+      }
+      correctCell = { count: getCount(2, 2), shape: chosenShape };
+      
+      const countsUsed = new Set<number>([correctCell.count]);
+      while (distractorCells.length < 3) {
+        const distCount = Math.floor(Math.random() * 5) + 1;
+        if (!countsUsed.has(distCount)) {
+          countsUsed.add(distCount);
+          distractorCells.push({ count: distCount, shape: chosenShape });
+        }
+      }
+      
+    } else if (type === "nesting") {
+      const baseShapes = ["square", "triangle", "circle", "diamond"];
+      const innerShapes = ["circle", "triangle", "square", "diamond"];
+      
+      const shufBase = [...baseShapes].sort(() => Math.random() - 0.5);
+      const shufInner = [...innerShapes].sort(() => Math.random() - 0.5);
+      
+      const getBase = (r: number) => shufBase[r];
+      const getInner = (c: number) => shufInner[c];
+      
+      for (let idx = 0; idx < 8; idx++) {
+        const r = Math.floor(idx / 3);
+        const c = idx % 3;
+        contextCells.push({ baseShape: getBase(r), innerShape: getInner(c) });
+      }
+      correctCell = { baseShape: getBase(2), innerShape: getInner(2) };
+      
+      distractorCells.push({ baseShape: getBase(2), innerShape: getInner(1) });
+      distractorCells.push({ baseShape: getBase(1), innerShape: getInner(2) });
+      distractorCells.push({ baseShape: getBase(0), innerShape: getInner(0) });
+      
+    } else if (type === "shading") {
+      const baseShapes = ["square", "triangle", "circle"];
+      const shadings = ["empty", "half", "full"];
+      
+      const shufBase = [...baseShapes].sort(() => Math.random() - 0.5);
+      const shufShading = [...shadings].sort(() => Math.random() - 0.5);
+      
+      const getShape = (r: number) => shufBase[r];
+      const getShading = (c: number) => shufShading[c];
+      
+      for (let idx = 0; idx < 8; idx++) {
+        const r = Math.floor(idx / 3);
+        const c = idx % 3;
+        contextCells.push({ shape: getShape(r), shading: getShading(c) });
+      }
+      correctCell = { shape: getShape(2), shading: getShading(2) };
+      
+      distractorCells.push({ shape: getShape(2), shading: getShading(1) });
+      distractorCells.push({ shape: getShape(1), shading: getShading(2) });
+      distractorCells.push({ shape: getShape(0), shading: getShading(0) });
+    }
+    
+    const allOptions = [correctCell, ...distractorCells];
+    const shuffledOptions = [...allOptions].sort(() => Math.random() - 0.5);
+    const correctOptionIndex = shuffledOptions.findIndex(
+      (opt) => JSON.stringify(opt) === JSON.stringify(correctCell)
+    );
+    
+    trials.push({
+      type,
+      contextCells,
+      options: shuffledOptions,
+      correctOptionIndex,
+    });
+  }
+  
+  return trials;
+};
+
 export default function MatrixReasoningTest({ onDone }: Props) {
   const { theme } = useTheme();
   const isDark = theme === "dark";
@@ -44,29 +228,39 @@ export default function MatrixReasoningTest({ onDone }: Props) {
   const [phase, setPhase] = useState<Phase>("instructions");
   const [trial, setTrial] = useState(0);
   const [correctCount, setCorrectCount] = useState(0);
+  const [trials, setTrials] = useState<MatrixTrial[]>([]);
+
+  useEffect(() => {
+    setTrials(generateMatrixTrials());
+  }, []);
 
   const handleSelectOption = (optionIdx: number) => {
-    // Correct indices mapped to each of the 12 trials
-    const correctAnswers = [0, 2, 1, 3, 0, 1, 2, 0, 3, 1, 2, 0];
-    const isCorrect = optionIdx === correctAnswers[trial];
+    const currentTrial = trials[trial];
+    if (!currentTrial) return;
+
+    const isCorrect = optionIdx === currentTrial.correctOptionIndex;
 
     try {
       Vibration.vibrate(isCorrect ? 12 : [0, 60]);
     } catch (_) {}
 
-    if (isCorrect) setCorrectCount((c) => c + 1);
+    let newCorrectCount = correctCount;
+    if (isCorrect) {
+      newCorrectCount += 1;
+      setCorrectCount(newCorrectCount);
+    }
 
     const nextTrial = trial + 1;
     if (nextTrial >= TOTAL_STIMULI) {
       setPhase("done");
-      const score = Math.round((correctCount / TOTAL_STIMULI) * 100);
-      const accuracy = correctCount / TOTAL_STIMULI;
+      const score = Math.round((newCorrectCount / TOTAL_STIMULI) * 100);
+      const accuracy = newCorrectCount / TOTAL_STIMULI;
 
       setTimeout(() => {
         onDone({
           game: "pattern",
           score,
-          rawScore: correctCount,
+          rawScore: newCorrectCount,
           accuracy,
           avgTimeMs: 0,
           label: "Matrix Reasoning Test",
@@ -77,164 +271,148 @@ export default function MatrixReasoningTest({ onDone }: Props) {
     }
   };
 
-  // Dynamic SVG Cell Renderer based on Trial Index and Cell Location (0 to 8)
-  // Cells 0-7 are the matrix context, cell 8 is the missing target (which the user matches)
-  // Options (index 0-3) show the candidates for cell 8.
-  const renderCellGraphic = (trialIdx: number, cellIdx: number, size = 60) => {
+  const renderCellGraphic = (cellData: any, size = 60) => {
+    if (!cellData) return null;
     const stroke = isDark ? "#ffffff" : "#020617";
     const shapeFill = colors.shapeAccent;
     const center = size / 2;
 
-    // Helper functions for common shapes
     const renderDot = (cx: number, cy: number, r = 3) => (
       <Circle cx={cx} cy={cy} r={r} fill={stroke} />
     );
 
-    // 12 Progressive Matrix Puzzles
-    switch (trialIdx) {
-      case 0: {
-        // Dot progression: Row 1 (1,2,3), Row 2 (2,3,4), Row 3 (3,4, [5])
-        const countMap = [1, 2, 3, 2, 3, 4, 3, 4, 5];
-        const count = cellIdx < 9 ? countMap[cellIdx] : [5, 3, 2, 6][cellIdx - 9]; // Options mapping: 0:[5], 1:[3], 2:[2], 3:[6]
-        return (
-          <Svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
-            {count >= 1 && renderDot(center, center - 12)}
-            {count >= 2 && renderDot(center - 12, center)}
-            {count >= 3 && renderDot(center + 12, center)}
-            {count >= 4 && renderDot(center, center + 12)}
-            {count >= 5 && renderDot(center, center)}
-            {count >= 6 && renderDot(center - 12, center - 12)}
-          </Svg>
-        );
-      }
-      case 1: {
-        // Rotation of a single line: Row 1 (0°, 45°, 90°), Row 2 (45°, 90°, 135°), Row 3 (90°, 135°, [180°])
-        const rotMap = [0, 45, 90, 45, 90, 135, 90, 135, 180];
-        const angle = cellIdx < 9 ? rotMap[cellIdx] : [135, 90, 180, 45][cellIdx - 9]; // Options mapping: 2: 180
-        return (
-          <Svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
-            <G transform={`translate(${center}, ${center}) rotate(${angle})`}>
-              <Line x1="-20" y1="0" x2="20" y2="0" stroke={shapeFill} strokeWidth="3.5" />
-              <Circle cx="20" cy="0" r="3.5" fill={stroke} />
-            </G>
-          </Svg>
-        );
-      }
-      case 2: {
-        // Venn overlap: Col 1 (Square left), Col 2 (Square right), Col 3 (Overlapping squares)
-        const hasLeft = [true, false, true, true, false, true, true, false, true];
-        const hasRight = [false, true, true, false, true, true, false, true, true];
-        // Options mapping: 0: none, 1: both, 2: left only, 3: right only
-        const isLeftOpt = [false, true, true, false][cellIdx - 9];
-        const isRightOpt = [false, true, false, true][cellIdx - 9];
-
-        const finalLeft = cellIdx < 9 ? hasLeft[cellIdx] : isLeftOpt;
-        const finalRight = cellIdx < 9 ? hasRight[cellIdx] : isRightOpt;
-
-        return (
-          <Svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
-            {finalLeft && <Rect x={center - 16} y={center - 10} width="16" height="16" fill="none" stroke={stroke} strokeWidth="2" />}
-            {finalRight && <Rect x={center} y={center - 10} width="16" height="16" fill="none" stroke={shapeFill} strokeWidth="2" />}
-          </Svg>
-        );
-      }
-      case 3: {
-        // Nesting shapes: Row 1 (Square base, Square+Circle, Square+Triangle)
-        // Row 2 (Triangle base, Triangle+Circle, Triangle+Square)
-        // Row 3 (Circle base, Circle+Square, [Circle+Triangle])
-        const baseShape = ["square", "square", "square", "triangle", "triangle", "triangle", "circle", "circle", "circle"];
-        const innerShape = ["none", "circle", "triangle", "none", "circle", "square", "none", "square", "triangle"];
-        // Options mapping: 0: Square+Triangle, 1: Circle+Square, 2: Triangle+Circle, 3: Circle+Triangle
-        const finalBase = cellIdx < 9 ? baseShape[cellIdx] : ["square", "circle", "triangle", "circle"][cellIdx - 9];
-        const finalInner = cellIdx < 9 ? innerShape[cellIdx] : ["triangle", "square", "circle", "triangle"][cellIdx - 9];
-
-        return (
-          <Svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
-            {/* Base shape */}
-            {finalBase === "square" && <Rect x={center - 15} y={center - 15} width="30" height="30" fill="none" stroke={stroke} strokeWidth="2" />}
-            {finalBase === "triangle" && <Polygon points={`${center},${center - 16} ${center - 16},${center + 14} ${center + 16},${center + 14}`} fill="none" stroke={stroke} strokeWidth="2" />}
-            {finalBase === "circle" && <Circle cx={center} cy={center} r="15" fill="none" stroke={stroke} strokeWidth="2" />}
-            {/* Inner shape */}
-            {finalInner === "circle" && <Circle cx={center} cy={center} r="7" fill={shapeFill} />}
-            {finalInner === "triangle" && <Polygon points={`${center},${center - 7} ${center - 7},${center + 6} ${center + 7},${center + 6}`} fill={shapeFill} />}
-            {finalInner === "square" && <Rect x={center - 5} y={center - 5} width="10" height="10" fill={shapeFill} />}
-          </Svg>
-        );
-      }
-      case 4: {
-        // Concentric shapes: Row 1 (1 ring, 2 rings, 3 rings)
-        // Row 2 (2 rings, 3 rings, 4 rings)
-        // Row 3 (3 rings, 4 rings, [5 rings])
-        const countMap = [1, 2, 3, 2, 3, 4, 3, 4, 5];
-        const count = cellIdx < 9 ? countMap[cellIdx] : [5, 3, 4, 6][cellIdx - 9]; // Options: 0: 5 rings
-        return (
-          <Svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
-            {count >= 1 && <Circle cx={center} cy={center} r="5" fill="none" stroke={stroke} strokeWidth="1.5" />}
-            {count >= 2 && <Circle cx={center} cy={center} r="9" fill="none" stroke={shapeFill} strokeWidth="1.5" />}
-            {count >= 3 && <Circle cx={center} cy={center} r="13" fill="none" stroke={stroke} strokeWidth="1.5" />}
-            {count >= 4 && <Circle cx={center} cy={center} r="17" fill="none" stroke={shapeFill} strokeWidth="1.5" />}
-            {count >= 5 && <Circle cx={center} cy={center} r="21" fill="none" stroke={stroke} strokeWidth="1.5" />}
-          </Svg>
-        );
-      }
-      case 5: {
-        // Alternating Shadings: Empty, Half-Filled, Full-Filled.
-        // Row 3 (Circle base): Empty, Half-Filled, [Full-Filled]
-        const typeMap = ["empty", "half", "full", "empty", "half", "full", "empty", "half", "full"];
-        const shpMap = ["square", "square", "square", "triangle", "triangle", "triangle", "circle", "circle", "circle"];
-
-        const finalShp = cellIdx < 9 ? shpMap[cellIdx] : ["circle", "circle", "square", "triangle"][cellIdx - 9]; // Options: 1: circle full
-        const finalType = cellIdx < 9 ? typeMap[cellIdx] : ["half", "full", "full", "empty"][cellIdx - 9];
-
-        return (
-          <Svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
-            {finalShp === "square" && (
-              <Rect
-                x={center - 14}
-                y={center - 14}
-                width="28"
-                height="28"
-                fill={finalType === "full" ? shapeFill : "none"}
-                stroke={stroke}
-                strokeWidth="2"
-              />
-            )}
-            {finalShp === "triangle" && (
-              <Polygon
-                points={`${center},${center - 15} ${center - 15},${center + 13} ${center + 15},${center + 13}`}
-                fill={finalType === "full" ? shapeFill : "none"}
-                stroke={stroke}
-                strokeWidth="2"
-              />
-            )}
-            {finalShp === "circle" && (
-              <Circle
-                cx={center}
-                cy={center}
-                r="14"
-                fill={finalType === "full" ? shapeFill : "none"}
-                stroke={stroke}
-                strokeWidth="2"
-              />
-            )}
-            {finalType === "half" && <Rect x={center - 14} y={center} width="28" height="14" fill={stroke} opacity="0.5" />}
-          </Svg>
-        );
-      }
-      // Simple custom layouts for remaining 6 trials of progressive matrix complexities
-      default: {
-        // Arrow rotates: cellIdx rotated
-        const angle = cellIdx * 45;
-        return (
-          <Svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
-            <G transform={`translate(${center}, ${center}) rotate(${angle})`}>
-              <Line x1="-15" y1="0" x2="15" y2="0" stroke={shapeFill} strokeWidth="2.5" />
-              <Polygon points="15,-5 23,0 15,5" fill={stroke} />
-            </G>
-          </Svg>
-        );
-      }
+    if (cellData.count !== undefined && cellData.shape === undefined) {
+      const count = cellData.count;
+      return (
+        <Svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+          {count >= 1 && renderDot(center, center - 12)}
+          {count >= 2 && renderDot(center - 12, center)}
+          {count >= 3 && renderDot(center + 12, center)}
+          {count >= 4 && renderDot(center, center + 12)}
+          {count >= 5 && renderDot(center, center)}
+          {count >= 6 && renderDot(center - 12, center - 12)}
+        </Svg>
+      );
     }
+
+    if (cellData.angle !== undefined) {
+      const { angle, shape } = cellData;
+      return (
+        <Svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+          <G transform={`translate(${center}, ${center}) rotate(${angle})`}>
+            {shape === "line" && (
+              <>
+                <Line x1="-20" y1="0" x2="20" y2="0" stroke={shapeFill} strokeWidth="3.5" />
+                <Circle cx="20" cy="0" r="3.5" fill={stroke} />
+              </>
+            )}
+            {shape === "arrow" && (
+              <>
+                <Line x1="-15" y1="0" x2="15" y2="0" stroke={shapeFill} strokeWidth="2.5" />
+                <Polygon points="15,-5 23,0 15,5" fill={stroke} />
+              </>
+            )}
+            {shape === "triangle" && (
+              <Polygon points="0,-16 -12,12 12,12" fill="none" stroke={stroke} strokeWidth="2.5" />
+            )}
+          </G>
+        </Svg>
+      );
+    }
+
+    if (cellData.count !== undefined && cellData.shape !== undefined) {
+      const { count, shape } = cellData;
+      return (
+        <Svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+          {[...Array(count)].map((_, i) => {
+            const r = 5 + i * 4;
+            if (shape === "circle") {
+              return (
+                <Circle
+                  key={i}
+                  cx={center}
+                  cy={center}
+                  r={r}
+                  fill="none"
+                  stroke={i % 2 === 0 ? stroke : shapeFill}
+                  strokeWidth="1.5"
+                />
+              );
+            } else {
+              return (
+                <Rect
+                  key={i}
+                  x={center - r}
+                  y={center - r}
+                  width={r * 2}
+                  height={r * 2}
+                  fill="none"
+                  stroke={i % 2 === 0 ? stroke : shapeFill}
+                  strokeWidth="1.5"
+                />
+              );
+            }
+          })}
+        </Svg>
+      );
+    }
+
+    if (cellData.baseShape !== undefined) {
+      const { baseShape, innerShape } = cellData;
+      return (
+        <Svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+          {baseShape === "square" && <Rect x={center - 15} y={center - 15} width="30" height="30" fill="none" stroke={stroke} strokeWidth="2" />}
+          {baseShape === "triangle" && <Polygon points={`${center},${center - 16} ${center - 16},${center + 14} ${center + 16},${center + 14}`} fill="none" stroke={stroke} strokeWidth="2" />}
+          {baseShape === "circle" && <Circle cx={center} cy={center} r="15" fill="none" stroke={stroke} strokeWidth="2" />}
+          {baseShape === "diamond" && <Polygon points={`${center},${center - 16} ${center + 16},${center} ${center},${center + 16} ${center - 16},${center}`} fill="none" stroke={stroke} strokeWidth="2" />}
+          
+          {innerShape === "circle" && <Circle cx={center} cy={center} r="7" fill={shapeFill} />}
+          {innerShape === "triangle" && <Polygon points={`${center},${center - 7} ${center - 7},${center + 6} ${center + 7},${center + 6}`} fill={shapeFill} />}
+          {innerShape === "square" && <Rect x={center - 5} y={center - 5} width="10" height="10" fill={shapeFill} />}
+          {innerShape === "diamond" && <Polygon points={`${center},${center - 7} ${center + 7},${center} ${center},${center + 7} ${center - 7},${center}`} fill={shapeFill} />}
+        </Svg>
+      );
+    }
+
+    if (cellData.shading !== undefined) {
+      const { shape, shading } = cellData;
+      return (
+        <Svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+          {shape === "square" && (
+            <Rect
+              x={center - 14}
+              y={center - 14}
+              width="28"
+              height="28"
+              fill={shading === "full" ? shapeFill : "none"}
+              stroke={stroke}
+              strokeWidth="2"
+            />
+          )}
+          {shape === "triangle" && (
+            <Polygon
+              points={`${center},${center - 15} ${center - 15},${center + 13} ${center + 15},${center + 13}`}
+              fill={shading === "full" ? shapeFill : "none"}
+              stroke={stroke}
+              strokeWidth="2"
+            />
+          )}
+          {shape === "circle" && (
+            <Circle
+              cx={center}
+              cy={center}
+              r="14"
+              fill={shading === "full" ? shapeFill : "none"}
+              stroke={stroke}
+              strokeWidth="2"
+            />
+          )}
+          {shading === "half" && <Rect x={center - 14} y={center} width="28" height="14" fill={stroke} opacity="0.5" />}
+        </Svg>
+      );
+    }
+
+    return null;
   };
 
   if (phase === "instructions") {
@@ -259,6 +437,8 @@ export default function MatrixReasoningTest({ onDone }: Props) {
     );
   }
 
+  const currentTrial = trials[trial];
+
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <Text style={styles.gameTitle}>MATRIX REASONING</Text>
@@ -268,9 +448,9 @@ export default function MatrixReasoningTest({ onDone }: Props) {
 
       {/* 3x3 Grid */}
       <View style={[styles.grid, { borderColor: colors.border, backgroundColor: colors.card }]}>
-        {[0, 1, 2, 3, 4, 5, 6, 7].map((cellIdx) => (
+        {currentTrial?.contextCells.map((cellData, cellIdx) => (
           <View key={cellIdx} style={[styles.cell, { borderColor: colors.border }]}>
-            {renderCellGraphic(trial, cellIdx)}
+            {renderCellGraphic(cellData)}
           </View>
         ))}
         {/* Missing Target cell */}
@@ -283,13 +463,13 @@ export default function MatrixReasoningTest({ onDone }: Props) {
 
       {/* 4 Graphic Options */}
       <View style={styles.optionsGrid}>
-        {[9, 10, 11, 12].map((optCellIdx, idx) => (
+        {currentTrial?.options.map((optCellData, idx) => (
           <TouchableOpacity
             key={idx}
             style={[styles.optionCard, { backgroundColor: colors.card, borderColor: colors.border }]}
             onPress={() => handleSelectOption(idx)}
           >
-            {renderCellGraphic(trial, optCellIdx, 70)}
+            {renderCellGraphic(optCellData, 70)}
             <View style={styles.optionBadge}>
               <Text style={styles.optionBadgeText}>{String.fromCharCode(65 + idx)}</Text>
             </View>

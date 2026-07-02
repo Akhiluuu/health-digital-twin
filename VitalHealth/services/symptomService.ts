@@ -13,6 +13,8 @@ import {
 } from "firebase/firestore";
 import { db } from "./firebase";
 
+import { log, error } from "../utils/logger";
+
 // ✅ TYPE (VERY IMPORTANT)
 export interface Symptom {
   id?: string;
@@ -39,8 +41,8 @@ export const addSymptom = async (uid: string, symptom: Symptom) => {
     });
 
     return docRef.id;
-  } catch (error) {
-    console.error("❌ Error adding symptom:", error);
+  } catch (err: unknown) {
+    error("❌ Error adding symptom:", err);
     throw error;
   }
 };
@@ -61,8 +63,8 @@ export const getSymptoms = async (uid: string): Promise<Symptom[]> => {
       id: docSnap.id,
       ...(docSnap.data() as Symptom),
     }));
-  } catch (error) {
-    console.error("❌ Error fetching symptoms:", error);
+  } catch (err: unknown) {
+    error("❌ Error fetching symptoms:", err);
     return [];
   }
 };
@@ -87,7 +89,7 @@ export const subscribeSymptoms = (
 
     callback(data);
   }, (error) => {
-    console.log("⚠️ Symptom onSnapshot error:", error);
+    log("⚠️ Symptom onSnapshot error:", error);
   });
 };
 
@@ -106,8 +108,8 @@ export const updateSymptom = async (
       ...updates,
       updatedAt: new Date(),
     });
-  } catch (error) {
-    console.error("❌ Error updating symptom:", error);
+  } catch (err: unknown) {
+    error("❌ Error updating symptom:", err);
     throw error;
   }
 };
@@ -119,8 +121,8 @@ export const deleteSymptom = async (uid: string, symptomId: string) => {
   try {
     const ref = doc(db, "users", uid, "symptoms", symptomId);
     await deleteDoc(ref);
-  } catch (error) {
-    console.error("❌ Error deleting symptom:", error);
+  } catch (err: unknown) {
+    error("❌ Error deleting symptom:", err);
     throw error;
   }
 };

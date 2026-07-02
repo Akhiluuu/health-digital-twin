@@ -3,6 +3,8 @@
 
 import { db } from "./index";
 
+import { log, error } from "../utils/logger";
+
 /**
  * Initialises History table.
  * No-op if initAllTables() was already called at app startup (table already exists).
@@ -26,9 +28,9 @@ export const initHistoryTable = async (): Promise<void> => {
         attachments TEXT
       );
     `);
-    console.log("History table ready (shared vital_health.db)");
-  } catch (error) {
-    console.error("History table error:", error);
+    log("History table ready (shared vital_health.db)");
+  } catch (err: unknown) {
+    error("History table error:", err);
     throw error;
   }
 };

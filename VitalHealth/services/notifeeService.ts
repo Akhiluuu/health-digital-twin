@@ -23,6 +23,8 @@ import { saveWaterToStorage }   from "../utils/hydrationStorage";
 import { addToMedicineHistory } from "../utils/medicineHistory";
 import { syncDeleteMedicine }   from "./firebaseSync";
 
+import { log } from "../utils/logger";
+
 ///////////////////////////////////////////////////////////
 // EVENT BUS
 // ✅ FIX (Tick not appearing): After the foreground handler writes to
@@ -59,7 +61,7 @@ export async function setupNotifee() {
   const settings = await notifee.requestPermission();
 
   if (settings.authorizationStatus < 1) {
-    console.log("❌ Notification permission denied");
+    log("❌ Notification permission denied");
     return;
   }
 
@@ -81,14 +83,14 @@ export async function setupNotifee() {
         }
       }
     } catch (e) {
-      console.log("⚠️ Power manager settings unavailable:", e);
+      log("⚠️ Power manager settings unavailable:", e);
     }
   }
 
   // Schedule daily digital twin sync check-in reminder
   await scheduleDailyLogReminder();
 
-  console.log("✅ Notifee initialized");
+  log("✅ Notifee initialized");
 }
 
 ///////////////////////////////////////////////////////////
@@ -161,7 +163,7 @@ export const scheduleMedicineDaily = async (
     trigger.setDate(trigger.getDate() + 1);
   }
 
-  console.log("📅 Daily trigger at:", trigger.toISOString());
+  log("📅 Daily trigger at:", trigger.toISOString());
 
   await notifee.createTriggerNotification(
     {
@@ -253,7 +255,7 @@ export const snoozeMedicine = async (
     }
   );
 
-  console.log(`⏰ Snoozed ${minutes}min — fires at:`, new Date(timestamp).toISOString());
+  log(`⏰ Snoozed ${minutes}min — fires at:`, new Date(timestamp).toISOString());
   return id;
 };
 
@@ -302,15 +304,15 @@ export async function handleMedicineTaken(
         syncDeleteMedicine(med.id);
         await notifee.cancelNotification(notifId);
         await notifee.cancelNotification(med.notificationId); // cancel original too
-        console.log("🗑 Once medicine deleted from vault:", med.name);
+        log("🗑 Once medicine deleted from vault:", med.name);
       } else {
         // Daily: just dismiss displayed notification; repeat trigger stays alive
         await notifee.cancelDisplayedNotification(notifId);
-        console.log("✅ Daily medicine marked taken:", med.name);
+        log("✅ Daily medicine marked taken:", med.name);
       }
     } else {
       // Medicine not found — just dismiss
-      console.log("⚠️ Medicine not found for notifId:", notifId, "medicineId:", medicineId);
+      log("⚠️ Medicine not found for notifId:", notifId, "medicineId:", medicineId);
       await notifee.cancelDisplayedNotification(notifId);
     }
 
@@ -318,7 +320,7 @@ export async function handleMedicineTaken(
     medicineEventBus.emit("medicine_taken");
 
   } catch (err) {
-    console.log("❌ handleMedicineTaken error:", err);
+    log("❌ handleMedicineTaken error:", err);
     await notifee.cancelDisplayedNotification(notifId).catch(() => {});
     medicineEventBus.emit("medicine_taken"); // still reload on error
   }
@@ -432,9 +434,9 @@ export const cancelSymptomNotification = async () => {
         await notifee.cancelNotification(n.notification.id!);
       }
     }
-    console.log("🛑 Symptom notifications cancelled");
+    log("🛑 Symptom notifications cancelled");
   } catch (error) {
-    console.log("❌ cancelSymptomNotification error:", error);
+    log("❌ cancelSymptomNotification error:", error);
   }
 };
 
@@ -446,7 +448,7 @@ export const cancelMedicineNotification = async (id: string) => {
   try {
     await notifee.cancelNotification(id);
   } catch (error) {
-    console.log("Cancel error:", error);
+    log("Cancel error:", error);
   }
 };
 
@@ -472,7 +474,7 @@ export const scheduleRoutineReminder = async (
       trigger.setDate(trigger.getDate() + 1);
     }
 
-    console.log(`📅 Daily routine trigger [${tab}] scheduled at:`, trigger.toISOString());
+    log(`📅 Daily routine trigger [${tab}] scheduled at:`, trigger.toISOString());
 
     await notifee.createTriggerNotification(
       {
@@ -500,7 +502,7 @@ export const scheduleRoutineReminder = async (
       }
     );
   } catch (e) {
-    console.log("❌ scheduleRoutineReminder error:", e);
+    log("❌ scheduleRoutineReminder error:", e);
   }
   return id;
 };
@@ -509,9 +511,9 @@ export const cancelRoutineReminder = async (id: string) => {
   if (!notifee) return;
   try {
     await notifee.cancelNotification(id);
-    console.log("🔕 Cancelled routine reminder:", id);
+    log("🔕 Cancelled routine reminder:", id);
   } catch (error) {
-    console.log("❌ Cancel routine reminder error:", error);
+    log("❌ Cancel routine reminder error:", error);
   }
 };
 
@@ -528,7 +530,7 @@ export const scheduleDailyLogReminder = async () => {
 
     if (!enabled) {
       await notifee.cancelNotification(id).catch(() => {});
-      console.log("🔕 Daily Twin Sync Reminder is disabled");
+      log("🔕 Daily Twin Sync Reminder is disabled");
       return;
     }
 
@@ -580,9 +582,9 @@ export const scheduleDailyLogReminder = async () => {
         },
       }
     );
-    console.log("📅 Daily Twin Sync Reminder scheduled for:", trigger.toISOString());
+    log("📅 Daily Twin Sync Reminder scheduled for:", trigger.toISOString());
   } catch (error) {
-    console.log("❌ Error scheduling daily log reminder:", error);
+    log("❌ Error scheduling daily log reminder:", error);
   }
 };
 
@@ -625,9 +627,9 @@ export const scheduleInactivityReminder = async () => {
         },
       }
     );
-    console.log("📅 24h inactivity reminder scheduled for:", new Date(triggerTime).toISOString());
+    log("📅 24h inactivity reminder scheduled for:", new Date(triggerTime).toISOString());
   } catch (err) {
-    console.log("❌ Error scheduling inactivity reminder:", err);
+    log("❌ Error scheduling inactivity reminder:", err);
   }
 };
 
@@ -642,7 +644,7 @@ export function registerNotifeeForegroundHandler() {
 
     // ── Handle Normal Notification Press ──────────────────────────
     if (type === EventType.PRESS) {
-      console.log("🔔 Foreground Notification Tap (Press):", data);
+      log("🔔 Foreground Notification Tap (Press):", data);
 
       if (data.type === "routine_reminder" && data.tab) {
         router.push({
@@ -676,7 +678,7 @@ export function registerNotifeeForegroundHandler() {
     const action    = detail.pressAction?.id;
     const medicineId = String(data.medicineId ?? "");
 
-    console.log("⚡ Foreground Action:", action, "notifId:", notifId, "medicineId:", medicineId);
+    log("⚡ Foreground Action:", action, "notifId:", notifId, "medicineId:", medicineId);
 
     // ── Medicine: Taken ──────────────────────────────────────────
     if (action === ACTION_MEDICINE_TAKEN) {
@@ -711,7 +713,7 @@ export function registerNotifeeForegroundHandler() {
         const { addWaterFromNotification } = await import("../context/HydrationContext");
         await addWaterFromNotification(ml);
       } catch (err) {
-        console.log("💧 HydrationContext import failed, writing directly to storage:", err);
+        log("💧 HydrationContext import failed, writing directly to storage:", err);
         await saveWaterToStorage(ml);
       }
       await scheduleHydrationReminder();
@@ -751,10 +753,10 @@ if (Platform.OS === "android") {
     const data       = detail.notification?.data ?? {};
     const medicineId = String(data.medicineId ?? "");
 
-    console.log("🔔 [notifeeService] Unified Background Action:", action, "notifId:", notifId, "data:", data);
+    log("🔔 [notifeeService] Unified Background Action:", action, "notifId:", notifId, "data:", data);
 
     if (action === "stop_tracking") {
-      console.log("\u23f9 Stop Tracking pressed from background");
+      log("\u23f9 Stop Tracking pressed from background");
       // \u2705 FIX: Steps are ALWAYS tracked for the logged-in user (self), never for a
       // switched family member. Reading activeMemberId here caused the stop signal
       // to write to the wrong uid if the user had switched profiles before killing the app.
@@ -798,7 +800,7 @@ if (Platform.OS === "android") {
         const { addWaterFromNotification } = await import("../context/HydrationContext");
         await addWaterFromNotification(ml);
       } catch (err) {
-        console.log("💧 [BG] HydrationContext import failed, writing directly to storage:", err);
+        log("💧 [BG] HydrationContext import failed, writing directly to storage:", err);
         await saveWaterToStorage(ml);
       }
       await scheduleHydrationReminder();
@@ -826,7 +828,7 @@ if (Platform.OS === "android") {
         await stopSymptomTracking(Number(data.symptomId));
         await notifee.cancelNotification(notifId);
       } catch (e) {
-        console.log("❌ [BG] SYMPTOM_NO error:", e);
+        log("❌ [BG] SYMPTOM_NO error:", e);
       }
       return;
     }

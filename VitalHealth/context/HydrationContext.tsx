@@ -40,6 +40,8 @@ import {
 //    both write through the same code path
 import { saveWaterToStorage } from "../utils/hydrationStorage";
 
+import { log } from "../utils/logger";
+
 ///////////////////////////////////////////////////////////
 // TYPES
 ///////////////////////////////////////////////////////////
@@ -127,9 +129,9 @@ export const HydrationProvider = ({
         if (!isMountedRef.current) return;
         setWater(total);
         setHistory(todayEntries);
-        console.log(`💧 Switched hydration synced from Firestore for ${activeMemberId}: ${total}ml`);
+        log(`💧 Switched hydration synced from Firestore for ${activeMemberId}: ${total}ml`);
       } catch (err) {
-        console.log("❌ Switched hydration sync error:", err);
+        log("❌ Switched hydration sync error:", err);
       } finally {
         setIsLoadingHydration(false);
       }
@@ -178,9 +180,9 @@ export const HydrationProvider = ({
         setWater(localWater ? Number(localWater) : 0);
         setHistory(todayLocal);
       }
-      console.log(`💧 Self hydration synced and loaded`);
+      log(`💧 Self hydration synced and loaded`);
     } catch (err) {
-      console.log("❌ Self hydration sync error:", err);
+      log("❌ Self hydration sync error:", err);
     } finally {
       setIsLoadingHydration(false);
     }
@@ -195,7 +197,7 @@ export const HydrationProvider = ({
         const entries = getTodayHydrationHistory();
         setHistory(entries);
       } catch (err) {
-        console.log("❌ History reload error:", err);
+        log("❌ History reload error:", err);
       } finally {
         setIsLoadingHydration(false);
       }
@@ -214,14 +216,14 @@ export const HydrationProvider = ({
       if (isNativeHydrationAlarmAvailable()) {
         cancelHydrationAlarm();
         scheduleHydrationAlarm(minutes);
-        console.log(`💧 Native Hydration reminder scheduled for ${minutes} minutes`);
+        log(`💧 Native Hydration reminder scheduled for ${minutes} minutes`);
       } else {
         await cancelHydrationReminders();
         await scheduleHydrationReminder();
-        console.log(`💧 Notifee Hydration reminder scheduled for ${minutes} minutes`);
+        log(`💧 Notifee Hydration reminder scheduled for ${minutes} minutes`);
       }
     } catch (err) {
-      console.log("❌ Hydration reminder error:", err);
+      log("❌ Hydration reminder error:", err);
     }
   }, []);
 
@@ -247,9 +249,9 @@ export const HydrationProvider = ({
           // Update history with the correct total
           setHistory((prevHistory) => [entry, ...prevHistory]);
           syncAddHydration(entry, activeMemberId).catch(
-            (err: unknown) => console.log("❌ Switched hydration sync error:", err)
+            (err: unknown) => log("❌ Switched hydration sync error:", err)
           );
-          console.log(`💧 Switched addWater: +${ml}ml → total: ${newTotal}ml for ${activeMemberId}`);
+          log(`💧 Switched addWater: +${ml}ml → total: ${newTotal}ml for ${activeMemberId}`);
           return newTotal;
         });
       } else {
@@ -258,7 +260,7 @@ export const HydrationProvider = ({
           lastStoredValue.current = newValue;
 
           AsyncStorage.setItem(getTodayKey(), String(newValue)).catch(
-            (err: unknown) => console.log("❌ Hydration save error:", err)
+            (err: unknown) => log("❌ Hydration save error:", err)
           );
 
           addHydrationEntry(ml, newValue, source)
@@ -269,13 +271,13 @@ export const HydrationProvider = ({
               const lastEntry = entries[0];
               if (lastEntry) {
                 syncAddHydration(lastEntry).catch(
-                  (err: unknown) => console.log("❌ Self hydration sync error:", err)
+                  (err: unknown) => log("❌ Self hydration sync error:", err)
                 );
               }
             })
-            .catch((err: unknown) => console.log("❌ History entry error:", err));
+            .catch((err: unknown) => log("❌ History entry error:", err));
 
-          console.log(`💧 addWater: +${ml}ml (${source}) → total: ${newValue}ml`);
+          log(`💧 addWater: +${ml}ml (${source}) → total: ${newValue}ml`);
 
           return newValue;
         });
@@ -294,26 +296,26 @@ export const HydrationProvider = ({
       setWater(0);
       setHistory([]);
       syncClearHydration(activeMemberId).catch((err: unknown) =>
-        console.log("❌ Switched hydration clear error:", err)
+        log("❌ Switched hydration clear error:", err)
       );
-      console.log(`💧 Switched hydration reset for ${activeMemberId}`);
+      log(`💧 Switched hydration reset for ${activeMemberId}`);
     } else {
       lastStoredValue.current = 0;
       setWater(0);
       setHistory([]);
 
       AsyncStorage.setItem(getTodayKey(), "0").catch((err: unknown) =>
-        console.log("❌ Hydration reset error:", err)
+        log("❌ Hydration reset error:", err)
       );
 
       clearTodayHydrationHistory().catch((err: unknown) =>
-        console.log("❌ History clear error:", err)
+        log("❌ History clear error:", err)
       );
 
       syncClearHydration().catch((err: unknown) =>
-        console.log("❌ Self hydration Firebase clear error:", err)
+        log("❌ Self hydration Firebase clear error:", err)
       );
-      console.log(`💧 Self hydration reset`);
+      log(`💧 Self hydration reset`);
     }
   }, [isSwitched, activeMemberId]);
 
@@ -325,7 +327,7 @@ export const HydrationProvider = ({
   // initHydrationHistoryDB must only run once — not on every profile switch.
   useEffect(() => {
     initHydrationHistoryDB().catch((err: unknown) => {
-      console.log("❌ HydrationHistoryDB init error:", err);
+      log("❌ HydrationHistoryDB init error:", err);
     });
   }, []);
 
@@ -359,7 +361,7 @@ export const HydrationProvider = ({
 
         if (lastCheckedDate.current !== today) {
           lastCheckedDate.current = today;
-          console.log("💧 New day detected — resetting hydration");
+          log("💧 New day detected — resetting hydration");
           reset();
           lastSyncTimeRef.current = Date.now();
           syncHydrationWithFirebase();
@@ -370,7 +372,7 @@ export const HydrationProvider = ({
           const now = Date.now();
           if (now - lastSyncTimeRef.current > 10000) {
             lastSyncTimeRef.current = now;
-            console.log("💧 Returning to app — syncing hydration");
+            log("💧 Returning to app — syncing hydration");
             syncHydrationWithFirebase();
           }
         }
@@ -424,10 +426,10 @@ export const useHydration = () => {
 
 export const addWaterFromNotification = async (ml: number) => {
   if (globalAddWater) {
-    console.log(`💧 Provider mounted — adding water via active context`);
+    log(`💧 Provider mounted — adding water via active context`);
     globalAddWater(ml, "notification");
   } else {
-    console.log(`💧 Provider not mounted — writing directly to storage/DB`);
+    log(`💧 Provider not mounted — writing directly to storage/DB`);
     await saveWaterToStorage(ml);
   }
 };

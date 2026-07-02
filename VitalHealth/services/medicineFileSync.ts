@@ -1,6 +1,8 @@
 import * as FileSystem from "expo-file-system/legacy";
 import { getMedicines } from "../database/medicineDB";
 
+import { log } from "../utils/logger";
+
 const FILE_PATH = FileSystem.documentDirectory + "medicineData.json";
 
 ///////////////////////////////////////////////////////////
@@ -14,9 +16,9 @@ export const syncMedicineFile = async () => {
       JSON.stringify(data, null, 2)
     );
 
-    console.log("Medicine file synced:", FILE_PATH);
+    log("Medicine file synced:", FILE_PATH);
   } catch (err) {
-    console.log("File sync error:", err);
+    log("File sync error:", err);
   }
 };
 
@@ -31,7 +33,7 @@ export const readMedicineFile = async () => {
     const content = await FileSystem.readAsStringAsync(FILE_PATH);
     return JSON.parse(content);
   } catch (err) {
-    console.log("Read error:", err);
+    log("Read error:", err);
     return [];
   }
 };

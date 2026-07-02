@@ -5,7 +5,7 @@
  */
 import React, { useState } from 'react';
 import { View, Text, TouchableOpacity, Modal, StyleSheet, Dimensions, ScrollView, Pressable } from 'react-native';
-import Svg, { Path, Defs, LinearGradient, Stop, Circle, Line, G } from 'react-native-svg';
+import Svg, { Path, Defs, LinearGradient as SvgLinearGradient, Stop, Circle, Line, G, Polyline, Polygon, Rect, Text as SvgText } from 'react-native-svg';
 import { Ionicons } from '@expo/vector-icons';
 
 const W = Dimensions.get('window').width;
@@ -166,36 +166,98 @@ export default function BodyMap({ scores, c, lastVitals, sessions = [], profile 
   const getHistoryVitals = (key: string) => {
     const validSessions = sessions
       .filter(s => s.vitals_snapshot)
-      .slice(0, 5)
+      .slice(0, 8)
       .reverse(); // oldest to newest for chronological flow
 
-    return validSessions.map(s => {
+    const historyPoints = validSessions.map(s => {
       const snap = s.vitals_snapshot!;
       const dateStr = new Date(s.timestamp).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
       let val = '--';
+      let numVal: number | null = null;
+      let unit = '';
 
       switch (key) {
         case 'brain':
-          val = snap.core_temperature ? `${snap.core_temperature.toFixed(1)} °C` : '--';
+          numVal = snap.core_temperature ?? null;
+          val = numVal != null ? `${numVal.toFixed(1)} °C` : '--';
+          unit = '°C';
           break;
         case 'heart':
-          val = snap.heart_rate ? `${snap.heart_rate} bpm` : '--';
+          numVal = snap.heart_rate ?? null;
+          val = numVal != null ? `${numVal} bpm` : '--';
+          unit = 'bpm';
           break;
         case 'lungs':
-          val = snap.spo2 ? `${snap.spo2}%` : '--';
+          numVal = snap.spo2 ?? null;
+          val = numVal != null ? `${numVal}%` : '--';
+          unit = '%';
           break;
         case 'liver':
-          val = snap.glucose ? `${Math.round(snap.glucose)} mg` : '--';
+          numVal = snap.glucose ? Math.round(snap.glucose) : null;
+          val = numVal != null ? `${numVal} mg/dL` : '--';
+          unit = 'mg/dL';
           break;
         case 'gut':
-          val = snap.core_temperature ? `${snap.core_temperature.toFixed(1)} °C` : '--';
+          numVal = snap.core_temperature ?? null;
+          val = numVal != null ? `${numVal.toFixed(1)} °C` : '--';
+          unit = '°C';
           break;
         case 'legs':
-          val = snap.stroke_volume ? `${Math.round(snap.stroke_volume)} mL` : '--';
+          numVal = snap.stroke_volume ? Math.round(snap.stroke_volume) : null;
+          val = numVal != null ? `${numVal} mL` : '--';
+          unit = 'mL';
           break;
       }
-      return { date: dateStr, value: val };
+      return { date: dateStr, value: val, numVal, unit };
     });
+
+    // Prepend a Baseline point from user profile to make sure there's always a start point
+    const p = profile || {};
+    let baselineNumVal = 72;
+    let baselineVal = '--';
+    let baselineUnit = '';
+
+    switch (key) {
+      case 'brain':
+        baselineNumVal = p.biogears_resting_temp ? parseFloat(p.biogears_resting_temp) : 37.0;
+        baselineVal = `${baselineNumVal.toFixed(1)} °C`;
+        baselineUnit = '°C';
+        break;
+      case 'heart':
+        baselineNumVal = p.biogears_resting_hr ? parseInt(p.biogears_resting_hr) : 72;
+        baselineVal = `${baselineNumVal} bpm`;
+        baselineUnit = 'bpm';
+        break;
+      case 'lungs':
+        baselineNumVal = 98; // Standard baseline SpO2
+        baselineVal = '98%';
+        baselineUnit = '%';
+        break;
+      case 'liver':
+        baselineNumVal = 95; // Standard baseline Glucose
+        baselineVal = '95 mg/dL';
+        baselineUnit = 'mg/dL';
+        break;
+      case 'gut':
+        baselineNumVal = p.biogears_resting_temp ? parseFloat(p.biogears_resting_temp) : 37.0;
+        baselineVal = `${baselineNumVal.toFixed(1)} °C`;
+        baselineUnit = '°C';
+        break;
+      case 'legs':
+        baselineNumVal = 72; // Standard stroke volume
+        baselineVal = '72 mL';
+        baselineUnit = 'mL';
+        break;
+    }
+
+    const baselinePoint = {
+      date: 'Baseline',
+      value: baselineVal,
+      numVal: baselineNumVal,
+      unit: baselineUnit
+    };
+
+    return [baselinePoint, ...historyPoints];
   };
 
   const currentAdvice = selected ? getOrganAdvice(selected.key, selectedData?.score ?? 100) : '';
@@ -266,10 +328,10 @@ export default function BodyMap({ scores, c, lastVitals, sessions = [], profile 
         <View style={{ width: '40%', height: '100%', justifyContent: 'center', alignItems: 'center', position: 'relative' }}>
           <Svg width="100%" height="100%" viewBox="0 0 180 340" style={{ alignSelf: 'center' }}>
             <Defs>
-              <LinearGradient id="bodyGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+              <SvgLinearGradient id="bodyGrad" x1="0%" y1="0%" x2="0%" y2="100%">
                 <Stop offset="0%" stopColor={c.accent} stopOpacity={0.25} />
                 <Stop offset="100%" stopColor={c.purple || '#8b5cf6'} stopOpacity={0.05} />
-              </LinearGradient>
+              </SvgLinearGradient>
             </Defs>
 
             {/* Futuristic hologram scan background elements */}
@@ -405,7 +467,7 @@ export default function BodyMap({ scores, c, lastVitals, sessions = [], profile 
             <View style={[styles.sheetHandle, { backgroundColor: c.border }]} />
             
             {selected && selectedData && (
-              <ScrollView showsVerticalScrollIndicator={false} style={{ width: '100%' }} contentContainerStyle={{ paddingBottom: 24 }}>
+              <ScrollView showsVerticalScrollIndicator={false} style={{ width: '100%', flexGrow: 0 }} contentContainerStyle={{ paddingBottom: 24 }}>
                 {/* Header */}
                 <View style={styles.sheetHeader}>
                   {selected.key === 'liver' ? (
@@ -483,27 +545,43 @@ export default function BodyMap({ scores, c, lastVitals, sessions = [], profile 
 
                 {activeTab === 'history' && (
                   <View style={styles.tabContent}>
-                    <Text style={[styles.tabSectionTitle, { color: c.text }]}>Recent Simulation History</Text>
-                    {currentHistory.length > 0 ? (
-                      <View style={{ marginTop: 8 }}>
+                    <Text style={[styles.tabSectionTitle, { color: c.text }]}>Trend Chart</Text>
+                    {currentHistory.length >= 2 ? (
+                      <>
+                        <OrganTrendChart
+                          data={currentHistory}
+                          accentColor={statusColor(selectedData?.status)}
+                          c={c}
+                        />
+                        <Text style={[styles.tabSectionTitle, { color: c.text, marginTop: 18, marginBottom: 8 }]}>History Logs</Text>
                         {currentHistory.map((item, idx) => (
                           <View key={idx} style={[styles.historyRow, { borderColor: c.border }]}>
-                            <View style={styles.historyDotWrap}>
-                              <View style={[styles.historyTimelineDot, { backgroundColor: c.accent }]} />
-                              {idx < currentHistory.length - 1 && <View style={[styles.historyTimelineLine, { backgroundColor: c.border }]} />}
-                            </View>
                             <View style={styles.historyDetails}>
                               <Text style={[styles.historyDate, { color: c.text }]}>{item.date}</Text>
                               <Text style={{ color: c.sub, fontSize: 11 }}>Simulated Value</Text>
                             </View>
-                            <Text style={[styles.historyVal, { color: c.text }]}>{item.value}</Text>
+                            <Text style={[styles.historyVal, { color: statusColor(selectedData?.status) }]}>{item.value}</Text>
                           </View>
                         ))}
+                      </>
+                    ) : currentHistory.length === 1 ? (
+                      <View style={{ alignItems: 'center', paddingVertical: 24 }}>
+                        <Ionicons name="bar-chart-outline" size={36} color={c.sub} />
+                        <Text style={[{ color: c.text, fontWeight: '700', marginTop: 10, fontSize: 14 }]}>Only 1 session recorded</Text>
+                        <Text style={{ color: c.sub, fontSize: 12, marginTop: 6, textAlign: 'center' }}>Run at least 2 simulations to see the trend graph.</Text>
+                        <View style={[styles.historyRow, { borderColor: c.border, marginTop: 16, width: '100%' }]}>
+                          <View style={styles.historyDetails}>
+                            <Text style={[styles.historyDate, { color: c.text }]}>{currentHistory[0].date}</Text>
+                            <Text style={{ color: c.sub, fontSize: 11 }}>Simulated Value</Text>
+                          </View>
+                          <Text style={[styles.historyVal, { color: statusColor(selectedData?.status) }]}>{currentHistory[0].value}</Text>
+                        </View>
                       </View>
                     ) : (
                       <View style={{ alignItems: 'center', paddingVertical: 24 }}>
                         <Ionicons name="time-outline" size={32} color={c.sub} />
                         <Text style={{ color: c.sub, fontSize: 12, marginTop: 8 }}>No past sessions found for this active twin.</Text>
+                        <Text style={{ color: c.sub, fontSize: 11, marginTop: 4, textAlign: 'center' }}>Run a simulation to start seeing trends.</Text>
                       </View>
                     )}
                   </View>
@@ -517,7 +595,183 @@ export default function BodyMap({ scores, c, lastVitals, sessions = [], profile 
   );
 }
 
+// ─── Trend Chart Component ────────────────────────────────────────────────────
+
+function OrganTrendChart({ data, accentColor, c }: {
+  data: { date: string; value: string; numVal: number | null; unit: string }[];
+  accentColor: string;
+  c: any;
+}) {
+  const chartW = Dimensions.get('window').width - 80; // modal padding
+  const chartH = 135;
+  const paddingLeft = 44;
+  const paddingRight = 12;
+  const paddingTop = 12;
+  const paddingBottom = 22;
+  const plotW = chartW - paddingLeft - paddingRight;
+  const plotH = chartH - paddingTop - paddingBottom;
+
+  // Filter points with valid numeric values
+  const points = data.filter(d => d.numVal !== null) as { date: string; value: string; numVal: number; unit: string }[];
+
+  if (points.length < 2) {
+    return (
+      <View style={{ alignItems: 'center', paddingVertical: 16 }}>
+        <Text style={{ color: c.sub, fontSize: 12 }}>Not enough numeric data to plot.</Text>
+      </View>
+    );
+  }
+
+  const vals = points.map(p => p.numVal);
+  const minVal = Math.min(...vals);
+  const maxVal = Math.max(...vals);
+  const range = maxVal - minVal || 1;
+  // Add a bit of padding to range
+  const domainMin = minVal - range * 0.15;
+  const domainMax = maxVal + range * 0.15;
+  const domainRange = domainMax - domainMin;
+
+  const toX = (i: number) => paddingLeft + (i / (points.length - 1)) * plotW;
+  const toY = (v: number) => paddingTop + plotH - ((v - domainMin) / domainRange) * plotH;
+
+  // Build polyline points string
+  const linePoints = points.map((p, i) => `${toX(i)},${toY(p.numVal)}`).join(' ');
+
+  // Build filled area polygon (line + bottom)
+  const areaPoints = [
+    ...points.map((p, i) => `${toX(i)},${toY(p.numVal)}`),
+    `${toX(points.length - 1)},${paddingTop + plotH}`,
+    `${toX(0)},${paddingTop + plotH}`,
+  ].join(' ');
+
+  // Y-axis labels (3 ticks)
+  const yTicks = [0, 0.5, 1].map(t => domainMin + t * domainRange);
+
+  const unit = points[0]?.unit ?? '';
+
+  return (
+    <View style={[styles.chartContainer, { backgroundColor: c.bg ?? '#0f172a', borderColor: c.border }]}>
+      <Svg width={chartW} height={chartH}>
+        <Defs>
+          <SvgLinearGradient id="areaGrad" x1="0" y1="0" x2="0" y2="1">
+            <Stop offset="0%" stopColor={accentColor} stopOpacity={0.35} />
+            <Stop offset="100%" stopColor={accentColor} stopOpacity={0.02} />
+          </SvgLinearGradient>
+        </Defs>
+
+        {/* Grid lines */}
+        {yTicks.map((tick, i) => {
+          const y = toY(tick);
+          return (
+            <G key={i}>
+              <Line
+                x1={paddingLeft}
+                y1={y}
+                x2={chartW - paddingRight}
+                y2={y}
+                stroke={c.border}
+                strokeWidth={1}
+                strokeDasharray="3 4"
+              />
+              <SvgText
+                x={paddingLeft - 4}
+                y={y + 4}
+                textAnchor="end"
+                fontSize={9}
+                fill={c.sub ?? '#64748b'}
+              >
+                {tick % 1 === 0 ? tick.toFixed(0) : tick.toFixed(1)}
+              </SvgText>
+            </G>
+          );
+        })}
+
+        {/* Y axis line */}
+        <Line
+          x1={paddingLeft}
+          y1={paddingTop}
+          x2={paddingLeft}
+          y2={paddingTop + plotH}
+          stroke={c.border}
+          strokeWidth={1}
+        />
+
+        {/* X axis line */}
+        <Line
+          x1={paddingLeft}
+          y1={paddingTop + plotH}
+          x2={chartW - paddingRight}
+          y2={paddingTop + plotH}
+          stroke={c.border}
+          strokeWidth={1}
+        />
+
+        {/* Filled area */}
+        <Polygon
+          points={areaPoints}
+          fill="url(#areaGrad)"
+        />
+
+        {/* Line */}
+        <Polyline
+          points={linePoints}
+          fill="none"
+          stroke={accentColor}
+          strokeWidth={2.5}
+          strokeLinejoin="round"
+          strokeLinecap="round"
+        />
+
+        {/* Data points + X labels */}
+        {points.map((p, i) => {
+          const x = toX(i);
+          const y = toY(p.numVal);
+          const isLast = i === points.length - 1;
+          return (
+            <G key={i}>
+              {/* Outer glow circle */}
+              <Circle cx={x} cy={y} r={7} fill={accentColor} fillOpacity={0.18} />
+              {/* Core dot */}
+              <Circle cx={x} cy={y} r={3.5} fill={accentColor} stroke="#ffffff" strokeWidth={1.5} />
+              {/* Value label above dot (only first, last, and every 2nd in between) */}
+              {(i === 0 || isLast || i % 2 === 0) && (
+                <SvgText
+                  x={x}
+                  y={y - 10}
+                  textAnchor="middle"
+                  fontSize={8.5}
+                  fontWeight="700"
+                  fill={accentColor}
+                >
+                  {p.numVal % 1 === 0 ? p.numVal.toFixed(0) : p.numVal.toFixed(1)}
+                </SvgText>
+              )}
+              {/* X axis date label */}
+              <SvgText
+                x={x}
+                y={paddingTop + plotH + 12}
+                textAnchor="middle"
+                fontSize={8}
+                fill={c.sub ?? '#64748b'}
+              >
+                {p.date}
+              </SvgText>
+            </G>
+          );
+        })}
+      </Svg>
+      {/* Unit label */}
+      {unit ? (
+        <Text style={{ color: c.sub, fontSize: 10, textAlign: 'right', marginTop: 2, paddingRight: 8 }}>
+          Unit: {unit}
+        </Text>
+      ) : null}
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
+  chartContainer: { borderRadius: 16, borderWidth: 1, padding: 8, marginTop: 4, overflow: 'hidden' },
   wrap: { borderRadius: 24, padding: 18, borderWidth: 1, marginBottom: 16 },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 },
   title: { fontWeight: '800', fontSize: 17 },

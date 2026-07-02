@@ -8,6 +8,7 @@ import {
   TouchableOpacity,
   Linking,
 } from "react-native";
+import { useRouter } from "expo-router";
 import Header from "./components/Header";
 import { useTheme } from "../context/ThemeContext";
 
@@ -77,6 +78,7 @@ function FadeIn({ delay = 0, children }: { delay?: number; children: React.React
 }
 
 export default function About() {
+  const router = useRouter();
   const { theme } = useTheme();
   const dark = theme === "dark";
 
@@ -94,7 +96,7 @@ export default function About() {
 
   return (
     <View style={[s.root, { backgroundColor: c.bg }]}>
-      <Header />
+      <Header title="About VitalHealth" showBack={true} showProfile={false} />
       <ScrollView
         contentContainerStyle={s.scroll}
         showsVerticalScrollIndicator={false}
@@ -210,14 +212,14 @@ export default function About() {
           <TouchableOpacity
             style={s.ctaBtn}
             activeOpacity={0.85}
-            onPress={() => {}}
+            onPress={() => router.replace("/(tabs)")}
           >
             <Text style={s.ctaBtnText}>Start Monitoring →</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={[s.ctaBtnOutline, { borderColor: c.border }]}
             activeOpacity={0.85}
-            onPress={() => Linking.openURL("mailto:vitalhealth12026@gmail.com")}
+            onPress={() => Linking.openURL("mailto:vitalhealth1215@gmail.com")}
           >
             <Text style={[s.ctaBtnOutlineText, { color: c.accent }]}>Contact the team</Text>
           </TouchableOpacity>

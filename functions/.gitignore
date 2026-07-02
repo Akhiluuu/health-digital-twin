@@ -1,0 +1,8 @@
+# Compiled JavaScript files
+lib/
+
+# Dependency directories
+node_modules/
+
+# Private keys / runtime config
+.runtimeconfig.json

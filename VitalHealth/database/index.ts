@@ -7,6 +7,11 @@
 import * as SQLite from "expo-sqlite";
 
 export const db = SQLite.openDatabaseSync("vital_health.db");
+try {
+  db.execSync("PRAGMA busy_timeout = 30000;");
+} catch (e) {
+  console.warn("⚠️ Failed to set busy_timeout on vital_health.db:", e);
+}
 
 // ── Convenience wrappers (same API as before, just re-exported) ───────────────
 export const run = (sql: string, params: any[] = []) => db.runAsync(sql, params);

@@ -7,6 +7,9 @@ import * as ImagePicker from 'expo-image-picker';
 
 import { Chunk, ChunkOptions, createChunks } from './chunkingService';
 import { generateEmbeddings, retrieveTopKChunks, ScoredChunk } from './embeddingService';
+import { getBiogearsBaseUrl, getApiKey } from './biogears';
+
+import { log, error } from "../utils/logger";
 
 // Storage keys
 const KEY_DOCUMENTS = '@hai_documents';
@@ -47,8 +50,8 @@ export async function loadDocuments(): Promise<Document[]> {
     const data = await AsyncStorage.getItem(KEY_DOCUMENTS);
     if (!data) return [];
     try { const p = JSON.parse(data); return Array.isArray(p) ? p : []; } catch { return []; }
-  } catch (error) {
-    console.error('[DocProcessing] Error loading documents:', error);
+  } catch (err: unknown) {
+    error('[DocProcessing] Error loading documents:', err);
     return [];
   }
 }
@@ -59,8 +62,8 @@ export async function loadDocuments(): Promise<Document[]> {
 export async function saveDocuments(docs: Document[]): Promise<void> {
   try {
     await AsyncStorage.setItem(KEY_DOCUMENTS, JSON.stringify(docs));
-  } catch (error) {
-    console.error('[DocProcessing] Error saving documents:', error);
+  } catch (err: unknown) {
+    error('[DocProcessing] Error saving documents:', err);
   }
 }
 
@@ -72,8 +75,8 @@ export async function loadChunks(): Promise<EmbeddedChunk[]> {
     const data = await AsyncStorage.getItem(KEY_CHUNKS);
     if (!data) return [];
     try { const p = JSON.parse(data); return Array.isArray(p) ? p : []; } catch { return []; }
-  } catch (error) {
-    console.error('[DocProcessing] Error loading chunks:', error);
+  } catch (err: unknown) {
+    error('[DocProcessing] Error loading chunks:', err);
     return [];
   }
 }
@@ -84,8 +87,8 @@ export async function loadChunks(): Promise<EmbeddedChunk[]> {
 export async function saveChunks(chunks: EmbeddedChunk[]): Promise<void> {
   try {
     await AsyncStorage.setItem(KEY_CHUNKS, JSON.stringify(chunks));
-  } catch (error) {
-    console.error('[DocProcessing] Error saving chunks:', error);
+  } catch (err: unknown) {
+    error('[DocProcessing] Error saving chunks:', err);
   }
 }
 
@@ -118,8 +121,8 @@ export async function pickDocument(): Promise<{
       type: isPdf ? 'pdf' : 'image',
       mimeType: asset.mimeType || (isPdf ? 'application/pdf' : 'image/jpeg'),
     };
-  } catch (error) {
-    console.error('[DocProcessing] Error picking document:', error);
+  } catch (err: unknown) {
+    error('[DocProcessing] Error picking document:', err);
     return null;
   }
 }
@@ -136,7 +139,7 @@ export async function pickImage(): Promise<{
   try {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== 'granted') {
-      console.log('[DocProcessing] Image picker permission denied');
+      log('[DocProcessing] Image picker permission denied');
       return null;
     }
 
@@ -158,8 +161,8 @@ export async function pickImage(): Promise<{
       type: 'image',
       mimeType: asset.mimeType || 'image/jpeg',
     };
-  } catch (error) {
-    console.error('[DocProcessing] Error picking image:', error);
+  } catch (err: unknown) {
+    error('[DocProcessing] Error picking image:', err);
     return null;
   }
 }
@@ -192,6 +195,66 @@ export async function processDocument(
     }
   };
 
+  // Try Server-Side AI processing first
+  try {
+    updateProgress('extracting', 15, 'Uploading to AI server for OCR...');
+    const baseUrl = await getBiogearsBaseUrl();
+    const apiKey = await getApiKey();
+    const uploadUrl = `${baseUrl.replace(/\/$/, '')}/ai/upload-and-embed`;
+
+    const formData = new FormData();
+    formData.append('file', {
+      uri: document.uri,
+      name: document.name,
+      type: document.mimeType || (document.type === 'pdf' ? 'application/pdf' : 'image/jpeg'),
+    } as any);
+
+    const response = await fetch(uploadUrl, {
+      method: 'POST',
+      body: formData,
+      headers: {
+        'Content-Type': 'multipart/form-data',
+        ...(apiKey ? { 'X-API-Key': apiKey } : {}),
+      },
+    });
+
+    if (response.ok) {
+      updateProgress('embedding', 75, 'Receiving AI chunks and embeddings...');
+      const result = await response.json();
+      
+      if (result.status === 'success' && Array.isArray(result.chunks)) {
+        const docId = generateDocId();
+        const embeddedChunks: EmbeddedChunk[] = result.chunks.map((c: any, index: number) => ({
+          id: `${docId}_c${index}`,
+          text: c.text,
+          metadata: {
+            ...(c.metadata || {}),
+            docId: docId,
+            docName: document.name,
+            docType: document.type,
+          },
+          embedding: c.embedding,
+        }));
+
+        const doc: Document = {
+          id: docId,
+          name: document.name,
+          type: document.type,
+          chunkCount: embeddedChunks.length,
+          uploadedAt: Date.now(),
+        };
+
+        updateProgress('complete', 100, 'Document processed on AI server!');
+        return { document: doc, chunks: embeddedChunks };
+      }
+    }
+    
+    log('[DocProcessing] Server upload returned non-success response. Falling back to local...');
+  } catch (err: any) {
+    log('[DocProcessing] Server OCR upload failed. Falling back to local:', err?.message || err);
+  }
+
+  // Graceful Fallback: Local processing (using mock text extraction and local simple embeddings)
   try {
     // Stage 1: Extract text
     updateProgress('extracting', 10, 'Extracting text from document...');
@@ -199,13 +262,8 @@ export async function processDocument(
     let extractedText: string;
     
     if (document.type === 'pdf') {
-      // For PDF, we'd normally use a PDF text extraction library
-      // For now, we'll use a placeholder
-      // In production, integrate with: expo-extract-text or react-native-pdf-extractor
       extractedText = await extractTextFromPDFDocument(document.uri, document.name);
     } else {
-      // For images, we'd use OCR
-      // For now, placeholder
       extractedText = await extractTextFromImageDocument(document.uri, document.name);
     }
     
@@ -213,7 +271,7 @@ export async function processDocument(
       throw new Error('Failed to extract meaningful text from document');
     }
     
-    console.log('[DocProcessing] Extracted text length:', extractedText.length);
+    log('[DocProcessing] Extracted text length:', extractedText.length);
     updateProgress('chunking', 40, 'Chunking text...');
 
     // Stage 2: Chunk text
@@ -225,7 +283,7 @@ export async function processDocument(
       throw new Error('Failed to create text chunks');
     }
     
-    console.log('[DocProcessing] Created chunks:', chunks.length);
+    log('[DocProcessing] Created chunks:', chunks.length);
     updateProgress('embedding', 60, 'Generating embeddings...');
 
     // Stage 3: Generate embeddings
@@ -238,7 +296,7 @@ export async function processDocument(
       embedding: embeddings[index],
     }));
     
-    console.log('[DocProcessing] Generated embeddings for', embeddings.length, 'chunks');
+    log('[DocProcessing] Generated embeddings for', embeddings.length, 'chunks');
     updateProgress('storing', 90, 'Storing locally...');
 
     // Stage 4: Create document record
@@ -254,9 +312,9 @@ export async function processDocument(
     
     return { document: doc, chunks: embeddedChunks };
     
-  } catch (error) {
-    updateProgress('error', 0, `Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    throw error;
+  } catch (err: unknown) {
+    updateProgress('error', 0, `Error: ${err instanceof Error ? err.message : 'Unknown error'}`);
+    throw err;
   }
 }
 
@@ -264,7 +322,7 @@ export async function processDocument(
 // In production, integrate with actual OCR/PDF libraries
 
 async function extractTextFromPDFDocument(uri: string, name: string): Promise<string> {
-  console.log('[DocProcessing] Extracting text from PDF:', name);
+  log('[DocProcessing] Extracting text from PDF:', name);
   
   // Placeholder: In production, use:
   // - expo-extract-text
@@ -301,7 +359,7 @@ Recommend dietary modifications and regular exercise.
 }
 
 async function extractTextFromImageDocument(uri: string, name: string): Promise<string> {
-  console.log('[DocProcessing] Extracting text from image:', name);
+  log('[DocProcessing] Extracting text from image:', name);
   
   // Placeholder: In production, use:
   // - react-native-mlkit-ocr
@@ -370,6 +428,6 @@ export async function deleteDocument(
 export async function clearAllData(): Promise<void> {
   await saveDocuments([]);
   await saveChunks([]);
-  console.log('[DocProcessing] All document data cleared');
+  log('[DocProcessing] All document data cleared');
 }
 

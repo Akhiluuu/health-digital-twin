@@ -6,6 +6,8 @@ import { doc, getDoc, setDoc } from "firebase/firestore";
 import { LinkedMember } from "./familySync";
 import { auth, db } from "./firebase";
 
+import { log } from "../utils/logger";
+
 export interface UserProfile {
   firstName: string;
   lastName: string;
@@ -109,7 +111,7 @@ export async function fetchProfile(uid?: string): Promise<UserProfile | null> {
     const userId = uid || auth.currentUser?.uid;
 
     if (!userId) {
-      console.log("⚠️ fetchProfile: No logged in user");
+      log("⚠️ fetchProfile: No logged in user");
       return null;
     }
 
@@ -129,14 +131,14 @@ export async function fetchProfile(uid?: string): Promise<UserProfile | null> {
         linkedMembers: data.linkedMembers || {},
       };
 
-      console.log("✅ Profile fetched safely:", userId);
+      log("✅ Profile fetched safely:", userId);
       return safeProfile;
     }
 
-    console.log("ℹ️ No profile found in Firebase for", userId);
+    log("ℹ️ No profile found in Firebase for", userId);
     return null;
   } catch (e) {
-    console.log("❌ fetchProfile error:", e);
+    log("❌ fetchProfile error:", e);
     return null;
   }
 }
@@ -180,10 +182,10 @@ export async function saveProfile(profile: UserProfile, targetUid?: string): Pro
       { merge: true }
     );
 
-    console.log("✅ Profile saved:", fullProfile.firstName);
+    log("✅ Profile saved:", fullProfile.firstName);
     return true;
   } catch (e) {
-    console.log("❌ saveProfile error:", e);
+    log("❌ saveProfile error:", e);
     return false;
   }
 }
@@ -274,14 +276,14 @@ export async function updateProfile(
           },
           { merge: true }
         );
-        console.log(`✅ Synced child profile ${uid} updates to parent account ${managedBy}`);
+        log(`✅ Synced child profile ${uid} updates to parent account ${managedBy}`);
       }
     }
 
-    console.log("✅ Profile updated:", Object.keys(partial).join(", "));
+    log("✅ Profile updated:", Object.keys(partial).join(", "));
     return true;
   } catch (e) {
-    console.log("❌ updateProfile error:", e);
+    log("❌ updateProfile error:", e);
     return false;
   }
 }

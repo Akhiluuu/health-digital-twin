@@ -2,6 +2,8 @@
 
 import { scheduleNotification } from "../services/notificationService";
 
+import { log, error } from "../utils/logger";
+
 // ======================================================
 // SCHEDULE HYDRATION REMINDER
 // ======================================================
@@ -34,10 +36,10 @@ export const scheduleHydrationReminder = async (
       undefined
     );
 
-    console.log(
+    log(
       `💧 Hydration reminder scheduled at ${hour}:${minute}`
     );
-  } catch (error) {
-    console.error("❌ Error scheduling hydration reminder:", error);
+  } catch (err: unknown) {
+    error("❌ Error scheduling hydration reminder:", err);
   }
 };

@@ -1,6 +1,8 @@
 import notifee, { TriggerType } from '@notifee/react-native';
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
+import { log } from "../utils/logger";
+
 ///////////////////////////////////////////////////////////
 // HELPER — Hydration Key
 ///////////////////////////////////////////////////////////
@@ -32,9 +34,9 @@ const addWaterToStorage = async (ml: number): Promise<void> => {
 
     await AsyncStorage.setItem(key, String(newValue));
 
-    console.log(`💧 [BG] Water saved: ${ml}ml (total: ${newValue}ml)`);
+    log(`💧 [BG] Water saved: ${ml}ml (total: ${newValue}ml)`);
   } catch (err) {
-    console.log("💧 [BG] Failed to save water:", err);
+    log("💧 [BG] Failed to save water:", err);
   }
 };
 
@@ -47,7 +49,7 @@ notifee.onBackgroundEvent(async ({ type, detail }) => {
   const { notification, pressAction } = detail;
 
   if (!notification || !pressAction) {
-    console.log("❌ [BG] Missing notification/action");
+    log("❌ [BG] Missing notification/action");
     return;
   }
 
@@ -61,7 +63,7 @@ notifee.onBackgroundEvent(async ({ type, detail }) => {
     symptomName?: string;
   };
 
-  console.log("📬 [BG] Action:", action, "| Type:", notifData?.type);
+  log("📬 [BG] Action:", action, "| Type:", notifData?.type);
 
   ///////////////////////////////////////////////////
   // 💊 MEDICINE ACTIONS
@@ -93,19 +95,19 @@ notifee.onBackgroundEvent(async ({ type, detail }) => {
 
           if (medicine.frequency?.toLowerCase() === "once") {
             deleteMedicineByNotificationId(notificationId);
-            console.log("💊 [BG] One-time medicine deleted");
+            log("💊 [BG] One-time medicine deleted");
           } else {
             markMedicineTakenByNotificationId(notificationId);
-            console.log("💊 [BG] Daily medicine marked taken");
+            log("💊 [BG] Daily medicine marked taken");
           }
         }
 
         await notifee.cancelNotification(notificationId);
 
-        console.log("✅ [BG] MEDICINE_TAKEN handled");
+        log("✅ [BG] MEDICINE_TAKEN handled");
 
       } catch (e) {
-        console.log("❌ [BG] MEDICINE_TAKEN error:", e);
+        log("❌ [BG] MEDICINE_TAKEN error:", e);
       }
       return;
     }
@@ -135,10 +137,10 @@ notifee.onBackgroundEvent(async ({ type, detail }) => {
 
         await notifee.cancelNotification(notificationId);
 
-        console.log("⏰ [BG] Medicine snoozed");
+        log("⏰ [BG] Medicine snoozed");
 
       } catch (e) {
-        console.log("❌ [BG] MEDICINE_SNOOZE error:", e);
+        log("❌ [BG] MEDICINE_SNOOZE error:", e);
       }
       return;
     }
@@ -153,14 +155,14 @@ notifee.onBackgroundEvent(async ({ type, detail }) => {
     if (action === "HYDRATION_100") {
       await addWaterToStorage(100);
       await notifee.cancelNotification(notificationId);
-      console.log("✅ [BG] HYDRATION_100 handled");
+      log("✅ [BG] HYDRATION_100 handled");
       return;
     }
 
     if (action === "HYDRATION_150") {
       await addWaterToStorage(150);
       await notifee.cancelNotification(notificationId);
-      console.log("✅ [BG] HYDRATION_150 handled");
+      log("✅ [BG] HYDRATION_150 handled");
       return;
     }
 
@@ -183,10 +185,10 @@ notifee.onBackgroundEvent(async ({ type, detail }) => {
 
         await notifee.cancelNotification(notificationId);
 
-        console.log("⏰ [BG] Hydration snoozed");
+        log("⏰ [BG] Hydration snoozed");
 
       } catch (e) {
-        console.log("❌ [BG] HYDRATION_SNOOZE error:", e);
+        log("❌ [BG] HYDRATION_SNOOZE error:", e);
       }
       return;
     }
@@ -207,19 +209,19 @@ notifee.onBackgroundEvent(async ({ type, detail }) => {
 
         await notifee.cancelNotification(notificationId);
 
-        console.log("✅ [BG] SYMPTOM_NO handled");
+        log("✅ [BG] SYMPTOM_NO handled");
 
       } catch (e) {
-        console.log("❌ [BG] SYMPTOM_NO error:", e);
+        log("❌ [BG] SYMPTOM_NO error:", e);
       }
       return;
     }
 
     if (action === "SYMPTOM_YES") {
-      console.log("📬 [BG] SYMPTOM_YES → app will open");
+      log("📬 [BG] SYMPTOM_YES → app will open");
       return;
     }
   }
 
-  console.log("⚠️ [BG] Unhandled action:", action);
+  log("⚠️ [BG] Unhandled action:", action);
 });

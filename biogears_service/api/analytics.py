@@ -59,6 +59,60 @@ def _score_value(val: float, low: float, high: float) -> float:
     return max(0.0, 1.0 - deviation)
 
 
+def _parse_float(val, default: float = 0.0) -> float:
+    if val is None or str(val).lower() == 'nan':
+        return default
+    try:
+        return float(val)
+    except (ValueError, TypeError):
+        import re
+        m = re.search(r"[-+]?\d*\.\d+|\d+", str(val))
+        if m:
+            try:
+                return float(m.group())
+            except ValueError:
+                pass
+        return default
+
+def _parse_int(val, default: int = 0) -> int:
+    if val is None or str(val).lower() == 'nan':
+        return default
+    try:
+        return int(val)
+    except (ValueError, TypeError):
+        import re
+        m = re.search(r"[-+]?\d+", str(val))
+        if m:
+            try:
+                return int(m.group())
+            except ValueError:
+                pass
+        return default
+
+def _parse_age(metadata: Dict[str, Any], default: int = 30) -> int:
+    age_val = metadata.get("age")
+    if age_val is not None and str(age_val).lower() != 'nan':
+        return _parse_int(age_val, default)
+    dob = metadata.get("dateOfBirth") or metadata.get("dob")
+    if dob and isinstance(dob, str):
+        try:
+            import datetime
+            if "-" in dob:
+                birth = datetime.datetime.strptime(dob.split("T")[0], "%Y-%m-%d")
+            elif "/" in dob:
+                parts = dob.split("/")
+                y = int(parts[2])
+                if y < 100: y += 2000
+                birth = datetime.datetime(y, int(parts[1]), int(parts[0]))
+            else:
+                birth = None
+            if birth:
+                return (datetime.datetime.now() - birth).days // 365
+        except:
+            pass
+    return default
+
+
 # ---------------------------------------------------------------------------
 # 1. HEALTH METRICS  (BMI, BSA, ideal weight, pulse pressure)
 # ---------------------------------------------------------------------------
@@ -68,13 +122,13 @@ def compute_metrics(metadata: Dict[str, Any]) -> Dict[str, Any]:
     No simulation required.
     Uses WHO South Asian BMI thresholds when ethnicity == 'South Asian'.
     """
-    weight = metadata.get("weight")   # kg
-    height = metadata.get("height")  # cm
+    weight = _parse_float(metadata.get("weight"), 0.0)   # kg
+    height = _parse_float(metadata.get("height"), 0.0)  # cm
     sex = metadata.get("sex", "Male")
     ethnicity = metadata.get("ethnicity", "Other")
     hba1c = metadata.get("hba1c")
 
-    if not weight or not height or height <= 0 or weight <= 0:
+    if weight <= 0 or height <= 0:
         return {"error": "Weight and height not available or invalid in profile metadata."}
 
     h_m = height / 100.0                  # metres
@@ -653,16 +707,16 @@ def compute_cvd_risk(metadata: Dict[str, Any]) -> Dict[str, Any]:
 
     Returns a risk percentage, category, and actionable factors.
     """
-    age     = int(metadata.get("age", 40))
-    sex     = str(metadata.get("sex", "Male")).lower()
-    sys_bp  = float(metadata.get("systolic_bp", 120))
-    smoker  = bool(metadata.get("is_smoker", False))
-    t1d     = bool(metadata.get("has_type1_diabetes", False))
-    t2d     = bool(metadata.get("has_type2_diabetes", False))
+    age     = _parse_age(metadata, 40)
+    sex     = str(metadata.get("sex") or metadata.get("gender") or "Male").lower()
+    sys_bp  = _parse_float(metadata.get("systolic_bp"), 120.0)
+    smoker  = bool(metadata.get("is_smoker") or False)
+    t1d     = bool(metadata.get("has_type1_diabetes") or False)
+    t2d     = bool(metadata.get("has_type2_diabetes") or False)
     hba1c   = metadata.get("hba1c")
     ethnicity = str(metadata.get("ethnicity", "Other")).lower()
-    weight  = float(metadata.get("weight", 70))
-    height  = float(metadata.get("height", 170))
+    weight  = _parse_float(metadata.get("weight"), 70.0)
+    height  = _parse_float(metadata.get("height"), 170.0)
     if height <= 0:
         height = 170.0
     bmi     = weight / ((height / 100) ** 2)
@@ -751,10 +805,10 @@ def compute_bmr_and_balance(metadata: Dict[str, Any], events: List[Dict[str, Any
     Computes Basal Metabolic Rate (Mifflin-St Jeor equation) and estimates
     caloric balance from logged events.
     """
-    weight = float(metadata.get("weight", 70))   # kg
-    height = float(metadata.get("height", 170))  # cm
-    age    = int(metadata.get("age", 30))
-    sex    = str(metadata.get("sex", "Male")).lower()
+    weight = _parse_float(metadata.get("weight"), 70.0)   # kg
+    height = _parse_float(metadata.get("height"), 170.0)  # cm
+    age    = _parse_age(metadata, 30)
+    sex    = str(metadata.get("sex") or metadata.get("gender") or "Male").lower()
 
     # Mifflin-St Jeor BMR (kcal/day)
     if sex == "male":

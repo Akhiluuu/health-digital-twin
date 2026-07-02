@@ -17,6 +17,8 @@ import { getUserId } from "./firebaseSync";
 import { UserProfile } from "./profileService";
 import { FamilyMember } from "../types/FamilyMember";
 
+import { log, error } from "../utils/logger";
+
 /* ──────────────────────────────────────────────────────────────
    Linked Member Type
    ────────────────────────────────────────────────────────────── */
@@ -71,7 +73,7 @@ export async function fetchLinkedMembers(): Promise<LinkedMember[]> {
       dob: value.dob || value.dateOfBirth || "",
     }));
   } catch (e) {
-    console.log("❌ fetchLinkedMembers error:", e);
+    log("❌ fetchLinkedMembers error:", e);
     return [];
   }
 }
@@ -109,8 +111,8 @@ const fetchLatestHeartRate = async (uid: string): Promise<number> => {
       const hrData = hrSnap.docs[0].data();
       return hrData?.bpm || 0;
     }
-  } catch (error) {
-    console.log("⚠️ Unable to fetch heart rate:", error);
+  } catch (err: unknown) {
+    log("⚠️ Unable to fetch heart rate:", err);
   }
 
   return 0;
@@ -180,8 +182,8 @@ export async function fetchMemberHealthData(
       profileImage: data.profileImage,
       updatedAt: data.updatedAt,
     };
-  } catch (error) {
-    console.error("❌ Error fetching member health data:", error);
+  } catch (err: unknown) {
+    error("❌ Error fetching member health data:", err);
     return null;
   }
 }
@@ -267,7 +269,7 @@ export function subscribeToMemberHealth(
         debounceTimer = setTimeout(() => {
           doSubcollectionRead(data).catch((err: any) => {
             if (err?.code !== "permission-denied") {
-              console.log("⚠️ subscribeToMemberHealth read error:", err?.code);
+              log("⚠️ subscribeToMemberHealth read error:", err?.code);
             }
           });
         }, 500); // 500ms window collapses rapid consecutive writes
@@ -276,7 +278,7 @@ export function subscribeToMemberHealth(
         // Silently ignore permission-denied — Firestore rules only allow
         // reading your own doc; the one-shot fetch already filled the UI.
         if (err?.code !== "permission-denied") {
-          console.log("⚠️ subscribeToMemberHealth error:", err?.code);
+          log("⚠️ subscribeToMemberHealth error:", err?.code);
         }
       }
     );
@@ -295,7 +297,7 @@ export function subscribeToMemberHealth(
       },
       (err: any) => {
         if (err?.code !== "permission-denied") {
-          console.log("⚠️ subscribeToMemberHealth HR error:", err?.code);
+          log("⚠️ subscribeToMemberHealth HR error:", err?.code);
         }
       }
     );
@@ -305,8 +307,8 @@ export function subscribeToMemberHealth(
       unsubscribeUser();
       unsubscribeHR();
     };
-  } catch (error) {
-    console.error("❌ Subscription error:", error);
+  } catch (err: unknown) {
+    error("❌ Subscription error:", err);
     return () => {};
   }
 }
@@ -331,7 +333,7 @@ export async function findUserByHealthId(
     const docSnap = snap.docs[0];
     return { ...(docSnap.data() as UserProfile), uid: docSnap.id };
   } catch (e) {
-    console.log("❌ findUserByHealthId error:", e);
+    log("❌ findUserByHealthId error:", e);
     return null;
   }
 }
@@ -390,7 +392,7 @@ export async function linkFamilyMember(
 
     return true;
   } catch (e) {
-    console.log("❌ linkFamilyMember error:", e);
+    log("❌ linkFamilyMember error:", e);
     return false;
   }
 }
@@ -471,7 +473,7 @@ export async function createDependentProfile(details: {
 
     return { newId, fakePhoneSuffix, inviteCode: depCode };
   } catch (e) {
-    console.log("❌ createDependentProfile error:", e);
+    log("❌ createDependentProfile error:", e);
     return null;
   }
 }
@@ -496,7 +498,7 @@ export async function unlinkFamilyMember(
         if (depData?.managedBy === myUid) {
           const { deleteDoc } = await import("firebase/firestore");
           await deleteDoc(depRef);
-          console.log(`🧹 Deleted orphaned dependent profile document: ${targetUid}`);
+          log(`🧹 Deleted orphaned dependent profile document: ${targetUid}`);
         }
       }
     }
@@ -510,7 +512,7 @@ export async function unlinkFamilyMember(
       [`linkedMembers.${myUid}`]: deleteField(),
     }).catch(() => {});
   } catch (e) {
-    console.log("❌ unlinkFamilyMember error:", e);
+    log("❌ unlinkFamilyMember error:", e);
   }
 }
 
@@ -579,7 +581,7 @@ export async function updateDependentProfile(
 
     return true;
   } catch (e) {
-    console.error("❌ updateDependentProfile error:", e);
+    error("❌ updateDependentProfile error:", e);
     return false;
   }
 }

@@ -1,3 +1,5 @@
+import { log } from "../utils/logger";
+
 // services/embeddingService.ts
 // On-device embedding generation using simple hash-based embeddings
 // Note: For production, install @xenova/transformers for better embeddings
@@ -60,7 +62,7 @@ function generateSimpleEmbedding(text: string): number[] {
 export async function initializeEmbeddingModel(): Promise<void> {
   if (isInitialized) return;
   
-  console.log('[Embedding] Initializing embedding service (fallback mode)');
+  log('[Embedding] Initializing embedding service (fallback mode)');
   isInitialized = true;
 }
 
@@ -196,6 +198,6 @@ export function retrieveTopKChunks(
  */
 export function unloadModel(): void {
   isInitialized = false;
-  console.log('[Embedding] Model unloaded');
+  log('[Embedding] Model unloaded');
 }
 

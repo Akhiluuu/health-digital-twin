@@ -96,13 +96,22 @@ export default function VisualObjectLearningTest({ onDone }: Props) {
   const [testIndex, setTestIndex] = useState(0);
   const [answers, setAnswers] = useState<Array<{ objId: number; response: number }>>([]);
   const [testSequence, setTestSequence] = useState<VisualObject3D[]>([]);
+  const [learningSet, setLearningSet] = useState<VisualObject3D[]>([]);
+  const [learningIds, setLearningIds] = useState<number[]>([]);
 
   const fadeAnim = useRef(new Animated.Value(1)).current;
 
   // Initialize and randomize test trials (all 20 objects)
   useEffect(() => {
-    const shuffled = [...SHAPES_POOL].sort(() => Math.random() - 0.5);
-    setTestSequence(shuffled);
+    // Select 10 random shapes to serve as the learning set
+    const shuffledPool = [...SHAPES_POOL].sort(() => Math.random() - 0.5);
+    const selectedLearning = shuffledPool.slice(0, 10);
+    setLearningSet(selectedLearning);
+    setLearningIds(selectedLearning.map(s => s.id));
+
+    // Test sequence has all 20 shapes, shuffled
+    const shuffledTest = [...SHAPES_POOL].sort(() => Math.random() - 0.5);
+    setTestSequence(shuffledTest);
   }, []);
 
   // Learning timer: 2 seconds per shape
@@ -139,7 +148,7 @@ export default function VisualObjectLearningTest({ onDone }: Props) {
       // Confidence-weighted grading matching clinical guidelines
       let totalPoints = 0;
       newAnswers.forEach((ans) => {
-        const isOld = ans.objId <= 10;
+        const isOld = learningIds.includes(ans.objId);
         if (isOld) {
           if (ans.response === 1) totalPoints += 10; // Definitely yes
           else if (ans.response === 2) totalPoints += 7;  // Probably yes
@@ -396,7 +405,7 @@ export default function VisualObjectLearningTest({ onDone }: Props) {
   }
 
   if (phase === "learning") {
-    const currentObj = SHAPES_POOL[learnIndex];
+    const currentObj = learningSet[learnIndex];
     return (
       <View style={[styles.container, { backgroundColor: colors.background }]}>
         <Text style={styles.gameTitle}>MEMORIZATION PHASE</Text>

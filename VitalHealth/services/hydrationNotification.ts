@@ -1,6 +1,7 @@
 // services/hydrationNotification.ts
 // Fixed for Notifee + TypeScript compatibility
 
+import { log } from "../utils/logger";
 import {
   cancelHydrationReminders,
   scheduleHydrationReminder as notifeeSchedule,
@@ -12,7 +13,7 @@ import {
 ///////////////////////////////////////////////////////////
 
 export const registerHydrationNotificationActions = async () => {
-  console.log("💧 Hydration actions handled by Notifee");
+  log("💧 Hydration actions handled by Notifee");
 };
 
 ///////////////////////////////////////////////////////////
@@ -23,14 +24,14 @@ export const scheduleHydrationReminder = async (
   _intervalSeconds: number = 3600
 ): Promise<string | null> => {
   try {
-    console.log("💧 Scheduling hydration reminder");
+    log("💧 Scheduling hydration reminder");
 
     // ✅ FIX: no argument required
     const id = await notifeeSchedule();
 
     return id;
   } catch (e) {
-    console.log("❌ scheduleHydrationReminder error:", e);
+    log("❌ scheduleHydrationReminder error:", e);
     return null;
   }
 };
@@ -42,7 +43,7 @@ export const scheduleHydrationReminder = async (
 export const snoozeHydrationReminder = async (
   _minutes: number = 10
 ): Promise<void> => {
-  console.log("💧 Snoozing hydration");
+  log("💧 Snoozing hydration");
 
   // ✅ FIX: no argument required
   await notifeeSnooze();
@@ -53,7 +54,7 @@ export const snoozeHydrationReminder = async (
 ///////////////////////////////////////////////////////////
 
 export const cancelHydrationReminder = async (): Promise<void> => {
-  console.log("💧 Cancel hydration reminders");
+  log("💧 Cancel hydration reminders");
 
   await cancelHydrationReminders();
 };

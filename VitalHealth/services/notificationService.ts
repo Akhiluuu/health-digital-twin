@@ -2,6 +2,8 @@
 
 import { addWaterFromNotification } from "../context/HydrationContext";
 
+import { log, warn } from "../utils/logger";
+
 ////////////////////////////////////////////////////////////
 // TYPES
 ////////////////////////////////////////////////////////////
@@ -23,14 +25,14 @@ try {
   AndroidImportance = notifeeModule.AndroidImportance;
   TriggerType = notifeeModule.TriggerType;
   EventType = notifeeModule.EventType;
-  console.log("✅ Notifee loaded successfully");
+  log("✅ Notifee loaded successfully");
 } catch (error) {
-  console.warn("⚠️ Notifee not available — notifications disabled (Expo Go)");
+  warn("⚠️ Notifee not available — notifications disabled (Expo Go)");
 }
 
 const isNotifeeAvailable = () => {
   if (!notifee) {
-    console.warn("⚠️ Notifee not available, skipping...");
+    warn("⚠️ Notifee not available, skipping...");
     return false;
   }
   return true;
@@ -45,9 +47,9 @@ export const cancelMedicineNotification = async (notificationId: string) => {
   try {
     if (!notificationId) return;
     await notifee.cancelNotification(notificationId);
-    console.log("🔕 Notification cancelled:", notificationId);
+    log("🔕 Notification cancelled:", notificationId);
   } catch (error) {
-    console.log("❌ Cancel notification error:", error);
+    log("❌ Cancel notification error:", error);
   }
 };
 
@@ -166,7 +168,7 @@ export const scheduleNotification = async (
     triggerTime += 24 * 60 * 60 * 1000;
   }
 
-  console.log("⏰ Scheduling notification at:", new Date(triggerTime));
+  log("⏰ Scheduling notification at:", new Date(triggerTime));
 
   await notifee.createTriggerNotification(
     {
@@ -196,10 +198,10 @@ if (notifee) {
   notifee.onForegroundEvent(async ({ type, detail }: any) => {
     if (type === EventType.ACTION_PRESS) {
       const actionId = detail.pressAction?.id;
-      console.log("🔔 Foreground Action:", actionId);
+      log("🔔 Foreground Action:", actionId);
 
       if (actionId === "HYDRATION_100") {
-        console.log("💧 Adding 100ml");
+        log("💧 Adding 100ml");
         addWaterFromNotification(100);
       }
     }

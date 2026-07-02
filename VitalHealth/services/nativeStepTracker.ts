@@ -13,6 +13,8 @@ import {
 } from 'react-native';
 import { Pedometer } from 'expo-sensors';
 
+import { warn } from "../utils/logger";
+
 // ── Types ─────────────────────────────────────────────────────────────────────
 export type DataSource = 'STEP_SENSOR' | 'SENSOR_FUSION' | 'HEALTH_CONNECT' | 'PEDOMETER' | 'NONE';
 
@@ -50,7 +52,7 @@ if (Platform.OS === 'android' && StepTrackerModule) {
 export async function startNativeTracking(uid: string): Promise<void> {
   if (Platform.OS !== 'android') return;
   if (!StepTrackerModule) {
-    console.warn('[NativeStepTracker] StepTrackerModule not available');
+    warn('[NativeStepTracker] StepTrackerModule not available');
     return;
   }
   StepTrackerModule.startTracking(uid);
@@ -86,7 +88,7 @@ export async function getTodayStepsNative(): Promise<{ steps: number; source: Da
       const result = await StepTrackerModule.getTodaySteps();
       return { steps: result.steps ?? 0, source: result.source ?? 'STEP_SENSOR' };
     } catch (e) {
-      console.warn('[NativeStepTracker] getTodaySteps error:', e);
+      warn('[NativeStepTracker] getTodaySteps error:', e);
       return { steps: 0, source: 'NONE' };
     }
   } else {
@@ -113,7 +115,7 @@ export async function getWeeklyStepsNative(): Promise<DailyStepData[]> {
     const result = await StepTrackerModule.getWeeklySteps();
     return Array.isArray(result) ? result : [];
   } catch (e) {
-    console.warn('[NativeStepTracker] getWeeklySteps error:', e);
+    warn('[NativeStepTracker] getWeeklySteps error:', e);
     return [];
   }
 }
@@ -127,7 +129,7 @@ export async function getMonthlyStepsNative(): Promise<DailyStepData[]> {
     const result = await StepTrackerModule.getMonthlySteps();
     return Array.isArray(result) ? result : [];
   } catch (e) {
-    console.warn('[NativeStepTracker] getMonthlySteps error:', e);
+    warn('[NativeStepTracker] getMonthlySteps error:', e);
     return [];
   }
 }
@@ -144,7 +146,7 @@ export async function getHistoricalStepsNative(
     const result = await StepTrackerModule.getHistoricalSteps(startDate, endDate);
     return Array.isArray(result) ? result : [];
   } catch (e) {
-    console.warn('[NativeStepTracker] getHistoricalSteps error:', e);
+    warn('[NativeStepTracker] getHistoricalSteps error:', e);
     return [];
   }
 }

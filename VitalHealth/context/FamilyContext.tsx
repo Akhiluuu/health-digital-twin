@@ -17,6 +17,8 @@ import {
   EMPTY_PROFILE,
   fetchProfile,     // ← reuse exact same safe fetch as ProfileContext
 } from "../services/profileService";
+import { log, warn, error } from "../utils/logger";
+
 import {
   fetchLinkedMembers,
   fetchMemberHealthData,
@@ -198,7 +200,7 @@ export const FamilyProvider = ({
         if (cleanedDependents.length !== dependents.length) {
           // Some dependents were already in linkedMembers — update Firestore to clean up
           await setDoc(doc(db, "users", uid), { familyMembers: cleanedDependents }, { merge: true });
-          console.log(`[FamilyContext] Cleaned up ${dependents.length - cleanedDependents.length} duplicate(s) from familyMembers array`);
+          log(`[FamilyContext] Cleaned up ${dependents.length - cleanedDependents.length} duplicate(s) from familyMembers array`);
         }
 
         return;
@@ -207,12 +209,12 @@ export const FamilyProvider = ({
       const stored = await AsyncStorage.getItem(STORAGE_KEY);
       if (stored) {
         let parsed: any = null;
-        try { parsed = JSON.parse(stored); } catch { console.log('[FamilyContext] Corrupted member cache, clearing'); await AsyncStorage.removeItem(STORAGE_KEY); }
+        try { parsed = JSON.parse(stored); } catch { log('[FamilyContext] Corrupted member cache, clearing'); await AsyncStorage.removeItem(STORAGE_KEY); }
         if (Array.isArray(parsed)) setMembers(parsed);
         else { await AsyncStorage.removeItem(STORAGE_KEY); setMembers([]); }
       }
     } catch (e) {
-      console.error("❌ FamilyContext loadMembers error:", e);
+      error("❌ FamilyContext loadMembers error:", e);
       setMembers([]);
     } finally {
       setIsLoaded(true);
@@ -227,7 +229,7 @@ export const FamilyProvider = ({
       const uid = await getUserId();
       if (uid) await setDoc(doc(db, "users", uid), { familyMembers: data }, { merge: true });
     } catch (e) {
-      console.error("❌ FamilyContext saveMembers error:", e);
+      error("❌ FamilyContext saveMembers error:", e);
     }
   };
 
@@ -268,7 +270,7 @@ export const FamilyProvider = ({
       if (exists) return;
       await saveMembers([...members, newMember]);
     } catch (e) {
-      console.error("❌ FamilyContext addMember error:", e);
+      error("❌ FamilyContext addMember error:", e);
     }
   };
 
@@ -299,7 +301,7 @@ export const FamilyProvider = ({
       // ✅ FIX: normalize activeMemberId before comparing so uid formats don't diverge
       if (normalizeId(activeMemberId) === nid) await switchToSelf();
     } catch (e) {
-      console.error("❌ FamilyContext removeMember error:", e);
+      error("❌ FamilyContext removeMember error:", e);
     }
   };
 
@@ -341,7 +343,7 @@ export const FamilyProvider = ({
      in its useCallback dependency array without forward-ref issues.
   */
   const switchToSelf = useCallback(async () => {
-    console.log("🔄 Switching back to self");
+    log("🔄 Switching back to self");
     lastSwitchTimeRef.current = Date.now();
     setLoadingStates({
       medicine: true,
@@ -354,7 +356,7 @@ export const FamilyProvider = ({
       setActiveProfile(selfProfileRef.current);
       await AsyncStorage.setItem(ACTIVE_MEMBER_KEY, "self");
     } catch (e) {
-      console.error("❌ switchToSelf error:", e);
+      error("❌ switchToSelf error:", e);
       setIsSwitchLoading(false);
     }
   }, []);
@@ -370,7 +372,7 @@ export const FamilyProvider = ({
 
     // ✅ Guard: reject concurrent calls synchronously
     if (isSwitchingRef.current) {
-      console.log("[FamilyContext] switchToMember: already switching, ignoring duplicate call for:", memberUid);
+      log("[FamilyContext] switchToMember: already switching, ignoring duplicate call for:", memberUid);
       return;
     }
 
@@ -389,17 +391,17 @@ export const FamilyProvider = ({
     });
     setIsSwitchLoading(true);
     try {
-      console.log("🔄 Switching profile to UID:", memberUid);
+      log("🔄 Switching profile to UID:", memberUid);
 
       const memberProfile = await fetchProfile(memberUid);
 
       if (memberProfile && memberProfile.firstName) {
-        console.log("✅ Profile loaded:", memberProfile.firstName, memberProfile.lastName);
+        log("✅ Profile loaded:", memberProfile.firstName, memberProfile.lastName);
         setActiveProfile(memberProfile);
       } else {
         // No profile doc in Firestore → use family member metadata as fallback
         const member = _findMemberInList(members, memberUid);
-        console.warn("⚠️ No full profile for:", memberUid, "— using metadata fallback");
+        warn("⚠️ No full profile for:", memberUid, "— using metadata fallback");
         setActiveProfile({
           ...EMPTY_PROFILE,
           firstName: member?.firstName ?? "Unknown",
@@ -410,7 +412,7 @@ export const FamilyProvider = ({
       setActiveMemberId(memberUid);
       await AsyncStorage.setItem(ACTIVE_MEMBER_KEY, memberUid);
     } catch (e) {
-      console.error("❌ switchToMember error:", e);
+      error("❌ switchToMember error:", e);
       setIsSwitchLoading(false);
       isSwitchingRef.current = false;
     }
@@ -440,7 +442,7 @@ export const FamilyProvider = ({
           try {
             const p = JSON.parse(stored);
             if (Array.isArray(p)) parsed = p;
-          } catch { console.log('[FamilyContext] updateActiveProfile: corrupted member cache'); }
+          } catch { log('[FamilyContext] updateActiveProfile: corrupted member cache'); }
           if (parsed.length > 0) {
             const updatedList = parsed.map((m) => {
               if (m.uid === activeMemberId || m.id === activeMemberId || m.userId === activeMemberId) {
@@ -457,7 +459,7 @@ export const FamilyProvider = ({
           }
         }
     } catch (err) {
-      console.error("❌ updateActiveProfile storage error:", err);
+      error("❌ updateActiveProfile storage error:", err);
     }
   }, [activeMemberId]);
 

@@ -136,7 +136,7 @@ export default function Notifications() {
         { backgroundColor: colors.bg },
       ]}
     >
-      <Header />
+      <Header title="Notifications" showBack={true} showProfile={false} />
 
       <View style={styles.content}>
         <Row

@@ -20,6 +20,8 @@ import * as WebBrowser from "expo-web-browser";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { db } from "./index";
 
+import { log, warn, error } from "../utils/logger";
+
 // Ensure any lingering auth-session redirect is dismissed on web
 WebBrowser.maybeCompleteAuthSession();
 
@@ -99,7 +101,7 @@ export async function exportDBToJSON(): Promise<string> {
   }
 
   const json = JSON.stringify(backup, null, 2);
-  console.log(
+  log(
     `📦 Backup export: ${BACKUP_TABLES.length} tables, ${(json.length / 1024).toFixed(1)} KB`
   );
   return json;
@@ -119,7 +121,7 @@ export async function importDBFromJSON(json: string): Promise<void> {
 
   if (!backup._meta) throw new Error("Invalid backup file — missing _meta header.");
 
-  console.log("🔄 Restoring from backup:", backup._meta.exported_at);
+  log("🔄 Restoring from backup:", backup._meta.exported_at);
 
   await db.execAsync("BEGIN TRANSACTION;");
   try {
@@ -136,13 +138,13 @@ export async function importDBFromJSON(json: string): Promise<void> {
           values
         );
       }
-      console.log(`  ✅ Restored ${rows.length} rows → ${table}`);
+      log(`  ✅ Restored ${rows.length} rows → ${table}`);
     }
     await db.execAsync("COMMIT;");
-    console.log("✅ Database restore complete.");
+    log("✅ Database restore complete.");
   } catch (err) {
     await db.execAsync("ROLLBACK;");
-    console.error("❌ Restore failed — rolled back:", err);
+    error("❌ Restore failed — rolled back:", err);
     throw err;
   }
 }
@@ -245,7 +247,7 @@ export async function signInWithGoogle(): Promise<string> {
 export async function signOutGoogle() {
   await AsyncStorage.removeItem(ACCESS_TOKEN_KEY);
   await AsyncStorage.removeItem(TOKEN_EXPIRY_KEY);
-  console.log("✅ Google Drive signed out.");
+  log("✅ Google Drive signed out.");
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -293,7 +295,7 @@ export async function uploadToGoogleDrive(json: string): Promise<string> {
     [new Date().toISOString(), file.id, json.length]
   );
 
-  console.log("☁️ Backup uploaded to Google Drive:", file.id, filename);
+  log("☁️ Backup uploaded to Google Drive:", file.id, filename);
   return file.id;
 }
 
@@ -329,7 +331,7 @@ export async function downloadFromGoogleDrive(fileId?: string): Promise<string> 
     const files = await listDriveBackups();
     if (files.length === 0) throw new Error("No backups found in Google Drive.");
     targetId = files[0].id;
-    console.log("📥 Auto-selecting latest backup:", files[0].name);
+    log("📥 Auto-selecting latest backup:", files[0].name);
   }
 
   const res = await fetch(
@@ -339,7 +341,7 @@ export async function downloadFromGoogleDrive(fileId?: string): Promise<string> 
 
   if (!res.ok) throw new Error("Drive download failed: " + (await res.text()));
   const json = await res.text();
-  console.log(`📥 Downloaded backup: ${(json.length / 1024).toFixed(1)} KB`);
+  log(`📥 Downloaded backup: ${(json.length / 1024).toFixed(1)} KB`);
   return json;
 }
 
@@ -388,10 +390,10 @@ export async function autoBackupIfNeeded(): Promise<void> {
       const ageMs = Date.now() - new Date(lastAt).getTime();
       if (ageMs < 24 * 60 * 60 * 1000) return; // backed up within 24 h
     }
-    console.log("🔄 Auto-backup triggered (>24 h since last backup)...");
+    log("🔄 Auto-backup triggered (>24 h since last backup)...");
     await performBackup();
   } catch (err) {
     // Auto-backup failures are non-fatal — don't crash the app
-    console.warn("⚠️ Auto-backup failed (non-fatal):", err);
+    warn("⚠️ Auto-backup failed (non-fatal):", err);
   }
 }

@@ -6,6 +6,8 @@
 import { db } from "./index";
 import type { BiogearsVitals } from "../services/biogears";
 
+import { log } from "../utils/logger";
+
 export interface SimulationRecord {
   id: number;
   uid: string;
@@ -89,18 +91,10 @@ export async function saveSimulationResult(
         runAt,
       ]
     );
-    // Keep only the last 30 records per user to control storage
-    await db.runAsync(
-      `DELETE FROM simulation_history
-       WHERE uid = ? AND id NOT IN (
-         SELECT id FROM simulation_history WHERE uid = ?
-         ORDER BY run_at DESC LIMIT 30
-       )`,
-      [uid, uid]
-    );
-    console.log("💾 Simulation result saved locally:", sessionId);
+    // Keep all simulation records for comprehensive history logs
+    log("💾 Simulation result saved locally:", sessionId);
   } catch (error) {
-    console.log("❌ saveSimulationResult error:", error);
+    log("❌ saveSimulationResult error:", error);
   }
 }
 
@@ -113,21 +107,21 @@ export async function getLastSimulation(uid: string): Promise<SimulationRecord |
       [uid]
     )) ?? null;
   } catch (error) {
-    console.log("❌ getLastSimulation error:", error);
+    log("❌ getLastSimulation error:", error);
     return null;
   }
 }
 
 // ─── Get last N simulations (for history / trend chart) ───────────────────────
 
-export async function getSimulationHistory(uid: string, limit: number = 10): Promise<SimulationRecord[]> {
+export async function getSimulationHistory(uid: string, limit: number = 10000): Promise<SimulationRecord[]> {
   try {
     return (await db.getAllAsync<SimulationRecord>(
       "SELECT * FROM simulation_history WHERE uid = ? ORDER BY run_at DESC LIMIT ?",
       [uid, limit]
     )) || [];
   } catch (error) {
-    console.log("❌ getSimulationHistory error:", error);
+    log("❌ getSimulationHistory error:", error);
     return [];
   }
 }

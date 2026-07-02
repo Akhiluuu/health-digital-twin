@@ -44,6 +44,8 @@ import {
 
 import { useFamily } from "./FamilyContext";
 
+import { log } from "../utils/logger";
+
 ///////////////////////////////////////////////////////////
 // TYPE
 ///////////////////////////////////////////////////////////
@@ -125,7 +127,7 @@ async function fetchMemberMedicinesFromFirebase(memberUid: string): Promise<Medi
       takenDate:      m.takenDate      ?? null,
     }));
   } catch (e) {
-    console.log("❌ fetchMemberMedicinesFromFirebase error:", e);
+    log("❌ fetchMemberMedicinesFromFirebase error:", e);
     return [];
   }
 }
@@ -169,11 +171,11 @@ export const MedicineProvider = ({
     setIsLoadingMember(true);
     try {
       if (isSwitched && activeMemberId && activeMemberId !== "self") {
-        console.log("💊 Loading medicines from Firebase for member:", activeMemberId);
+        log("💊 Loading medicines from Firebase for member:", activeMemberId);
         const memberMeds = await fetchMemberMedicinesFromFirebase(activeMemberId);
         if (!isMountedRef.current) return;
         setMedicines(memberMeds);
-        console.log(`💊 Loaded ${memberMeds.length} medicines for member:`, activeMemberId);
+        log(`💊 Loaded ${memberMeds.length} medicines for member:`, activeMemberId);
       } else {
         // ── Self: load from local SQLite ───────────────────
         const data = getMedicines() as Medicine[];
@@ -183,7 +185,7 @@ export const MedicineProvider = ({
         const todayStr = new Date().toISOString().split('T')[0];
         for (const med of data) {
           if (med.endDate && med.endDate !== 'ongoing' && med.endDate < todayStr && med.notificationId) {
-            console.log(`[MedicineContext] Cancelling notification ${med.notificationId} for expired medicine: ${med.name}`);
+            log(`[MedicineContext] Cancelling notification ${med.notificationId} for expired medicine: ${med.name}`);
             cancelMedicineNotification(med.notificationId).catch(() => {});
           }
         }
@@ -267,12 +269,12 @@ export const MedicineProvider = ({
               }
             }
           } catch (syncErr) {
-            console.log("⚠️ Background medicine sync failed:", syncErr);
+            log("⚠️ Background medicine sync failed:", syncErr);
           }
         })();
       }
     } catch (err) {
-      console.log("💊 Load medicines error:", err);
+      log("💊 Load medicines error:", err);
     } finally {
       if (isMountedRef.current) setIsLoadingMember(false);
     }
@@ -287,8 +289,8 @@ export const MedicineProvider = ({
       await loadMedicines();
       // File sync only for self on first mount
       if (!isSwitched) {
-        syncMedicineFile().catch((err) => console.log("💊 File sync error:", err));
-        console.log("💊 Medicine system ready");
+        syncMedicineFile().catch((err) => log("💊 File sync error:", err));
+        log("💊 Medicine system ready");
       }
     };
     run();
@@ -309,7 +311,7 @@ export const MedicineProvider = ({
 
   useEffect(() => {
     const onTaken = () => {
-      console.log("🔄 medicine_taken event — reloading");
+      log("🔄 medicine_taken event — reloading");
       loadMedicinesRef.current();
     };
     medicineEventBus.on("medicine_taken", onTaken);
@@ -390,7 +392,7 @@ export const MedicineProvider = ({
             }
           }
         } catch (notifError) {
-          console.log("❌ Notification scheduling failed:", notifError);
+          log("❌ Notification scheduling failed:", notifError);
         }
       }
 
@@ -398,14 +400,14 @@ export const MedicineProvider = ({
         id: lastMedicine.id, name, dose, type, time,
         timestamp: normalisedTimestamp, meal, frequency,
         startDate, endDate, reminder, notificationId: notifId,
-      }).catch((err) => console.log("⚠️ syncAddMedicine (self) failed:", err));
+      }).catch((err) => log("⚠️ syncAddMedicine (self) failed:", err));
 
       if (notifId) syncUpdateMedicineNotificationId(lastMedicine.id, notifId);
 
       await loadMedicines();
       if (!isSwitched) await syncMedicineFile();
     } catch (err) {
-      console.log("💊 Add medicine error:", err);
+      log("💊 Add medicine error:", err);
     }
   }, [isSwitched, activeMemberId]);
 
@@ -429,7 +431,7 @@ export const MedicineProvider = ({
       if (medicine) syncMarkMedicineTaken(medicine.id);
       await loadMedicines();
     } catch (err) {
-      console.log("💊 Mark taken error:", err);
+      log("💊 Mark taken error:", err);
     }
   }, [isSwitched, activeMemberId, medicines]);
 
@@ -452,10 +454,10 @@ export const MedicineProvider = ({
         await cancelMedicineNotification(item.notificationId);
       }
       deleteMedicine(id);
-      syncDeleteMedicine(id).catch((err) => console.log("⚠️ syncDeleteMedicine (self) failed:", err));
+      syncDeleteMedicine(id).catch((err) => log("⚠️ syncDeleteMedicine (self) failed:", err));
       await loadMedicines();
     } catch (err) {
-      console.log("💊 Delete medicine error:", err);
+      log("💊 Delete medicine error:", err);
     }
   }, [isSwitched, activeMemberId, medicines]);
 
@@ -479,7 +481,7 @@ export const MedicineProvider = ({
       await loadMedicines();
       if (!isSwitched) await syncMedicineFile();
     } catch (err) {
-      console.log("💊 Clear all medicines error:", err);
+      log("💊 Clear all medicines error:", err);
     }
   }, [isSwitched, activeMemberId, medicines]);
 

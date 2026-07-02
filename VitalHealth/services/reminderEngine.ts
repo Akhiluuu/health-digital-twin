@@ -3,6 +3,8 @@
 import { resolveSymptom } from "../database/symptomDB";
 import { showHealthNotification } from "./notificationService";
 
+import { log } from "../utils/logger";
+
 /* ===========================
    TYPES
 =========================== */
@@ -29,7 +31,7 @@ export async function startSymptomTracking(
   try {
     const intervalMinutes = symptom.followupTime ?? 60;
 
-    console.log("🚀 Starting symptom tracking:", symptom.name);
+    log("🚀 Starting symptom tracking:", symptom.name);
 
     if (symptomIntervals[symptom.id]) {
       clearInterval(symptomIntervals[symptom.id]);
@@ -51,7 +53,7 @@ export async function startSymptomTracking(
 
     return `symptom-${symptom.id}`;
   } catch (error) {
-    console.log("❌ startSymptomTracking error:", error);
+    log("❌ startSymptomTracking error:", error);
     throw error;
   }
 }
@@ -62,7 +64,7 @@ export async function startSymptomTracking(
 
 export async function stopSymptomTracking(symptomId: number): Promise<void> {
   try {
-    console.log("🛑 Stopping symptom tracking:", symptomId);
+    log("🛑 Stopping symptom tracking:", symptomId);
 
     if (symptomIntervals[symptomId]) {
       clearInterval(symptomIntervals[symptomId]);
@@ -71,8 +73,8 @@ export async function stopSymptomTracking(symptomId: number): Promise<void> {
 
     await resolveSymptom(symptomId);
 
-    console.log("✅ Symptom resolved:", symptomId);
+    log("✅ Symptom resolved:", symptomId);
   } catch (error) {
-    console.log("❌ stopSymptomTracking error:", error);
+    log("❌ stopSymptomTracking error:", error);
   }
 }

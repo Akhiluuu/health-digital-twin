@@ -100,8 +100,8 @@ const SECTIONS: Section[] = [
       },
       {
         icon: "🚨",
-        q: "What triggers an emergency alert?",
-        a: "Heart rate above 180 bpm or below 40 bpm, SpO₂ below 90%, or a detected irregular rhythm pattern. Emergency contacts are notified if you don't respond within 2 minutes.",
+        q: "What triggers a critical vital alert?",
+        a: "Heart rate above 180 bpm or below 40 bpm, or SpO₂ below 90%. You will receive a high-priority push notification advising you to check your vitals or consult a doctor.",
       },
     ],
   },
@@ -211,7 +211,7 @@ export default function SettingsHelp() {
 
   return (
     <View style={[styles.root, { backgroundColor: c.bg }]}>
-      <Header />
+      <Header title="Help Center" showBack={true} showProfile={false} />
       <ScrollView
         contentContainerStyle={styles.scroll}
         showsVerticalScrollIndicator={false}
@@ -263,14 +263,14 @@ export default function SettingsHelp() {
           <TouchableOpacity
             style={[styles.contactBtn, { backgroundColor: c.accent }]}
             activeOpacity={0.85}
-            onPress={() => Linking.openURL("mailto:vitalhealth12026@gmail.com")}
+            onPress={() => Linking.openURL("mailto:vitalhealth1215@gmail.com")}
           >
             <Text style={styles.contactBtnText}>Contact Support →</Text>
           </TouchableOpacity>
         </View>
 
         <Text style={[styles.version, { color: c.text3 }]}>
-          VitalHealth v2.4.1 · vitalhealth12026@gmail.com
+          VitalHealth v2.4.1 · vitalhealth1215@gmail.com
         </Text>
       </ScrollView>
     </View>

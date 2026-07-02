@@ -10,7 +10,11 @@
 
 import axios from "axios";
 
-const RESEND_API_KEY = "re_WQFism5R_E6eSbt2sAvG7HojgDiQbnrN7"; // paste your actual key here
+import { log } from "../utils/logger";
+
+const RESEND_API_KEY =
+  process.env.EXPO_PUBLIC_RESEND_API_KEY ||
+  "re_WQFism5R_E6eSbt2sAvG7HojgDiQbnrN7";
 const FROM_EMAIL     = "VitalTwin <onboarding@resend.dev>";
 
 async function sendEmail(to: string, subject: string, html: string): Promise<void> {
@@ -25,9 +29,9 @@ async function sendEmail(to: string, subject: string, html: string): Promise<voi
         },
       }
     );
-    console.log("✅ Email sent to:", to);
+    log("✅ Email sent to:", to);
   } catch (error: any) {
-    console.log("⚠️ Email failed:", error?.response?.data || error.message);
+    log("⚠️ Email failed:", error?.response?.data || error.message);
   }
 }
 

@@ -3,6 +3,8 @@
 
 import * as ImagePicker from 'expo-image-picker';
 
+import { log, error } from "../utils/logger";
+
 // Request permissions for image picker
 export async function requestImagePermissions(): Promise<boolean> {
   const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -21,7 +23,7 @@ export async function extractTextFromImage(): Promise<string | null> {
     // Request permissions
     const hasPermission = await requestImagePermissions();
     if (!hasPermission) {
-      console.log('[TextExtraction] Permission denied');
+      log('[TextExtraction] Permission denied');
       return null;
     }
 
@@ -33,12 +35,12 @@ export async function extractTextFromImage(): Promise<string | null> {
     });
 
     if (result.canceled || !result.assets || result.assets.length === 0) {
-      console.log('[TextExtraction] No image selected');
+      log('[TextExtraction] No image selected');
       return null;
     }
 
     const asset = result.assets[0];
-    console.log('[TextExtraction] Image selected:', asset.uri);
+    log('[TextExtraction] Image selected:', asset.uri);
 
     // For now, return a placeholder - actual OCR would require:
     // 1. ML Kit (react-native-mlkit-ocr)
@@ -50,10 +52,10 @@ export async function extractTextFromImage(): Promise<string | null> {
 
     // Placeholder: return the image info for now
     // In production, integrate with ML Kit
-    console.log('[TextExtraction] OCR not implemented - requires ML Kit integration');
+    log('[TextExtraction] OCR not implemented - requires ML Kit integration');
     return `[Image selected: ${asset.fileName || 'unnamed'}]\nNote: OCR requires ML Kit integration. Please use document upload for text extraction.`;
-  } catch (error) {
-    console.error('[TextExtraction] Error:', error);
+  } catch (err: unknown) {
+    error('[TextExtraction] Error:', err);
     return null;
   }
 }
@@ -141,7 +143,7 @@ export async function extractTextFromPDF(_uri: string): Promise<string> {
   // This is a placeholder - PDF text extraction requires additional libraries
   // In production, use expo-pdf-reader or similar
   
-  console.log('[TextExtraction] PDF extraction not fully implemented');
+  log('[TextExtraction] PDF extraction not fully implemented');
   
   // Return placeholder for now
   return `[PDF document]\nNote: Full PDF text extraction requires additional integration.`;

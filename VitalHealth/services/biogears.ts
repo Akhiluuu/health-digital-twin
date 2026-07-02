@@ -6,6 +6,8 @@ import * as SecureStore from 'expo-secure-store';
 import { doc, setDoc, deleteDoc, writeBatch, collection, getDocs, getDoc, serverTimestamp } from "firebase/firestore";
 import { db, auth } from "./firebase";
 
+import { log, warn } from "../utils/logger";
+
 // ─── Configuration ────────────────────────────────────────────────────────────
 // LOCAL DEV:  your laptop's Wi-Fi IP (e.g. 'http://10.172.0.79:8000')
 // PRODUCTION: change to your E2E Cloud URL (e.g. 'https://yourdomain.com')
@@ -42,14 +44,14 @@ export async function getBiogearsBaseUrl(): Promise<string> {
 
     // Auto-heal: if we fixed a bad stored URL, persist the clean version
     if (stored && url !== stored) {
-      console.log(`[BioGears] Auto-fixed stored URL: ${stored} → ${url}`);
+      log(`[BioGears] Auto-fixed stored URL: ${stored} → ${url}`);
       await AsyncStorage.setItem(BASE_URL_KEY, url);
     }
 
-    console.log(`[BioGears] Using Base URL: ${url}`);
+    log(`[BioGears] Using Base URL: ${url}`);
     return url;
   } catch {
-    console.log(`[BioGears] Using Default Base URL (Fallback): ${DEFAULT_BASE_URL}`);
+    log(`[BioGears] Using Default Base URL (Fallback): ${DEFAULT_BASE_URL}`);
     return DEFAULT_BASE_URL;
   }
 }
@@ -280,7 +282,7 @@ async function apiFetch<T>(path: string, options?: RequestInit, timeoutMs = 3000
 
   try {
     const isFallback = apiKey === FALLBACK_API_KEY;
-    console.log(`[BioGears] API REQUEST: ${options?.method || 'GET'} ${url} | Key: ${isFallback ? 'Default Fallback' : 'Custom Key (' + apiKey.slice(0, 4) + '...' + apiKey.slice(-4) + ')'}`);
+    log(`[BioGears] API REQUEST: ${options?.method || 'GET'} ${url} | Key: ${isFallback ? 'Default Fallback' : 'Custom Key (' + apiKey.slice(0, 4) + '...' + apiKey.slice(-4) + ')'}`);
     const res = await fetch(url, {
       headers: {
         'Content-Type': 'application/json',
@@ -291,11 +293,11 @@ async function apiFetch<T>(path: string, options?: RequestInit, timeoutMs = 3000
     });
     clearTimeout(timer);
 
-    console.log(`[BioGears] API RESPONSE: ${res.status} ${url}`);
+    log(`[BioGears] API RESPONSE: ${res.status} ${url}`);
     if (!res.ok) {
       let detail: any;
       try { detail = await res.json(); } catch { detail = await res.text(); }
-      console.log(`[BioGears] API ERROR DETAIL:`, detail);
+      log(`[BioGears] API ERROR DETAIL:`, detail);
       throw new BiogearsError(
         `BioGears API error ${res.status}`,
         res.status,
@@ -578,14 +580,14 @@ export async function saveSessionMeta(userId: string, meta: LocalSessionMeta, ow
     const firestoreUid = ownerUid || user?.uid;
     if (firestoreUid) {
       await setDoc(doc(db, "users", firestoreUid, "session_meta", meta.session_id), meta);
-      console.log(`☁️ Session meta synced to Firestore: ${meta.session_id} for owner: ${firestoreUid}`);
+      log(`☁️ Session meta synced to Firestore: ${meta.session_id} for owner: ${firestoreUid}`);
     } else {
       // ✅ FIX: Auth not ready yet — session is safely in AsyncStorage;
       // it will be synced on the next app foreground via syncDigitalTwinDataFromFirestore.
-      console.log("[BioGears] saveSessionMeta: auth not ready, skipping Firestore (AsyncStorage OK)");
+      log("[BioGears] saveSessionMeta: auth not ready, skipping Firestore (AsyncStorage OK)");
     }
   } catch (err) {
-    console.warn("⚠️ Failed to sync session meta to Firestore:", err);
+    warn("⚠️ Failed to sync session meta to Firestore:", err);
   }
 }
 
@@ -611,10 +613,10 @@ export async function deleteSessionMeta(userId: string, sessionId: string, owner
     const firestoreUid = ownerUid || user?.uid;
     if (firestoreUid) {
       await deleteDoc(doc(db, "users", firestoreUid, "session_meta", sessionId));
-      console.log(`☁️ Session meta deleted from Firestore: ${sessionId} for owner: ${firestoreUid}`);
+      log(`☁️ Session meta deleted from Firestore: ${sessionId} for owner: ${firestoreUid}`);
     }
   } catch (err) {
-    console.warn("⚠️ Failed to delete session meta from Firestore:", err);
+    warn("⚠️ Failed to delete session meta from Firestore:", err);
   }
 }
 
@@ -653,10 +655,10 @@ export async function saveRoutine(userId: string, routine: SavedRoutine, ownerUi
     const firestoreUid = ownerUid || user?.uid;
     if (firestoreUid) {
       await setDoc(doc(db, "users", firestoreUid, "routines", routine.id), routine);
-      console.log(`☁️ Routine synced to Firestore: ${routine.id} for owner: ${firestoreUid}`);
+      log(`☁️ Routine synced to Firestore: ${routine.id} for owner: ${firestoreUid}`);
     }
   } catch (err) {
-    console.warn("⚠️ Failed to sync routine to Firestore:", err);
+    warn("⚠️ Failed to sync routine to Firestore:", err);
   }
 }
 
@@ -670,10 +672,10 @@ export async function deleteRoutine(userId: string, routineId: string, ownerUid?
     const firestoreUid = ownerUid || user?.uid;
     if (firestoreUid) {
       await deleteDoc(doc(db, "users", firestoreUid, "routines", routineId));
-      console.log(`☁️ Routine deleted from Firestore: ${routineId} for owner: ${firestoreUid}`);
+      log(`☁️ Routine deleted from Firestore: ${routineId} for owner: ${firestoreUid}`);
     }
   } catch (err) {
-    console.warn("⚠️ Failed to delete routine from Firestore:", err);
+    warn("⚠️ Failed to delete routine from Firestore:", err);
   }
 }
 
@@ -690,10 +692,10 @@ export async function markRoutineUsed(userId: string, routineId: string, ownerUi
     const firestoreUid = ownerUid || user?.uid;
     if (firestoreUid && routine) {
       await setDoc(doc(db, "users", firestoreUid, "routines", routineId), routine);
-      console.log(`☁️ Routine lastUsed synced to Firestore: ${routineId} for owner: ${firestoreUid}`);
+      log(`☁️ Routine lastUsed synced to Firestore: ${routineId} for owner: ${firestoreUid}`);
     }
   } catch (err) {
-    console.warn("⚠️ Failed to sync lastUsed for routine:", err);
+    warn("⚠️ Failed to sync lastUsed for routine:", err);
   }
 }
 
@@ -715,10 +717,10 @@ export async function setDefaultRoutine(userId: string, routineId: string, owner
         batch.set(ref, r);
       }
       await batch.commit();
-      console.log(`☁️ Routine defaults synced to Firestore for owner: ${firestoreUid}`);
+      log(`☁️ Routine defaults synced to Firestore for owner: ${firestoreUid}`);
     }
   } catch (err) {
-    console.warn("⚠️ Failed to sync default routine status to Firestore:", err);
+    warn("⚠️ Failed to sync default routine status to Firestore:", err);
   }
 }
 
@@ -738,7 +740,7 @@ export async function syncDigitalTwinDataFromFirestore(userId: string, ownerUid?
   // If no ownerUid provided, fall back to the logged-in user
   const firestoreUid = ownerUid || user.uid;
 
-  console.log(`☁️ Starting Firestore sync for user: ${user.uid} (HealthID: ${userId}, Firestore owner: ${firestoreUid})`);
+  log(`☁️ Starting Firestore sync for user: ${user.uid} (HealthID: ${userId}, Firestore owner: ${firestoreUid})`);
 
   try {
     // 1. Sync Routines
@@ -757,7 +759,7 @@ export async function syncDigitalTwinDataFromFirestore(userId: string, ownerUid?
 
       const mergedRoutines = Array.from(routineMap.values());
       await AsyncStorage.setItem(ROUTINES_KEY(userId), JSON.stringify(mergedRoutines));
-      console.log(`☁️ Routines synced: loaded ${firestoreRoutines.length} from Firestore`);
+      log(`☁️ Routines synced: loaded ${firestoreRoutines.length} from Firestore`);
     }
 
     // 2. Sync Session Metadata
@@ -778,11 +780,11 @@ export async function syncDigitalTwinDataFromFirestore(userId: string, ownerUid?
         (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
       );
       await AsyncStorage.setItem(SESSION_META_KEY(userId), JSON.stringify(mergedSessions));
-      console.log(`☁️ Session meta synced: loaded ${firestoreSessions.length} from Firestore`);
+      log(`☁️ Session meta synced: loaded ${firestoreSessions.length} from Firestore`);
     }
 
   } catch (err) {
-    console.warn("⚠️ Failed to sync Digital Twin data from Firestore:", err);
+    warn("⚠️ Failed to sync Digital Twin data from Firestore:", err);
   }
 }
 
@@ -795,7 +797,7 @@ export async function syncPendingEvents(userId: string, events: any[], ownerUid?
     const user = auth.currentUser;
     const firestoreUid = ownerUid || user?.uid;
     if (!firestoreUid) {
-      console.log("[BioGears] syncPendingEvents: auth not ready, skipping Firestore sync (AsyncStorage backup OK)");
+      log("[BioGears] syncPendingEvents: auth not ready, skipping Firestore sync (AsyncStorage backup OK)");
       return;
     }
     await setDoc(doc(db, "users", firestoreUid, "biogears_pending", "today"), {
@@ -803,9 +805,9 @@ export async function syncPendingEvents(userId: string, events: any[], ownerUid?
       events,
       updatedAt: serverTimestamp(),
     });
-    console.log(`☁️ Pending events synced to Firestore for owner: ${firestoreUid}`);
+    log(`☁️ Pending events synced to Firestore for owner: ${firestoreUid}`);
   } catch (err) {
-    console.warn("⚠️ Failed to sync pending events to Firestore:", err);
+    warn("⚠️ Failed to sync pending events to Firestore:", err);
   }
 }
 
@@ -821,7 +823,7 @@ export async function fetchPendingEvents(userId: string, ownerUid?: string): Pro
       }
     }
   } catch (err) {
-    console.warn("⚠️ Failed to fetch pending events from Firestore:", err);
+    warn("⚠️ Failed to fetch pending events from Firestore:", err);
   }
   return null;
 }

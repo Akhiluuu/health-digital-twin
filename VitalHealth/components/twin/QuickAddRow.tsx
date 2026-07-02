@@ -11,6 +11,7 @@ import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useTheme } from '../../context/ThemeContext';
 import { useBiogearsTwin } from '../../context/BiogearsTwinContext';
+import { useNutrition } from '../../context/NutritionContext';
 import { colors as themeColors } from '../../theme/colors';
 
 const SHORTCUTS_STORAGE_KEY = 'biogears_custom_shortcuts';
@@ -58,6 +59,7 @@ export default function QuickAddRow({ addEventAndSimulate, twinStatus }: Props) 
   const { theme } = useTheme();
   const c = themeColors[theme as 'light' | 'dark'] ?? themeColors['dark'];
   const { twinUserId } = useBiogearsTwin();
+  const { addFoodEntry } = useNutrition();
 
   const [shortcuts, setShortcuts] = useState<any[]>([]);
   const [modalVisible, setModalVisible] = useState(false);
@@ -308,6 +310,22 @@ export default function QuickAddRow({ addEventAndSimulate, twinStatus }: Props) 
         displayLabel: s.displayLabel || `${s.label} · ${s.value}`,
         displayIcon: s.icon,
       };
+
+      if (s.event_type === 'meal') {
+        // Sync with NutritionContext
+        await addFoodEntry({
+          foodId: s.id || 'shortcut',
+          foodName: s.label || 'Meal Shortcut',
+          calories: s.value,
+          protein: s.protein_g || 0,
+          carbs: s.carb_g || 0,
+          fat: s.fat_g || 0,
+          sugar: 0,
+          sodium: 0,
+          fiber: 0,
+          mealId: s.meal_type === 'custom' ? 'snacks' : s.meal_type || 'snacks',
+        });
+      }
 
       await addEventAndSimulate(eventPayload, `${s.label} Sim`);
     } catch (e: any) {

@@ -3,6 +3,8 @@
 
 import { db } from "./index";
 
+import { log } from "../utils/logger";
+
 ///////////////////////////////////////////////////////////
 // TYPE
 ///////////////////////////////////////////////////////////
@@ -46,11 +48,11 @@ export async function initMedicineDB() {
     db.runSync(
       `ALTER TABLE medicines ADD COLUMN takenDate TEXT DEFAULT NULL`
     );
-    console.log("💊 Added takenDate column to medicines");
+    log("💊 Added takenDate column to medicines");
   } catch {
     // Column already exists — ignore the error
   }
-  console.log("💊 Medicine DB ready (shared vital_health.db)");
+  log("💊 Medicine DB ready (shared vital_health.db)");
 }
 
 ///////////////////////////////////////////////////////////
@@ -168,9 +170,9 @@ export async function markMedicineTaken(medicineId: string) {
       "UPDATE medicines SET taken = 1, takenDate = ? WHERE id = ?",
       [today, medicineId]
     );
-    console.log("✅ Medicine marked as taken:", medicineId);
+    log("✅ Medicine marked as taken:", medicineId);
   } catch (error) {
-    console.log("❌ Error marking medicine:", error);
+    log("❌ Error marking medicine:", error);
   }
 }
 
@@ -186,7 +188,7 @@ export function markMedicineTakenByNotificationId(notificationId: string) {
     "UPDATE medicines SET taken = 1, takenDate = ? WHERE notificationId = ?",
     [today, notificationId]
   );
-  console.log("✅ markMedicineTakenByNotificationId — set taken for today:", today);
+  log("✅ markMedicineTakenByNotificationId — set taken for today:", today);
 }
 
 ///////////////////////////////////////////////////////////
@@ -205,7 +207,7 @@ export function resetDailyTakenIfNewDay() {
        AND (takenDate IS NULL OR takenDate != ?)`,
     [today]
   );
-  console.log("🔄 Daily medicines reset for:", today);
+  log("🔄 Daily medicines reset for:", today);
 }
 
 ///////////////////////////////////////////////////////////
@@ -219,9 +221,9 @@ export async function saveMedicineHistory(medicineId: string) {
       "INSERT INTO medicine_history (medicineId, takenAt) VALUES (?, ?)",
       [medicineId, date]
     );
-    console.log("📊 Medicine history saved");
+    log("📊 Medicine history saved");
   } catch (error) {
-    console.log("❌ History error:", error);
+    log("❌ History error:", error);
   }
 }
 
@@ -236,9 +238,9 @@ export async function markMissedMedicines() {
       "UPDATE medicines SET taken = -1 WHERE timestamp < ? AND taken = 0 AND frequency = 'once'",
       [now]
     );
-    console.log("⚠️ Missed once-medicines updated");
+    log("⚠️ Missed once-medicines updated");
   } catch (error) {
-    console.log("❌ Missed update error:", error);
+    log("❌ Missed update error:", error);
   }
 }
 
@@ -259,7 +261,7 @@ export async function getTodayMedicineStats() {
     );
     return { taken: taken?.count || 0, missed: missed?.count || 0 };
   } catch (error) {
-    console.log("❌ Stats error:", error);
+    log("❌ Stats error:", error);
     return { taken: 0, missed: 0 };
   }
 }
@@ -276,7 +278,7 @@ export function getMedicineByNotificationId(notificationId: string): Medicine | 
     );
     return result.length > 0 ? result[0] : null;
   } catch (error) {
-    console.log("❌ getMedicineByNotificationId error:", error);
+    log("❌ getMedicineByNotificationId error:", error);
     return null;
   }
 }
@@ -288,9 +290,9 @@ export function getMedicineByNotificationId(notificationId: string): Medicine | 
 export function deleteMedicineByNotificationId(notificationId: string) {
   try {
     db.runSync("DELETE FROM medicines WHERE notificationId = ?", [notificationId]);
-    console.log("🗑 Deleted medicine by notificationId");
+    log("🗑 Deleted medicine by notificationId");
   } catch (error) {
-    console.log("❌ deleteMedicineByNotificationId error:", error);
+    log("❌ deleteMedicineByNotificationId error:", error);
   }
 }
 

@@ -5,6 +5,8 @@
 
 import { db } from "./index";
 
+import { log, error } from "../utils/logger";
+
 export { db };
 
 // ── Version tracking so future migrations know the current schema ─────────────
@@ -187,9 +189,9 @@ export const initAllTables = async (): Promise<void> => {
       ["schema_version", String(SCHEMA_VERSION)]
     );
 
-    console.log("✅ VitalHealth DB — all tables initialised (v" + SCHEMA_VERSION + ")");
-  } catch (error) {
-    console.error("❌ initAllTables error:", error);
+    log("✅ VitalHealth DB — all tables initialised (v" + SCHEMA_VERSION + ")");
+  } catch (err: unknown) {
+    error("❌ initAllTables error:", err);
     throw error;
   }
 };
@@ -210,8 +212,8 @@ export const clearAllSqliteTables = async (): Promise<void> => {
       DELETE FROM simulation_history;
       DELETE FROM backup_meta;
     `);
-    console.log("🧹 Cleared all SQLite database tables");
-  } catch (error) {
-    console.error("❌ Failed to clear SQLite database tables:", error);
+    log("🧹 Cleared all SQLite database tables");
+  } catch (err: unknown) {
+    error("❌ Failed to clear SQLite database tables:", err);
   }
 };

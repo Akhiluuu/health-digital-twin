@@ -89,7 +89,6 @@ export default function SettingsScreen() {
 
         <View style={[styles.section, { backgroundColor: colors.card, borderColor: colors.border }]}>
           {Item("Security", "/settings-security")}
-          {Item("Emergency Contacts", "/settings-contacts")}
           {Item("Language", "/settings-language")}
           {Item("Notifications", "/settings-notifications")}
         </View>

@@ -408,7 +408,7 @@ export default function HomeScreen() {
           />
           <TelemetryCard
             title="DAILY BURN"
-            value={caloricBalance ? Math.round(caloricBalance.estimated_burn_kcal).toLocaleString("en-IN") : calories.toLocaleString("en-IN")}
+            value={caloricBalance && !isNaN(caloricBalance.estimated_burn_kcal) ? Math.round(caloricBalance.estimated_burn_kcal).toLocaleString("en-IN") : (!isNaN(calories) ? calories.toLocaleString("en-IN") : "0")}
             unit="kcal"
             icon={<Ionicons name="flame" size={20} color="#f59e0b" />}
             accent="#f59e0b"

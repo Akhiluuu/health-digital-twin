@@ -1,6 +1,7 @@
 // services/symptomNotification.ts
 // Fixed for Notifee + TypeScript compatibility
 
+import { log } from "../utils/logger";
 import {
   cancelSymptomNotification as notifeeCancel,
   scheduleSymptomHourly,
@@ -11,7 +12,7 @@ import {
 ///////////////////////////////////////////////////////////
 
 export const registerSymptomNotificationActions = async () => {
-  console.log("🩺 Symptom actions handled by Notifee");
+  log("🩺 Symptom actions handled by Notifee");
 };
 
 ///////////////////////////////////////////////////////////
@@ -23,7 +24,7 @@ export const scheduleSymptomNotification = async (
   name: string,
   _time: number
 ): Promise<string> => {
-  console.log("🩺 Scheduling symptom:", name);
+  log("🩺 Scheduling symptom:", name);
 
   // ✅ FIX: Only pass symptom name
   const notifId = await scheduleSymptomHourly(name);

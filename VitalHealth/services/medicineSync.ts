@@ -15,12 +15,14 @@
 import { db } from "../database/index";
 import { fetchMedicinesFromFirebase } from "./firebaseSync";
 
+import { log } from "../utils/logger";
+
 export async function syncMedicinesFromFirebase(): Promise<void> {
   try {
     const remoteMedicines = await fetchMedicinesFromFirebase();
 
     if (!remoteMedicines || remoteMedicines.length === 0) {
-      console.log("☁️ No remote medicines to sync");
+      log("☁️ No remote medicines to sync");
       return;
     }
 
@@ -71,7 +73,7 @@ export async function syncMedicinesFromFirebase(): Promise<void> {
       inserted++;
     }
 
-    console.log(
+    log(
       `☁️ Medicine sync complete — inserted: ${inserted}, skipped (already local): ${skipped}`
     );
 
@@ -124,17 +126,17 @@ export async function syncMedicinesFromFirebase(): Promise<void> {
             if (notifId) {
               updateMedicineNotificationId(med.id, notifId);
               syncUpdateMedicineNotificationId(med.id, notifId).catch(() => {});
-              console.log(`🔔 Re-scheduled notification for restored medicine: ${med.name}`);
+              log(`🔔 Re-scheduled notification for restored medicine: ${med.name}`);
             }
           } catch (notifErr) {
-            console.log("⚠️ Could not reschedule notification for:", med.name, notifErr);
+            log("⚠️ Could not reschedule notification for:", med.name, notifErr);
           }
         }
       } catch (rescheduleErr) {
-        console.log("⚠️ Notification reschedule pass failed (non-critical):", rescheduleErr);
+        log("⚠️ Notification reschedule pass failed (non-critical):", rescheduleErr);
       }
     }
   } catch (err) {
-    console.log("⚠️ syncMedicinesFromFirebase error (non-critical):", err);
+    log("⚠️ syncMedicinesFromFirebase error (non-critical):", err);
   }
 }
