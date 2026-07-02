@@ -202,16 +202,21 @@ export default function StepIntelligenceScreen() {
 
     // Reuse and render the beautiful bar chart with appropriate scaling
     const chartContent = (
-      <View style={s.chartContainer}>
+      <View style={[s.chartContainer, historyFilter === "monthly" && { minWidth: 1100 }]}>
         {chartData.map((item, idx) => {
           const barHeight = Math.max(5, (item.steps / maxSteps) * 80);
           let label = "";
           let isHighlight = false;
 
-          if (historyFilter === "weekly" || historyFilter === "monthly") {
+          if (historyFilter === "weekly") {
             isHighlight = item.date === todayStr();
             const [y, m, d] = item.date.split("-").map(Number);
             label = new Date(y, m - 1, d).toLocaleDateString("en-IN", { weekday: "short" }).toUpperCase();
+          } else if (historyFilter === "monthly") {
+            isHighlight = item.date === todayStr();
+            const [y, m, d] = item.date.split("-").map(Number);
+            const monthNames = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
+            label = `${d} ${monthNames[m - 1]}`;
           } else {
             // Yearly - show month name
             const [y, m] = item.date.split("-").map(Number);
@@ -224,8 +229,8 @@ export default function StepIntelligenceScreen() {
               style={[
                 s.chartColumn,
                 {
-                  width: historyFilter === "monthly" ? 32 : "auto",
-                  minWidth: historyFilter === "monthly" ? 30 : 20,
+                  width: historyFilter === "monthly" ? 36 : "auto",
+                  minWidth: historyFilter === "monthly" ? 34 : 20,
                   marginHorizontal: historyFilter === "monthly" ? 4 : 0,
                 },
               ]}
@@ -618,17 +623,22 @@ export default function StepIntelligenceScreen() {
             const maxSteps = Math.max(...dataToUse.map(d => d.steps), 1000);
 
             const chartContent = (
-              <View style={[s.chartContainer, overviewFilter === "monthly" && { minWidth: 600 }]}>
+              <View style={[s.chartContainer, overviewFilter === "monthly" && { minWidth: 1100 }]}>
                 {dataToUse.map((day, idx) => {
                   const barHeight = Math.max(10, (day.steps / maxSteps) * 80);
                   let isToday = false;
                   let label = "";
 
-                  if (overviewFilter === "weekly" || overviewFilter === "monthly") {
+                  if (overviewFilter === "weekly") {
                     isToday = day.date === todayStr();
                     const [y, m, d] = day.date.split("-").map(Number);
                     const localDate = new Date(y, m - 1, d);
                     label = localDate.toLocaleDateString("en-IN", { weekday: "short" }).toUpperCase();
+                  } else if (overviewFilter === "monthly") {
+                    isToday = day.date === todayStr();
+                    const [y, m, d] = day.date.split("-").map(Number);
+                    const monthNames = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
+                    label = `${d} ${monthNames[m - 1]}`;
                   } else {
                     const [y, m] = day.date.split("-").map(Number);
                     const localDate = new Date(y, m - 1, 2);
@@ -636,11 +646,21 @@ export default function StepIntelligenceScreen() {
                   }
 
                   return (
-                    <View key={day.date} style={s.chartColumn}>
+                    <View
+                      key={day.date || idx}
+                      style={[
+                        s.chartColumn,
+                        {
+                          width: overviewFilter === "monthly" ? 36 : "auto",
+                          minWidth: overviewFilter === "monthly" ? 34 : 20,
+                          marginHorizontal: overviewFilter === "monthly" ? 4 : 0,
+                        },
+                      ]}
+                    >
                       <Text style={[s.chartBarValue, { color: isToday ? colors.accent : colors.subText, fontSize: 8 }]}>
                         {day.steps >= 1000 ? `${(day.steps / 1000).toFixed(0)}k` : day.steps}
                       </Text>
-                      <View style={[s.chartBarBg, { backgroundColor: colors.border }]}>
+                      <View style={[s.chartBarBg, { width: overviewFilter === "monthly" ? 8 : 12, backgroundColor: colors.border }]}>
                         <LinearGradient
                            colors={isToday ? [colors.accent, colors.accent + "88"] : ["#6366f1", "#4f46e5"]}
                            style={[s.chartBarFill, { height: barHeight }]}
