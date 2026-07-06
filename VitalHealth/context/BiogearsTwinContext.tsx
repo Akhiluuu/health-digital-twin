@@ -1069,7 +1069,7 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
               return buildWaterEvent({ ml: e.value, timestamp: ts });
             } else if (e.event_type === 'substance' && e.substance_name) {
               return buildMedicationEvent({ substance_name: e.substance_name,
-                dose: e.value, unit: e.unit, timestamp: ts });
+                dose: e.value, unit: undefined, timestamp: ts });
             } else {
               // Generic event (stress, alcohol, fast, etc.)
               return {

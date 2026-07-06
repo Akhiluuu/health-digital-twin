@@ -2607,7 +2607,7 @@ export default function TwinScreen() {
       <PhysiologySyncModal
         visible={showDPSSModal}
         userId={twinUserId || ''}
-        profileName={profile?.name}
+        profileName={profile ? `${profile.firstName || ''} ${profile.lastName || ''}`.trim() : undefined}
         onClose={() => setShowDPSSModal(false)}
         onSyncComplete={() => {
           setShowDPSSModal(false);
