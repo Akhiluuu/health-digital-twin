@@ -206,8 +206,17 @@ export default function MedicationVault() {
     // 1. Status Filter
     const today = getLocalDateString();
     const isActive = med.endDate === "ongoing" || med.endDate >= today;
-    if (statusFilter === "active" && !isActive) return false;
-    if (statusFilter === "completed" && isActive) return false;
+    const takenToday = isTakenToday(med);
+    const missedToday = isMissedToday(med);
+    const loggedToday = takenToday || missedToday;
+
+    if (statusFilter === "active") {
+      // Show if it's active AND has not been taken/logged today
+      if (!isActive || loggedToday) return false;
+    } else if (statusFilter === "completed") {
+      // Show if it is expired OR has been taken/logged today
+      if (isActive && !loggedToday) return false;
+    }
 
     // 2. Schedule Filter
     if (filter === "regular") return med.frequency === "daily";
@@ -577,6 +586,28 @@ export default function MedicationVault() {
           keyExtractor={(item) => String(item.id)}
           showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.list}
+          ListEmptyComponent={
+            <View style={[styles.emptyState, { backgroundColor: c.card }]}>
+              <Ionicons
+                name={statusFilter === "active" ? "shield-checkmark-outline" : "hourglass-outline"}
+                size={48}
+                color={statusFilter === "active" ? "#22c55e" : c.sub}
+              />
+              <Text style={[styles.emptyText, { color: c.text, fontWeight: "600", textAlign: "center" }]}>
+                {statusFilter === "active"
+                  ? "All caught up! No pending medications."
+                  : "No completed medications for today."}
+              </Text>
+              {statusFilter === "active" && (
+                <TouchableOpacity
+                  style={[styles.emptyButton, { backgroundColor: c.accent }]}
+                  onPress={() => router.push("/AddMedicine" as any)}
+                >
+                  <Text style={styles.emptyButtonText}>Add New Medicine</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          }
         />
       </View>
     </SafeAreaView>
