@@ -12,7 +12,7 @@ export { db };
 // ── Version tracking so future migrations know the current schema ─────────────
 // v4: Added takenDate column directly to medicines schema (was previously added
 //     only via ALTER TABLE in initMedicineDB, which was not authoritative)
-const SCHEMA_VERSION = 5;
+const SCHEMA_VERSION = 6;
 
 export const initAllTables = async (): Promise<void> => {
   try {
@@ -160,6 +160,36 @@ export const initAllTables = async (): Promise<void> => {
         drive_file_id  TEXT,
         status         TEXT DEFAULT 'success',
         size_bytes     INTEGER
+      );
+
+      -- ── Notifications ────────────────────────────────────────────────────────
+      CREATE TABLE IF NOT EXISTS notifications (
+        id            TEXT PRIMARY KEY NOT NULL,
+        title         TEXT NOT NULL,
+        message       TEXT NOT NULL,
+        profileId     TEXT,
+        profileName   TEXT,
+        relationship  TEXT,
+        profilePhoto  TEXT,
+        category      TEXT NOT NULL,
+        priority      TEXT NOT NULL,
+        timestamp     TEXT NOT NULL,
+        deepLink      TEXT,
+        actionButtons TEXT,
+        readStatus    INTEGER DEFAULT 0,
+        archived      INTEGER DEFAULT 0
+      );
+
+      -- ── Notification Preferences ─────────────────────────────────────────────
+      CREATE TABLE IF NOT EXISTS notification_preferences (
+        profileId           TEXT PRIMARY KEY NOT NULL,
+        medsEnabled         INTEGER DEFAULT 1,
+        alertsEnabled       INTEGER DEFAULT 1,
+        stepsEnabled        INTEGER DEFAULT 1,
+        hydrationEnabled    INTEGER DEFAULT 1,
+        reportsEnabled      INTEGER DEFAULT 1,
+        twinReminderEnabled INTEGER DEFAULT 1,
+        muted               INTEGER DEFAULT 0
       );
     `);
 

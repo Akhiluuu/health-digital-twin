@@ -15,11 +15,13 @@ import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect } from "@react-navigation/native";
 import { useRouter } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
+import * as Haptics from "expo-haptics";
 
 import { Medicine, useMedicine } from "../context/MedicineContext";
 import { useTheme } from "../context/ThemeContext";
 import { colors } from "../theme/colors";
 import Header from "./components/Header";
+import { useNotifications } from "../context/NotificationContext";
 
 // deleteMedicine + cancelMedicineNotification now handled via context.removeMedicine
 import { cancelRoutineReminder, scheduleRoutineReminder } from "../services/notifeeService";
@@ -28,6 +30,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import { log } from "../utils/logger";
 import { addToMedicineHistory } from "../utils/medicineHistory";
+import { getLocalDateString } from "../utils/twinUtils";
 
 ///////////////////////////////////////////////////////////
 // Vault Alarm Settings Card
@@ -158,9 +161,16 @@ function formatDateString(val: string): string {
 // Daily medicines from yesterday are never shown as ticked.
 ///////////////////////////////////////////////////////////
 function isTakenToday(medicine: Medicine): boolean {
-  if (!medicine.taken) return false;
+  if (medicine.taken !== 1) return false;
   if (!medicine.takenDate) return false;
-  const today = new Date().toISOString().split("T")[0];
+  const today = getLocalDateString();
+  return medicine.takenDate === today;
+}
+
+function isMissedToday(medicine: Medicine): boolean {
+  if (medicine.taken !== -1) return false;
+  if (!medicine.takenDate) return false;
+  const today = getLocalDateString();
   return medicine.takenDate === today;
 }
 
@@ -171,7 +181,7 @@ export default function MedicationVault() {
   const { theme } = useTheme();
   const c = colors[theme];
 
-  const { medicines, removeMedicine, reloadMedicines, clearAllMedicines } = useMedicine();
+  const { medicines, removeMedicine, reloadMedicines, clearAllMedicines, setMedicineStatus } = useMedicine();
   const [filter, setFilter] = useState<"all" | "regular" | "once">("all");
   const [statusFilter, setStatusFilter] = useState<"active" | "completed">("active");
 
@@ -179,10 +189,13 @@ export default function MedicationVault() {
   // REFRESH on screen focus
   /////////////////////////////////////////////////////////
 
+  const { markReadByCategory } = useNotifications();
+
   useFocusEffect(
     useCallback(() => {
       reloadMedicines();
-    }, [])
+      markReadByCategory("medication");
+    }, [reloadMedicines, markReadByCategory])
   );
 
   /////////////////////////////////////////////////////////
@@ -191,7 +204,7 @@ export default function MedicationVault() {
 
   const filteredMedicines = medicines.filter((med: Medicine) => {
     // 1. Status Filter
-    const today = new Date().toISOString().split("T")[0];
+    const today = getLocalDateString();
     const isActive = med.endDate === "ongoing" || med.endDate >= today;
     if (statusFilter === "active" && !isActive) return false;
     if (statusFilter === "completed" && isActive) return false;
@@ -266,13 +279,55 @@ export default function MedicationVault() {
       ]
     );
   };
+  const handleToggleTaken = async (item: Medicine) => {
+    try {
+      const currentlyTaken = isTakenToday(item);
+      const newStatus = currentlyTaken ? "pending" : "taken";
 
+      if (newStatus === "taken") {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      } else {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      }
+
+      await setMedicineStatus(item.id, newStatus);
+    } catch (error) {
+      console.log("❌ handleToggleTaken error:", error);
+    }
+  };
+
+  const handleToggleMissed = async (item: Medicine) => {
+    try {
+      const currentlyMissed = isMissedToday(item);
+      const newStatus = currentlyMissed ? "pending" : "missed";
+
+      if (newStatus === "missed") {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+      } else {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      }
+
+      await setMedicineStatus(item.id, newStatus);
+    } catch (error) {
+      console.log("❌ handleToggleMissed error:", error);
+    }
+  };
   /////////////////////////////////////////////////////////
   // ITEM RENDER
   /////////////////////////////////////////////////////////
-
   const renderMedicine = ({ item }: { item: Medicine }) => {
     const takenToday = isTakenToday(item);
+    const missedToday = isMissedToday(item);
+
+    let borderColor = "transparent";
+    let borderWidth = 0;
+    if (takenToday) {
+      borderColor = "#22c55e";
+      borderWidth = 1.5;
+    } else if (missedToday) {
+      borderColor = "#ef4444";
+      borderWidth = 1.5;
+    }
 
     return (
       <View
@@ -280,9 +335,8 @@ export default function MedicationVault() {
           styles.medCard,
           {
             backgroundColor: c.card,
-            // Green border when taken today — visual feedback only
-            borderWidth: takenToday ? 1.5 : 0,
-            borderColor: takenToday ? "#22c55e" : "transparent",
+            borderWidth,
+            borderColor,
           },
         ]}
       >
@@ -293,13 +347,28 @@ export default function MedicationVault() {
                 {item.name}
               </Text>
 
-              {/* Green tick next to name — only if taken today */}
               {takenToday && (
-                <Ionicons name="checkmark-circle" size={16} color="#22c55e" />
+                <View style={styles.statusBadgeSmall}>
+                  <Ionicons name="checkmark-circle" size={14} color="#22c55e" />
+                  <Text style={[styles.statusTextSmall, { color: "#22c55e" }]}>Taken</Text>
+                </View>
               )}
 
-              {/* Bell icon — only if reminder set AND not yet taken today */}
-              {item.reminder === 1 && !takenToday && (
+              {missedToday && (
+                <View style={styles.statusBadgeSmall}>
+                  <Ionicons name="close-circle" size={14} color="#ef4444" />
+                  <Text style={[styles.statusTextSmall, { color: "#ef4444" }]}>Missed</Text>
+                </View>
+              )}
+
+              {!takenToday && !missedToday && (
+                <View style={styles.statusBadgeSmall}>
+                  <Ionicons name="ellipse-outline" size={14} color={c.sub} />
+                  <Text style={[styles.statusTextSmall, { color: c.sub }]}>Pending</Text>
+                </View>
+              )}
+
+              {item.reminder === 1 && !takenToday && !missedToday && (
                 <Ionicons name="notifications" size={16} color={c.accent} />
               )}
             </View>
@@ -359,16 +428,41 @@ export default function MedicationVault() {
             </View>
           </View>
 
-          {/*
-            ✅ REMOVED: The taken (✅) button has been removed from the vault.
-            The tick mark is now set ONLY when the user taps "Taken"
-            on the actual medication reminder notification.
-            This prevents accidental manual ticking.
-          */}
           <View style={styles.actionButtons}>
+            <TouchableOpacity
+              style={[
+                styles.statusButton,
+                takenToday && { backgroundColor: "#22c55e20" }
+              ]}
+              onPress={() => handleToggleTaken(item)}
+              activeOpacity={0.7}
+            >
+              <Ionicons
+                name={takenToday ? "checkmark-circle" : "checkmark-circle-outline"}
+                size={22}
+                color={takenToday ? "#22c55e" : c.sub}
+              />
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[
+                styles.statusButton,
+                missedToday && { backgroundColor: "#ef444420" }
+              ]}
+              onPress={() => handleToggleMissed(item)}
+              activeOpacity={0.7}
+            >
+              <Ionicons
+                name={missedToday ? "close-circle" : "close-circle-outline"}
+                size={22}
+                color={missedToday ? "#ef4444" : c.sub}
+              />
+            </TouchableOpacity>
+
             <TouchableOpacity
               style={styles.deleteButton}
               onPress={() => handleDelete(item)}
+              activeOpacity={0.7}
             >
               <Ionicons name="trash-outline" size={20} color="#ef4444" />
             </TouchableOpacity>
@@ -679,5 +773,20 @@ const styles = StyleSheet.create({
   statusTabTxt: {
     fontWeight: "700",
     fontSize: 12,
+  },
+  statusButton: {
+    padding: 8,
+    borderRadius: 20,
+  },
+  statusBadgeSmall: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: "transparent",
+    marginLeft: 8,
+  },
+  statusTextSmall: {
+    fontSize: 12,
+    fontWeight: "700",
   },
 });

@@ -15,6 +15,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTheme } from "../../context/ThemeContext";
 import { colors as globalColors } from "../../theme/colors";
 import { useFamily } from "../../context/FamilyContext";
+import * as Haptics from "expo-haptics";
 
 interface HeaderProps {
   title?: string;
@@ -55,6 +56,15 @@ export default function Header({
       router.push("/profile");
     }
   };
+
+  let unreadCount = 0;
+  try {
+    const { useNotifications } = require("../../context/NotificationContext");
+    const notificationsCtx = useNotifications();
+    if (notificationsCtx) {
+      unreadCount = notificationsCtx.unreadCount;
+    }
+  } catch (_) {}
 
   return (
     <View
@@ -123,8 +133,24 @@ export default function Header({
           </Text>
         </View>
 
-        {/* RIGHT: SOS Button Removed */}
-        <View style={styles.placeholder} />
+        {/* RIGHT: Notification Bell Button */}
+        <TouchableOpacity
+          onPress={() => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            router.push("/NotificationCenter" as any);
+          }}
+          activeOpacity={0.7}
+          style={styles.notificationBtn}
+        >
+          <Ionicons
+            name="notifications-outline"
+            size={22}
+            color={colors.text}
+          />
+          {unreadCount > 0 && (
+            <View style={styles.notificationBadge} />
+          )}
+        </TouchableOpacity>
       </View>
     </View>
   );
@@ -204,5 +230,21 @@ const styles = StyleSheet.create({
   avatarInitialsText: {
     fontSize: 11,
     fontWeight: "700",
+  },
+  notificationBtn: {
+    padding: 6,
+    marginRight: -6,
+    position: "relative",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  notificationBadge: {
+    position: "absolute",
+    top: 5,
+    right: 5,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: "#ef4444",
   },
 });

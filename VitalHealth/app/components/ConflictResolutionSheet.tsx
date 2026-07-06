@@ -179,11 +179,16 @@ export function ConflictResolutionSheet({ conflicts, onResolve, onDismiss, visib
   const c = themeColors[theme as 'light' | 'dark'] ?? themeColors['dark'];
 
   // Initialise all resolutions to 'keep_mine' (user's entry wins by default)
-  const [resolutions, setResolutions] = useState<Record<string, Resolution>>(() => {
+  const [resolutions, setResolutions] = useState<Record<string, Resolution>>({});
+
+  // Reset resolutions when conflicts prop changes
+  React.useEffect(() => {
     const init: Record<string, Resolution> = {};
-    for (const cConflict of conflicts) init[cConflict.fingerprint] = 'keep_mine';
-    return init;
-  });
+    for (const cConflict of conflicts) {
+      init[cConflict.fingerprint] = 'keep_mine';
+    }
+    setResolutions(init);
+  }, [conflicts]);
 
   const pick = useCallback((fingerprint: string, r: Resolution) => {
     setResolutions(prev => ({ ...prev, [fingerprint]: r }));

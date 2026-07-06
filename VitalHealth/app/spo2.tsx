@@ -27,6 +27,7 @@ import CameraPreview from "../components/CameraPreview";
 import { useTheme } from "../context/ThemeContext";
 import { useFamily } from "../context/FamilyContext";
 import { colors } from "../theme/colors";
+import { useNotifications } from "../context/NotificationContext";
 
 // 🔹 Firebase Imports
 import { doc, setDoc, onSnapshot, collection, addDoc, serverTimestamp, query, orderBy, limit } from "firebase/firestore";
@@ -81,7 +82,11 @@ export default function Spo2Screen() {
   const isDark = theme === "dark";
   const c = colors[theme];
 
+  const { markReadByCategory } = useNotifications();
+
   useEffect(() => {
+    markReadByCategory("vitals");
+    markReadByCategory("alerts");
     const unsubscribeBlur = navigation.addListener("blur", () => {
       stopSpo2Measurement();
     });
@@ -89,7 +94,7 @@ export default function Spo2Screen() {
       unsubscribeBlur();
       stopSpo2Measurement();
     };
-  }, [navigation]);
+  }, [navigation, markReadByCategory]);
 
   // ─── State ──────────────────────────────────────────────────────────────────
   const [spo2, setSpo2] = useState("");

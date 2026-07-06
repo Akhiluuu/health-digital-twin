@@ -31,7 +31,7 @@ export type MedicineHistoryEntry = {
   time: string;
   date: string;
   takenAt: string;
-  status: "taken" | "skipped" | "late" | "scheduled" | "deleted";
+  status: "taken" | "skipped" | "missed" | "late" | "scheduled" | "deleted";
 };
 
 const HISTORY_STORAGE_KEY = "medicine_history";
@@ -146,7 +146,8 @@ export default function MedicineHistory() {
     switch (status) {
       case "taken":   return "#22c55e";
       case "late":    return "#f59e0b";
-      case "skipped": return "#ef4444";
+      case "skipped":
+      case "missed":  return "#ef4444";
       case "deleted": return "#6b7280";
       default:        return c.sub;
     }
@@ -156,7 +157,8 @@ export default function MedicineHistory() {
     switch (status) {
       case "taken":   return "checkmark-circle";
       case "late":    return "time";
-      case "skipped": return "close-circle";
+      case "skipped":
+      case "missed":  return "close-circle";
       case "deleted": return "trash";
       default:        return "help-circle";
     }

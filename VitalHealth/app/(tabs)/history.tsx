@@ -32,16 +32,60 @@ const TABS: { id: LogTab; label: string; icon: any; accent: string }[] = [
 
 const REMINDER_KEY = (tab: LogTab) => `@log_reminder_${tab}`;
 
-function fmt(ts: number) {
-  if (!ts || isNaN(ts)) return '';
+function fmt(ts: any) {
+  if (!ts) return '';
   try {
-    return new Date(ts).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
-  } catch { return ''; }
+    // If it matches HH:MM pattern (24-hour string)
+    if (typeof ts === 'string' && /^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/.test(ts)) {
+      const [hStr, mStr] = ts.split(':');
+      let hours = parseInt(hStr, 10);
+      const minutes = mStr;
+      const ampm = hours >= 12 ? 'PM' : 'AM';
+      hours = hours % 12;
+      hours = hours ? hours : 12;
+      return `${String(hours).padStart(2, '0')}:${minutes} ${ampm}`;
+    }
+
+    let num = Number(ts);
+    let date: Date;
+    if (!isNaN(num)) {
+      if (num < 10000000000) {
+        num = num * 1000;
+      }
+      date = new Date(num);
+    } else {
+      date = new Date(ts);
+    }
+
+    if (isNaN(date.getTime())) return '';
+
+    let hours = date.getHours();
+    const minutes = String(date.getMinutes()).padStart(2, '0');
+    const ampm = hours >= 12 ? 'PM' : 'AM';
+    hours = hours % 12;
+    hours = hours ? hours : 12; // the hour '0' should be '12'
+    return `${String(hours).padStart(2, '0')}:${minutes} ${ampm}`;
+  } catch {
+    return '';
+  }
 }
-function ago(ts: number) {
-  if (!ts || isNaN(ts)) return '';
+function ago(ts: any) {
+  if (!ts) return '';
   try {
-    const m = Math.floor((Date.now() - ts) / 60000);
+    let num = Number(ts);
+    if (isNaN(num)) {
+      const d = new Date(ts);
+      if (!isNaN(d.getTime())) {
+        num = d.getTime();
+      } else {
+        return '';
+      }
+    } else {
+      if (num < 10000000000) {
+        num = num * 1000;
+      }
+    }
+    const m = Math.floor((Date.now() - num) / 60000);
     if (m < 1) return 'Just now'; if (m < 60) return `${m}m ago`;
     const h = Math.floor(m / 60); if (h < 24) return `${h}h ago`;
     return `${Math.floor(h / 24)}d ago`;
@@ -626,7 +670,7 @@ export default function LogRoutineScreen() {
 
   const { todayEvents, refreshSessions } = useBiogearsTwin();
   const { water, history: hydHist, reloadHistory } = useHydration();
-  const { totals, foodEntries, activityEntries, totalActivityCalories, mealReminders } = useNutrition();
+  const { totals, foodEntries, activityEntries, totalActivityCalories, mealReminders, syncNutritionWithFirebase } = useNutrition();
   const { activeSymptoms, historySymptoms, refreshSymptoms } = useSymptoms();
 
   const { isSwitched, activeMemberId, activeProfile, updateActiveProfile } = useFamily();
@@ -673,30 +717,41 @@ export default function LogRoutineScreen() {
     }
   }, [params.tab]);
 
-  // Reload hydration data whenever the screen gains focus or the hydration tab is opened
+  // Reload all data when screen gains focus
   useFocusEffect(
     useCallback(() => {
       reloadHistory();
-    }, [reloadHistory])
+      refreshSessions();
+      refreshSymptoms();
+      syncNutritionWithFirebase().catch(() => {});
+    }, [reloadHistory, refreshSessions, refreshSymptoms, syncNutritionWithFirebase])
   );
 
-  // Also reload when user switches to the hydration tab explicitly
+  // Also reload when user switches tab explicitly
   useEffect(() => {
-    if (tab === 'hydration') {
-      reloadHistory();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tab]);
+    reloadHistory();
+    refreshSessions();
+    refreshSymptoms();
+    syncNutritionWithFirebase().catch(() => {});
+  }, [tab, reloadHistory, refreshSessions, refreshSymptoms, syncNutritionWithFirebase]);
 
   const [refreshing, setRefresh] = useState(false);
 
   const onRefresh = useCallback(async () => {
     setRefresh(true);
-    await Promise.all([refreshSessions(), refreshSymptoms()]).catch(() => { });
+    await Promise.all([
+      refreshSessions(),
+      refreshSymptoms(),
+      reloadHistory(),
+      syncNutritionWithFirebase(),
+    ]).catch(() => { });
     setRefresh(false);
-  }, [refreshSessions, refreshSymptoms]);
+  }, [refreshSessions, refreshSymptoms, reloadHistory, syncNutritionWithFirebase]);
 
-  useEffect(() => { refreshSymptoms(); }, []);
+  useEffect(() => {
+    refreshSymptoms();
+    syncNutritionWithFirebase().catch(() => {});
+  }, [refreshSymptoms, syncNutritionWithFirebase]);
 
   const accent = TABS.find(t => t.id === tab)?.accent ?? '#38bdf8';
 
@@ -753,7 +808,7 @@ export default function LogRoutineScreen() {
             {foodEntries.slice(0, 15).map(f => (
               <EntryCard key={f.id} icon="🍽️" title={f.foodName || 'Food'}
                 sub={`${Math.round(f.calories || 0)} kcal · P:${Math.round(f.protein || 0)}g C:${Math.round(f.carbs || 0)}g F:${Math.round(f.fat || 0)}g`}
-                time={f.timestamp ? (() => { try { return new Date(f.timestamp).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true }); } catch { return ''; } })() : ''}
+                time={f.timestamp ? fmt(f.timestamp) : ''}
                 accent={accent} c={c} />
             ))}
             {foodEntries.length > 15 && <Text style={[s.sec, { color: c.sub, textAlign: 'center', marginTop: 4 }]}>+{foodEntries.length - 15} more entries today</Text>}
@@ -766,7 +821,7 @@ export default function LogRoutineScreen() {
             {bgMeals.slice(0, 10).map(e => (
               <EntryCard key={e.id} icon={e.displayIcon || '🍽️'} title={e.displayLabel || 'Meal'}
                 sub={`${Math.round(e.value || 0)} kcal · synced to twin`}
-                time={e.wallTime || ''} accent={accent} c={c} />
+                time={fmt(e.wallTime || e.timestamp)} accent={accent} c={c} />
             ))}
             {bgMeals.length > 10 && <Text style={[s.sec, { color: c.sub, textAlign: 'center', marginTop: 4 }]}>+{bgMeals.length - 10} more twin events</Text>}
           </>
@@ -795,7 +850,7 @@ export default function LogRoutineScreen() {
             {activityEntries.slice(0, 10).map((a: any) => (
               <EntryCard key={a.id} icon={a.activityIcon || '🏃'} title={a.activityName || 'Activity'}
                 sub={`${a.intensity || 'Unknown'} · ${a.durationMins || 0} min · −${a.caloriesBurned || 0} kcal`}
-                time="Today" accent={accent} c={c} />
+                time={a.timestamp ? fmt(a.timestamp) : 'Today'} accent={accent} c={c} />
             ))}
           </>
         )}
@@ -806,7 +861,7 @@ export default function LogRoutineScreen() {
             {bgEx.slice(0, 10).map(e => (
               <EntryCard key={e.id} icon="🏃" title={e.displayLabel || 'Exercise'}
                 sub={`${Math.round((e.value || 0) * 100)}% intensity · ${Math.round((e.duration_seconds || 0) / 60)} min`}
-                time={e.wallTime || ''} accent={accent} c={c} />
+                time={fmt(e.wallTime || e.timestamp)} accent={accent} c={c} />
             ))}
           </>
         )}
@@ -830,7 +885,7 @@ export default function LogRoutineScreen() {
           {bgSleep.map(e => (
             <EntryCard key={e.id} icon="😴" title={`${e.value}h sleep`}
               sub={e.displayLabel || 'Logged to BioGears twin'}
-              time={e.wallTime} accent={accent} c={c} />
+              time={fmt(e.wallTime || e.timestamp)} accent={accent} c={c} />
           ))}
         </>
       ) : (
@@ -872,7 +927,7 @@ export default function LogRoutineScreen() {
             <SectionTitle text="BIOGEARS WATER EVENTS" c={c} />
             {bgWater.slice(0, 10).map(e => (
               <EntryCard key={e.id} icon="water" title={`${Math.round(e.value || 0)} mL`}
-                sub="Synced to twin simulation" time={e.wallTime || ''} accent={accent} c={c} />
+                sub="Synced to twin simulation" time={fmt(e.wallTime || e.timestamp)} accent={accent} c={c} />
             ))}
           </>
         )}

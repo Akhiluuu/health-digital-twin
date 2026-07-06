@@ -40,11 +40,13 @@ import {
   syncMarkMedicineTaken,
   syncUpdateMedicineNotificationId,
   fetchMedicinesFromFirebase,
+  syncUpdateMedicineStatus,
 } from "../services/firebaseSync";
 
 import { useFamily } from "./FamilyContext";
 
 import { log } from "../utils/logger";
+import { getLocalDateString } from "../utils/twinUtils";
 
 ///////////////////////////////////////////////////////////
 // TYPE
@@ -89,6 +91,7 @@ type ContextType = {
   clearAllMedicines: () => Promise<void>;
   reloadMedicines: () => Promise<void>;
   markMedicineAsTaken: (notificationId?: string) => Promise<void>;
+  setMedicineStatus: (medicineId: number, status: "taken" | "missed" | "pending") => Promise<void>;
   isLoadingMemberMedicines: boolean;
 };
 
@@ -182,7 +185,7 @@ export const MedicineProvider = ({
         if (!isMountedRef.current) return;
 
         // Auto-clean notifications for expired medicines
-        const todayStr = new Date().toISOString().split('T')[0];
+        const todayStr = getLocalDateString();
         for (const med of data) {
           if (med.endDate && med.endDate !== 'ongoing' && med.endDate < todayStr && med.notificationId) {
             log(`[MedicineContext] Cancelling notification ${med.notificationId} for expired medicine: ${med.name}`);
@@ -436,6 +439,55 @@ export const MedicineProvider = ({
   }, [isSwitched, activeMemberId, medicines]);
 
   ///////////////////////////////////////////////////////////
+  // SET STATUS — taken, missed, pending
+  ///////////////////////////////////////////////////////////
+
+  const setMedicineStatus = React.useCallback(async (medicineId: number, status: "taken" | "missed" | "pending") => {
+    try {
+      if (isSwitched && activeMemberId && activeMemberId !== "self") {
+        await syncUpdateMedicineStatus(medicineId, status, activeMemberId);
+        await loadMedicines();
+        return;
+      }
+
+      const {
+        markMedicineTaken,
+        markMedicineMissed,
+        markMedicinePending,
+      } = require("../database/medicineDB");
+
+      if (status === "taken") {
+        await markMedicineTaken(medicineId);
+      } else if (status === "missed") {
+        await markMedicineMissed(medicineId);
+      } else {
+        await markMedicinePending(medicineId);
+      }
+
+      await syncUpdateMedicineStatus(medicineId, status);
+
+      // Log to history
+      if (status !== "pending") {
+        const medicine = medicines.find((m) => m.id === medicineId);
+        if (medicine) {
+          const { addToMedicineHistory } = require("../utils/medicineHistory");
+          await addToMedicineHistory({
+            medicineId: medicine.id,
+            medicineName: medicine.name,
+            dose: medicine.dose,
+            time: medicine.time,
+            status: status as "taken" | "missed",
+          });
+        }
+      }
+
+      await loadMedicines();
+    } catch (err) {
+      log("💊 setMedicineStatus error:", err);
+    }
+  }, [isSwitched, activeMemberId, medicines]);
+
+  ///////////////////////////////////////////////////////////
   // REMOVE — when switched: directly from Firestore; when self: local SQLite + cancel notification + sync
   ///////////////////////////////////////////////////////////
 
@@ -498,6 +550,7 @@ export const MedicineProvider = ({
         clearAllMedicines,
         reloadMedicines,
         markMedicineAsTaken,
+        setMedicineStatus,
         isLoadingMemberMedicines,
       }}
     >

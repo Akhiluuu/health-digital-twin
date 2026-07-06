@@ -4,6 +4,7 @@
 import { db } from "./index";
 
 import { log } from "../utils/logger";
+import { getLocalDateString } from "../utils/twinUtils";
 
 ///////////////////////////////////////////////////////////
 // INIT — no-op: table created by initAllTables in schema.ts
@@ -19,7 +20,7 @@ export async function initHydrationDB() {
 
 export async function addWater(amount: number) {
   try {
-    const today = new Date().toISOString().split("T")[0];
+    const today = getLocalDateString();
     const existing: any = await db.getFirstAsync(
       "SELECT amount FROM hydration WHERE date = ?",
       [today]
@@ -47,7 +48,7 @@ export async function addWater(amount: number) {
 
 export async function addWaterFromNotification(amount: number) {
   try {
-    const today = new Date().toISOString().split("T")[0];
+    const today = getLocalDateString();
     const existing: any = await db.getFirstAsync(
       "SELECT amount FROM hydration WHERE date = ?",
       [today]
@@ -75,7 +76,7 @@ export async function addWaterFromNotification(amount: number) {
 
 export async function getTodayWater() {
   try {
-    const today = new Date().toISOString().split("T")[0];
+    const today = getLocalDateString();
     const result: any = await db.getFirstAsync(
       "SELECT amount FROM hydration WHERE date = ?",
       [today]

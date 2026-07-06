@@ -640,6 +640,7 @@ export default function NutritionScreen() {
   const [customFood, setCustomFood] = useState("");
   const [customCalories, setCustomCalories] = useState("");
   const [showReminderModal, setShowReminderModal] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const [aiTip, setAiTip] = useState("");
 
@@ -701,7 +702,9 @@ export default function NutritionScreen() {
 
   // ── Add confirmed food ───────────────────────────────────────────────────
   const confirmFoodWithQuantity = useCallback(() => {
+    if (isSubmitting) return;
     if (!selectedCsvFood || !selectedMeal || !scaled) return;
+    setIsSubmitting(true);
     const displayQty = `${quantity} ${parsedUnit.unitLabel}`;
     const label = `${selectedCsvFood.food} (${displayQty})`;
     addFoodEntry({
@@ -712,13 +715,15 @@ export default function NutritionScreen() {
     });
     closeModal();
     Alert.alert("✅ Added", `${label} added to ${selectedMeal.label}`);
-  }, [selectedCsvFood, selectedMeal, scaled, quantity, parsedUnit]);
+  }, [selectedCsvFood, selectedMeal, scaled, quantity, parsedUnit, isSubmitting]);
 
   // ── Custom food entry ────────────────────────────────────────────────────
   const handleAddCustomFood = () => {
+    if (isSubmitting) return;
     if (!selectedMeal || !customFood || !customCalories) return;
     const cal = parseInt(customCalories);
     if (isNaN(cal)) return;
+    setIsSubmitting(true);
     addFoodEntry({
       mealId: selectedMeal.id, foodId: `custom_${Date.now()}`,
       foodName: customFood, calories: cal,
@@ -731,6 +736,7 @@ export default function NutritionScreen() {
   const closeModal = () => {
     setModalVisible(false); setModalPhase("main"); setSearchQuery("");
     setSelectedCsvFood(null); setQuantity(1); setCustomFood(""); setCustomCalories("");
+    setIsSubmitting(false);
   };
 
   const openMealModal = (meal: typeof mealTypes[0]) => {
@@ -1151,8 +1157,9 @@ export default function NutritionScreen() {
                   </View>
 
                   <TouchableOpacity
-                    style={[styles.confirmBtn, { backgroundColor: colors.success }]}
+                    style={[styles.confirmBtn, { backgroundColor: colors.success }, isSubmitting && { opacity: 0.7 }]}
                     onPress={confirmFoodWithQuantity}
+                    disabled={isSubmitting}
                   >
                     <Ionicons name="checkmark-circle" size={22} color="#fff" />
                     <Text style={styles.confirmBtnText}>
@@ -1193,9 +1200,13 @@ export default function NutritionScreen() {
                     returnKeyType="done"
                   />
                   <TouchableOpacity
-                    style={[styles.confirmBtn, { backgroundColor: customFood && customCalories ? colors.success : colors.border }]}
+                    style={[
+                      styles.confirmBtn,
+                      { backgroundColor: customFood && customCalories ? colors.success : colors.border },
+                      isSubmitting && { opacity: 0.7 }
+                    ]}
                     onPress={handleAddCustomFood}
-                    disabled={!customFood || !customCalories}
+                    disabled={!customFood || !customCalories || isSubmitting}
                   >
                     <Ionicons name="add-circle" size={22} color="#fff" />
                     <Text style={styles.confirmBtnText}>Add Custom Food</Text>

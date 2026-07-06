@@ -67,3 +67,45 @@ export function estimateBioAge(profile: any, currentVitals: any): number {
 
   return Math.round(variance);
 }
+
+/**
+ * Returns YYYY-MM-DD in the local timezone for a given Date, timestamp (seconds or ms), or ISO string.
+ */
+export function getLocalDateString(dateInput?: Date | string | number): string {
+  if (dateInput === undefined || dateInput === null) {
+    const now = new Date();
+    const yyyy = now.getFullYear();
+    const mm = String(now.getMonth() + 1).padStart(2, "0");
+    const dd = String(now.getDate()).padStart(2, "0");
+    return `${yyyy}-${mm}-${dd}`;
+  }
+
+  let date: Date;
+  if (dateInput instanceof Date) {
+    date = dateInput;
+  } else if (typeof dateInput === "number") {
+    // If it's in seconds (like UNIX timestamp in todayEvents: e.g. 1783009865), convert to ms
+    // Standard UNIX timestamps for our times are around 1.7e9, whereas millisecond timestamps are 1.7e12.
+    if (dateInput < 10000000000) {
+      date = new Date(dateInput * 1000);
+    } else {
+      date = new Date(dateInput);
+    }
+  } else {
+    date = new Date(dateInput);
+  }
+
+  if (isNaN(date.getTime())) {
+    const now = new Date();
+    const yyyy = now.getFullYear();
+    const mm = String(now.getMonth() + 1).padStart(2, "0");
+    const dd = String(now.getDate()).padStart(2, "0");
+    return `${yyyy}-${mm}-${dd}`;
+  }
+
+  const yyyy = date.getFullYear();
+  const mm = String(date.getMonth() + 1).padStart(2, "0");
+  const dd = String(date.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+}
+

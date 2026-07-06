@@ -2,6 +2,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { MedicineHistoryEntry } from "../app/MedicineHistory";
 import { syncAddMedicineHistory } from "../services/firebaseSync";
+import { getLocalDateString } from "./twinUtils";
 
 const HISTORY_STORAGE_KEY = "medicine_history";
 
@@ -22,7 +23,7 @@ export const addToMedicineHistory = async (
       dose:         medicine.dose,
       time:         medicine.time,
       status:       medicine.status,
-      date:         now.toISOString().split("T")[0],
+      date:         getLocalDateString(now),
       takenAt:      now.toISOString(),
     };
 

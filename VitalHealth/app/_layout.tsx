@@ -35,6 +35,7 @@ import { SymptomsProvider } from "../context/SymptomContext";
 import { ThemeProvider } from "../context/ThemeContext";
 import { FamilyProvider, useFamily } from "../context/FamilyContext";
 import { CognitiveProvider } from "../context/CognitiveContext";
+import { NotificationProvider } from "../context/NotificationContext";
 
 ///////////////////////////////////////////////////////////
 // DATABASE INITIALIZATION
@@ -105,13 +106,15 @@ const FamilyProviderWithProfile: React.FC<{ children: React.ReactNode }> = ({
   const { profile } = useProfile();
   return (
     <FamilyProvider selfProfile={profile}>
-      {/* MedicineProvider and SymptomsProvider MUST be here,
-          inside FamilyProvider, so useFamily() works inside them */}
-      <MedicineProvider>
-        <SymptomsProvider>
-          {children}
-        </SymptomsProvider>
-      </MedicineProvider>
+      <NotificationProvider>
+        {/* MedicineProvider and SymptomsProvider MUST be here,
+            inside FamilyProvider, so useFamily() works inside them */}
+        <MedicineProvider>
+          <SymptomsProvider>
+            {children}
+          </SymptomsProvider>
+        </MedicineProvider>
+      </NotificationProvider>
     </FamilyProvider>
   );
 };
@@ -344,6 +347,7 @@ export default function RootLayout() {
                           <Stack.Screen name="step-intelligence"    options={{ animation: 'slide_from_right', gestureEnabled: true, fullScreenGestureEnabled: true }} />
                           <Stack.Screen name="calorie-intelligence" options={{ animation: 'slide_from_right', gestureEnabled: true, fullScreenGestureEnabled: true }} />
                           <Stack.Screen name="heart-scanner"        options={{ animation: 'slide_from_right', gestureEnabled: true, fullScreenGestureEnabled: true }} />
+                          <Stack.Screen name="NotificationCenter"   options={{ animation: 'slide_from_right', gestureEnabled: true, fullScreenGestureEnabled: true }} />
 
                           {/* Settings */}
                           <Stack.Screen name="settings"                  options={{ animation: 'slide_from_right', gestureEnabled: true, fullScreenGestureEnabled: true }} />

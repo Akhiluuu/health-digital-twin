@@ -78,6 +78,7 @@ notifee.onBackgroundEvent(async ({ type, detail }) => {
           markMedicineTakenByNotificationId,
           deleteMedicineByNotificationId,
         } = await import("../database/medicineDB");
+        const { syncUpdateMedicineStatus } = await import("./firebaseSync");
 
         const { addToMedicineHistory } =
           await import("../utils/medicineHistory");
@@ -98,6 +99,7 @@ notifee.onBackgroundEvent(async ({ type, detail }) => {
             log("💊 [BG] One-time medicine deleted");
           } else {
             markMedicineTakenByNotificationId(notificationId);
+            await syncUpdateMedicineStatus(medicine.id, "taken");
             log("💊 [BG] Daily medicine marked taken");
           }
         }
@@ -108,6 +110,43 @@ notifee.onBackgroundEvent(async ({ type, detail }) => {
 
       } catch (e) {
         log("❌ [BG] MEDICINE_TAKEN error:", e);
+      }
+      return;
+    }
+
+    if (action === "MEDICINE_MISSED") {
+      try {
+        const {
+          getMedicineByNotificationId,
+          markMedicineMissedByNotificationId,
+        } = await import("../database/medicineDB");
+        const { syncUpdateMedicineStatus } = await import("./firebaseSync");
+
+        const { addToMedicineHistory } =
+          await import("../utils/medicineHistory");
+
+        const medicine = getMedicineByNotificationId(notificationId) as Medicine | null;
+
+        if (medicine) {
+          await addToMedicineHistory({
+            medicineId: medicine.id,
+            medicineName: medicine.name,
+            dose: medicine.dose,
+            time: medicine.time,
+            status: "missed",
+          });
+
+          markMedicineMissedByNotificationId(notificationId);
+          await syncUpdateMedicineStatus(medicine.id, "missed");
+          log("💊 [BG] Daily medicine marked missed");
+        }
+
+        await notifee.cancelNotification(notificationId);
+
+        log("✅ [BG] MEDICINE_MISSED handled");
+
+      } catch (e) {
+        log("❌ [BG] MEDICINE_MISSED error:", e);
       }
       return;
     }
@@ -125,6 +164,7 @@ notifee.onBackgroundEvent(async ({ type, detail }) => {
               channelId: "health",
               actions: [
                 { title: "Taken", pressAction: { id: "MEDICINE_TAKEN" } },
+                { title: "Missed", pressAction: { id: "MEDICINE_MISSED" } },
                 { title: "Snooze", pressAction: { id: "MEDICINE_SNOOZE" } },
               ],
             },

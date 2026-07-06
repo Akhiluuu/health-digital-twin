@@ -17,6 +17,7 @@ import { syncStepsData, fetchStepsDataFromFirebase, fetchAllStepsFromFirebase } 
 import * as BackgroundFetch from 'expo-background-fetch';
 import * as TaskManager from 'expo-task-manager';
 import { log, warn, error } from "../utils/logger";
+import { getLocalDateString } from '../utils/twinUtils';
 
 import {
   startNativeTracking,
@@ -43,7 +44,7 @@ const KEY = (uid: string) => ({
   lastMoveTs:   `step_last_move_ts_v7_${uid}`,
 });
 
-const todayStr = () => new Date().toISOString().slice(0, 10);
+const todayStr = () => getLocalDateString();
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Background task (WorkManager equivalent via expo-background-fetch)
@@ -438,7 +439,7 @@ export const StepProvider: React.FC<{
             start.setHours(0, 0, 0, 0);
             const end = new Date(start);
             end.setHours(23, 59, 59, 999);
-            const dateStr = start.toISOString().slice(0, 10);
+            const dateStr = getLocalDateString(start);
             try {
               const r = await Pedometer.getStepCountAsync(start, end);
               if (r) {
@@ -475,7 +476,7 @@ export const StepProvider: React.FC<{
         for (let i = 29; i >= 0; i--) {
           const d = new Date();
           d.setDate(d.getDate() - i);
-          const dateStr = d.toISOString().slice(0, 10);
+          const dateStr = getLocalDateString(d);
           
           let seedSteps = 0;
           if (i === 0) {
@@ -494,14 +495,14 @@ export const StepProvider: React.FC<{
       for (let i = 6; i >= 0; i--) {
         const d = new Date();
         d.setDate(d.getDate() - i);
-        last7Days.push(d.toISOString().slice(0, 10));
+        last7Days.push(getLocalDateString(d));
       }
 
       const last30Days: string[] = [];
       for (let i = 29; i >= 0; i--) {
         const d = new Date();
         d.setDate(d.getDate() - i);
-        last30Days.push(d.toISOString().slice(0, 10));
+        last30Days.push(getLocalDateString(d));
       }
 
       // Construct weekly steps (chronological order)
@@ -526,7 +527,7 @@ export const StepProvider: React.FC<{
       for (let i = 11; i >= 0; i--) {
         const d = new Date();
         d.setMonth(d.getMonth() - i);
-        const yearMonth = d.toISOString().slice(0, 7); // "2026-07"
+        const yearMonth = getLocalDateString(d).slice(0, 7); // "2026-07"
         last12Months.push(yearMonth);
         yearlyMap.set(yearMonth, 0);
       }

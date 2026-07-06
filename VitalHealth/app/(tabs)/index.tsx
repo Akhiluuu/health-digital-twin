@@ -191,6 +191,18 @@ export default function HomeScreen() {
   const { caloricBalance, lastVitals, addEvent } = useBiogearsTwin();
   const { activeMemberId, isSwitched, activeProfile } = useFamily();
 
+  const isTakenToday = (medicine: any): boolean => {
+    if (medicine.taken !== 1) return false;
+    if (!medicine.takenDate) return false;
+    return medicine.takenDate === new Date().toISOString().split("T")[0];
+  };
+
+  const isMissedToday = (medicine: any): boolean => {
+    if (medicine.taken !== -1) return false;
+    if (!medicine.takenDate) return false;
+    return medicine.takenDate === new Date().toISOString().split("T")[0];
+  };
+
   const [spo2, setSpo2] = useState<number>(0);
   const [measuredHeartRate, setMeasuredHeartRate] = useState<number | null>(null);
   const [heartModalOpen, setHeartModalOpen] = useState(false);
@@ -544,21 +556,54 @@ export default function HomeScreen() {
           </View>
         ) : (
           <View style={styles.medicineList}>
-            {medicines.slice(0, 2).map((m) => (
-              <View key={m.id} style={[styles.medicineTimelineItem, { backgroundColor: c.card, borderColor: c.border }]}>
-                <View style={[styles.medicinePillWrapper, { backgroundColor: c.accent + "12" }]}>
-                  <Ionicons name="bandage-outline" size={20} color={c.accent} />
+            {medicines.slice(0, 2).map((m) => {
+              const takenToday = isTakenToday(m);
+              const missedToday = isMissedToday(m);
+              return (
+                <View
+                  key={m.id}
+                  style={[
+                    styles.medicineTimelineItem,
+                    { backgroundColor: c.card, borderColor: c.border },
+                    takenToday && { borderLeftWidth: 3.5, borderLeftColor: "#22c55e" },
+                    missedToday && { borderLeftWidth: 3.5, borderLeftColor: "#ef4444" }
+                  ]}
+                >
+                  <View style={[
+                    styles.medicinePillWrapper,
+                    {
+                      backgroundColor: takenToday
+                        ? "#22c55e12"
+                        : missedToday
+                        ? "#ef444412"
+                        : c.accent + "12"
+                    }
+                  ]}>
+                    <Ionicons
+                      name={takenToday ? "checkmark-circle" : missedToday ? "close-circle" : "bandage-outline"}
+                      size={20}
+                      color={takenToday ? "#22c55e" : missedToday ? "#ef4444" : c.accent}
+                    />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[
+                      styles.medicineNameText,
+                      { color: c.text },
+                      takenToday && { textDecorationLine: "line-through", opacity: 0.6 }
+                    ]}>
+                      {m.name}
+                    </Text>
+                    <Text style={[styles.medicineDoseText, { color: c.sub }]}>
+                      {m.dose} • {takenToday ? "Taken Today" : missedToday ? "Missed Today" : "Pending"}
+                    </Text>
+                  </View>
+                  <View style={styles.medicineTimeWrapper}>
+                    <Ionicons name="time-outline" size={14} color={c.sub} />
+                    <Text style={[styles.medicineTimeText, { color: c.sub }]}>{m.time}</Text>
+                  </View>
                 </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.medicineNameText, { color: c.text }]}>{m.name}</Text>
-                  <Text style={[styles.medicineDoseText, { color: c.sub }]}>{m.dose}</Text>
-                </View>
-                <View style={styles.medicineTimeWrapper}>
-                  <Ionicons name="time-outline" size={14} color={c.sub} />
-                  <Text style={[styles.medicineTimeText, { color: c.sub }]}>{m.time}</Text>
-                </View>
-              </View>
-            ))}
+              );
+            })}
             {medicines.length > 2 && (
               <TouchableOpacity 
                 style={[styles.medicineMoreRow, { backgroundColor: c.card, borderColor: c.border }]} 

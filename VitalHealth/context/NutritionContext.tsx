@@ -14,6 +14,7 @@ import { doc, getDoc, setDoc } from "firebase/firestore";
 import { useFamily } from "./FamilyContext";
 import { useBiogearsTwin } from "./BiogearsTwinContext";
 import { log, error } from "../utils/logger";
+import { getLocalDateString } from "../utils/twinUtils";
 
 import {
   syncAddFoodEntry,
@@ -30,6 +31,8 @@ import {
 const NUTRITION_DATA_KEY   = "nutrition_data_v2";
 const MEAL_REMINDER_KEY    = "meal_reminders_v2";
 const ACTIVITY_LOG_KEY     = "activity_log_v1";
+const DELETED_FOOD_IDS_KEY     = "@deleted_food_ids_v1";
+const DELETED_ACTIVITY_IDS_KEY = "@deleted_activity_ids_v1";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 export type FoodEntry = {
@@ -338,7 +341,7 @@ type NutritionContextType = {
   loaded: boolean;
 
   // Actions
-  addFoodEntry: (entry: Omit<FoodEntry, "id" | "timestamp">) => void;
+  addFoodEntry: (entry: Omit<FoodEntry, "id" | "timestamp"> & { timestamp?: string }) => Promise<void>;
   removeFoodEntry: (id: string) => void;
   addActivityEntry: (entry: Omit<ActivityEntry, "id" | "timestamp">) => void;
   removeActivityEntry: (id: string) => void;
@@ -348,6 +351,7 @@ type NutritionContextType = {
   updateReminderTime: (reminderId: string, time: string) => void;
   getMealEntries: (mealId: string) => FoodEntry[];
   resetToday: () => void;
+  syncNutritionWithFirebase: () => Promise<void>;
 };
 
 const NutritionContext = createContext<NutritionContextType | null>(null);
@@ -356,7 +360,7 @@ const NutritionContext = createContext<NutritionContextType | null>(null);
 export function NutritionProvider({ children }: { children: React.ReactNode }) {
   const [state, dispatch] = useReducer(reducer, initialState);
   const { isSwitched, activeMemberId } = useFamily();
-  const { todayEvents, setTodayEvents } = useBiogearsTwin();
+  const { todayEvents, setTodayEvents, sessions } = useBiogearsTwin();
 
   // Sync / Load with Firebase
   const syncNutritionWithFirebase = useCallback(async () => {
@@ -369,13 +373,31 @@ export function NutritionProvider({ children }: { children: React.ReactNode }) {
           getDoc(doc(db, "users", activeMemberId, "nutrition_config", "latest")),
         ]);
 
-        const todayStr = new Date().toISOString().split('T')[0]; // ✅ ISO date, locale-safe
+        const todayStr = getLocalDateString(); // ✅ Timezone-safe local date string (YYYY-MM-DD)
+        const lastClearedKey = `nutrition_last_cleared_${activeMemberId}`;
+        const lastClearedRaw = await AsyncStorage.getItem(lastClearedKey);
+        const lastCleared = lastClearedRaw ? new Date(lastClearedRaw) : null;
+        const lastClearedDateStr = lastCleared ? getLocalDateString(lastCleared) : null;
 
         const todayFood = foodFirebase.filter(
-          (f) => (f.timestamp || '').slice(0, 10) === todayStr
+          (f) => {
+            const isToday = getLocalDateString(f.timestamp) === todayStr;
+            if (!isToday) return false;
+            if (lastCleared && lastClearedDateStr === todayStr) {
+              return new Date(f.timestamp) > lastCleared;
+            }
+            return true;
+          }
         );
         const todayActivity = activityFirebase.filter(
-          (a) => (a.timestamp || '').slice(0, 10) === todayStr
+          (a) => {
+            const isToday = getLocalDateString(a.timestamp) === todayStr;
+            if (!isToday) return false;
+            if (lastCleared && lastClearedDateStr === todayStr) {
+              return new Date(a.timestamp) > lastCleared;
+            }
+            return true;
+          }
         );
 
         let selectedProfileId: HealthProfileId = "standard";
@@ -443,19 +465,40 @@ export function NutritionProvider({ children }: { children: React.ReactNode }) {
         log("⚠️ Firebase fetch error (offline fallback):", fbErr);
       }
 
-      const todayStr = new Date().toISOString().split('T')[0]; // ✅ ISO date, locale-safe
+      const todayStr = getLocalDateString(); // ✅ Timezone-safe local date string (YYYY-MM-DD)
+      const lastClearedKey = `nutrition_last_cleared_${currentUser?.uid || "self"}`;
+      const lastClearedRaw = await AsyncStorage.getItem(lastClearedKey);
+      const lastCleared = lastClearedRaw ? new Date(lastClearedRaw) : null;
+      const lastClearedDateStr = lastCleared ? getLocalDateString(lastCleared) : null;
+
       const todayFirebaseFood = foodFirebase.filter(
-        (f) => (f.timestamp || '').slice(0, 10) === todayStr
+        (f) => {
+          const isToday = getLocalDateString(f.timestamp) === todayStr;
+          if (!isToday) return false;
+          if (lastCleared && lastClearedDateStr === todayStr) {
+            return new Date(f.timestamp) > lastCleared;
+          }
+          return true;
+        }
       );
       const todayFirebaseActivity = activityFirebase.filter(
-        (a) => (a.timestamp || '').slice(0, 10) === todayStr
+        (a) => {
+          const isToday = getLocalDateString(a.timestamp) === todayStr;
+          if (!isToday) return false;
+          if (lastCleared && lastClearedDateStr === todayStr) {
+            return new Date(a.timestamp) > lastCleared;
+          }
+          return true;
+        }
       );
 
       // Load local
-      const [dataRaw, remindersRaw, activityRaw] = await Promise.all([
+      const [dataRaw, remindersRaw, activityRaw, deletedFoodRaw, deletedActivityRaw] = await Promise.all([
         AsyncStorage.getItem(NUTRITION_DATA_KEY),
         AsyncStorage.getItem(MEAL_REMINDER_KEY),
         AsyncStorage.getItem(ACTIVITY_LOG_KEY),
+        AsyncStorage.getItem(DELETED_FOOD_IDS_KEY),
+        AsyncStorage.getItem(DELETED_ACTIVITY_IDS_KEY),
       ]);
 
       let localFood: FoodEntry[] = [];
@@ -463,6 +506,10 @@ export function NutritionProvider({ children }: { children: React.ReactNode }) {
       let selectedProfileId: HealthProfileId = "standard";
       let customCalorieTarget: number | null = null;
       let mealReminders = defaultReminders;
+      let deletedFoodIds: string[] = deletedFoodRaw ? safeJsonParse<string[]>(deletedFoodRaw, []) : [];
+      let deletedActivityIds: string[] = deletedActivityRaw ? safeJsonParse<string[]>(deletedActivityRaw, []) : [];
+      const deletedFoodSet = new Set(deletedFoodIds);
+      const deletedActivitySet = new Set(deletedActivityIds);
 
       if (dataRaw) {
         const data = safeJsonParse(dataRaw, { foodEntries: [], selectedProfileId: 'standard', customCalorieTarget: null });
@@ -481,10 +528,10 @@ export function NutritionProvider({ children }: { children: React.ReactNode }) {
 
       // Filter local to today only
       localFood = localFood.filter(
-        (f) => (f.timestamp || '').slice(0, 10) === todayStr
+        (f) => getLocalDateString(f.timestamp) === todayStr
       );
       localActivity = localActivity.filter(
-        (a) => (a.timestamp || '').slice(0, 10) === todayStr
+        (a) => getLocalDateString(a.timestamp) === todayStr
       );
 
       // Only perform Firebase sync operations if we actually fetched Firebase data successfully
@@ -494,15 +541,23 @@ export function NutritionProvider({ children }: { children: React.ReactNode }) {
         const firebaseFoodIds = new Set(todayFirebaseFood.map((f) => f.id));
 
         for (const entry of localFood) {
-          if (!firebaseFoodIds.has(entry.id)) {
+          if (!firebaseFoodIds.has(entry.id) && !deletedFoodSet.has(entry.id)) {
             await syncAddFoodEntry(entry).catch(() => {});
           }
         }
 
+        const remainingDeletedFoodIds = [...deletedFoodIds];
         for (const entry of todayFirebaseFood) {
-          if (!localFoodIds.has(entry.id)) {
+          if (deletedFoodSet.has(entry.id)) {
+            await syncDeleteFoodEntry(entry.id).catch(() => {});
+            const idx = remainingDeletedFoodIds.indexOf(entry.id);
+            if (idx > -1) remainingDeletedFoodIds.splice(idx, 1);
+          } else if (!localFoodIds.has(entry.id)) {
             localFood.push(entry);
           }
+        }
+        if (remainingDeletedFoodIds.length !== deletedFoodIds.length) {
+          await AsyncStorage.setItem(DELETED_FOOD_IDS_KEY, JSON.stringify(remainingDeletedFoodIds)).catch(() => {});
         }
 
         // Sync activity: upload missing, download missing
@@ -510,15 +565,23 @@ export function NutritionProvider({ children }: { children: React.ReactNode }) {
         const firebaseActivityIds = new Set(todayFirebaseActivity.map((a) => a.id));
 
         for (const entry of localActivity) {
-          if (!firebaseActivityIds.has(entry.id)) {
+          if (!firebaseActivityIds.has(entry.id) && !deletedActivitySet.has(entry.id)) {
             await syncAddActivityEntry(entry).catch(() => {});
           }
         }
 
+        const remainingDeletedActivityIds = [...deletedActivityIds];
         for (const entry of todayFirebaseActivity) {
-          if (!localActivityIds.has(entry.id)) {
+          if (deletedActivitySet.has(entry.id)) {
+            await syncDeleteActivityEntry(entry.id).catch(() => {});
+            const idx = remainingDeletedActivityIds.indexOf(entry.id);
+            if (idx > -1) remainingDeletedActivityIds.splice(idx, 1);
+          } else if (!localActivityIds.has(entry.id)) {
             localActivity.push(entry);
           }
+        }
+        if (remainingDeletedActivityIds.length !== deletedActivityIds.length) {
+          await AsyncStorage.setItem(DELETED_ACTIVITY_IDS_KEY, JSON.stringify(remainingDeletedActivityIds)).catch(() => {});
         }
 
         // Sync config if firebase exists
@@ -741,6 +804,97 @@ export function NutritionProvider({ children }: { children: React.ReactNode }) {
     }, { merge: true }).catch(() => {});
   }, [state.selectedProfileId, state.mealReminders, state.customCalorieTarget, state.loaded, isSwitched, activeMemberId]);
 
+  // ── Import Simulated Twin Events to Nutrition/Activity Context ─────────────
+  // When a simulation completes, its events are stored in the session meta.
+  // We scan the latest session's events and import any simulated meals/exercise
+  // that were not already synced from the nutrition log.
+  useEffect(() => {
+    if (!state.loaded || !sessions || sessions.length === 0) return;
+
+    const latestSession = sessions[0];
+    if (!latestSession || !latestSession.events || latestSession.events.length === 0) return;
+
+    // Only process sessions from today to prevent importing historic logs
+    const sessionDate = new Date(latestSession.timestamp);
+    if (sessionDate.toDateString() !== new Date().toDateString()) return;
+
+    let didUpdate = false;
+
+    for (const rawEvent of latestSession.events) {
+      const event = rawEvent as any;
+      if (!event.id || !event.timestamp) continue;
+
+      // 🍳 Sync Meals (event_type === 'meal')
+      if (event.event_type === 'meal') {
+        const originFoodId = event.id.startsWith("food_") ? event.id.replace("food_", "") : null;
+        
+        const alreadyExists = originFoodId 
+          ? state.foodEntries.some(fe => fe.id === originFoodId)
+          : state.foodEntries.some(fe => fe.id === `sim_${event.id}`);
+
+        if (!alreadyExists) {
+          const simulatedFoodEntry: FoodEntry = {
+            id: originFoodId || `sim_${event.id}`,
+            mealId: event.meal_type || "lunch",
+            foodId: "simulated",
+            foodName: event.displayLabel || "Simulated Meal",
+            calories: Math.round(event.value || 0),
+            protein: Math.round(event.protein_g || 0),
+            carbs: Math.round(event.carb_g || 0),
+            fat: Math.round(event.fat_g || 0),
+            sugar: 0,
+            fiber: 0,
+            sodium: 0,
+            timestamp: new Date(event.timestamp * 1000).toISOString(),
+          };
+
+          dispatch({ type: "ADD_ENTRY", payload: simulatedFoodEntry });
+          
+          const syncTarget = isSwitched && activeMemberId && activeMemberId !== "self" ? activeMemberId : undefined;
+          syncAddFoodEntry(simulatedFoodEntry, syncTarget).catch(
+            (err: unknown) => log("⚠️ syncAddFoodEntry for simulated meal failed:", err)
+          );
+          didUpdate = true;
+        }
+      }
+
+      // 🏃 Sync Exercise (event_type === 'exercise')
+      if (event.event_type === 'exercise') {
+        const originActivityId = event.id.startsWith("act_") ? event.id : null;
+
+        const alreadyExists = originActivityId
+          ? state.activityEntries.some(ae => ae.id === originActivityId)
+          : state.activityEntries.some(ae => ae.id === `sim_${event.id}`);
+
+        if (!alreadyExists) {
+          const durationMins = Math.round((event.duration_seconds || 1800) / 60);
+          const simulatedActivityEntry: ActivityEntry = {
+            id: originActivityId || `sim_${event.id}`,
+            activityName: event.displayLabel || "Simulated Exercise",
+            activityIcon: event.displayIcon || "🏃",
+            durationMins,
+            intensity: "Moderate",
+            caloriesBurned: Math.round(event.value || 0),
+            met: 3.5,
+            timestamp: new Date(event.timestamp * 1000).toISOString(),
+          };
+
+          dispatch({ type: "ADD_ACTIVITY", payload: simulatedActivityEntry });
+
+          const syncTarget = isSwitched && activeMemberId && activeMemberId !== "self" ? activeMemberId : undefined;
+          syncAddActivityEntry(simulatedActivityEntry, syncTarget).catch(
+            (err: unknown) => log("⚠️ syncAddActivityEntry for simulated exercise failed:", err)
+          );
+          didUpdate = true;
+        }
+      }
+    }
+
+    if (didUpdate) {
+      log("[NutritionContext] Successfully imported simulated twin events into nutrition log");
+    }
+  }, [sessions, state.loaded]);
+
   // ── Derived ─────────────────────────────────────────────────────────────────
   const selectedProfile = useMemo(() => {
     const baseProfile = healthProfiles.find((p) => p.id === state.selectedProfileId) ?? healthProfiles[0];
@@ -788,11 +942,16 @@ export function NutritionProvider({ children }: { children: React.ReactNode }) {
   );
 
   // ── Actions ──────────────────────────────────────────────────────────────────
-  const addFoodEntry = useCallback(async (entry: Omit<FoodEntry, "id" | "timestamp">) => {
+  const addFoodEntry = useCallback(async (entry: Omit<FoodEntry, "id" | "timestamp"> & { timestamp?: string }) => {
     // ✅ FIX: Use high-resolution timestamp + random suffix to guarantee unique IDs
     // even if addFoodEntry is called twice in the same millisecond (rapid double-tap).
     const id = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-    const timestamp = new Date().toISOString();
+    
+    let timestamp = entry.timestamp;
+    if (!timestamp) {
+      timestamp = new Date().toISOString();
+    }
+    
     const fullEntry: FoodEntry = { ...entry, id, timestamp };
 
     dispatch({ type: "ADD_ENTRY", payload: fullEntry });
@@ -801,15 +960,27 @@ export function NutritionProvider({ children }: { children: React.ReactNode }) {
     await syncAddFoodEntry(fullEntry, syncTarget).catch(
       (err: unknown) => log("⚠️ syncAddFoodEntry failed:", err)
     );
-  }, [isSwitched, activeMemberId]);
+  }, [isSwitched, activeMemberId, state.mealReminders]);
 
   const removeFoodEntry = useCallback(async (id: string) => {
     dispatch({ type: "REMOVE_ENTRY", payload: id });
 
+    // Track deleted ID for sync tombstoning
+    try {
+      const raw = await AsyncStorage.getItem(DELETED_FOOD_IDS_KEY);
+      const currentDeleted = raw ? JSON.parse(raw) : [];
+      if (!currentDeleted.includes(id)) {
+        currentDeleted.push(id);
+        await AsyncStorage.setItem(DELETED_FOOD_IDS_KEY, JSON.stringify(currentDeleted));
+      }
+    } catch (err) {
+      log("⚠️ Failed to store deleted food ID:", err);
+    }
+
     if (isSwitched && activeMemberId && activeMemberId !== "self") {
-      await syncDeleteFoodEntry(id, activeMemberId);
+      await syncDeleteFoodEntry(id, activeMemberId).catch(() => {});
     } else {
-      await syncDeleteFoodEntry(id);
+      await syncDeleteFoodEntry(id).catch(() => {});
     }
   }, [isSwitched, activeMemberId]);
 
@@ -830,10 +1001,22 @@ export function NutritionProvider({ children }: { children: React.ReactNode }) {
   const removeActivityEntry = useCallback(async (id: string) => {
     dispatch({ type: "REMOVE_ACTIVITY", payload: id });
 
+    // Track deleted ID for sync tombstoning
+    try {
+      const raw = await AsyncStorage.getItem(DELETED_ACTIVITY_IDS_KEY);
+      const currentDeleted = raw ? JSON.parse(raw) : [];
+      if (!currentDeleted.includes(id)) {
+        currentDeleted.push(id);
+        await AsyncStorage.setItem(DELETED_ACTIVITY_IDS_KEY, JSON.stringify(currentDeleted));
+      }
+    } catch (err) {
+      log("⚠️ Failed to store deleted activity ID:", err);
+    }
+
     if (isSwitched && activeMemberId && activeMemberId !== "self") {
-      await syncDeleteActivityEntry(id, activeMemberId);
+      await syncDeleteActivityEntry(id, activeMemberId).catch(() => {});
     } else {
-      await syncDeleteActivityEntry(id);
+      await syncDeleteActivityEntry(id).catch(() => {});
     }
   }, [isSwitched, activeMemberId]);
 
@@ -886,7 +1069,14 @@ export function NutritionProvider({ children }: { children: React.ReactNode }) {
         JSON.stringify({ foodEntries: [], selectedProfileId: state.selectedProfileId, customCalorieTarget: state.customCalorieTarget })
       ).catch(() => {}),
       AsyncStorage.setItem(ACTIVITY_LOG_KEY, JSON.stringify([])).catch(() => {}),
+      AsyncStorage.setItem(DELETED_FOOD_IDS_KEY, JSON.stringify([])).catch(() => {}),
+      AsyncStorage.setItem(DELETED_ACTIVITY_IDS_KEY, JSON.stringify([])).catch(() => {}),
     ]);
+
+    const currentUser = auth.currentUser;
+    const uid = isSwitched && activeMemberId && activeMemberId !== "self" ? activeMemberId : (currentUser?.uid || "self");
+    const lastClearedKey = `nutrition_last_cleared_${uid}`;
+    await AsyncStorage.setItem(lastClearedKey, new Date().toISOString()).catch(() => {});
 
     const syncTarget = isSwitched && activeMemberId && activeMemberId !== "self" ? activeMemberId : undefined;
     await syncClearFoodEntries(syncTarget).catch(
@@ -918,8 +1108,9 @@ export function NutritionProvider({ children }: { children: React.ReactNode }) {
       updateReminderTime,
       getMealEntries,
       resetToday,
+      syncNutritionWithFirebase,
     }),
-    [state, selectedProfile, totals, totalActivityCalories, netCalories, addFoodEntry, removeFoodEntry, addActivityEntry, removeActivityEntry, setProfile, setCustomCalorieTarget, toggleReminder, updateReminderTime, getMealEntries, resetToday]
+    [state, selectedProfile, totals, totalActivityCalories, netCalories, addFoodEntry, removeFoodEntry, addActivityEntry, removeActivityEntry, setProfile, setCustomCalorieTarget, toggleReminder, updateReminderTime, getMealEntries, resetToday, syncNutritionWithFirebase]
   );
 
   return <NutritionContext.Provider value={value}>{children}</NutritionContext.Provider>;

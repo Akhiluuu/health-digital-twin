@@ -239,20 +239,47 @@ export async function syncDeleteAllMedicines(targetUid?: string): Promise<void> 
  * Mark medicine as taken in Firebase.
  */
 export async function syncMarkMedicineTaken(id: number, targetUid?: string): Promise<void> {
+  return syncUpdateMedicineStatus(id, "taken", targetUid);
+}
+
+/**
+ * Update medicine status in Firebase.
+ */
+export async function syncUpdateMedicineStatus(
+  id: number,
+  status: "taken" | "missed" | "pending",
+  targetUid?: string
+): Promise<void> {
   if (!(await isVitalsSyncEnabled())) return;
   try {
     const uid = targetUid || await getUserId();
     if (!uid) return;
 
-    await setDoc(doc(medicinesCol(uid), String(id)), {
-      takenToday: true,
-      takenAt:    serverTimestamp(),
-      updatedAt:  serverTimestamp(),
-    }, { merge: true });
+    let updates: any = {
+      updatedAt: serverTimestamp(),
+    };
 
-    log("✅ Medicine marked taken in Firebase:", id);
+    if (status === "taken") {
+      updates.takenToday = true;
+      updates.taken = 1;
+      updates.takenDate = new Date().toISOString().split("T")[0];
+      updates.takenAt = serverTimestamp();
+    } else if (status === "missed") {
+      updates.takenToday = false;
+      updates.taken = -1;
+      updates.takenDate = new Date().toISOString().split("T")[0];
+      updates.takenAt = null;
+    } else {
+      updates.takenToday = false;
+      updates.taken = 0;
+      updates.takenDate = null;
+      updates.takenAt = null;
+    }
+
+    await setDoc(doc(medicinesCol(uid), String(id)), updates, { merge: true });
+    log(`✅ Medicine status updated in Firebase (${status}):`, id);
   } catch (e) {
-    log("⚠️ syncMarkMedicineTaken failed (non-critical):", e);
+    log(`⚠️ syncUpdateMedicineStatus (${status}) failed (non-critical):`, e);
   }
 }
 
@@ -651,6 +678,19 @@ export async function syncAddHydration(
   }
 }
 
+export async function syncDeleteHydrationEntry(timestamp: number, targetUid?: string): Promise<void> {
+  if (!(await isVitalsSyncEnabled())) return;
+  try {
+    const uid = targetUid || await getUserId();
+    if (!uid) return;
+    const docRef = doc(hydrationCol(uid), String(timestamp));
+    await deleteDoc(docRef);
+    log(`✅ Hydration entry deleted from Firebase for timestamp: ${timestamp}`);
+  } catch (e) {
+    log("⚠️ syncDeleteHydrationEntry failed:", e);
+  }
+}
+
 export async function syncClearHydration(targetUid?: string): Promise<void> {
   try {
     const uid = targetUid || await getUserId();
@@ -697,12 +737,18 @@ export async function syncAddFoodEntry(
     fiber: number;
     timestamp: string;
   },
-  targetUid?: string
+  targetUid?: string,
+  retryCount: number = 0
 ): Promise<void> {
   if (!(await isVitalsSyncEnabled())) return;
   try {
     const uid = targetUid || await getUserId();
-    if (!uid) return;
+    if (!uid) {
+      if (retryCount < 5) {
+        pendingSyncs.push(() => syncAddFoodEntry(entry, targetUid, retryCount + 1));
+      }
+      return;
+    }
     await setDoc(doc(nutritionCol(uid), entry.id), {
       ...entry,
       syncedAt: serverTimestamp(),
@@ -710,24 +756,42 @@ export async function syncAddFoodEntry(
     log(`✅ Food entry synced to Firebase: ${entry.foodName}`);
   } catch (e) {
     log("⚠️ syncAddFoodEntry failed:", e);
+    if (retryCount < 5) {
+      scheduleRetry(() => syncAddFoodEntry(entry, targetUid, retryCount + 1), retryCount + 1);
+    }
   }
 }
 
-export async function syncDeleteFoodEntry(id: string, targetUid?: string): Promise<void> {
+export async function syncDeleteFoodEntry(id: string, targetUid?: string, retryCount: number = 0): Promise<void> {
+  if (!(await isVitalsSyncEnabled())) return;
   try {
     const uid = targetUid || await getUserId();
-    if (!uid) return;
+    if (!uid) {
+      if (retryCount < 5) {
+        pendingSyncs.push(() => syncDeleteFoodEntry(id, targetUid, retryCount + 1));
+      }
+      return;
+    }
     await deleteDoc(doc(nutritionCol(uid), id));
     log(`✅ Food entry deleted from Firebase: ${id}`);
   } catch (e) {
     log("⚠️ syncDeleteFoodEntry failed:", e);
+    if (retryCount < 5) {
+      scheduleRetry(() => syncDeleteFoodEntry(id, targetUid, retryCount + 1), retryCount + 1);
+    }
   }
 }
 
-export async function syncClearFoodEntries(targetUid?: string): Promise<void> {
+export async function syncClearFoodEntries(targetUid?: string, retryCount: number = 0): Promise<void> {
+  if (!(await isVitalsSyncEnabled())) return;
   try {
     const uid = targetUid || await getUserId();
-    if (!uid) return;
+    if (!uid) {
+      if (retryCount < 5) {
+        pendingSyncs.push(() => syncClearFoodEntries(targetUid, retryCount + 1));
+      }
+      return;
+    }
     const snap = await getDocs(nutritionCol(uid));
     const batch = writeBatch(db);
     snap.forEach((d) => batch.delete(d.ref));
@@ -735,6 +799,9 @@ export async function syncClearFoodEntries(targetUid?: string): Promise<void> {
     log("✅ All food entries cleared in Firebase");
   } catch (e) {
     log("⚠️ syncClearFoodEntries failed:", e);
+    if (retryCount < 5) {
+      scheduleRetry(() => syncClearFoodEntries(targetUid, retryCount + 1), retryCount + 1);
+    }
   }
 }
 
@@ -766,12 +833,18 @@ export async function syncAddActivityEntry(
     met: number;
     timestamp: string;
   },
-  targetUid?: string
+  targetUid?: string,
+  retryCount: number = 0
 ): Promise<void> {
   if (!(await isVitalsSyncEnabled())) return;
   try {
     const uid = targetUid || await getUserId();
-    if (!uid) return;
+    if (!uid) {
+      if (retryCount < 5) {
+        pendingSyncs.push(() => syncAddActivityEntry(entry, targetUid, retryCount + 1));
+      }
+      return;
+    }
     await setDoc(doc(activityCol(uid), entry.id), {
       ...entry,
       syncedAt: serverTimestamp(),
@@ -779,24 +852,42 @@ export async function syncAddActivityEntry(
     log(`✅ Activity entry synced to Firebase: ${entry.activityName}`);
   } catch (e) {
     log("⚠️ syncAddActivityEntry failed:", e);
+    if (retryCount < 5) {
+      scheduleRetry(() => syncAddActivityEntry(entry, targetUid, retryCount + 1), retryCount + 1);
+    }
   }
 }
 
-export async function syncDeleteActivityEntry(id: string, targetUid?: string): Promise<void> {
+export async function syncDeleteActivityEntry(id: string, targetUid?: string, retryCount: number = 0): Promise<void> {
+  if (!(await isVitalsSyncEnabled())) return;
   try {
     const uid = targetUid || await getUserId();
-    if (!uid) return;
+    if (!uid) {
+      if (retryCount < 5) {
+        pendingSyncs.push(() => syncDeleteActivityEntry(id, targetUid, retryCount + 1));
+      }
+      return;
+    }
     await deleteDoc(doc(activityCol(uid), id));
     log(`✅ Activity entry deleted from Firebase: ${id}`);
   } catch (e) {
     log("⚠️ syncDeleteActivityEntry failed:", e);
+    if (retryCount < 5) {
+      scheduleRetry(() => syncDeleteActivityEntry(id, targetUid, retryCount + 1), retryCount + 1);
+    }
   }
 }
 
-export async function syncClearActivityEntries(targetUid?: string): Promise<void> {
+export async function syncClearActivityEntries(targetUid?: string, retryCount: number = 0): Promise<void> {
+  if (!(await isVitalsSyncEnabled())) return;
   try {
     const uid = targetUid || await getUserId();
-    if (!uid) return;
+    if (!uid) {
+      if (retryCount < 5) {
+        pendingSyncs.push(() => syncClearActivityEntries(targetUid, retryCount + 1));
+      }
+      return;
+    }
     const snap = await getDocs(activityCol(uid));
     const batch = writeBatch(db);
     snap.forEach((d) => batch.delete(d.ref));
@@ -804,6 +895,9 @@ export async function syncClearActivityEntries(targetUid?: string): Promise<void
     log("✅ All activity entries cleared in Firebase");
   } catch (e) {
     log("⚠️ syncClearActivityEntries failed:", e);
+    if (retryCount < 5) {
+      scheduleRetry(() => syncClearActivityEntries(targetUid, retryCount + 1), retryCount + 1);
+    }
   }
 }
 

@@ -163,7 +163,7 @@ export function updateMedicineNotificationId(id: number, notificationId: string)
 // ✅ FIX: Now also writes takenDate so getMedicines() can date-scope it.
 ///////////////////////////////////////////////////////////
 
-export async function markMedicineTaken(medicineId: string) {
+export async function markMedicineTaken(medicineId: number | string) {
   try {
     const today = todayStr();
     await db.runAsync(
@@ -173,6 +173,31 @@ export async function markMedicineTaken(medicineId: string) {
     log("✅ Medicine marked as taken:", medicineId);
   } catch (error) {
     log("❌ Error marking medicine:", error);
+  }
+}
+
+export async function markMedicineMissed(medicineId: number | string) {
+  try {
+    const today = todayStr();
+    await db.runAsync(
+      "UPDATE medicines SET taken = -1, takenDate = ? WHERE id = ?",
+      [today, medicineId]
+    );
+    log("✅ Medicine marked as missed:", medicineId);
+  } catch (error) {
+    log("❌ Error marking medicine missed:", error);
+  }
+}
+
+export async function markMedicinePending(medicineId: number | string) {
+  try {
+    await db.runAsync(
+      "UPDATE medicines SET taken = 0, takenDate = NULL WHERE id = ?",
+      [medicineId]
+    );
+    log("✅ Medicine marked as pending/untaken:", medicineId);
+  } catch (error) {
+    log("❌ Error resetting medicine to pending:", error);
   }
 }
 
@@ -189,6 +214,15 @@ export function markMedicineTakenByNotificationId(notificationId: string) {
     [today, notificationId]
   );
   log("✅ markMedicineTakenByNotificationId — set taken for today:", today);
+}
+
+export function markMedicineMissedByNotificationId(notificationId: string) {
+  const today = todayStr();
+  db.runSync(
+    "UPDATE medicines SET taken = -1, takenDate = ? WHERE notificationId = ?",
+    [today, notificationId]
+  );
+  log("✅ markMedicineMissedByNotificationId — set missed for today:", today);
 }
 
 ///////////////////////////////////////////////////////////

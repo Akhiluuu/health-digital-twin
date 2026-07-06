@@ -27,6 +27,7 @@ import {
   clearTodayHydrationHistory,
   getTodayHydrationHistory,
   initHydrationHistoryDB,
+  deduplicateHydrationHistory,
 } from "../database/hydrationHistoryDB";
 
 import { useFamily } from "./FamilyContext";
@@ -34,6 +35,7 @@ import {
   syncAddHydration,
   syncClearHydration,
   fetchHydrationFromFirebase,
+  syncDeleteHydrationEntry,
 } from "../services/firebaseSync";
 
 // ✅ Delegates to the shared utility so background and foreground
@@ -117,11 +119,30 @@ export const HydrationProvider = ({
     if (isSwitched && activeMemberId && activeMemberId !== "self") {
       try {
         const firebaseEntries = await fetchHydrationFromFirebase(activeMemberId);
+
+        // Deduplicate in memory and cleanup Firebase duplicates
+        const uniqueFirebase: any[] = [];
+        for (const entry of firebaseEntries) {
+          const isDup = uniqueFirebase.some(
+            (existing) =>
+              Math.abs(existing.timestamp - entry.timestamp) < 60000 &&
+              existing.amount === entry.amount &&
+              existing.source === entry.source
+          );
+          if (!isDup) {
+            uniqueFirebase.push(entry);
+          } else {
+            try {
+              await syncDeleteHydrationEntry(entry.timestamp, activeMemberId);
+            } catch (_) {}
+          }
+        }
+
         const startOfDay = new Date();
         startOfDay.setHours(0, 0, 0, 0);
         const startMs = startOfDay.getTime();
 
-        const todayEntries = firebaseEntries
+        const todayEntries = uniqueFirebase
           .filter((e) => e.timestamp >= startMs)
           .sort((a, b) => b.timestamp - a.timestamp);
 
@@ -140,12 +161,50 @@ export const HydrationProvider = ({
 
     // Self
     try {
+      // First, sync local deletions to Firebase
+      try {
+        const rawDeleted = await AsyncStorage.getItem("@deleted_hydration_timestamps_v1");
+        if (rawDeleted) {
+          const deletedTimestamps: number[] = JSON.parse(rawDeleted);
+          if (deletedTimestamps.length > 0) {
+            log(`💧 Syncing ${deletedTimestamps.length} hydration deletions to Firebase...`);
+            for (const ts of deletedTimestamps) {
+              await syncDeleteHydrationEntry(ts);
+            }
+            await AsyncStorage.setItem("@deleted_hydration_timestamps_v1", JSON.stringify([]));
+          }
+        }
+      } catch (err) {
+        log("⚠️ Failed to sync hydration deletions:", err);
+      }
+
+      await deduplicateHydrationHistory();
+
       const firebaseEntries = await fetchHydrationFromFirebase();
+
+      // Deduplicate in memory and cleanup Firebase duplicates
+      const uniqueFirebase: any[] = [];
+      for (const entry of firebaseEntries) {
+        const isDup = uniqueFirebase.some(
+          (existing) =>
+            Math.abs(existing.timestamp - entry.timestamp) < 60000 &&
+            existing.amount === entry.amount &&
+            existing.source === entry.source
+        );
+        if (!isDup) {
+          uniqueFirebase.push(entry);
+        } else {
+          try {
+            await syncDeleteHydrationEntry(entry.timestamp);
+          } catch (_) {}
+        }
+      }
+
       const startOfDay = new Date();
       startOfDay.setHours(0, 0, 0, 0);
       const startMs = startOfDay.getTime();
 
-      const todayFirebase = firebaseEntries.filter((e) => e.timestamp >= startMs);
+      const todayFirebase = uniqueFirebase.filter((e) => e.timestamp >= startMs);
       const todayLocal = getTodayHydrationHistory();
 
       const firebaseTimestamps = new Set(todayFirebase.map((e) => e.timestamp));
@@ -162,25 +221,23 @@ export const HydrationProvider = ({
       let didInsertLocal = false;
       for (const entry of todayFirebase) {
         if (!localTimestamps.has(entry.timestamp)) {
-          await addHydrationEntry(entry.amount, entry.total, entry.source);
+          await addHydrationEntry(entry.amount, entry.total, entry.source, entry.timestamp);
           didInsertLocal = true;
         }
       }
 
       if (didInsertLocal) {
-        const updatedLocal = getTodayHydrationHistory();
-        const total = updatedLocal.length > 0 ? updatedLocal[0].total : 0;
-        await AsyncStorage.setItem(getTodayKey(), String(total));
-        if (!isMountedRef.current) return;
-        setWater(total);
-        setHistory(updatedLocal);
-      } else {
-        const localWater = await AsyncStorage.getItem(getTodayKey());
-        if (!isMountedRef.current) return;
-        setWater(localWater ? Number(localWater) : 0);
-        setHistory(todayLocal);
+        await deduplicateHydrationHistory();
       }
-      log(`💧 Self hydration synced and loaded`);
+
+      const finalLocal = getTodayHydrationHistory();
+      const total = finalLocal.reduce((sum, e) => sum + e.amount, 0);
+      await AsyncStorage.setItem(getTodayKey(), String(total));
+
+      if (!isMountedRef.current) return;
+      setWater(total);
+      setHistory(finalLocal);
+      log(`💧 Self hydration synced and loaded: total ${total}ml`);
     } catch (err) {
       log("❌ Self hydration sync error:", err);
     } finally {
@@ -227,60 +284,61 @@ export const HydrationProvider = ({
     }
   }, []);
 
+  const waterRef = useRef<number>(0);
+
+  useEffect(() => {
+    waterRef.current = water;
+  }, [water]);
+
   /////////////////////////////////////////////////////////
   // Add Water (manual or foreground notification)
   /////////////////////////////////////////////////////////
 
   const addWater = useCallback(
     (ml: number, source: "manual" | "notification" = "manual") => {
+      const timestamp = Date.now();
+      const currentWater = waterRef.current;
+      const nextWater = currentWater + ml;
+
+      waterRef.current = nextWater;
+      setWater(nextWater);
+
       if (isSwitched && activeMemberId && activeMemberId !== "self") {
-        // ✅ FIX: use functional updater so `total` is always computed from
-        // the latest committed state, not a potentially stale closure value.
-        setWater((prev) => {
-          const newTotal = prev + ml;
-          const timestamp = Date.now();
-          const entry = {
-            id: timestamp,
-            amount: ml,
-            total: newTotal,
-            timestamp,
-            source,
-          };
-          // Update history with the correct total
-          setHistory((prevHistory) => [entry, ...prevHistory]);
-          syncAddHydration(entry, activeMemberId).catch(
-            (err: unknown) => log("❌ Switched hydration sync error:", err)
-          );
-          log(`💧 Switched addWater: +${ml}ml → total: ${newTotal}ml for ${activeMemberId}`);
-          return newTotal;
-        });
+        const entry = {
+          id: timestamp,
+          amount: ml,
+          total: nextWater,
+          timestamp,
+          source,
+        };
+        // Update history with the correct total
+        setHistory((prevHistory) => [entry, ...prevHistory]);
+        syncAddHydration(entry, activeMemberId).catch(
+          (err: unknown) => log("❌ Switched hydration sync error:", err)
+        );
+        log(`💧 Switched addWater: +${ml}ml → total: ${nextWater}ml for ${activeMemberId}`);
       } else {
-        setWater((prev) => {
-          const newValue = prev + ml;
-          lastStoredValue.current = newValue;
+        lastStoredValue.current = nextWater;
 
-          AsyncStorage.setItem(getTodayKey(), String(newValue)).catch(
-            (err: unknown) => log("❌ Hydration save error:", err)
-          );
+        AsyncStorage.setItem(getTodayKey(), String(nextWater)).catch(
+          (err: unknown) => log("❌ Hydration save error:", err)
+        );
 
-          addHydrationEntry(ml, newValue, source)
-            .then(() => {
-              if (!isMountedRef.current) return;
-              const entries = getTodayHydrationHistory();
-              setHistory(entries);
-              const lastEntry = entries[0];
-              if (lastEntry) {
-                syncAddHydration(lastEntry).catch(
-                  (err: unknown) => log("❌ Self hydration sync error:", err)
-                );
-              }
-            })
-            .catch((err: unknown) => log("❌ History entry error:", err));
+        addHydrationEntry(ml, nextWater, source, timestamp)
+          .then(() => {
+            if (!isMountedRef.current) return;
+            const entries = getTodayHydrationHistory();
+            setHistory(entries);
+            const lastEntry = entries[0];
+            if (lastEntry) {
+              syncAddHydration(lastEntry).catch(
+                (err: unknown) => log("❌ Self hydration sync error:", err)
+              );
+            }
+          })
+          .catch((err: unknown) => log("❌ History entry error:", err));
 
-          log(`💧 addWater: +${ml}ml (${source}) → total: ${newValue}ml`);
-
-          return newValue;
-        });
+        log(`💧 addWater: +${ml}ml (${source}) → total: ${nextWater}ml`);
       }
       initializeHydrationReminder().catch(() => {});
     },

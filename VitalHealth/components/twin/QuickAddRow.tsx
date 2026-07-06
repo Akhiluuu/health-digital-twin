@@ -324,6 +324,7 @@ export default function QuickAddRow({ addEventAndSimulate, twinStatus }: Props) 
           sodium: 0,
           fiber: 0,
           mealId: s.meal_type === 'custom' ? 'snacks' : s.meal_type || 'snacks',
+          timestamp: now.toISOString(),
         });
       }
 
