@@ -41,6 +41,7 @@ export const medicineEventBus = new EventEmitter();
 ///////////////////////////////////////////////////////////
 
 export const ACTION_MEDICINE_TAKEN  = "MEDICINE_TAKEN";
+export const ACTION_MEDICINE_MISSED = "MEDICINE_MISSED";
 export const ACTION_MEDICINE_SNOOZE = "MEDICINE_SNOOZE";
 
 export const ACTION_WATER_100   = "HYDRATION_100";
@@ -124,6 +125,10 @@ export const scheduleMedicineOnce = async (
             pressAction: { id: ACTION_MEDICINE_TAKEN, launchActivity: "none" },
           },
           {
+            title: "❌ Missed",
+            pressAction: { id: ACTION_MEDICINE_MISSED, launchActivity: "none" },
+          },
+          {
             title: "⏰ Snooze 5min",
             pressAction: { id: ACTION_MEDICINE_SNOOZE, launchActivity: "none" },
           },
@@ -184,6 +189,10 @@ export const scheduleMedicineDaily = async (
             pressAction: { id: ACTION_MEDICINE_TAKEN, launchActivity: "none" },
           },
           {
+            title: "❌ Missed",
+            pressAction: { id: ACTION_MEDICINE_MISSED, launchActivity: "none" },
+          },
+          {
             title: "⏰ Snooze 5min",
             pressAction: { id: ACTION_MEDICINE_SNOOZE, launchActivity: "none" },
           },
@@ -237,6 +246,10 @@ export const snoozeMedicine = async (
           {
             title: "✅ Taken",
             pressAction: { id: ACTION_MEDICINE_TAKEN, launchActivity: "none" },
+          },
+          {
+            title: "❌ Missed",
+            pressAction: { id: ACTION_MEDICINE_MISSED, launchActivity: "none" },
           },
           {
             title: "⏰ Snooze 5min",
@@ -323,6 +336,49 @@ export async function handleMedicineTaken(
     log("❌ handleMedicineTaken error:", err);
     await notifee.cancelDisplayedNotification(notifId).catch(() => {});
     medicineEventBus.emit("medicine_taken"); // still reload on error
+  }
+}
+
+export async function handleMedicineMissed(
+  notifId:    string,
+  medicineId: string = ""
+) {
+  try {
+    const { markMedicineMissedByNotificationId, getMedicineByNotificationId, getMedicines } = require("../database/medicineDB");
+    const { syncUpdateMedicineStatus } = require("./firebaseSync");
+
+    let med = getMedicineByNotificationId(notifId);
+
+    if (!med && medicineId) {
+      const all = getMedicines();
+      med = all.find((m: any) => String(m.id) === String(medicineId)) ?? null;
+    }
+
+    if (med) {
+      markMedicineMissedByNotificationId(med.notificationId || notifId);
+      await syncUpdateMedicineStatus(med.id, "missed");
+
+      await addToMedicineHistory({
+        medicineId:   med.id,
+        medicineName: med.name,
+        dose:         med.dose,
+        time:         med.time,
+        status:       "missed",
+      });
+
+      await notifee.cancelDisplayedNotification(notifId);
+      log("❌ Daily medicine marked missed:", med.name);
+    } else {
+      log("⚠️ Medicine not found for notifId:", notifId, "medicineId:", medicineId);
+      await notifee.cancelDisplayedNotification(notifId);
+    }
+
+    medicineEventBus.emit("medicine_taken");
+
+  } catch (err) {
+    log("❌ handleMedicineMissed error:", err);
+    await notifee.cancelDisplayedNotification(notifId).catch(() => {});
+    medicineEventBus.emit("medicine_taken");
   }
 }
 
@@ -687,6 +743,13 @@ export function registerNotifeeForegroundHandler() {
       return;
     }
 
+    // ── Medicine: Missed ──────────────────────────────────────────
+    if (action === ACTION_MEDICINE_MISSED) {
+      await handleMedicineMissed(notifId, medicineId);
+      await scheduleInactivityReminder().catch(() => {});
+      return;
+    }
+
     // ── Medicine: Snooze ─────────────────────────────────────────
     if (action === ACTION_MEDICINE_SNOOZE) {
       await snoozeMedicine(
@@ -736,6 +799,46 @@ export function registerNotifeeForegroundHandler() {
       return;
     }
 
+    // ── DPSS: Sync Now ────────────────────────────────────────────────
+    if (action === ACTION_DPSS_SYNC_NOW) {
+      const userId = String(data.userId ?? "");
+      if (userId) {
+        try {
+          const { runSimulation } = await import("./deferredSyncService");
+          await runSimulation(userId, "user");
+          log(`[DPSS] Sync triggered from notification for ${userId}`);
+        } catch (e) {
+          log("[DPSS] runSimulation from notification failed:", e);
+        }
+        router.push("/(tabs)/twin" as any);
+      }
+      if (notifId) await notifee.cancelDisplayedNotification(notifId);
+      return;
+    }
+
+    // ── DPSS: Undo ────────────────────────────────────────────────────
+    if (action === ACTION_DPSS_UNDO) {
+      const userId = String(data.userId ?? "");
+      if (userId) {
+        try {
+          const { undoSimulation } = await import("./deferredSyncService");
+          const res = await undoSimulation(userId);
+          log(`[DPSS] Undo complete from notification: ${res.message}`);
+        } catch (e) {
+          log("[DPSS] undoSimulation from notification failed:", e);
+        }
+        router.push("/(tabs)/twin" as any);
+      }
+      if (notifId) await notifee.cancelDisplayedNotification(notifId);
+      return;
+    }
+
+    // ── DPSS: Dismiss ─────────────────────────────────────────────────
+    if (action === ACTION_DPSS_DISMISS) {
+      if (notifId) await notifee.cancelDisplayedNotification(notifId);
+      return;
+    }
+
     // Default dismiss
     if (notifId) await notifee.cancelDisplayedNotification(notifId);
   });
@@ -772,6 +875,12 @@ if (Platform.OS === "android") {
 
     if (action === ACTION_MEDICINE_TAKEN) {
       await handleMedicineTaken(notifId, medicineId);
+      await scheduleInactivityReminder().catch(() => {});
+      return;
+    }
+
+    if (action === ACTION_MEDICINE_MISSED) {
+      await handleMedicineMissed(notifId, medicineId);
       await scheduleInactivityReminder().catch(() => {});
       return;
     }
@@ -833,8 +942,185 @@ if (Platform.OS === "android") {
       return;
     }
 
+    // ── DPSS: Sync Now (background) ──────────────────────────────────
+    if (action === "DPSS_SYNC_NOW") {
+      const userId = String((data as any).userId ?? "");
+      if (userId) {
+        try {
+          const { runSimulation } = await import("./deferredSyncService");
+          await runSimulation(userId, "user");
+          log(`[DPSS] [BG] Sync triggered for ${userId}`);
+        } catch (e) {
+          log("[DPSS] [BG] runSimulation failed:", e);
+        }
+      }
+      if (notifId) await notifee.cancelDisplayedNotification(notifId).catch(() => {});
+      return;
+    }
+
+    // ── DPSS: Undo (background) ──────────────────────────────────────
+    if (action === "DPSS_UNDO") {
+      const userId = String((data as any).userId ?? "");
+      if (userId) {
+        try {
+          const { undoSimulation } = await import("./deferredSyncService");
+          await undoSimulation(userId);
+          log(`[DPSS] [BG] Undo complete for ${userId}`);
+        } catch (e) {
+          log("[DPSS] [BG] undoSimulation failed:", e);
+        }
+      }
+      if (notifId) await notifee.cancelDisplayedNotification(notifId).catch(() => {});
+      return;
+    }
+
     if (notifId) {
       await notifee.cancelDisplayedNotification(notifId).catch(() => {});
     }
   });
 }
+
+
+///////////////////////////////////////////////////////////
+// 🧬 DPSS — DEFERRED PHYSIOLOGY SYNC NOTIFICATIONS
+///////////////////////////////////////////////////////////
+
+export const ACTION_DPSS_SYNC_NOW  = "DPSS_SYNC_NOW";
+export const ACTION_DPSS_DISMISS   = "DPSS_DISMISS";
+export const ACTION_DPSS_UNDO      = "DPSS_UNDO";
+
+/**
+ * Show a "Your physiology is ready to synchronize" notification.
+ * Includes action buttons: Sync Now | Later
+ */
+export const showPhysioSyncReady = async (
+  pendingCount: number,
+  userId: string,
+  notificationId?: string,
+): Promise<string> => {
+  const id = notificationId || `dpss_sync_ready_${userId}`;
+  // Cancel any existing dpss_ready notification for this user first
+  await notifee.cancelNotification(id).catch(() => {});
+
+  await notifee.displayNotification({
+    id,
+    title: "🧬 Physiology Ready to Sync",
+    body: `You have ${pendingCount} unprocessed health event${pendingCount > 1 ? "s" : ""}. Synchronize your Digital Twin now.`,
+    data: {
+      type: "dpss_sync",
+      userId,
+      action: "open_twin",
+    },
+    android: {
+      channelId: CHANNEL_ID,
+      importance: AndroidImportance.HIGH,
+      pressAction: { id: "default" },
+      actions: [
+        {
+          title: "🚀 Sync Now",
+          pressAction: { id: ACTION_DPSS_SYNC_NOW },
+        },
+        {
+          title: "Later",
+          pressAction: { id: ACTION_DPSS_DISMISS, launchActivity: "none" },
+        },
+      ],
+    },
+  });
+
+  log(`[DPSS] Sync ready notification shown for ${userId} (pending=${pendingCount})`);
+  return id;
+};
+
+/**
+ * Show a notification after an automatic midnight sync completes.
+ */
+export const showAutoSyncCompleted = async (
+  userId: string,
+  simDate: string,
+): Promise<void> => {
+  const id = `dpss_auto_complete_${userId}_${simDate}`;
+  await notifee.displayNotification({
+    id,
+    title: "✅ Digital Twin Auto-Synced",
+    body: `Your physiology for ${simDate} was automatically synchronized overnight.`,
+    data: {
+      type: "dpss_auto_complete",
+      userId,
+      action: "open_twin",
+    },
+    android: {
+      channelId: CHANNEL_ID,
+      pressAction: { id: "default" },
+      actions: [
+        {
+          title: "⏪ Undo & Review",
+          pressAction: { id: ACTION_DPSS_UNDO },
+        },
+        {
+          title: "✔ Got it",
+          pressAction: { id: ACTION_DPSS_DISMISS, launchActivity: "none" },
+        },
+      ],
+    },
+  });
+  log(`[DPSS] Auto-sync complete notification for ${userId} (${simDate})`);
+};
+
+/**
+ * Show an undo-success notification.
+ */
+export const showSimUndone = async (userId: string): Promise<void> => {
+  const id = `dpss_undone_${userId}_${Date.now()}`;
+  await notifee.displayNotification({
+    id,
+    title: "⏪ Simulation Rolled Back",
+    body: "Your Digital Twin was restored to the previous checkpoint. Edit your events and re-run when ready.",
+    data: { type: "dpss_sync", userId, action: "open_twin" },
+    android: {
+      channelId: CHANNEL_ID,
+      pressAction: { id: "default" },
+    },
+  });
+};
+
+/**
+ * Show a simulation failed notification.
+ */
+export const showSimFailed = async (
+  userId: string,
+  simDate: string,
+): Promise<void> => {
+  const id = `dpss_failed_${userId}_${simDate}`;
+  await notifee.displayNotification({
+    id,
+    title: "❌ Sync Failed",
+    body: `The Digital Twin sync for ${simDate} encountered an error. Tap to retry manually.`,
+    data: { type: "dpss_sync", userId, action: "open_twin" },
+    android: {
+      channelId: CHANNEL_ID,
+      importance: AndroidImportance.HIGH,
+      pressAction: { id: "default" },
+      actions: [
+        { title: "Retry", pressAction: { id: ACTION_DPSS_SYNC_NOW } },
+      ],
+    },
+  });
+};
+
+/**
+ * Cancel all DPSS notifications for a user.
+ */
+export const cancelDPSSNotifications = async (userId: string): Promise<void> => {
+  try {
+    const displayed = await notifee.getDisplayedNotifications();
+    for (const n of displayed) {
+      if ((n.notification?.data as any)?.userId === userId &&
+          String(n.notification?.data?.type ?? "").startsWith("dpss")) {
+        await notifee.cancelNotification(n.notification!.id!);
+      }
+    }
+  } catch (err) {
+    log("[DPSS] cancelDPSSNotifications error:", err);
+  }
+};

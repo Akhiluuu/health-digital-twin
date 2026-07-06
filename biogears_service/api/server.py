@@ -28,6 +28,8 @@ from biogears_service.simulation.config import (
 from biogears_service.simulation.substance_registry import ROUTE_GROUPS
 from biogears_service.simulation import validator as sim_validator
 from biogears_service.api import db, analytics, streaming
+from biogears_service.api.dpss_router import dpss_router
+from biogears_service.api import dpss_scheduler as _dpss_sched
 
 # --- LOGGING & PATH VERIFICATION ---
 logging.basicConfig(level=logging.INFO)
@@ -63,6 +65,13 @@ app = FastAPI(
     version="4.0.0",
     description="Physiological digital twin simulation API powered by BioGears."
 )
+
+# ── DPSS Router & Scheduler ───────────────────────────────────────────────────
+app.include_router(dpss_router)
+try:
+    _dpss_sched.start_scheduler()
+except Exception as _dpss_err:
+    logger.warning(f"DPSS Scheduler failed to start: {_dpss_err}")
 
 app.add_middleware(
     CORSMiddleware,

@@ -20,7 +20,7 @@ import {
   syncBiogearsAnalytics,
   fetchBiogearsAnalyticsFromFirebase,
 } from '../services/firebaseSync';
-import { getTwinId } from '../utils/twinUtils';
+import { getTwinId, getLocalDateString } from '../utils/twinUtils';
 import { scheduleDailyLogReminder, scheduleInactivityReminder } from '../services/notifeeService';
 import { useMedicine } from './MedicineContext';
 import { useSteps } from './StepContext';
@@ -275,37 +275,54 @@ const parseCm = (height?: any) => {
 };
 
 /**
- * Produces a deterministic fingerprint for an event so near-duplicate events
- * from different sources (routine vs manual) can be detected before merging.
- *
- * Strategy:
- *  • event_type is an exact key.
- *  • wallTime is quantised to 30-minute buckets so "08:00" and "08:17" share a bucket.
- *  • value is quantised to 10-unit buckets to absorb minor portion differences.
- */
-function getEventFingerprint(e: { event_type: string; wallTime?: string; value?: number }): string {
-  const [hh = 0, mm = 0] = (e.wallTime || '00:00').split(':').map(Number);
-  const totalMin = hh * 60 + mm;
-  const timeBucket = Math.floor(totalMin / 30);
-  const valueBucket = Math.floor((e.value || 0) / 10);
-  return `${e.event_type}|t${timeBucket}|v${valueBucket}`;
-}
-
-/**
  * Compares incoming routine/baseline events against the existing todayEvents
- * queue and returns any fingerprint collisions as EventConflict[]. Only events
- * whose wallTime falls within the target time window are checked.
+ * queue and returns any conflicts as EventConflict[].
+ *
+ * Conflict criteria:
+ *  - Same event_type.
+ *  - Same substance_name (if it is a substance event).
+ *  - Wall times are within 60 minutes of each other.
  */
 function detectConflicts(
   incoming: RoutineEvent[],
   existing: RoutineEvent[]
 ): EventConflict[] {
   const conflicts: EventConflict[] = [];
+  const toMin = (e: RoutineEvent) => {
+    let wt = e.wallTime;
+    if (!wt && e.timestamp) {
+      const d = new Date(e.timestamp * 1000);
+      wt = d.toTimeString().slice(0, 5);
+    }
+    const [h = 0, m = 0] = (wt || '00:00').split(':').map(Number);
+    return h * 60 + m;
+  };
+
   for (const inc of incoming) {
-    const fp = getEventFingerprint(inc);
-    const clash = existing.find(ex => getEventFingerprint(ex) === fp);
+    const incMin = toMin(inc);
+    const clash = existing.find(ex => {
+      if (ex.event_type !== inc.event_type) return false;
+
+      // Substances must match by substance_name (case insensitive)
+      if (inc.event_type === 'substance') {
+        const incSub = String(inc.substance_name || '').trim().toLowerCase();
+        const exSub = String(ex.substance_name || '').trim().toLowerCase();
+        if (incSub !== exSub) return false;
+      }
+
+      const exMin = toMin(ex);
+      const diff = Math.abs(incMin - exMin);
+
+      // Conflict if within 60 minutes
+      return diff <= 60;
+    });
+
     if (clash) {
-      conflicts.push({ incoming: inc, existing: clash, fingerprint: fp });
+      conflicts.push({
+        incoming: inc,
+        existing: clash,
+        fingerprint: inc.id, // Use incoming event ID as the unique conflict fingerprint
+      });
     }
   }
   return conflicts;
@@ -598,10 +615,10 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
           const remotePending = await BiogearsAPI.fetchPendingEvents(twinUserId, firestoreOwnerUid);
           if (!active) return;
           if (remotePending && remotePending.length > 0) {
-            const todayStr = new Date().toDateString();
+            const todayStr = getLocalDateString();
             const fresh = remotePending.filter(e => {
               if (!e.timestamp) return false;
-              return new Date(e.timestamp * 1000).toDateString() === todayStr;
+              return getLocalDateString(e.timestamp) === todayStr;
             });
             if (active) {
               setTodayEvents(fresh);
@@ -667,6 +684,12 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
       if (nextAppState === 'active') {
         log('[BiogearsTwin] App foregrounded. Resuming/checking active job...');
         resumeActiveJobRef.current();
+        // Gap 3 fix: flush any events queued offline while the server was unreachable
+        if (twinUserId) {
+          import('../services/deferredSyncService')
+            .then(({ flushOfflineQueue }) => flushOfflineQueue(twinUserId))
+            .catch(() => {});
+        }
       }
     });
 
@@ -813,6 +836,7 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
       await AsyncStorage.removeItem('biogears_active_job_start_time');
       await AsyncStorage.removeItem('biogears_active_job_user_id');
       await AsyncStorage.removeItem('biogears_active_job_owner_uid');
+      await AsyncStorage.removeItem('biogears_active_job_events');
     }
   };
 
@@ -842,14 +866,48 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
       setLastInteractionWarnings(Array.isArray(result.interaction_warnings) ? result.interaction_warnings : []);
     }
 
+    // Try to get simulated events from AsyncStorage first
     let jobEvents: RoutineEvent[] = [];
-    if (isCurrentActive) {
-      jobEvents = todayEvents;
-    } else if (targetUserId) {
-      try {
-        const raw = await AsyncStorage.getItem(TODAY_EVENTS_KEY(targetUserId));
-        if (raw) jobEvents = JSON.parse(raw);
-      } catch {}
+    let jobEventsCount = 0;
+    try {
+      const storedEventsRaw = await AsyncStorage.getItem('biogears_active_job_events');
+      if (storedEventsRaw) {
+        const parsedEvents = JSON.parse(storedEventsRaw);
+        if (Array.isArray(parsedEvents)) {
+          jobEvents = parsedEvents.map((e: any, idx: number) => ({
+            id: e.id || `job_evt_${idx}`,
+            event_type: e.event_type,
+            value: e.value,
+            wallTime: e.wallTime || (e.timestamp ? new Date(e.timestamp * 1000).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false }) : '12:00'),
+            timestamp: e.timestamp,
+            displayLabel: e.displayLabel || e.notes || e.event_type,
+            displayIcon: e.displayIcon || '📝',
+            substance_name: e.substance_name,
+            meal_type: e.meal_type,
+            carb_g: e.carb_g,
+            fat_g: e.fat_g,
+            protein_g: e.protein_g,
+            duration_seconds: e.duration_seconds,
+            environment_name: e.environment_name,
+            notes: e.notes,
+          }));
+          jobEventsCount = jobEvents.length;
+        }
+      }
+    } catch (e) {
+      warn('[BiogearsTwin] Failed to load biogears_active_job_events from AsyncStorage:', e);
+    }
+
+    if (jobEventsCount === 0) {
+      if (isCurrentActive) {
+        jobEvents = todayEvents;
+      } else if (targetUserId) {
+        try {
+          const raw = await AsyncStorage.getItem(TODAY_EVENTS_KEY(targetUserId));
+          if (raw) jobEvents = JSON.parse(raw);
+        } catch {}
+      }
+      jobEventsCount = jobEvents.length;
     }
 
     const sessionId = new Date().toISOString().replace(/[:.]/g, '-');
@@ -859,7 +917,7 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
         sessionId,
         result.vitals,
         result.anomalies || [],
-        jobEvents.length,
+        jobEventsCount,
         new Date().toISOString()
       ).catch(err => warn('[BiogearsTwin] Local save failed (non-fatal):', err));
     }
@@ -922,7 +980,7 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
       vitals_snapshot: result.vitals,
       has_anomaly: result.has_anomaly,
       events: jobEvents,
-      event_count: jobEvents.length,
+      event_count: jobEventsCount,
       ai_insights: fallbackInsights,
     };
 
@@ -949,6 +1007,7 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
     await AsyncStorage.removeItem('biogears_active_job');
     await AsyncStorage.removeItem('biogears_active_job_user_id');
     await AsyncStorage.removeItem('biogears_active_job_owner_uid');
+    await AsyncStorage.removeItem('biogears_active_job_events');
 
     if (targetUserId) {
       await AsyncStorage.removeItem(TODAY_EVENTS_KEY(targetUserId));
@@ -968,12 +1027,10 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
       const raw = await AsyncStorage.getItem(TODAY_EVENTS_KEY(twinUserId));
       if (raw) {
         const stored = JSON.parse(raw) as RoutineEvent[];
-        // Only keep today's events (don't carry over from yesterday)
-        // ✅ FIX: Use ISO date comparison (locale-safe). toDateString() can differ by locale.
-        const todayStr = new Date().toISOString().split('T')[0];
+        const todayStr = getLocalDateString();
         const fresh = stored.filter(e => {
           if (!e.timestamp) return false;
-          return new Date(e.timestamp * 1000).toISOString().split('T')[0] === todayStr;
+          return getLocalDateString(e.timestamp) === todayStr;
         });
         setTodayEvents(fresh);
       }
@@ -986,6 +1043,51 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
       await AsyncStorage.setItem(TODAY_EVENTS_KEY(twinUserId), JSON.stringify(events));
       await BiogearsAPI.syncPendingEvents(twinUserId, events, firestoreOwnerUid);
       await scheduleInactivityReminder().catch(() => {});
+
+      // Gap 4 fix: also stage each new event into the DPSS pending_events queue
+      // so the scheduler can auto-simulate them at midnight.
+      try {
+        const { stageBatch, buildMealEvent, buildExerciseEvent,
+                buildSleepEvent, buildWaterEvent, buildMedicationEvent } =
+          await import('../services/deferredSyncService');
+
+        const dpssEvents = events
+          .filter(e => [
+            'meal','exercise','sleep','water','substance','stress','alcohol','fast'
+          ].includes(e.event_type))
+          .map(e => {
+            const ts = e.timestamp ?? Math.round(Date.now() / 1000);
+            const eventTs = new Date(ts * 1000).toISOString();
+            if (e.event_type === 'meal') {
+              return buildMealEvent({ calories: e.value, meal_type: e.meal_type,
+                carb_g: e.carb_g, fat_g: e.fat_g, protein_g: e.protein_g, timestamp: ts });
+            } else if (e.event_type === 'exercise') {
+              return buildExerciseEvent({ intensity: e.value, duration_seconds: e.duration_seconds, timestamp: ts });
+            } else if (e.event_type === 'sleep') {
+              return buildSleepEvent({ hours: e.value, timestamp: ts });
+            } else if (e.event_type === 'water') {
+              return buildWaterEvent({ ml: e.value, timestamp: ts });
+            } else if (e.event_type === 'substance' && e.substance_name) {
+              return buildMedicationEvent({ substance_name: e.substance_name,
+                dose: e.value, unit: e.unit, timestamp: ts });
+            } else {
+              // Generic event (stress, alcohol, fast, etc.)
+              return {
+                event_type: e.event_type as any,
+                event_timestamp: eventTs,
+                payload: { value: e.value, timestamp: ts, duration_seconds: e.duration_seconds },
+              };
+            }
+          })
+          .filter(Boolean) as any[];
+
+        if (dpssEvents.length > 0) {
+          await stageBatch(twinUserId, dpssEvents);
+          log(`[DPSS] Staged ${dpssEvents.length} events into DPSS queue`);
+        }
+      } catch (dpssErr) {
+        log('[DPSS] stageBatch failed (non-fatal):', dpssErr);
+      }
     } catch { /* ignore */ }
   };
 
@@ -1584,18 +1686,25 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
     });
   }, [twinUserId]);
 
-  // ✅ FIX: Include twinUserId in deps so persistToday is always fresh.
-  // Empty deps caused persistToday to use a stale twinUserId from mount-time closure.
-  const setTodayEventsWrapped = useCallback((events: RoutineEvent[]) => {
-    setTodayEvents(events);
-    persistToday(events);
-  }, [twinUserId]); // eslint-disable-line react-hooks/exhaustive-deps
+  // ✅ FIX: Support functional updates and include twinUserId and firestoreOwnerUid in deps.
+  const setTodayEventsWrapped = useCallback((eventsOrUpdater: RoutineEvent[] | ((prev: RoutineEvent[]) => RoutineEvent[])) => {
+    if (typeof eventsOrUpdater === 'function') {
+      setTodayEvents(prev => {
+        const next = eventsOrUpdater(prev);
+        persistToday(next);
+        return next;
+      });
+    } else {
+      setTodayEvents(eventsOrUpdater);
+      persistToday(eventsOrUpdater);
+    }
+  }, [twinUserId, firestoreOwnerUid]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const clearToday = useCallback(() => {
+  const clearToday = useCallback(async () => {
     setTodayEvents([]);
     if (twinUserId) {
-      AsyncStorage.removeItem(TODAY_EVENTS_KEY(twinUserId));
-      BiogearsAPI.syncPendingEvents(twinUserId, [], firestoreOwnerUid).catch(() => {});
+      await AsyncStorage.removeItem(TODAY_EVENTS_KEY(twinUserId)).catch(() => {});
+      await BiogearsAPI.syncPendingEvents(twinUserId, [], firestoreOwnerUid).catch(() => {});
     }
   }, [twinUserId, firestoreOwnerUid]);
 
@@ -1643,7 +1752,7 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
       id: `evt_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
       source: 'routine' as const,
       timestamp: (e as RoutineEvent).wallTime
-        ? wallTimeToTimestamp((e as RoutineEvent).wallTime, anchorDate)
+        ? wallTimeToTimestamp((e as RoutineEvent).wallTime, anchorDate || new Date())
         : undefined,
     }));
     const sorted = remapped.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
@@ -1692,15 +1801,15 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
         id: `evt_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
         source: 'routine' as const,
         timestamp: (e as RoutineEvent).wallTime
-          ? wallTimeToTimestamp((e as RoutineEvent).wallTime)
+          ? wallTimeToTimestamp((e as RoutineEvent).wallTime, new Date())
           : undefined,
       }));
 
     const conflicts = detectConflicts(incoming, todayEvents);
 
     // Commit safe/non-conflicting events immediately
-    const conflictFps = new Set(conflicts.map(c => c.fingerprint));
-    const safeToAdd = incoming.filter(inc => !conflictFps.has(getEventFingerprint(inc)));
+    const conflictIds = new Set(conflicts.map(c => c.fingerprint));
+    const safeToAdd = incoming.filter(inc => !conflictIds.has(inc.id));
 
     const commitSafeEvents = () => {
       if (safeToAdd.length === 0) return;
@@ -1992,12 +2101,27 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
         events.push(stepEvent);
       }
 
+      const rawEventsToStore = [...updatedEvents];
+      if (stepEvent) {
+        rawEventsToStore.push({
+          id: 'step_exercise_event',
+          event_type: stepEvent.event_type,
+          value: stepEvent.value,
+          wallTime: new Date(stepEvent.timestamp! * 1000).toTimeString().slice(0, 5),
+          timestamp: stepEvent.timestamp,
+          displayLabel: 'Steps to Exercise',
+          displayIcon: '🚶',
+          duration_seconds: stepEvent.duration_seconds,
+        });
+      }
+
       setSimulationProgress('Starting BioGears engine...');
       setSimulationStatus('running');
       const { job_id } = await BiogearsAPI.simulateAsync(twinUserId, events);
       await AsyncStorage.setItem('biogears_active_job', job_id);
       await AsyncStorage.setItem('biogears_active_job_user_id', twinUserId);
       await AsyncStorage.setItem('biogears_active_job_owner_uid', firestoreOwnerUid || '');
+      await AsyncStorage.setItem('biogears_active_job_events', JSON.stringify(rawEventsToStore));
       const startTime = Date.now();
       await AsyncStorage.setItem('biogears_active_job_start_time', String(startTime));
       setSimulationStartTime(startTime);
@@ -2026,6 +2150,7 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
       await AsyncStorage.removeItem('biogears_active_job');
       await AsyncStorage.removeItem('biogears_active_job_user_id');
       await AsyncStorage.removeItem('biogears_active_job_owner_uid');
+      await AsyncStorage.removeItem('biogears_active_job_events');
       setSimulationStatus('failed');
       setSimulationError(err.message || 'Simulation failed');
       setSimulationProgress('');
@@ -2075,6 +2200,20 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
         events.push(stepEvent);
       }
 
+      const rawEventsToStore = [...todayEvents];
+      if (stepEvent) {
+        rawEventsToStore.push({
+          id: 'step_exercise_event',
+          event_type: stepEvent.event_type,
+          value: stepEvent.value,
+          wallTime: new Date(stepEvent.timestamp! * 1000).toTimeString().slice(0, 5),
+          timestamp: stepEvent.timestamp,
+          displayLabel: 'Steps to Exercise',
+          displayIcon: '🚶',
+          duration_seconds: stepEvent.duration_seconds,
+        });
+      }
+
       // Start async job
       setSimulationProgress('Starting BioGears engine...');
       setSimulationStatus('running');
@@ -2082,6 +2221,7 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
       await AsyncStorage.setItem('biogears_active_job', job_id);
       await AsyncStorage.setItem('biogears_active_job_user_id', twinUserId);
       await AsyncStorage.setItem('biogears_active_job_owner_uid', firestoreOwnerUid || '');
+      await AsyncStorage.setItem('biogears_active_job_events', JSON.stringify(rawEventsToStore));
       const startTime = Date.now();
       await AsyncStorage.setItem('biogears_active_job_start_time', String(startTime));
       setSimulationStartTime(startTime);
@@ -2114,6 +2254,7 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
       await AsyncStorage.removeItem('biogears_active_job');
       await AsyncStorage.removeItem('biogears_active_job_user_id');
       await AsyncStorage.removeItem('biogears_active_job_owner_uid');
+      await AsyncStorage.removeItem('biogears_active_job_events');
       setSimulationStatus('failed');
       setSimulationError(err.message || 'Simulation failed');
       setSimulationProgress('');
@@ -2140,6 +2281,7 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
 
     try {
       const catchUpEvents: BiogearsHealthEvent[] = [];
+      const catchUpEventsToStore: RoutineEvent[] = [];
       const now = new Date();
 
       // Generate events for each missed day chronologically
@@ -2166,11 +2308,30 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
             environment_name: e.environment_name,
             notes: `Catch-up day -${i}: ${e.notes || ''}`,
           });
+
+          catchUpEventsToStore.push({
+            id: `catchup_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+            event_type: e.event_type,
+            value: e.value,
+            wallTime: (e as any).wallTime || '08:00',
+            timestamp,
+            displayLabel: (e as any).displayLabel || e.notes || e.event_type,
+            displayIcon: (e as any).displayIcon || '📝',
+            substance_name: e.substance_name,
+            meal_type: e.meal_type,
+            carb_g: e.carb_g,
+            fat_g: e.fat_g,
+            protein_g: e.protein_g,
+            duration_seconds: e.duration_seconds,
+            environment_name: e.environment_name,
+            notes: `Catch-up day -${i}: ${e.notes || ''}`,
+          });
         }
       }
 
       // Sort chronological
       catchUpEvents.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+      catchUpEventsToStore.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
 
       setSimulationProgress(`Running multi-day catch-up (${days} days)...`);
       setSimulationStatus('running');
@@ -2178,6 +2339,7 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
       await AsyncStorage.setItem('biogears_active_job', job_id);
       await AsyncStorage.setItem('biogears_active_job_user_id', twinUserId);
       await AsyncStorage.setItem('biogears_active_job_owner_uid', firestoreOwnerUid || '');
+      await AsyncStorage.setItem('biogears_active_job_events', JSON.stringify(catchUpEventsToStore));
       const startTime = Date.now();
       await AsyncStorage.setItem('biogears_active_job_start_time', String(startTime));
       setSimulationStartTime(startTime);
@@ -2205,6 +2367,7 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
       await AsyncStorage.removeItem('biogears_active_job');
       await AsyncStorage.removeItem('biogears_active_job_user_id');
       await AsyncStorage.removeItem('biogears_active_job_owner_uid');
+      await AsyncStorage.removeItem('biogears_active_job_events');
       setSimulationStatus('failed');
       setSimulationError(err.message || 'Catch-up simulation failed');
       setSimulationProgress('');
@@ -2263,7 +2426,7 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
           id: `evt_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
           wallTime: deTime,
           source: 'baseline' as const,
-          timestamp: wallTimeToTimestamp(deTime),
+          timestamp: wallTimeToTimestamp(deTime, new Date()),
           notes: de.notes ? `${de.notes} (Filled Baseline)` : 'Filled from baseline',
           displayLabel: (de as any).displayLabel || de.notes || de.event_type,
           displayIcon: (de as any).displayIcon || '📝',
@@ -2283,8 +2446,8 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
     const conflicts = detectConflicts(candidates, todayEvents);
 
     // Non-conflicting candidates can be merged straight away
-    const conflictFps = new Set(conflicts.map(c => c.fingerprint));
-    const safeToAdd = candidates.filter(c => !conflictFps.has(getEventFingerprint(c)));
+    const conflictIds = new Set(conflicts.map(c => c.fingerprint));
+    const safeToAdd = candidates.filter(c => !conflictIds.has(c.id));
 
     const commitSafeEvents = () => {
       if (safeToAdd.length === 0) return;

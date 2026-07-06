@@ -29,6 +29,7 @@ import QuickAddRow from '../../components/twin/QuickAddRow';
 import BodyMap from '../../components/twin/BodyMap';
 import { CSV_FOOD_DB, CsvFoodItem, parseDisplayAmount, scaleNutrients, getQuickQuantities } from '../nutrition';
 import { ConflictResolutionSheet } from '../components/ConflictResolutionSheet';
+import PhysiologySyncModal from '../../components/PhysiologySyncModal';
 
 const CSV_CATEGORIES = [
   { id: 'all', label: 'All', icon: 'restaurant' },
@@ -210,9 +211,14 @@ function SliderRow({ label, value, min, max, step, onChange, accent, c }: {
   );
 }
 
-function AddButton({ label, accent, onPress }: { label: string; accent: string; onPress: () => void }) {
+function AddButton({ label, accent, onPress, disabled }: { label: string; accent: string; onPress: () => void; disabled?: boolean }) {
   return (
-    <TouchableOpacity style={[ss.addBtn, { backgroundColor: accent }]} onPress={onPress} activeOpacity={0.85}>
+    <TouchableOpacity
+      style={[ss.addBtn, { backgroundColor: accent }, disabled && { opacity: 0.6 }]}
+      onPress={onPress}
+      activeOpacity={0.85}
+      disabled={disabled}
+    >
       <Ionicons name="add-circle" size={18} color="#fff" />
       <Text style={ss.addBtnTxt}>{label}</Text>
     </TouchableOpacity>
@@ -273,6 +279,7 @@ export default function TwinScreen() {
   const insets = useSafeAreaInsets();
 
   const [showCatchUpModal, setShowCatchUpModal] = useState(false);
+  const [showDPSSModal, setShowDPSSModal] = useState(false);
 
   useEffect(() => {
     if (params.triggerReminderPopup === 'true') {
@@ -304,7 +311,7 @@ export default function TwinScreen() {
     dismissCalibrationSuccess,
   } = useBiogearsTwin();
    const { activeProfile: profile, isSwitched } = useFamily();
-   const { addFoodEntry } = useNutrition();
+   const { addFoodEntry, removeFoodEntry, resetToday } = useNutrition();
   const isFocused = useIsFocused();
   const [showSuccessModal, setShowSuccessModal] = useState(false);
 
@@ -530,6 +537,7 @@ export default function TwinScreen() {
   const [selectedCsvFood, setSelectedCsvFood] = useState<CsvFoodItem | null>(null);
   const [csvFoodAmount, setCsvFoodAmount] = useState(1);
   const [foodRenderLimit, setFoodRenderLimit] = useState(20);
+  const [isSubmittingMeal, setIsSubmittingMeal] = useState(false);
 
   useEffect(() => {
     setFoodRenderLimit(20);
@@ -669,17 +677,16 @@ export default function TwinScreen() {
 
   // ── addEvent handlers ─────────────────────────────────────────────────────
 
-  const addMeal = () => {
+  const addMeal = async () => {
+    if (isSubmittingMeal) return;
     const kcal = parseFloat(mealKcal);
     if (isNaN(kcal) || kcal < 5 || kcal > 10000) {
       return Alert.alert('Validation Error', 'Meal calories must be between 5 and 10,000 kcal.');
     }
 
+    setIsSubmittingMeal(true);
+
     // ── Macro normalization ───────────────────────────────────────────────────
-    // BioGears validator REQUIRES carb_g / fat_g / protein_g when meal_type is
-    // 'custom'. If the user left the macro fields blank, we estimate them from
-    // the balanced preset (40% carb / 30% fat / 30% protein) so the simulation
-    // never fails with a validation error.
     let finalMealType = mealType;
     let mealMacros: { carb_g: number; fat_g: number; protein_g: number } | null = null;
 
@@ -691,16 +698,13 @@ export default function TwinScreen() {
         && !isNaN(fatVal) && fatVal >= 0
         && !isNaN(protVal) && protVal >= 0;
       if (hasAllMacros) {
-        // User provided explicit macros — send as custom
         mealMacros = { carb_g: carbVal, fat_g: fatVal, protein_g: protVal };
       } else {
-        // Estimate macros from balanced preset so the validator passes
         mealMacros = {
           carb_g: Math.round(kcal * 0.40 / 4),
           fat_g: Math.round(kcal * 0.30 / 9),
           protein_g: Math.round(kcal * 0.30 / 4),
         };
-        // Keep 'custom' type so BioGears uses our explicit values
       }
     }
 
@@ -714,29 +718,49 @@ export default function TwinScreen() {
       protein_g: Math.round(kcal * 0.30 / 4),
     };
 
-    // Sync with NutritionContext
-    addFoodEntry({
-      foodId: 'custom',
-      foodName: `${mealLabel} Meal`,
-      calories: kcal,
-      protein: finalMacros.protein_g,
-      carbs: finalMacros.carb_g,
-      fat: finalMacros.fat_g,
-      sugar: 0,
-      sodium: 0,
-      fiber: 0,
-      mealId: mealType === 'custom' ? 'snacks' : mealType,
-    });
+    // Calculate smart retroactive timestamp matching mealTime
+    const [hh, mm] = mealTime.split(':').map(Number);
+    const now = new Date();
+    const current_hh = now.getHours();
+    const current_mm = now.getMinutes();
+    now.setHours(hh, mm, 0, 0);
+    if (hh > current_hh || (hh === current_hh && mm > current_mm)) {
+      now.setDate(now.getDate() - 1);
+    }
+    const timestamp = now.toISOString();
 
-    addEvent({
-      event_type: 'meal', value: kcal, wallTime: mealTime,
-      meal_type: finalMealType,
-      ...finalMacros,
-      displayLabel: `${mealLabel} Meal · ${kcal} kcal`,
-      displayIcon: '🍽️',
-    });
-    setMealKcal('500');
-    setMealCarb(''); setMealFat(''); setMealProt('');
+    try {
+      // Sync with NutritionContext (will automatically sync to todayEvents)
+      await addFoodEntry({
+        foodId: 'custom',
+        foodName: `${mealLabel} Meal`,
+        calories: kcal,
+        protein: finalMacros.protein_g,
+        carbs: finalMacros.carb_g,
+        fat: finalMacros.fat_g,
+        sugar: 0,
+        sodium: 0,
+        fiber: 0,
+        mealId: mealType === 'custom' ? 'snacks' : mealType,
+        timestamp,
+      });
+      setMealKcal('500');
+      setMealCarb(''); setMealFat(''); setMealProt('');
+      Alert.alert('✅ Added', `${mealLabel} Meal logged at ${wallTimeToLabel(mealTime)}`);
+    } catch (err) {
+      console.error("⚠️ Failed to add custom food entry from Twin page:", err);
+    } finally {
+      setIsSubmittingMeal(false);
+    }
+  };
+
+  const handleRemoveEvent = (id: string) => {
+    if (id.startsWith("food_")) {
+      const foodId = id.slice(5); // Remove 'food_' prefix
+      removeFoodEntry(foodId);
+    } else {
+      removeEvent(id);
+    }
   };
 
   const addExercise = () => {
@@ -967,39 +991,48 @@ export default function TwinScreen() {
   // ────────────────────────────────────────────────────────────────────────────
 
   // ── Meal tab: add from recipe list ───────────────────────────────────
-  const confirmCsvFoodAdd = () => {
+  const confirmCsvFoodAdd = async () => {
+    if (isSubmittingMeal) return;
     if (!selectedCsvFood) return;
+    setIsSubmittingMeal(true);
+
     const { base } = parseDisplayAmount(selectedCsvFood.display_amount);
     const multiplier = csvFoodAmount / base;
     const scaled = scaleNutrients(selectedCsvFood, multiplier);
 
-    // Sync with NutritionContext
-    addFoodEntry({
-      foodId: selectedCsvFood.food.toLowerCase().replace(/[^a-z0-9]/g, '_'),
-      foodName: selectedCsvFood.food,
-      calories: scaled.calories,
-      protein: scaled.protein,
-      carbs: scaled.carbs,
-      fat: scaled.fat,
-      sugar: 0,
-      sodium: 0,
-      fiber: 0,
-      mealId: 'snacks',
-    });
+    // Calculate smart retroactive timestamp matching mealTime
+    const [hh, mm] = mealTime.split(':').map(Number);
+    const now = new Date();
+    const current_hh = now.getHours();
+    const current_mm = now.getMinutes();
+    now.setHours(hh, mm, 0, 0);
+    if (hh > current_hh || (hh === current_hh && mm > current_mm)) {
+      now.setDate(now.getDate() - 1);
+    }
+    const timestamp = now.toISOString();
 
-    addEvent({
-      event_type: 'meal',
-      value: scaled.calories,
-      wallTime: mealTime,
-      meal_type: 'custom',
-      carb_g: scaled.carbs,
-      fat_g: scaled.fat,
-      protein_g: scaled.protein,
-      displayLabel: `${selectedCsvFood.food} · ${scaled.calories} kcal`,
-      displayIcon: 'restaurant',
-    });
-    Alert.alert('✅ Added', `${selectedCsvFood.food} logged at ${wallTimeToLabel(mealTime)}`);
-    setSelectedCsvFood(null);
+    try {
+      // Sync with NutritionContext (will automatically sync to todayEvents)
+      await addFoodEntry({
+        foodId: selectedCsvFood.food.toLowerCase().replace(/[^a-z0-9]/g, '_'),
+        foodName: selectedCsvFood.food,
+        calories: scaled.calories,
+        protein: scaled.protein,
+        carbs: scaled.carbs,
+        fat: scaled.fat,
+        sugar: 0,
+        sodium: 0,
+        fiber: 0,
+        mealId: 'snacks',
+        timestamp,
+      });
+      Alert.alert('✅ Added', `${selectedCsvFood.food} logged at ${wallTimeToLabel(mealTime)}`);
+      setSelectedCsvFood(null);
+    } catch (err) {
+      console.error("⚠️ Failed to add CSV food entry from Twin page:", err);
+    } finally {
+      setIsSubmittingMeal(false);
+    }
   };
 
   const MACRO_PRESETS: Record<string, { carb: number; fat: number; protein: number }> = {
@@ -1183,7 +1216,7 @@ export default function TwinScreen() {
               </View>
             </View>
 
-            <AddButton label="Add Meal" accent="#f59e0b" onPress={addMeal} />
+            <AddButton label="Add Meal" accent="#f59e0b" onPress={addMeal} disabled={isSubmittingMeal} />
           </View>
         )}
 
@@ -2138,7 +2171,7 @@ export default function TwinScreen() {
                 <TouchableOpacity
                   onPress={() => Alert.alert('Clear All', 'Remove all queued events?', [
                     { text: 'Cancel', style: 'cancel' },
-                    { text: 'Clear', style: 'destructive', onPress: () => { clearToday(); setLastLoadedRoutineName(null); } },
+                    { text: 'Clear', style: 'destructive', onPress: async () => { await clearToday(); await resetToday(); setLastLoadedRoutineName(null); } },
                   ])}
                   style={{
                     backgroundColor: 'rgba(239, 68, 68, 0.08)',
@@ -2211,7 +2244,7 @@ export default function TwinScreen() {
                       })()}
                     </View>
                   </View>
-                  <TouchableOpacity onPress={() => removeEvent(ev.id)} style={ss.deleteBtn}>
+                  <TouchableOpacity onPress={() => handleRemoveEvent(ev.id)} style={ss.deleteBtn}>
                     <Ionicons name="trash-outline" size={16} color="#ef4444" />
                   </TouchableOpacity>
                 </View>
@@ -2422,7 +2455,11 @@ export default function TwinScreen() {
               />
 
               <View style={{ marginTop: 12 }}>
-                <TouchableOpacity style={[ss.modalBtn, { backgroundColor: '#f59e0b', justifyContent: 'center' }]} onPress={confirmCsvFoodAdd}>
+                <TouchableOpacity
+                  style={[ss.modalBtn, { backgroundColor: '#f59e0b', justifyContent: 'center' }, isSubmittingMeal && { opacity: 0.6 }]}
+                  onPress={confirmCsvFoodAdd}
+                  disabled={isSubmittingMeal}
+                >
                   <Text style={{ color: '#fff', fontWeight: 'bold' }}>Add Meal</Text>
                 </TouchableOpacity>
               </View>
@@ -2565,6 +2602,19 @@ export default function TwinScreen() {
           </Pressable>
         </Pressable>
       </Modal>
+
+      {/* ── DPSS Physiology Sync Modal ── */}
+      <PhysiologySyncModal
+        visible={showDPSSModal}
+        userId={twinUserId || ''}
+        profileName={profile?.name}
+        onClose={() => setShowDPSSModal(false)}
+        onSyncComplete={() => {
+          setShowDPSSModal(false);
+          refreshSessions();
+          refreshAnalytics();
+        }}
+      />
     </>
   );
 
