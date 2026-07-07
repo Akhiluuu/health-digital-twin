@@ -498,21 +498,24 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
                   target.twinId,
                   localId,
                   title,
-                  body
+                  body,
+                  target.id
                 );
               } else if (notif.notif_type === "AUTO_COMPLETED") {
                 await showAutoSyncCompleted(
                   target.twinId,
                   notif.sim_date,
                   title,
-                  body
+                  body,
+                  target.id
                 );
               } else if (notif.notif_type === "SIM_FAILED") {
                 await showSimFailed(
                   target.twinId,
                   notif.sim_date,
                   title,
-                  body
+                  body,
+                  target.id
                 );
               } else {
                 // Generic display
@@ -520,6 +523,12 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
                   id: localId,
                   title,
                   body,
+                  data: {
+                    type: "dpss_sync",
+                    userId: target.twinId,
+                    profileId: target.id,
+                    action: "open_twin",
+                  },
                   android: {
                     channelId: CHANNEL_ID,
                     pressAction: { id: "default" },
@@ -539,7 +548,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
                 category: "system",
                 priority: notif.notif_type === "SIM_FAILED" ? "high" : "medium",
                 timestamp: notif.created_at || new Date().toISOString(),
-                deepLink: "/(tabs)/twin",
+                deepLink: target.id === "self" ? "/profile" : `/family/member-details?id=${target.id}`,
                 actionButtons: null
               });
             }

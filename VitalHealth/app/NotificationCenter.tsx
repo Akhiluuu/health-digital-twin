@@ -386,7 +386,24 @@ export default function NotificationCenter() {
                       },
                     ]}
                   >
-                    <View style={styles.cardHeader}>
+                    <TouchableOpacity
+                      activeOpacity={0.7}
+                      onPress={() => {
+                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                        if (item.readStatus === 0) {
+                          markRead(item.id, true);
+                        }
+                        if (item.profileId && item.profileId !== "self") {
+                          router.push({
+                            pathname: "/family/member-details",
+                            params: { id: item.profileId.toString() },
+                          });
+                        } else {
+                          router.push("/profile");
+                        }
+                      }}
+                      style={styles.cardHeader}
+                    >
                       {/* Avatar or Icon */}
                       {item.profileId && item.profileId !== "self" ? (
                         <View style={styles.avatarContainer}>
@@ -430,7 +447,7 @@ export default function NotificationCenter() {
                           {item.message}
                         </Text>
                       </View>
-                    </View>
+                    </TouchableOpacity>
 
                     {/* Footer Actions */}
                     <View style={[styles.cardActions, { borderTopColor: colors.border + "40" }]}>

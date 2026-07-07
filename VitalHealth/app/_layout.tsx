@@ -246,6 +246,16 @@ export default function RootLayout() {
               pathname: "/(tabs)/history",
               params: { tab: "symptoms" }
             } as any);
+          } else if (data.type === "dpss_sync" || data.type === "dpss_auto_complete") {
+            const pId = data.profileId;
+            if (pId && pId !== "self") {
+              router.push({
+                pathname: "/family/member-details",
+                params: { id: pId }
+              } as any);
+            } else {
+              router.push("/profile" as any);
+            }
           }
         }, 1000);
       }

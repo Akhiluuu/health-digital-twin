@@ -716,11 +716,16 @@ export function registerNotifeeForegroundHandler() {
           pathname: "/(tabs)/history",
           params: { tab: "hydration" }
         } as any);
-      } else if (data.type === "symptom") {
-        router.push({
-          pathname: "/(tabs)/history",
-          params: { tab: "symptoms" }
-        } as any);
+      } else if (data.type === "dpss_sync" || data.type === "dpss_auto_complete") {
+        const pId = data.profileId;
+        if (pId && pId !== "self") {
+          router.push({
+            pathname: "/family/member-details",
+            params: { id: pId }
+          } as any);
+        } else {
+          router.push("/profile" as any);
+        }
       }
 
       if (notifId) {
@@ -999,6 +1004,7 @@ export const showPhysioSyncReady = async (
   notificationId?: string,
   customTitle?: string,
   customBody?: string,
+  profileId?: string,
 ): Promise<string> => {
   const id = notificationId || `dpss_sync_ready_${userId}`;
   // Cancel any existing dpss_ready notification for this user first
@@ -1011,6 +1017,7 @@ export const showPhysioSyncReady = async (
     data: {
       type: "dpss_sync",
       userId,
+      profileId: profileId || "",
       action: "open_twin",
     },
     android: {
@@ -1042,6 +1049,7 @@ export const showAutoSyncCompleted = async (
   simDate: string,
   customTitle?: string,
   customBody?: string,
+  profileId?: string,
 ): Promise<void> => {
   const id = `dpss_auto_complete_${userId}_${simDate}`;
   await notifee.displayNotification({
@@ -1051,6 +1059,7 @@ export const showAutoSyncCompleted = async (
     data: {
       type: "dpss_auto_complete",
       userId,
+      profileId: profileId || "",
       action: "open_twin",
     },
     android: {
@@ -1096,13 +1105,14 @@ export const showSimFailed = async (
   simDate: string,
   customTitle?: string,
   customBody?: string,
+  profileId?: string,
 ): Promise<void> => {
   const id = `dpss_failed_${userId}_${simDate}`;
   await notifee.displayNotification({
     id,
     title: customTitle || "❌ Sync Failed",
     body: customBody || `The Digital Twin sync for ${simDate} encountered an error. Tap to retry manually.`,
-    data: { type: "dpss_sync", userId, action: "open_twin" },
+    data: { type: "dpss_sync", userId, profileId: profileId || "", action: "open_twin" },
     android: {
       channelId: CHANNEL_ID,
       importance: AndroidImportance.HIGH,
