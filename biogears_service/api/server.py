@@ -124,15 +124,30 @@ async def require_api_key(key: str = Depends(api_key_header)):
     else:
         current_actor.set("system")
 
+_has_celery = None
+
 def _run_biogears_via_celery(scenario_path: str, user_id: str = "unknown") -> bool:
-    try:
-        from biogears_service.api.tasks import run_simulation_task
-        task_res = run_simulation_task.delay(scenario_path, user_id=user_id)
-        result = task_res.get()
-        return bool(result.get("success", False))
-    except Exception as e:
-        logger.error(f"❌ [Celery Handoff] Failed to run simulation via Celery: {e}")
-        logger.info("⚠️ Falling back to local synchronous BioGears execution...")
+    global _has_celery
+    if _has_celery is None:
+        try:
+            import celery
+            _has_celery = True
+        except ImportError:
+            _has_celery = False
+
+    if _has_celery:
+        try:
+            from biogears_service.api.tasks import run_simulation_task
+            task_res = run_simulation_task.delay(scenario_path, user_id=user_id)
+            result = task_res.get()
+            return bool(result.get("success", False))
+        except Exception as e:
+            logger.error(f"❌ [Celery Handoff] Failed to run simulation via Celery: {e}")
+            logger.info("⚠️ Falling back to local synchronous BioGears execution...")
+            res = engine_runner.run_biogears(scenario_path, user_id=user_id)
+            return res.success
+    else:
+        logger.info("ℹ️ Celery not installed. Running local synchronous BioGears execution...")
         res = engine_runner.run_biogears(scenario_path, user_id=user_id)
         return res.success
 
