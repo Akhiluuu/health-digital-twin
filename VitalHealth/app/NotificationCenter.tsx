@@ -72,7 +72,8 @@ export default function NotificationCenter() {
   // Reload notifications on mount
   useEffect(() => {
     syncNotifications();
-  }, [syncNotifications]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Categories list
   const categories = [

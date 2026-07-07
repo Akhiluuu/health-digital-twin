@@ -50,6 +50,11 @@ const CHANNEL_ID = "health_critical";
 
 export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
+  const notificationsRef = useRef<NotificationItem[]>([]);
+  useEffect(() => {
+    notificationsRef.current = notifications;
+  }, [notifications]);
+
   const [preferences, setPreferences] = useState<Record<string, NotificationPrefs>>({});
   const [isLoading, setIsLoading] = useState(true);
   
@@ -486,7 +491,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
               const localId = `dpss_${notif.notification_id}`;
 
               // Check if we already have it in local notifications to avoid duplicate alerts
-              const alreadyExists = notifications.some(n => n.id === localId);
+              const alreadyExists = notificationsRef.current.some(n => n.id === localId);
               if (alreadyExists) continue;
 
               // Display the system push notification
@@ -565,7 +570,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
     } catch (e) {
       error("[NotificationContext] syncDPSSNotifications outer error:", e);
     }
-  }, [selfProfile, members, notifications, loadNotifications]);
+  }, [selfProfile, members, loadNotifications]);
 
   const syncNotifications = useCallback(async () => {
     setIsLoading(true);
