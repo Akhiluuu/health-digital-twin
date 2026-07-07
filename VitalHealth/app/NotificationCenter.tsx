@@ -440,6 +440,13 @@ export default function NotificationCenter() {
                             {item.priority}
                           </Text>
                         </View>
+                        {item.profileName && (
+                          <View style={[styles.profilePillBadge, { backgroundColor: colors.accent + "10", marginLeft: 6 }]}>
+                            <Text style={[styles.profilePillBadgeText, { color: colors.accent }]}>
+                              👤 {item.profileName} {item.relationship ? `(${item.relationship})` : ""}
+                            </Text>
+                          </View>
+                        )}
                       </View>
 
                       <View style={styles.actionButtonsRow}>
@@ -944,5 +951,14 @@ const styles = StyleSheet.create({
   prefDivider: {
     height: 1,
     width: "100%",
+  },
+  profilePillBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 8,
+  },
+  profilePillBadgeText: {
+    fontSize: 9,
+    fontWeight: "700",
   },
 });
