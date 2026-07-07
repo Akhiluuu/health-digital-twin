@@ -11,6 +11,7 @@ import {
   Switch,
   ActivityIndicator,
   Platform,
+  RefreshControl,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
@@ -34,6 +35,7 @@ export default function NotificationCenter() {
     unreadCount,
     isLoading,
     loadNotifications,
+    syncNotifications,
     markRead,
     markAllRead,
     archiveNotification,
@@ -54,10 +56,23 @@ export default function NotificationCenter() {
   // Per-profile preference manager states
   const [activePrefsProfile, setActivePrefsProfile] = useState<string>("global");
 
+  const [refreshing, setRefreshing] = useState(false);
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    try {
+      await syncNotifications();
+    } catch (err) {
+      console.error("Error refreshing notifications:", err);
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
   // Reload notifications on mount
   useEffect(() => {
-    loadNotifications();
-  }, [loadNotifications]);
+    syncNotifications();
+  }, [syncNotifications]);
 
   // Categories list
   const categories = [
@@ -375,6 +390,14 @@ export default function NotificationCenter() {
                 data={filteredNotifications}
                 keyExtractor={(item) => item.id}
                 contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 40 }}
+                refreshControl={
+                  <RefreshControl
+                    refreshing={refreshing}
+                    onRefresh={handleRefresh}
+                    tintColor={colors.accent}
+                    colors={[colors.accent]}
+                  />
+                }
                 renderItem={({ item }) => (
                   <View
                     style={[

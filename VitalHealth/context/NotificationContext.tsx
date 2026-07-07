@@ -29,6 +29,7 @@ interface NotificationContextType {
   unreadCount: number;
   isLoading: boolean;
   loadNotifications: (query?: string) => Promise<void>;
+  syncNotifications: () => Promise<void>;
   addNotification: (item: Omit<NotificationItem, "readStatus" | "archived">) => Promise<void>;
   markRead: (id: string, read?: boolean) => Promise<void>;
   markAllRead: () => Promise<void>;
@@ -566,6 +567,13 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
     }
   }, [selfProfile, members, notifications, loadNotifications]);
 
+  const syncNotifications = useCallback(async () => {
+    setIsLoading(true);
+    await syncDPSSNotifications();
+    await loadNotifications();
+    setIsLoading(false);
+  }, [syncDPSSNotifications, loadNotifications]);
+
   // Poll for DPSS notifications
   useEffect(() => {
     if (!isLoading) {
@@ -586,6 +594,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
         unreadCount,
         isLoading,
         loadNotifications,
+        syncNotifications,
         addNotification,
         markRead,
         markAllRead,
