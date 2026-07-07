@@ -2003,6 +2003,7 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
           log('[BiogearsTwin] Demographics mismatch detected. Auto-recalibrating remote digital twin...');
           const payload: BiogearsRegistrationPayload = {
             user_id: twinUserId,
+            profile_name: profile?.firstName ? `${profile.firstName} ${profile.lastName || ""}`.trim() : undefined,
             age,
             weight,
             height,

@@ -287,6 +287,7 @@ export default function AddMemberScreen() {
           lastName: depLastName.trim(),
           phone: fakePhoneSuffix,
         } as any),
+        profile_name: `${depFirstName.trim()} ${depLastName.trim()}`.trim(),
         age,
         weight: w,
         height: h,

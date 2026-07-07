@@ -30,6 +30,26 @@ def _db():
     return dpss_db
 
 
+def _resolve_profile_name(user_id: str) -> str:
+    # 1. Try to read from db profile metadata
+    try:
+        from biogears_service.api import db as biogears_db
+        profile = biogears_db.get_profile(user_id)
+        if profile and profile.get("profile_name"):
+            return profile["profile_name"]
+    except Exception as e:
+        logger.warning(f"Error reading profile metadata for {user_id}: {e}")
+
+    # 2. Fallback to parsing user_id
+    if "_" in user_id:
+        parts = user_id.split("_")
+        name_parts = [p for p in parts if not p.isdigit()]
+        if name_parts:
+            return " ".join(p.capitalize() for p in name_parts)
+
+    return user_id
+
+
 def _run_sim(user_id: str, events: list, sim_type: str = "AUTOMATIC") -> dict:
     """
     Core simulation executor used by the scheduler.
@@ -317,13 +337,15 @@ class DPSSScheduler:
                 pass
 
         notif_type = "MULTIPLE_PENDING" if count > 10 else "SIM_READY"
+        profile_name = _resolve_profile_name(user_id)
         db.create_dpss_notification(
             user_id=user_id,
             notif_type=notif_type,
             sim_date=today_str,
+            profile_name=profile_name,
             payload={
-                "title": "🧬 Physiology Ready to Sync",
-                "body": f"You have {count} unprocessed health events. Tap to synchronize your Digital Twin.",
+                "title": f"🧬 Physiology Ready to Sync ({profile_name})",
+                "body": f"{profile_name} has {count} unprocessed health events. Tap to synchronize their Digital Twin.",
                 "pending_count": count,
                 "action": "open_twin",
             },
@@ -422,16 +444,22 @@ class DPSSScheduler:
 
             # Create an AUTO_COMPLETED notification
             today_str = datetime.date.today().isoformat()
+            profile_name = _resolve_profile_name(user_id)
             db.create_dpss_notification(
                 user_id=user_id,
                 notif_type="AUTO_COMPLETED" if result["success"] else "SIM_FAILED",
                 sim_date=day_str,
+                profile_name=profile_name,
                 payload={
-                    "title": "✅ Auto-Sync Complete" if result["success"] else "❌ Sync Failed",
-                    "body": (
-                        f"Your physiology for {day_str} was automatically synchronized."
+                    "title": (
+                        f"✅ Auto-Sync Complete ({profile_name})"
                         if result["success"]
-                        else f"Auto-sync for {day_str} failed. Please run manually."
+                        else f"❌ Sync Failed ({profile_name})"
+                    ),
+                    "body": (
+                        f"{profile_name}'s physiology for {day_str} was automatically synchronized."
+                        if result["success"]
+                        else f"Auto-sync for {day_str} failed ({profile_name}). Please run manually."
                     ),
                     "sim_id": result.get("sim_id"),
                     "vitals": result.get("vitals", {}),

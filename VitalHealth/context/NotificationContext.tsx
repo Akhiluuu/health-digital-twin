@@ -21,6 +21,7 @@ import {
   DEFAULT_PREFS
 } from "../database/notificationDB";
 import { useFamily } from "./FamilyContext";
+import { useProfile } from "./ProfileContext";
 import { log, error } from "../utils/logger";
 
 interface NotificationContextType {
@@ -438,6 +439,136 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
     
     loadNotifications();
   }, [loadNotifications]);
+
+  const { profile: selfProfile } = useProfile();
+
+  const syncDPSSNotifications = useCallback(async () => {
+    try {
+      if (!selfProfile) return;
+
+      const { getTwinId } = require("../utils/twinUtils");
+      const { getDPSSNotifications } = require("../services/deferredSyncService");
+      const {
+        showPhysioSyncReady,
+        showAutoSyncCompleted,
+        showSimFailed
+      } = require("../services/notifeeService");
+
+      // 1. Gather all profile Twin IDs
+      const profilesToCheck = [
+        {
+          id: "self",
+          name: selfProfile.firstName ? `${selfProfile.firstName} ${selfProfile.lastName || ""}`.trim() : "You",
+          twinId: getTwinId(selfProfile),
+          relationship: "Self",
+          photo: selfProfile.profileImage || null
+        },
+        ...members.map(m => ({
+          id: m.uid,
+          name: m.name || `${m.firstName || ""} ${m.lastName || ""}`.trim() || "Family Member",
+          twinId: getTwinId(m),
+          relationship: m.relationship || m.relation || "Family",
+          photo: m.profileImage || null
+        }))
+      ];
+
+      for (const target of profilesToCheck) {
+        if (!target.twinId || target.twinId === "temp_user") continue;
+
+        try {
+          const res = await getDPSSNotifications(target.twinId, 10);
+          if (res && res.notifications) {
+            for (const notif of res.notifications) {
+              // Only process UNREAD notifications
+              if (notif.status !== "UNREAD") continue;
+
+              const localId = `dpss_${notif.notification_id}`;
+
+              // Check if we already have it in local notifications to avoid duplicate alerts
+              const alreadyExists = notifications.some(n => n.id === localId);
+              if (alreadyExists) continue;
+
+              // Display the system push notification
+              const title = notif.payload?.title || "Digital Twin Sync Alert";
+              const body = notif.payload?.body || "Update available.";
+
+              if (notif.notif_type === "SIM_READY" || notif.notif_type === "MULTIPLE_PENDING") {
+                await showPhysioSyncReady(
+                  notif.payload?.pending_count || 1,
+                  target.twinId,
+                  localId,
+                  title,
+                  body
+                );
+              } else if (notif.notif_type === "AUTO_COMPLETED") {
+                await showAutoSyncCompleted(
+                  target.twinId,
+                  notif.sim_date,
+                  title,
+                  body
+                );
+              } else if (notif.notif_type === "SIM_FAILED") {
+                await showSimFailed(
+                  target.twinId,
+                  notif.sim_date,
+                  title,
+                  body
+                );
+              } else {
+                // Generic display
+                await notifee.displayNotification({
+                  id: localId,
+                  title,
+                  body,
+                  android: {
+                    channelId: CHANNEL_ID,
+                    pressAction: { id: "default" },
+                  }
+                });
+              }
+
+              // Add it to the local SQLite database so it appears in the Notification Inbox (NotificationCenter)
+              await addNotificationDB({
+                id: localId,
+                title,
+                message: body,
+                profileId: target.id === "self" ? null : target.id,
+                profileName: target.name,
+                relationship: target.relationship,
+                profilePhoto: target.photo,
+                category: "system",
+                priority: notif.notif_type === "SIM_FAILED" ? "high" : "medium",
+                timestamp: notif.created_at || new Date().toISOString(),
+                deepLink: "/(tabs)/twin",
+                actionButtons: null
+              });
+            }
+          }
+        } catch (err) {
+          log(`[NotificationContext] Error syncing DPSS notifications for ${target.name}:`, err);
+        }
+      }
+
+      // Reload notifications to refresh the list in state
+      await loadNotifications();
+
+    } catch (e) {
+      error("[NotificationContext] syncDPSSNotifications outer error:", e);
+    }
+  }, [selfProfile, members, notifications, loadNotifications]);
+
+  // Poll for DPSS notifications
+  useEffect(() => {
+    if (!isLoading) {
+      syncDPSSNotifications();
+    }
+
+    const interval = setInterval(() => {
+      syncDPSSNotifications();
+    }, 180000); // Poll every 3 minutes
+
+    return () => clearInterval(interval);
+  }, [isLoading, syncDPSSNotifications]);
 
   return (
     <NotificationContext.Provider

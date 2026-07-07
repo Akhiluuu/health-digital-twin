@@ -120,6 +120,7 @@ async function getUrl(path: string): Promise<string> {
 
 export interface BiogearsRegistrationPayload {
   user_id: string;
+  profile_name?: string;
   age: number;
   weight: number;        // kg
   height: number;        // cm

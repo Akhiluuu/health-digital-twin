@@ -482,6 +482,7 @@ export default function MemberDetailsScreen() {
             lastName: depLastName.trim(),
             phone: member.phone || "",
           } as any),
+          profile_name: `${depFirstName.trim()} ${depLastName.trim()}`.trim(),
           age,
           weight: w,
           height: h,

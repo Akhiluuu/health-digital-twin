@@ -1000,6 +1000,7 @@ export default function ProfileScreen() {
       const generatedId = getTwinId(localProfile);
       const payload: BiogearsRegistrationPayload = {
         user_id: generatedId,
+        profile_name: localProfile.firstName ? `${localProfile.firstName} ${localProfile.lastName || ""}`.trim() : undefined,
         age: parseAge(localProfile.dateOfBirth),
         weight: parseKg(localProfile.weight),
         height: parseCm(localProfile.height),

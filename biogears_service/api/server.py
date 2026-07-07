@@ -316,6 +316,7 @@ def _check_rate_limit(user_id: str):
 # ---------------------------------------------------------------------------
 class RegistrationRequest(BaseModel):
     user_id: str
+    profile_name: Optional[str] = None
     age: int
     weight: float
     height: float
@@ -1216,6 +1217,7 @@ def _register_impl(data: RegistrationRequest):
 
                 # Persist metadata
                 db.upsert_profile(data.user_id, {
+                    "profile_name": data.profile_name,
                     "age": data.age,
                     "sex": data.sex,
                     "weight": data.weight,

@@ -997,6 +997,8 @@ export const showPhysioSyncReady = async (
   pendingCount: number,
   userId: string,
   notificationId?: string,
+  customTitle?: string,
+  customBody?: string,
 ): Promise<string> => {
   const id = notificationId || `dpss_sync_ready_${userId}`;
   // Cancel any existing dpss_ready notification for this user first
@@ -1004,8 +1006,8 @@ export const showPhysioSyncReady = async (
 
   await notifee.displayNotification({
     id,
-    title: "🧬 Physiology Ready to Sync",
-    body: `You have ${pendingCount} unprocessed health event${pendingCount > 1 ? "s" : ""}. Synchronize your Digital Twin now.`,
+    title: customTitle || "🧬 Physiology Ready to Sync",
+    body: customBody || `You have ${pendingCount} unprocessed health event${pendingCount > 1 ? "s" : ""}. Synchronize your Digital Twin now.`,
     data: {
       type: "dpss_sync",
       userId,
@@ -1038,12 +1040,14 @@ export const showPhysioSyncReady = async (
 export const showAutoSyncCompleted = async (
   userId: string,
   simDate: string,
+  customTitle?: string,
+  customBody?: string,
 ): Promise<void> => {
   const id = `dpss_auto_complete_${userId}_${simDate}`;
   await notifee.displayNotification({
     id,
-    title: "✅ Digital Twin Auto-Synced",
-    body: `Your physiology for ${simDate} was automatically synchronized overnight.`,
+    title: customTitle || "✅ Digital Twin Auto-Synced",
+    body: customBody || `Your physiology for ${simDate} was automatically synchronized overnight.`,
     data: {
       type: "dpss_auto_complete",
       userId,
@@ -1090,12 +1094,14 @@ export const showSimUndone = async (userId: string): Promise<void> => {
 export const showSimFailed = async (
   userId: string,
   simDate: string,
+  customTitle?: string,
+  customBody?: string,
 ): Promise<void> => {
   const id = `dpss_failed_${userId}_${simDate}`;
   await notifee.displayNotification({
     id,
-    title: "❌ Sync Failed",
-    body: `The Digital Twin sync for ${simDate} encountered an error. Tap to retry manually.`,
+    title: customTitle || "❌ Sync Failed",
+    body: customBody || `The Digital Twin sync for ${simDate} encountered an error. Tap to retry manually.`,
     data: { type: "dpss_sync", userId, action: "open_twin" },
     android: {
       channelId: CHANNEL_ID,
