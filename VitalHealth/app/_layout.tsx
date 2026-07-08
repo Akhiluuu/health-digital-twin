@@ -12,7 +12,7 @@ import { Stack, router } from "expo-router";
 import React, { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, View, LogBox } from "react-native";
 import * as SplashScreen from "expo-splash-screen";
-import notifee from "@notifee/react-native";
+import notifee, { EventType } from "@notifee/react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { ErrorBoundary } from "../components/ErrorBoundary";
 import { LoadingOverlay } from "../components/LoadingOverlay";
@@ -138,6 +138,116 @@ const StepProviderWrapper: React.FC<{ children: React.ReactNode }> = ({
 };
 
 ///////////////////////////////////////////////////////////
+// NOTIFICATION NAVIGATION BRIDGE
+///////////////////////////////////////////////////////////
+const NotificationNavigationBridge: React.FC = () => {
+  const { switchToMember, switchToSelf } = useFamily();
+
+  useEffect(() => {
+    // 1. Foreground listener
+    const unsubscribe = notifee.onForegroundEvent(async ({ type, detail }) => {
+      const data = detail.notification?.data ?? {};
+
+      if (type === EventType.DELIVERED) {
+        try {
+          const { saveDeliveredNotificationToDB } = require("../services/notifeeService");
+          await saveDeliveredNotificationToDB(detail.notification);
+        } catch (err) {
+          console.error("Bridge save notification failed:", err);
+        }
+        return;
+      }
+
+      if (type === EventType.PRESS) {
+        log("🔔 Foreground Notification Tap (Press) bridged:", data);
+
+        const pId = data.profileId ? String(data.profileId) : undefined;
+        try {
+          if (pId && pId !== "self") {
+            await switchToMember(pId);
+          } else if (pId === "self") {
+            await switchToSelf();
+          }
+        } catch (err) {
+          console.error("Bridge switch profile failed:", err);
+        }
+
+        if (data.type === "routine_reminder" && data.tab) {
+          router.push({
+            pathname: "/(tabs)/history",
+            params: { tab: data.tab }
+          } as any);
+        } else if (data.type === "twin_reminder") {
+          router.push("/(tabs)/twin?triggerReminderPopup=true" as any);
+        } else if (data.type === "medicine") {
+          router.push("/MedicationVault" as any);
+        } else if (data.type === "hydration") {
+          router.push({
+            pathname: "/(tabs)/history",
+            params: { tab: "hydration" }
+          } as any);
+        } else if (data.type === "dpss_sync" || data.type === "dpss_auto_complete") {
+          router.push("/(tabs)/twin" as any);
+        }
+      }
+    });
+
+    // 2. Cold start / Initial notification listener
+    notifee.getInitialNotification().then(async (initialNotification) => {
+      if (initialNotification) {
+        const { notification } = initialNotification;
+        const data = notification?.data ?? {};
+        console.log("🔔 Cold start notification bridged:", data);
+
+        const pId = data.profileId ? String(data.profileId) : undefined;
+        try {
+          if (pId && pId !== "self") {
+            await switchToMember(pId);
+          } else if (pId === "self") {
+            await switchToSelf();
+          }
+        } catch (err) {
+          console.error("Bridge cold start switch profile failed:", err);
+        }
+
+        setTimeout(() => {
+          if (data.type === "routine_reminder" && data.tab) {
+            router.push({
+              pathname: "/(tabs)/history",
+              params: { tab: data.tab }
+            } as any);
+          } else if (data.type === "twin_reminder") {
+            router.push("/(tabs)/twin?triggerReminderPopup=true" as any);
+          } else if (data.type === "medicine") {
+            router.push("/MedicationVault" as any);
+          } else if (data.type === "hydration") {
+            router.push({
+              pathname: "/(tabs)/history",
+              params: { tab: "hydration" }
+            } as any);
+          } else if (data.type === "symptom") {
+            router.push({
+              pathname: "/(tabs)/history",
+              params: { tab: "symptoms" }
+            } as any);
+          } else if (data.type === "dpss_sync" || data.type === "dpss_auto_complete") {
+            router.push("/(tabs)/twin" as any);
+          }
+        }, 1000);
+      }
+    }).catch((err) => {
+      console.log("⚠️ Error checking initial notification in bridge:", err);
+    });
+
+    return () => {
+      if (unsubscribe) unsubscribe();
+    };
+  }, [switchToMember, switchToSelf]);
+
+  return null;
+};
+
+///////////////////////////////////////////////////////////
 // ROOT LAYOUT
 ///////////////////////////////////////////////////////////
 export default function RootLayout() {
@@ -205,64 +315,7 @@ export default function RootLayout() {
     return () => unsubAuth();
   }, []);
 
-  ///////////////////////////////////////////////////////////
-  // FOREGROUND & COLD START NOTIFICATION HANDLER
-  ///////////////////////////////////////////////////////////
-  useEffect(() => {
-    const unsubscribe = registerNotifeeForegroundHandler();
-    return () => {
-      if (unsubscribe) unsubscribe();
-    };
-  }, []);
 
-  useEffect(() => {
-    if (!isReady) return;
-
-    // Handle cold start launches from notifications
-    notifee.getInitialNotification().then((initialNotification) => {
-      if (initialNotification) {
-        const { notification } = initialNotification;
-        const data = notification?.data ?? {};
-        console.log("🔔 Cold start from notification:", data);
-        
-        // Short delay to ensure the React Navigation / Expo Router is fully mounted
-        setTimeout(() => {
-          if (data.type === "routine_reminder" && data.tab) {
-            router.push({
-              pathname: "/(tabs)/history",
-              params: { tab: data.tab }
-            } as any);
-          } else if (data.type === "twin_reminder") {
-            router.push("/(tabs)/twin?triggerReminderPopup=true" as any);
-          } else if (data.type === "medicine") {
-            router.push("/MedicationVault" as any);
-          } else if (data.type === "hydration") {
-            router.push({
-              pathname: "/(tabs)/history",
-              params: { tab: "hydration" }
-            } as any);
-          } else if (data.type === "symptom") {
-            router.push({
-              pathname: "/(tabs)/history",
-              params: { tab: "symptoms" }
-            } as any);
-          } else if (data.type === "dpss_sync" || data.type === "dpss_auto_complete") {
-            const pId = data.profileId;
-            if (pId && pId !== "self") {
-              router.push({
-                pathname: "/family/member-details",
-                params: { id: pId }
-              } as any);
-            } else {
-              router.push("/profile" as any);
-            }
-          }
-        }, 1000);
-      }
-    }).catch((err) => {
-      console.log("⚠️ Error checking initial notification:", err);
-    });
-  }, [isReady]);
 
   ///////////////////////////////////////////////////////////
   // LOADING SCREEN
@@ -312,6 +365,7 @@ export default function RootLayout() {
                   <BiogearsTwinProvider>
                     <NutritionProvider>
                       <CognitiveProvider>
+                        <NotificationNavigationBridge />
                         <Stack
                           screenOptions={{
                             headerShown: false,

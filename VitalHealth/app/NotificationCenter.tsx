@@ -45,7 +45,7 @@ export default function NotificationCenter() {
     updatePrefs,
   } = useNotifications();
 
-  const { members } = useFamily();
+  const { members, switchToMember, switchToSelf } = useFamily();
 
   // Navigation / Filter States
   const [activeTab, setActiveTab] = useState<TabType>("active");
@@ -412,26 +412,32 @@ export default function NotificationCenter() {
                   >
                     <TouchableOpacity
                       activeOpacity={0.7}
-                      onPress={() => {
+                      onPress={async () => {
                         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                         if (item.readStatus === 0) {
                           markRead(item.id, true);
                         }
-                        if (item.deepLink) {
-                          router.push(item.deepLink as any);
-                        } else if (item.profileId && item.profileId !== "self") {
-                          router.push({
-                            pathname: "/family/member-details",
-                            params: { id: item.profileId.toString() },
-                          });
-                        } else {
-                          router.push("/profile");
+                        
+                        try {
+                          if (item.profileId && item.profileId !== "self") {
+                            await switchToMember(item.profileId);
+                          } else {
+                            await switchToSelf();
+                          }
+                          router.push("/(tabs)/twin" as any);
+                        } catch (err) {
+                          console.error("Failed to switch profile on notification tap:", err);
+                          if (item.deepLink) {
+                            router.push(item.deepLink as any);
+                          } else {
+                            router.push("/(tabs)/twin" as any);
+                          }
                         }
                       }}
                       style={styles.cardHeader}
                     >
                       {/* Avatar or Icon */}
-                      {item.profileId && item.profileId !== "self" ? (
+                      {item.profileId ? (
                         <View style={styles.avatarContainer}>
                           {item.profilePhoto ? (
                             <Image source={{ uri: item.profilePhoto }} style={styles.avatarImage} />
@@ -496,9 +502,19 @@ export default function NotificationCenter() {
                         {/* Deep link action button */}
                         {item.deepLink && (
                           <TouchableOpacity
-                            onPress={() => {
+                            onPress={async () => {
                               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-                              router.push(item.deepLink as any);
+                              try {
+                                if (item.profileId && item.profileId !== "self") {
+                                  await switchToMember(item.profileId);
+                                } else {
+                                  await switchToSelf();
+                                }
+                                router.push("/(tabs)/twin" as any);
+                              } catch (err) {
+                                console.error("Failed to switch profile on notification action tap:", err);
+                                router.push(item.deepLink as any);
+                              }
                             }}
                             style={[styles.actionBtn, { backgroundColor: colors.accent + "10" }]}
                           >

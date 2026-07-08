@@ -3,7 +3,7 @@ import React, { createContext, useContext, useState, useEffect, useCallback, use
 import * as Haptics from "expo-haptics";
 import notifee, { AndroidImportance } from "@notifee/react-native";
 import { doc, onSnapshot, collection } from "firebase/firestore";
-import { db } from "../services/firebase";
+import { db, auth } from "../services/firebase";
 import { getUserId } from "../services/firebaseSync";
 import {
   NotificationItem,
@@ -353,7 +353,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
                 id: `alert_spo2_${member.uid}_${now}`,
                 title: `🚨 Low Oxygen Alert`,
                 message: `${member.name}'s oxygen saturation level dropped to a critical ${curSpo2}%. Please check on them immediately.`,
-                profileId: member.uid === parentUid ? null : member.uid,
+                profileId: member.uid === parentUid ? "self" : member.uid,
                 profileName: member.name ?? null,
                 relationship: member.relationship || member.relation || "Family",
                 profilePhoto: member.profileImage || null,
@@ -373,7 +373,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
                 id: `alert_hr_${member.uid}_${now}`,
                 title: `⚠️ Abnormal Heart Rate`,
                 message: `${member.name} has an ${issue} of ${curHR} BPM.`,
-                profileId: member.uid === parentUid ? null : member.uid,
+                profileId: member.uid === parentUid ? "self" : member.uid,
                 profileName: member.name ?? null,
                 relationship: member.relationship || member.relation || "Family",
                 profilePhoto: member.profileImage || null,
@@ -416,7 +416,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
                       id: `med_taken_${key}_${Date.now()}`,
                       title: `✓ ${member.name} Medicine Taken`,
                       message: `${member.name} has taken ${med.name || "medication"}.`,
-                      profileId: member.uid === parentUid ? null : member.uid,
+                      profileId: member.uid === parentUid ? "self" : member.uid,
                       profileName: member.name ?? null,
                       relationship: member.relationship || member.relation || "Family",
                       profilePhoto: member.profileImage || null,
@@ -432,7 +432,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
                       id: `med_missed_${key}_${Date.now()}`,
                       title: `❌ ${member.name} Medicine Missed`,
                       message: `${member.name} missed scheduled dose of ${med.name || "medication"}.`,
-                      profileId: member.uid === parentUid ? null : member.uid,
+                      profileId: member.uid === parentUid ? "self" : member.uid,
                       profileName: member.name ?? null,
                       relationship: member.relationship || member.relation || "Family",
                       profilePhoto: member.profileImage || null,
@@ -575,7 +575,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
                 id: localId,
                 title,
                 message: body,
-                profileId: target.id === "self" ? null : target.id,
+                profileId: target.id,
                 profileName: target.name,
                 relationship: target.relationship,
                 profilePhoto: target.photo,
@@ -601,10 +601,9 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
   }, [selfProfile, members, loadNotifications]);
 
   const syncNotifications = useCallback(async () => {
-    setIsLoading(true);
+    // Run DPSS sync and reload local notifications in background without blocking UI
     await syncDPSSNotifications();
     await loadNotifications();
-    setIsLoading(false);
   }, [syncDPSSNotifications, loadNotifications]);
 
   // Poll for DPSS notifications
@@ -614,18 +613,20 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
   }, [syncDPSSNotifications]);
 
   useEffect(() => {
-    if (selfProfile) {
+    const uid = auth.currentUser?.uid;
+    if (uid) {
       syncDPSSNotificationsRef.current();
     }
 
     const interval = setInterval(() => {
-      if (selfProfile) {
+      const currentUid = auth.currentUser?.uid;
+      if (currentUid) {
         syncDPSSNotificationsRef.current();
       }
     }, 180000); // Poll every 3 minutes
 
     return () => clearInterval(interval);
-  }, [!!selfProfile]);
+  }, [auth.currentUser?.uid]);
 
   return (
     <NotificationContext.Provider

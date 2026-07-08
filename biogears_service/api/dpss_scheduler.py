@@ -356,16 +356,23 @@ class DPSSScheduler:
     def _midnight_sweep(self):
         """
         Auto-simulate every user who still has PENDING events from prior to today.
+        Also runs automatic baseline calibration for any days the user missed
+        (e.g., if they didn't log any events and ignored notifications for several days).
         Handles multi-day gaps by chaining simulations in chronological order.
         """
         db = _db()
+        from biogears_service.api.db import list_profiles
         try:
-            user_ids = db.get_users_with_pending_events()
+            profiles = list_profiles()
+            user_ids = list(profiles.keys())
         except Exception as e:
-            logger.warning(f"midnight_sweep DB error: {e}")
-            return
+            logger.warning(f"midnight_sweep list_profiles error: {e}")
+            try:
+                user_ids = db.get_users_with_pending_events()
+            except Exception:
+                user_ids = []
 
-        logger.info(f"🌙 Midnight sweep: {len(user_ids)} users with pending events.")
+        logger.info(f"🌙 Midnight sweep: checking {len(user_ids)} digital twins.")
 
         for user_id in user_ids:
             if not _acquire_user_lock(user_id, ttl_seconds=600):
@@ -383,16 +390,15 @@ class DPSSScheduler:
         Run the automatic simulation for a user.
         Groups pending events by calendar day and chains them sequentially
         to maintain physiological continuity across multi-day gaps.
+        If a day was missed (no user-logged events), automatically generates
+        and simulates standard baseline routine events to keep twin calibrated.
         """
         today = datetime.date.today()
         pending = db.get_pending_events(user_id)
 
-        if not pending:
-            return
-
-        # Group events by calendar day
+        # Group existing pending events by calendar day
         from collections import defaultdict
-        days: dict = defaultdict(list)
+        days = defaultdict(list)
         for event in pending:
             ts = event.get("event_timestamp", "")
             try:
@@ -404,44 +410,91 @@ class DPSSScheduler:
             except Exception:
                 days[str(today)].append(event)
 
-        # Process each day in chronological order (skip today — user still has time)
-        sorted_days = sorted(days.keys())
-        days_to_process = [d for d in sorted_days if d < str(today)]
+        # Find the gap between last simulated date and today
+        snap = db.get_latest_snapshot(user_id)
+        if snap and snap.get("sim_date"):
+            try:
+                last_sim_date = datetime.date.fromisoformat(snap["sim_date"])
+            except Exception:
+                last_sim_date = today - datetime.timedelta(days=1)
+        else:
+            # If no snapshot exists yet, default to yesterday
+            last_sim_date = today - datetime.timedelta(days=1)
+
+        # Collect all days to process chronologically (last_sim_date + 1 up to today - 1)
+        days_to_process = []
+        curr = last_sim_date + datetime.timedelta(days=1)
+        while curr < today:
+            days_to_process.append(curr.strftime("%Y-%m-%d"))
+            curr += datetime.timedelta(days=1)
+
+        # Ensure we also process any day before today that has pending events
+        for d in days.keys():
+            if d < today.strftime("%Y-%m-%d") and d not in days_to_process:
+                days_to_process.append(d)
+
+        days_to_process = sorted(list(set(days_to_process)))
 
         if not days_to_process:
-            # All events are from today — only auto-sim if running at midnight
-            days_to_process = sorted_days
+            # If there are no historical missed days, but there are pending events from today,
+            # we only auto-simulate if there is a pending event count.
+            # Otherwise return.
+            if pending:
+                days_to_process = sorted(list(days.keys()))
+            else:
+                return
 
         for day_str in days_to_process:
             day_events = days[day_str]
-            logger.info(f"[{user_id}] Auto-simulating day {day_str} ({len(day_events)} events)")
-
+            
             # Convert events to plain dicts for the engine
             events_raw = []
-            for e in day_events:
-                payload = e.get("payload", {})
-                if isinstance(payload, str):
-                    import json
-                    try:
-                        payload = json.loads(payload)
-                    except Exception:
-                        payload = {}
-                row = {
-                    "event_id": e.get("event_id"),
-                    "event_type": e.get("event_type"),
-                    "value": payload.get("value", 0),
-                    "timestamp": payload.get("timestamp"),
-                    "time_offset": payload.get("time_offset"),
-                    "substance_name": payload.get("substance_name"),
-                    "unit": payload.get("unit"),
-                    "meal_type": payload.get("meal_type"),
-                    "carb_g": payload.get("carb_g"),
-                    "fat_g": payload.get("fat_g"),
-                    "protein_g": payload.get("protein_g"),
-                    "duration_seconds": payload.get("duration_seconds"),
-                    "notes": payload.get("notes"),
-                }
-                events_raw.append({k: v for k, v in row.items() if v is not None})
+            
+            if not day_events:
+                # User did not log any events for this day. Generate standard baseline events.
+                logger.info(f"[{user_id}] Generating baseline calibration events for missed day {day_str}")
+                day_date = datetime.date.fromisoformat(day_str)
+                t_8_00 = int(datetime.datetime.combine(day_date, datetime.time(8, 0)).timestamp())
+                t_8_30 = int(datetime.datetime.combine(day_date, datetime.time(8, 30)).timestamp())
+                t_12_30 = int(datetime.datetime.combine(day_date, datetime.time(12, 30)).timestamp())
+                t_17_30 = int(datetime.datetime.combine(day_date, datetime.time(17, 30)).timestamp())
+                t_23_00 = int(datetime.datetime.combine(day_date, datetime.time(23, 0)).timestamp())
+
+                events_raw = [
+                    {"event_type": "water", "value": 250.0, "timestamp": t_8_00, "notes": "Baseline hydration"},
+                    {"event_type": "meal", "value": 500.0, "timestamp": t_8_30, "meal_type": "balanced", "carb_g": 60, "fat_g": 15, "protein_g": 20, "notes": "Baseline breakfast"},
+                    {"event_type": "water", "value": 300.0, "timestamp": t_12_30, "notes": "Baseline hydration"},
+                    {"event_type": "meal", "value": 700.0, "timestamp": t_12_30, "meal_type": "balanced", "carb_g": 85, "fat_g": 22, "protein_g": 28, "notes": "Baseline lunch"},
+                    {"event_type": "water", "value": 300.0, "timestamp": t_17_30, "notes": "Baseline hydration"},
+                    {"event_type": "meal", "value": 800.0, "timestamp": t_17_30, "meal_type": "balanced", "carb_g": 100, "fat_g": 25, "protein_g": 35, "notes": "Baseline dinner"},
+                    {"event_type": "sleep", "value": 8.0, "timestamp": t_23_00, "duration_seconds": 28800, "notes": "Baseline sleep"}
+                ]
+            else:
+                logger.info(f"[{user_id}] Auto-simulating day {day_str} ({len(day_events)} events)")
+                for e in day_events:
+                    payload = e.get("payload", {})
+                    if isinstance(payload, str):
+                        import json
+                        try:
+                            payload = json.loads(payload)
+                        except Exception:
+                            payload = {}
+                    row = {
+                        "event_id": e.get("event_id"),
+                        "event_type": e.get("event_type"),
+                        "value": payload.get("value", 0),
+                        "timestamp": payload.get("timestamp"),
+                        "time_offset": payload.get("time_offset"),
+                        "substance_name": payload.get("substance_name"),
+                        "unit": payload.get("unit"),
+                        "meal_type": payload.get("meal_type"),
+                        "carb_g": payload.get("carb_g"),
+                        "fat_g": payload.get("fat_g"),
+                        "protein_g": payload.get("protein_g"),
+                        "duration_seconds": payload.get("duration_seconds"),
+                        "notes": payload.get("notes"),
+                    }
+                    events_raw.append({k: v for k, v in row.items() if v is not None})
 
             result = _run_sim(user_id, events_raw, sim_type="AUTOMATIC")
 

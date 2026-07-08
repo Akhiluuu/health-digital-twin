@@ -2272,8 +2272,17 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
       return;
     }
     const defaultRoutine = savedRoutines.find(r => r.isDefault) || savedRoutines[0];
-    if (!defaultRoutine) {
-      throw new Error('No default routine available for catch-up');
+    let eventsToUse = defaultRoutine?.events;
+    if (!eventsToUse || eventsToUse.length === 0) {
+      eventsToUse = [
+        { event_type: 'water', value: 250.0, wallTime: '08:00', notes: 'Baseline hydration' },
+        { event_type: 'meal', value: 500.0, wallTime: '08:30', meal_type: 'balanced', carb_g: 60, fat_g: 15, protein_g: 20, notes: 'Baseline breakfast' },
+        { event_type: 'water', value: 300.0, wallTime: '12:30', notes: 'Baseline hydration' },
+        { event_type: 'meal', value: 700.0, wallTime: '12:30', meal_type: 'balanced', carb_g: 85, fat_g: 22, protein_g: 28, notes: 'Baseline lunch' },
+        { event_type: 'water', value: 300.0, wallTime: '17:30', notes: 'Baseline hydration' },
+        { event_type: 'meal', value: 800.0, wallTime: '17:30', meal_type: 'balanced', carb_g: 100, fat_g: 25, protein_g: 35, notes: 'Baseline dinner' },
+        { event_type: 'sleep', value: 8.0, wallTime: '23:00', duration_seconds: 28800, notes: 'Baseline sleep' }
+      ] as any[];
     }
 
     setSimulationStatus('queued');
@@ -2290,7 +2299,7 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
         const targetDate = new Date();
         targetDate.setDate(now.getDate() - i);
 
-        for (const e of defaultRoutine.events) {
+        for (const e of eventsToUse) {
           const [hh, mm] = ((e as any).wallTime || '08:00').split(':').map(Number);
           const eventDate = new Date(targetDate);
           eventDate.setHours(hh || 0, mm || 0, 0, 0);
@@ -2389,9 +2398,17 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
   const fillBaselineEvents = useCallback(async (): Promise<void> => {
     if (!twinUserId) return;
     const defaultRoutine = savedRoutines.find(r => r.isDefault) || savedRoutines[0];
-    if (!defaultRoutine) {
-      Alert.alert('No Default Routine', 'Please create or set a default routine first.');
-      return;
+    let eventsToUse = defaultRoutine?.events;
+    if (!eventsToUse || eventsToUse.length === 0) {
+      eventsToUse = [
+        { event_type: 'water', value: 250.0, wallTime: '08:00', notes: 'Baseline hydration' },
+        { event_type: 'meal', value: 500.0, wallTime: '08:30', meal_type: 'balanced', carb_g: 60, fat_g: 15, protein_g: 20, notes: 'Baseline breakfast' },
+        { event_type: 'water', value: 300.0, wallTime: '12:30', notes: 'Baseline hydration' },
+        { event_type: 'meal', value: 700.0, wallTime: '12:30', meal_type: 'balanced', carb_g: 85, fat_g: 22, protein_g: 28, notes: 'Baseline lunch' },
+        { event_type: 'water', value: 300.0, wallTime: '17:30', notes: 'Baseline hydration' },
+        { event_type: 'meal', value: 800.0, wallTime: '17:30', meal_type: 'balanced', carb_g: 100, fat_g: 25, protein_g: 35, notes: 'Baseline dinner' },
+        { event_type: 'sleep', value: 8.0, wallTime: '23:00', duration_seconds: 28800, notes: 'Baseline sleep' }
+      ] as any[];
     }
 
     const now = new Date();
@@ -2418,7 +2435,7 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
 
     // Build candidate baseline events in the gap window
     const candidates: RoutineEvent[] = [];
-    for (const de of defaultRoutine.events) {
+    for (const de of eventsToUse) {
       const deTime = (de as any).wallTime || '08:00';
       const deMinutes = parseTime(deTime);
       if (deMinutes > startMinutes && deMinutes <= currentMinutes) {
@@ -2461,7 +2478,10 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
 
     if (conflicts.length === 0) {
       commitSafeEvents();
-      Alert.alert('Baseline Filled', `Added ${safeToAdd.length} missing event(s) to today's timeline.`);
+      setTimeout(() => {
+        runSimulation().catch(e => log('[FillBaseline] Auto-simulation failed:', e));
+      }, 500);
+      Alert.alert('Baseline Filled', `Added ${safeToAdd.length} missing event(s) and started simulation.`);
       return;
     }
 
@@ -2499,10 +2519,13 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
         }
         const merged = [...current, ...toAppend].sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
         persistToday(merged);
+        setTimeout(() => {
+          runSimulation().catch(e => log('[FillBaseline] Auto-simulation failed:', e));
+        }, 500);
         return merged;
       });
     });
-  }, [twinUserId, savedRoutines, todayEvents, sessions]);
+  }, [twinUserId, savedRoutines, todayEvents, sessions, runSimulation]);
 
   // ─── Undo Last Simulation ─────────────────────────────────────────────────────
   const undoLastSimulation = useCallback(async () => {
