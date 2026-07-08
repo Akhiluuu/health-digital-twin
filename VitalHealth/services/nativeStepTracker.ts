@@ -16,7 +16,7 @@ import { Pedometer } from 'expo-sensors';
 import { warn } from "../utils/logger";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
-export type DataSource = 'STEP_SENSOR' | 'SENSOR_FUSION' | 'HEALTH_CONNECT' | 'PEDOMETER' | 'NONE';
+export type DataSource = 'STEP_SENSOR' | 'SENSOR_FUSION' | 'HEALTH_CONNECT' | 'PEDOMETER' | 'NONE' | 'CLOUD_SYNC';
 
 export interface StepUpdateEvent {
   steps: number;
@@ -49,13 +49,13 @@ if (Platform.OS === 'android' && StepTrackerModule) {
 /**
  * Start native step tracking (Android only — on iOS the Pedometer is used).
  */
-export async function startNativeTracking(uid: string): Promise<void> {
+export async function startNativeTracking(uid: string, profileName?: string): Promise<void> {
   if (Platform.OS !== 'android') return;
   if (!StepTrackerModule) {
     warn('[NativeStepTracker] StepTrackerModule not available');
     return;
   }
-  StepTrackerModule.startTracking(uid);
+  StepTrackerModule.startTracking(uid, profileName || '');
 }
 
 /**

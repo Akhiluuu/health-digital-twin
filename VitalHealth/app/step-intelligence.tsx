@@ -23,6 +23,7 @@ import Svg, { Circle, Defs, LinearGradient as SvgGrad, Stop } from "react-native
 import { useProfile } from "../context/ProfileContext";
 import { useSteps } from "../context/StepContext";
 import { useTheme } from "../context/ThemeContext";
+import { useFamily } from "../context/FamilyContext";
 
 
 // ── Circular ring ──────────────────────────────────────────────────────────────
@@ -92,7 +93,11 @@ export default function StepIntelligenceScreen() {
     ? { background: "#f8fafc", card: "#ffffff", text: "#020617", subText: "#64748b", border: "#e2e8f0", accent: "#6366f1", headerGradient: ["#6366f1","#4f46e5"] as const }
     : { background: "#0D0D0F", card: "rgba(255,255,255,0.04)", text: "#ffffff", subText: "rgba(255,255,255,0.4)", border: "rgba(255,255,255,0.08)", accent: "#6366f1", headerGradient: ["#0f0c29","#302b63"] as const };
 
-  const { weightKg, heightCm, profile } = useProfile();
+  const { weightKg: parentWeight, heightCm: parentHeight, profile: parentProfile } = useProfile();
+  const { activeProfile, isSwitched } = useFamily();
+  const profile = isSwitched ? activeProfile : parentProfile;
+  const weightKg = isSwitched && activeProfile?.weight ? (parseFloat(String(activeProfile.weight).replace(/[^0-9.]/g, "")) || 60) : parentWeight;
+  const heightCm = isSwitched && activeProfile?.height ? (parseFloat(String(activeProfile.height).replace(/[^0-9.]/g, "")) || 170) : parentHeight;
   const {
     steps, calories, distanceKm, goal, sessionSecs,
     isTracking, dataSource, lastSyncAt, weeklySteps, monthlySteps, yearlySteps, refreshHistory,

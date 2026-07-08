@@ -49,6 +49,7 @@ const NotificationContext = createContext<NotificationContextType | null>(null);
 const CHANNEL_ID = "health_critical";
 
 export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { profile: selfProfile } = useProfile();
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const notificationsRef = useRef<NotificationItem[]>([]);
   useEffect(() => {
@@ -292,147 +293,176 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
    * Set up real-time observers for family member activities (Caregiver / Sync Pipeline)
    */
   useEffect(() => {
-    // Clean up any existing listeners
-    activeUnsubscribes.current.forEach(unsub => unsub());
-    activeUnsubscribes.current = [];
+    let active = true;
 
-    if (!members || members.length === 0) return;
+    const initObservers = async () => {
+      const parentUid = await getUserId();
+      if (!active) return;
 
-    log(`[NotificationContext] Initializing observers for ${members.length} family profiles`);
+      // Clean up any existing listeners
+      activeUnsubscribes.current.forEach(unsub => unsub());
+      activeUnsubscribes.current = [];
 
-    members.forEach(member => {
-      if (!member.uid) return;
-
-      // ── 1. Observe Family Member Vitals / Anomaly Detection ────────
-      const profileUnsub = onSnapshot(
-        doc(db, "users", member.uid),
-        (snapshot) => {
-          if (!snapshot.exists()) return;
-          const data = snapshot.data();
-          
-          const prev = lastVitalsValue.current[member.uid] || { spo2: 98, heartRate: 75 };
-          const curSpo2 = data.spo2 !== undefined ? data.spo2 : 0;
-          const curHR = data.heartRate !== undefined ? Math.round(data.heartRate) : 0;
-          
-          lastVitalsValue.current[member.uid] = { spo2: curSpo2 || prev.spo2, heartRate: curHR || prev.heartRate };
-
-          const alertState = lastVitalAlerts.current[member.uid] || { spo2Time: 0, hrTime: 0 };
-          const now = Date.now();
-
-          // A. SpO₂ Anomalies (Hypoxia detection)
-          if (curSpo2 > 0 && curSpo2 < 95 && (now - alertState.spo2Time > 15 * 60 * 1000)) {
-            // Trigger critical hypoxia notification
-            lastVitalAlerts.current[member.uid].spo2Time = now;
-            addNotification({
-              id: `alert_spo2_${member.uid}_${now}`,
-              title: `🚨 Low Oxygen Alert`,
-              message: `${member.name}'s oxygen saturation level dropped to a critical ${curSpo2}%. Please check on them immediately.`,
-              profileId: member.uid,
-              profileName: member.name ?? null,
-              relationship: member.relationship || member.relation || "Family",
-              profilePhoto: member.profileImage || null,
-              category: "alerts",
-              priority: "critical",
-              timestamp: new Date().toISOString(),
-              deepLink: "/(tabs)/twin",
-              actionButtons: JSON.stringify([{ id: "view", title: "View Vitals" }]),
-            });
-          }
-
-          // B. Heart Rate Anomalies (Tachycardia / Bradycardia)
-          if (curHR > 0 && (curHR > 120 || curHR < 50) && (now - alertState.hrTime > 15 * 60 * 1000)) {
-            lastVitalAlerts.current[member.uid].hrTime = now;
-            const issue = curHR > 120 ? "abnormally high heart rate (Tachycardia)" : "abnormally low heart rate (Bradycardia)";
-            addNotification({
-              id: `alert_hr_${member.uid}_${now}`,
-              title: `⚠️ Abnormal Heart Rate`,
-              message: `${member.name} has an ${issue} of ${curHR} BPM.`,
-              profileId: member.uid,
-              profileName: member.name ?? null,
-              relationship: member.relationship || member.relation || "Family",
-              profilePhoto: member.profileImage || null,
-              category: "alerts",
-              priority: "high",
-              timestamp: new Date().toISOString(),
-              deepLink: "/(tabs)/twin",
-              actionButtons: JSON.stringify([{ id: "view", title: "View Vitals" }]),
-            });
-          }
-        },
-        (err) => {
-          error(`[NotificationContext] Error monitoring profile for ${member.name}:`, err);
+      const profilesToObserve = [...members];
+      if (parentUid && selfProfile) {
+        // Only add if not already in members
+        if (!members.some(m => m.uid === parentUid)) {
+          profilesToObserve.push({
+            uid: parentUid,
+            name: selfProfile.firstName ? `${selfProfile.firstName} ${selfProfile.lastName || ""}`.trim() : "You",
+            relationship: "Self",
+            profileImage: selfProfile.profileImage || null,
+            relation: "Self"
+          } as any);
         }
-      );
+      }
 
-      // ── 2. Observe Family Member Medication Actions (Requirement 1) ──
-      const medicineUnsub = onSnapshot(
-        collection(db, "users", member.uid, "medicines"),
-        (snapshot) => {
-          snapshot.docChanges().forEach(change => {
-            if (change.type === "modified") {
-              const med = change.doc.data();
-              const medIdStr = change.doc.id;
-              const key = `${member.uid}_${medIdStr}`;
-              
-              const prevTaken = lastMedicineStates.current[key] !== undefined ? lastMedicineStates.current[key] : 0;
-              const curTaken = med.taken !== undefined ? med.taken : 0;
-              
-              lastMedicineStates.current[key] = curTaken;
+      if (profilesToObserve.length === 0) return;
 
-              // Only trigger if status transitioned from pending/unset to Taken (1) or Missed (-1) today
-              const today = new Date().toISOString().split("T")[0];
-              const isToday = med.takenDate === today;
+      log(`[NotificationContext] Initializing observers for ${profilesToObserve.length} profiles (including self)`);
 
-              if (isToday) {
-                if (curTaken === 1 && prevTaken !== 1) {
-                  // ✓ Taken Notification
-                  addNotification({
-                    id: `med_taken_${key}_${Date.now()}`,
-                    title: `✓ ${member.name} Medicine Taken`,
-                    message: `${member.name} has taken ${med.name || "medication"}.`,
-                    profileId: member.uid,
-                    profileName: member.name ?? null,
-                    relationship: member.relationship || member.relation || "Family",
-                    profilePhoto: member.profileImage || null,
-                    category: "medication",
-                    priority: "medium",
-                    timestamp: new Date().toISOString(),
-                    deepLink: "/MedicationVault",
-                    actionButtons: null,
-                  });
-                } else if (curTaken === -1 && prevTaken !== -1) {
-                  // ❌ Missed Notification
-                  addNotification({
-                    id: `med_missed_${key}_${Date.now()}`,
-                    title: `❌ ${member.name} Medicine Missed`,
-                    message: `${member.name} missed scheduled dose of ${med.name || "medication"}.`,
-                    profileId: member.uid,
-                    profileName: member.name ?? null,
-                    relationship: member.relationship || member.relation || "Family",
-                    profilePhoto: member.profileImage || null,
-                    category: "medication",
-                    priority: "high",
-                    timestamp: new Date().toISOString(),
-                    deepLink: "/MedicationVault",
-                    actionButtons: null,
-                  });
+      profilesToObserve.forEach(member => {
+        if (!member.uid) return;
+
+        // Initialize state placeholders
+        if (!lastVitalAlerts.current[member.uid]) {
+          lastVitalAlerts.current[member.uid] = { spo2Time: 0, hrTime: 0 };
+        }
+
+        // ── 1. Observe Family Member Vitals / Anomaly Detection ────────
+        const profileUnsub = onSnapshot(
+          doc(db, "users", member.uid),
+          (snapshot) => {
+            if (!snapshot.exists()) return;
+            const data = snapshot.data();
+            
+            const prev = lastVitalsValue.current[member.uid] || { spo2: 98, heartRate: 75 };
+            const curSpo2 = data.spo2 !== undefined ? data.spo2 : 0;
+            const curHR = data.heartRate !== undefined ? Math.round(data.heartRate) : 0;
+            
+            lastVitalsValue.current[member.uid] = { spo2: curSpo2 || prev.spo2, heartRate: curHR || prev.heartRate };
+
+            const alertState = lastVitalAlerts.current[member.uid] || { spo2Time: 0, hrTime: 0 };
+            const now = Date.now();
+
+            // A. SpO₂ Anomalies (Hypoxia detection)
+            if (curSpo2 > 0 && curSpo2 < 95 && (now - alertState.spo2Time > 15 * 60 * 1000)) {
+              // Trigger critical hypoxia notification
+              lastVitalAlerts.current[member.uid].spo2Time = now;
+              addNotification({
+                id: `alert_spo2_${member.uid}_${now}`,
+                title: `🚨 Low Oxygen Alert`,
+                message: `${member.name}'s oxygen saturation level dropped to a critical ${curSpo2}%. Please check on them immediately.`,
+                profileId: member.uid === parentUid ? null : member.uid,
+                profileName: member.name ?? null,
+                relationship: member.relationship || member.relation || "Family",
+                profilePhoto: member.profileImage || null,
+                category: "alerts",
+                priority: "critical",
+                timestamp: new Date().toISOString(),
+                deepLink: member.uid === parentUid ? "/(tabs)/twin" : `/family/member-details?id=${member.uid}`,
+                actionButtons: JSON.stringify([{ id: "view", title: "View Vitals" }]),
+              });
+            }
+
+            // B. Heart Rate Anomalies (Tachycardia / Bradycardia)
+            if (curHR > 0 && (curHR > 120 || curHR < 50) && (now - alertState.hrTime > 15 * 60 * 1000)) {
+              lastVitalAlerts.current[member.uid].hrTime = now;
+              const issue = curHR > 120 ? "abnormally high heart rate (Tachycardia)" : "abnormally low heart rate (Bradycardia)";
+              addNotification({
+                id: `alert_hr_${member.uid}_${now}`,
+                title: `⚠️ Abnormal Heart Rate`,
+                message: `${member.name} has an ${issue} of ${curHR} BPM.`,
+                profileId: member.uid === parentUid ? null : member.uid,
+                profileName: member.name ?? null,
+                relationship: member.relationship || member.relation || "Family",
+                profilePhoto: member.profileImage || null,
+                category: "alerts",
+                priority: "high",
+                timestamp: new Date().toISOString(),
+                deepLink: member.uid === parentUid ? "/(tabs)/twin" : `/family/member-details?id=${member.uid}`,
+                actionButtons: JSON.stringify([{ id: "view", title: "View Vitals" }]),
+              });
+            }
+          },
+          (err) => {
+            error(`[NotificationContext] Error monitoring profile for ${member.name}:`, err);
+          }
+        );
+
+        // ── 2. Observe Family Member Medication Actions (Requirement 1) ──
+        const medicineUnsub = onSnapshot(
+          collection(db, "users", member.uid, "medicines"),
+          (snapshot) => {
+            snapshot.docChanges().forEach(change => {
+              if (change.type === "modified") {
+                const med = change.doc.data();
+                const medIdStr = change.doc.id;
+                const key = `${member.uid}_${medIdStr}`;
+                
+                const prevTaken = lastMedicineStates.current[key] !== undefined ? lastMedicineStates.current[key] : 0;
+                const curTaken = med.taken !== undefined ? med.taken : 0;
+                
+                lastMedicineStates.current[key] = curTaken;
+
+                // Only trigger if status transitioned from pending/unset to Taken (1) or Missed (-1) today
+                const today = new Date().toISOString().split("T")[0];
+                const isToday = med.takenDate === today;
+
+                if (isToday) {
+                  if (curTaken === 1 && prevTaken !== 1) {
+                    // ✓ Taken Notification
+                    addNotification({
+                      id: `med_taken_${key}_${Date.now()}`,
+                      title: `✓ ${member.name} Medicine Taken`,
+                      message: `${member.name} has taken ${med.name || "medication"}.`,
+                      profileId: member.uid === parentUid ? null : member.uid,
+                      profileName: member.name ?? null,
+                      relationship: member.relationship || member.relation || "Family",
+                      profilePhoto: member.profileImage || null,
+                      category: "medication",
+                      priority: "medium",
+                      timestamp: new Date().toISOString(),
+                      deepLink: member.uid === parentUid ? "/MedicationVault" : `/family/member-details?id=${member.uid}`,
+                      actionButtons: null,
+                    });
+                  } else if (curTaken === -1 && prevTaken !== -1) {
+                    // ❌ Missed Notification
+                    addNotification({
+                      id: `med_missed_${key}_${Date.now()}`,
+                      title: `❌ ${member.name} Medicine Missed`,
+                      message: `${member.name} missed scheduled dose of ${med.name || "medication"}.`,
+                      profileId: member.uid === parentUid ? null : member.uid,
+                      profileName: member.name ?? null,
+                      relationship: member.relationship || member.relation || "Family",
+                      profilePhoto: member.profileImage || null,
+                      category: "medication",
+                      priority: "high",
+                      timestamp: new Date().toISOString(),
+                      deepLink: member.uid === parentUid ? "/MedicationVault" : `/family/member-details?id=${member.uid}`,
+                      actionButtons: null,
+                    });
+                  }
                 }
               }
-            }
-          });
-        },
-        (err) => {
-          error(`[NotificationContext] Error monitoring medicines for ${member.name}:`, err);
-        }
-      );
+            });
+          },
+          (err) => {
+            error(`[NotificationContext] Error monitoring medicines for ${member.name}:`, err);
+          }
+        );
 
-      activeUnsubscribes.current.push(profileUnsub, medicineUnsub);
-    });
+        activeUnsubscribes.current.push(profileUnsub, medicineUnsub);
+      });
+    };
+
+    initObservers();
 
     return () => {
+      active = false;
       activeUnsubscribes.current.forEach(unsub => unsub());
     };
-  }, [members, addNotification]);
+  }, [members, selfProfile, addNotification]);
 
   // Initial load
   useEffect(() => {
@@ -445,8 +475,6 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
     
     loadNotifications();
   }, [loadNotifications]);
-
-  const { profile: selfProfile } = useProfile();
 
   const syncDPSSNotifications = useCallback(async () => {
     try {
@@ -580,17 +608,24 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
   }, [syncDPSSNotifications, loadNotifications]);
 
   // Poll for DPSS notifications
+  const syncDPSSNotificationsRef = useRef(syncDPSSNotifications);
   useEffect(() => {
-    if (!isLoading) {
-      syncDPSSNotifications();
+    syncDPSSNotificationsRef.current = syncDPSSNotifications;
+  }, [syncDPSSNotifications]);
+
+  useEffect(() => {
+    if (selfProfile) {
+      syncDPSSNotificationsRef.current();
     }
 
     const interval = setInterval(() => {
-      syncDPSSNotifications();
+      if (selfProfile) {
+        syncDPSSNotificationsRef.current();
+      }
     }, 180000); // Poll every 3 minutes
 
     return () => clearInterval(interval);
-  }, [isLoading, syncDPSSNotifications]);
+  }, [!!selfProfile]);
 
   return (
     <NotificationContext.Provider

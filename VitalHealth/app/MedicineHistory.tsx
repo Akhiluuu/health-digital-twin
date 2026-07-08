@@ -251,7 +251,7 @@ export default function MedicineHistory() {
                   </Text>
 
                   <Text style={{ color: c.sub }}>
-                    Status: {selectedEntry.status.toUpperCase()}
+                    Status: {(selectedEntry.status || "").toUpperCase()}
                   </Text>
 
                   <Text style={{ color: c.sub }}>

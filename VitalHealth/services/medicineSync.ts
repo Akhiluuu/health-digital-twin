@@ -140,3 +140,99 @@ export async function syncMedicinesFromFirebase(): Promise<void> {
     log("⚠️ syncMedicinesFromFirebase error (non-critical):", err);
   }
 }
+
+export async function syncAndScheduleAllFamilyMedicines(members: any[]): Promise<void> {
+  try {
+    log(`🔄 Starting sync & reschedule pass for ${members.length} family members...`);
+    const {
+      scheduleMedicineDaily,
+      scheduleMedicineOnce,
+      cancelMedicineNotification,
+    } = await import("./notifeeService");
+    const notifee = (await import("@notifee/react-native")).default;
+
+    const triggers = await notifee.getTriggerNotifications();
+    const scheduledIds = new Set(triggers.map((t: any) => t.notification.id));
+
+    const { getTwinId } = await import("../utils/twinUtils");
+    const { fetchMedicinesFromFirebase } = await import("./firebaseSync");
+
+    for (const member of members) {
+      const memberId = member.id || member.uid || member.userId;
+      if (!memberId || memberId === "self") continue;
+
+      const profileName = member.firstName
+        ? `${member.firstName} ${member.lastName || ""}`.trim()
+        : member.name || "Family Member";
+
+      log(`[MedicineSync] Fetching medicines for family member: ${profileName} (${memberId})`);
+      const meds = await fetchMedicinesFromFirebase(memberId);
+
+      // Keep track of which IDs should be scheduled for this member
+      const activeMedNotifIds = new Set<string>();
+      const now = new Date();
+
+      for (const med of meds) {
+        if (!med.id) continue;
+        const deterministicId = `med_${memberId}_${med.id}`;
+
+        if (med.reminder) {
+          activeMedNotifIds.add(deterministicId);
+
+          if (!scheduledIds.has(deterministicId)) {
+            try {
+              const dateObj = new Date(med.timestamp);
+              const freq = (med.frequency ?? "").toLowerCase();
+              let scheduledId = "";
+
+              if (freq === "once" && dateObj.getTime() > now.getTime()) {
+                scheduledId = await scheduleMedicineOnce(
+                  `${med.name} — ${med.dose}`,
+                  dateObj,
+                  med.id,
+                  memberId,
+                  profileName,
+                  med.name,
+                  med.dose,
+                  med.time,
+                  med.frequency
+                );
+              } else if (freq === "daily") {
+                scheduledId = await scheduleMedicineDaily(
+                  `${med.name} — ${med.dose}`,
+                  dateObj.getHours(),
+                  dateObj.getMinutes(),
+                  med.id,
+                  memberId,
+                  profileName,
+                  med.name,
+                  med.dose,
+                  med.time,
+                  med.frequency
+                );
+              }
+
+              if (scheduledId) {
+                log(`🔔 Scheduled notification for ${profileName}'s medicine: ${med.name} (${scheduledId})`);
+              }
+            } catch (err) {
+              log(`❌ Failed to schedule medicine ${med.name} for ${profileName}:`, err);
+            }
+          }
+        }
+      }
+
+      // Clean up orphaned or turned-off alarms for this member
+      for (const t of triggers) {
+        const notifId = t.notification.id;
+        if (notifId && notifId.startsWith(`med_${memberId}_`) && !activeMedNotifIds.has(notifId)) {
+          log(`🗑 Cancelling orphaned notification for ${profileName}: ${notifId}`);
+          await cancelMedicineNotification(notifId).catch(() => {});
+        }
+      }
+    }
+    log("✅ Finished sync & reschedule pass for all family members.");
+  } catch (err) {
+    log("❌ Error in syncAndScheduleAllFamilyMedicines:", err);
+  }
+}

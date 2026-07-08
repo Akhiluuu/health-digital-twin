@@ -396,7 +396,10 @@ class DPSSScheduler:
         for event in pending:
             ts = event.get("event_timestamp", "")
             try:
-                day_str = ts[:10]  # YYYY-MM-DD
+                if isinstance(ts, (datetime.datetime, datetime.date)):
+                    day_str = ts.strftime("%Y-%m-%d")
+                else:
+                    day_str = str(ts)[:10]  # YYYY-MM-DD
                 days[day_str].append(event)
             except Exception:
                 days[str(today)].append(event)

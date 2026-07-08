@@ -748,7 +748,10 @@ def _run_batch_sync_blocking_core(
     # Check for "Dead Twin" (NaNs or zeros in critical vitals)
     # BioGears exits 0 even when it diverges — catch that here.
     critical_cols = [
-        col for col in ['HeartRate', 'SystolicArterialPressure', 'OxygenSaturation']
+        col for col in [
+            'HeartRate', 'SystolicArterialPressure', 'OxygenSaturation',
+            'CoreTemperature', 'RespirationRate', 'Glucose-BloodConcentration'
+        ]
         if col in df.columns
     ]
     nan_detected = any(df[col].isnull().any() for col in critical_cols)

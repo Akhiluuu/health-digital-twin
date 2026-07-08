@@ -101,20 +101,31 @@ export async function setupNotifee() {
 export const scheduleMedicineOnce = async (
   title: string,
   date: Date,
-  medicineId?: number
+  medicineId?: number,
+  profileId?: string,
+  profileName?: string,
+  medicineName?: string,
+  dose?: string,
+  time?: string,
+  frequency?: string,
+  customNotifId?: string
 ): Promise<string> => {
-  const id = `med_once_${Date.now()}`;
+  const id = customNotifId || (profileId && profileId !== "self" && medicineId ? `med_${profileId}_${medicineId}` : `med_once_${Date.now()}`);
 
   await notifee.createTriggerNotification(
     {
       id,
-      title: "💊 Medicine Reminder",
+      title: profileName ? `💊 Medicine Reminder (${profileName})` : "💊 Medicine Reminder",
       body: title,
       data: {
         type:       "medicine",
-        // ✅ Store medicineId in notification data so snooze lookups work
         medicineId: String(medicineId ?? ""),
-        frequency:  "once",
+        medicineName: medicineName || "",
+        dose:         dose || "",
+        time:         time || "",
+        frequency:    frequency || "once",
+        profileId:  profileId || "self",
+        profileName: profileName || "",
       },
       android: {
         channelId: CHANNEL_ID,
@@ -156,9 +167,16 @@ export const scheduleMedicineDaily = async (
   title: string,
   hour: number,
   minute: number,
-  medicineId?: number
+  medicineId?: number,
+  profileId?: string,
+  profileName?: string,
+  medicineName?: string,
+  dose?: string,
+  time?: string,
+  frequency?: string,
+  customNotifId?: string
 ): Promise<string> => {
-  const id = `med_daily_${Date.now()}`;
+  const id = customNotifId || (profileId && profileId !== "self" && medicineId ? `med_${profileId}_${medicineId}` : `med_daily_${Date.now()}`);
 
   const now     = new Date();
   const trigger = new Date();
@@ -173,12 +191,17 @@ export const scheduleMedicineDaily = async (
   await notifee.createTriggerNotification(
     {
       id,
-      title: "💊 Medicine Reminder",
+      title: profileName ? `💊 Medicine Reminder (${profileName})` : "💊 Medicine Reminder",
       body: title,
       data: {
         type:       "medicine",
         medicineId: String(medicineId ?? ""),
-        frequency:  "daily",
+        medicineName: medicineName || "",
+        dose:         dose || "",
+        time:         time || "",
+        frequency:    frequency || "daily",
+        profileId:  profileId || "self",
+        profileName: profileName || "",
       },
       android: {
         channelId: CHANNEL_ID,
@@ -221,7 +244,12 @@ export const snoozeMedicine = async (
   body:       string,
   medicineId: string = "",
   frequency:  string = "daily",
-  minutes:    number = 5
+  minutes:    number = 5,
+  profileId:  string = "self",
+  profileName: string = "",
+  medicineName: string = "",
+  dose:       string = "",
+  time:       string = ""
 ): Promise<string> => {
   const id        = `snooze_${Date.now()}`;
   const timestamp = Date.now() + minutes * 60 * 1000;
@@ -229,15 +257,17 @@ export const snoozeMedicine = async (
   await notifee.createTriggerNotification(
     {
       id,
-      title: "💊 Snoozed Reminder",
+      title: profileName ? `💊 Snoozed Reminder (${profileName})` : "💊 Snoozed Reminder",
       body,
       data: {
         type: "medicine",
-        // ✅ KEY FIX: carry the original medicineId through the snooze
-        //    so handleMedicineTaken can look up by medicineId (not notifId)
-        //    when the user taps "Taken" on the snoozed notification.
         medicineId,
         frequency,
+        profileId,
+        profileName,
+        medicineName,
+        dose,
+        time,
       },
       android: {
         channelId: CHANNEL_ID,
@@ -280,20 +310,27 @@ export const snoozeMedicine = async (
 // ✅ FIX 2: Emits "medicine_taken" event so MedicineContext immediately
 //    calls reloadMedicines() and the tick appears without needing to
 //    leave and re-enter the screen.
-///////////////////////////////////////////////////////////
+// ///////////////////////////////////////////////////////////
 
 export async function handleMedicineTaken(
   notifId:    string,
-  medicineId: string = ""   // from notification data — needed for snooze
+  medicineId: string = "",   // from notification data — needed for snooze
+  profileId:  string = "self",
+  medicineName: string = "",
+  dose:       string = "",
+  time:       string = "",
+  frequency:  string = ""
 ) {
   try {
-    // Step 1: Try to find medicine by notifId first (original notification)
-    let med = getMedicineByNotificationId(notifId);
+    const isMember = profileId && profileId !== "self";
+    let med = null;
 
-    // Step 2: If not found (snooze case — new notifId), look up by medicineId
-    if (!med && medicineId) {
-      const all = getMedicines();
-      med = all.find((m) => String(m.id) === String(medicineId)) ?? null;
+    if (!isMember) {
+      med = getMedicineByNotificationId(notifId);
+      if (!med && medicineId) {
+        const all = getMedicines();
+        med = all.find((m) => String(m.id) === String(medicineId)) ?? null;
+      }
     }
 
     if (med) {
@@ -323,6 +360,31 @@ export async function handleMedicineTaken(
         await notifee.cancelDisplayedNotification(notifId);
         log("✅ Daily medicine marked taken:", med.name);
       }
+    } else if (isMember) {
+      if (medicineId) {
+        const medIdNum = parseInt(medicineId, 10);
+        const { syncUpdateMedicineStatus, syncDeleteMedicine: firebaseDeleteMedicine } = require("./firebaseSync");
+
+        await syncUpdateMedicineStatus(medIdNum, "taken", profileId);
+
+        await addToMedicineHistory({
+          medicineId:   medIdNum,
+          medicineName: medicineName || "Medication",
+          dose:         dose || "",
+          time:         time || "",
+          status:       "taken",
+          targetUid:    profileId,
+        });
+
+        if (frequency?.toLowerCase() === "once") {
+          await firebaseDeleteMedicine(medIdNum, profileId);
+          await notifee.cancelNotification(notifId);
+          log("🗑 Once medicine deleted from vault for member:", profileId);
+        } else {
+          await notifee.cancelDisplayedNotification(notifId);
+          log("✅ Daily medicine marked taken for member:", profileId);
+        }
+      }
     } else {
       // Medicine not found — just dismiss
       log("⚠️ Medicine not found for notifId:", notifId, "medicineId:", medicineId);
@@ -341,17 +403,25 @@ export async function handleMedicineTaken(
 
 export async function handleMedicineMissed(
   notifId:    string,
-  medicineId: string = ""
+  medicineId: string = "",
+  profileId:  string = "self",
+  medicineName: string = "",
+  dose:       string = "",
+  time:       string = ""
 ) {
   try {
     const { markMedicineMissedByNotificationId, getMedicineByNotificationId, getMedicines } = require("../database/medicineDB");
     const { syncUpdateMedicineStatus } = require("./firebaseSync");
 
-    let med = getMedicineByNotificationId(notifId);
+    const isMember = profileId && profileId !== "self";
+    let med = null;
 
-    if (!med && medicineId) {
-      const all = getMedicines();
-      med = all.find((m: any) => String(m.id) === String(medicineId)) ?? null;
+    if (!isMember) {
+      med = getMedicineByNotificationId(notifId);
+      if (!med && medicineId) {
+        const all = getMedicines();
+        med = all.find((m: any) => String(m.id) === String(medicineId)) ?? null;
+      }
     }
 
     if (med) {
@@ -368,6 +438,23 @@ export async function handleMedicineMissed(
 
       await notifee.cancelDisplayedNotification(notifId);
       log("❌ Daily medicine marked missed:", med.name);
+    } else if (isMember) {
+      if (medicineId) {
+        const medIdNum = parseInt(medicineId, 10);
+        await syncUpdateMedicineStatus(medIdNum, "missed", profileId);
+
+        await addToMedicineHistory({
+          medicineId:   medIdNum,
+          medicineName: medicineName || "Medication",
+          dose:         dose || "",
+          time:         time || "",
+          status:       "missed",
+          targetUid:    profileId,
+        });
+
+        await notifee.cancelDisplayedNotification(notifId);
+        log("❌ Daily medicine marked missed for member:", profileId);
+      }
     } else {
       log("⚠️ Medicine not found for notifId:", notifId, "medicineId:", medicineId);
       await notifee.cancelDisplayedNotification(notifId);
@@ -386,16 +473,24 @@ export async function handleMedicineMissed(
 // 💧 HYDRATION
 ///////////////////////////////////////////////////////////
 
-export const scheduleHydration = async (minutes: number = 60): Promise<string> => {
+export const scheduleHydration = async (
+  minutes: number = 60,
+  profileId?: string,
+  profileName?: string
+): Promise<string> => {
   const id        = `hydration_${Date.now()}`;
   const timestamp = Date.now() + minutes * 60 * 1000;
 
   await notifee.createTriggerNotification(
     {
       id,
-      title: "💧 Drink Water",
+      title: profileName ? `💧 Drink Water (${profileName})` : "💧 Drink Water",
       body:  "Stay hydrated!",
-      data:  { type: "hydration" },
+      data:  {
+        type: "hydration",
+        profileId: profileId || "self",
+        profileName: profileName || "",
+      },
       android: {
         channelId: CHANNEL_ID,
         pressAction: { id: "default" },
@@ -417,10 +512,10 @@ export const scheduleHydration = async (minutes: number = 60): Promise<string> =
   return id;
 };
 
-export const scheduleHydrationReminder = async () => {
+export const scheduleHydrationReminder = async (profileId?: string, profileName?: string) => {
   const value   = await AsyncStorage.getItem("hydration_interval");
   const minutes = value ? Number(value) : 60;
-  return scheduleHydration(minutes);
+  return scheduleHydration(minutes, profileId, profileName);
 };
 
 export const cancelHydrationReminders = async () => {
@@ -432,17 +527,18 @@ export const cancelHydrationReminders = async () => {
   }
 };
 
-export const snoozeHydrationReminder = async () => scheduleHydration(10);
+export const snoozeHydrationReminder = async (profileId?: string, profileName?: string) =>
+  scheduleHydration(10, profileId, profileName);
 
 ///////////////////////////////////////////////////////////
 // 🩺 SYMPTOM
 ///////////////////////////////////////////////////////////
 
-export const showSymptomNotification = async (symptom: string) => {
+export const showSymptomNotification = async (symptom: string, profileId?: string, profileName?: string) => {
   await notifee.displayNotification({
-    title: "🩺 Symptom Check",
+    title: profileName ? `🩺 Symptom Check (${profileName})` : "🩺 Symptom Check",
     body:  `Are you experiencing ${symptom}?`,
-    data:  { type: "symptom", symptom },
+    data:  { type: "symptom", symptom, profileId: profileId || "self", profileName: profileName || "" },
     android: {
       channelId: CHANNEL_ID,
       pressAction: { id: "default" },
@@ -453,15 +549,15 @@ export const showSymptomNotification = async (symptom: string) => {
   });
 };
 
-export const scheduleSymptomHourly = async (symptom: string): Promise<string> => {
+export const scheduleSymptomHourly = async (symptom: string, profileId?: string, profileName?: string): Promise<string> => {
   const id = `symptom_hourly_${Date.now()}`;
 
   await notifee.createTriggerNotification(
     {
       id,
-      title: "🩺 Symptom Check",
+      title: profileName ? `🩺 Symptom Check (${profileName})` : "🩺 Symptom Check",
       body:  `Are you still experiencing ${symptom}?`,
-      data:  { type: "symptom", symptom },
+      data:  { type: "symptom", symptom, profileId: profileId || "self", profileName: profileName || "" },
       android: {
         channelId: CHANNEL_ID,
         pressAction: { id: "default" },
@@ -689,6 +785,56 @@ export const scheduleInactivityReminder = async () => {
   }
 };
 
+async function saveDeliveredNotificationToDB(notification: any) {
+  if (!notification || !notification.id) return;
+  try {
+    const data = notification.data || {};
+    
+    // Ignore step tracker foreground notification because it's persistent and updated on every step
+    if (notification.id === "step_foreground_notif") return;
+
+    const profileId = data.profileId === "self" || !data.profileId ? null : String(data.profileId);
+    const profileName = data.profileName ? String(data.profileName) : null;
+    
+    let category: any = "system";
+    if (data.type === "medicine" || data.type === "medication") category = "medication";
+    else if (data.type === "hydration") category = "vitals";
+    else if (data.type === "symptom") category = "alerts";
+    else if (data.type === "dpss_sync" || data.type === "dpss_auto_complete") category = "system";
+
+    let priority: any = "medium";
+    if (category === "alerts") priority = "high";
+    else if (category === "medication") priority = "medium";
+    else if (category === "vitals") priority = "medium";
+    else priority = "low";
+
+    let deepLink = null;
+    if (data.type === "medicine") deepLink = "/MedicationVault";
+    else if (data.type === "hydration") deepLink = "/(tabs)/history?tab=hydration";
+    else if (data.type === "symptom") deepLink = "/symptom-log";
+    else if (data.type === "twin_reminder" || data.type === "dpss_sync") deepLink = "/(tabs)/twin";
+
+    const { addNotificationDB } = await import("../database/notificationDB");
+    await addNotificationDB({
+      id: notification.id,
+      title: notification.title || "Health Notification",
+      message: notification.body || "",
+      profileId,
+      profileName,
+      relationship: data.relationship ? String(data.relationship) : null,
+      profilePhoto: data.profilePhoto ? String(data.profilePhoto) : null,
+      category,
+      priority,
+      timestamp: new Date().toISOString(),
+      deepLink,
+      actionButtons: null,
+    });
+    log("💾 Automatically saved delivered notification to DB:", notification.id);
+  } catch (err: any) {
+    log("⚠️ Delivered notification already stored or ignored:", err.message || err);
+  }
+}
+
 ///////////////////////////////////////////////////////////
 // FOREGROUND HANDLER
 ///////////////////////////////////////////////////////////
@@ -697,6 +843,11 @@ export function registerNotifeeForegroundHandler() {
   return notifee.onForegroundEvent(async ({ type, detail }) => {
     const notifId   = detail.notification?.id ?? "";
     const data      = detail.notification?.data ?? {};
+
+    if (type === EventType.DELIVERED) {
+      await saveDeliveredNotificationToDB(detail.notification);
+      return;
+    }
 
     // ── Handle Normal Notification Press ──────────────────────────
     if (type === EventType.PRESS) {
@@ -738,19 +889,25 @@ export function registerNotifeeForegroundHandler() {
 
     const action    = detail.pressAction?.id;
     const medicineId = String(data.medicineId ?? "");
+    const profileId = String(data.profileId ?? "self");
+    const profileName = String(data.profileName ?? "");
+    const medicineName = String(data.medicineName ?? "");
+    const dose = String(data.dose ?? "");
+    const time = String(data.time ?? "");
+    const frequency = String(data.frequency ?? "");
 
-    log("⚡ Foreground Action:", action, "notifId:", notifId, "medicineId:", medicineId);
+    log("⚡ Foreground Action:", action, "notifId:", notifId, "medicineId:", medicineId, "profileId:", profileId);
 
     // ── Medicine: Taken ──────────────────────────────────────────
     if (action === ACTION_MEDICINE_TAKEN) {
-      await handleMedicineTaken(notifId, medicineId);
+      await handleMedicineTaken(notifId, medicineId, profileId, medicineName, dose, time, frequency);
       await scheduleInactivityReminder().catch(() => {});
       return;
     }
 
     // ── Medicine: Missed ──────────────────────────────────────────
     if (action === ACTION_MEDICINE_MISSED) {
-      await handleMedicineMissed(notifId, medicineId);
+      await handleMedicineMissed(notifId, medicineId, profileId, medicineName, dose, time);
       await scheduleInactivityReminder().catch(() => {});
       return;
     }
@@ -760,8 +917,13 @@ export function registerNotifeeForegroundHandler() {
       await snoozeMedicine(
          detail.notification?.body || "Medicine reminder",
          medicineId,
-         String(data.frequency ?? "daily"),
-         5
+         frequency || "daily",
+         5,
+         profileId,
+         profileName,
+         medicineName,
+         dose,
+         time
       );
       await notifee.cancelDisplayedNotification(notifId);
       return;
@@ -779,19 +941,21 @@ export function registerNotifeeForegroundHandler() {
         : 200;
       try {
         const { addWaterFromNotification } = await import("../context/HydrationContext");
-        await addWaterFromNotification(ml);
+        await addWaterFromNotification(ml, profileId);
       } catch (err) {
         log("💧 HydrationContext import failed, writing directly to storage:", err);
         await saveWaterToStorage(ml);
       }
-      await scheduleHydrationReminder();
+      await scheduleHydrationReminder(profileId, profileName);
       await scheduleInactivityReminder().catch(() => {});
       await notifee.cancelDisplayedNotification(notifId);
       return;
     }
 
     if (action === ACTION_WATER_SKIP) {
-      await scheduleHydrationReminder();
+      const profileId = String(data.profileId || "self");
+      const profileName = String(data.profileName || "");
+      await scheduleHydrationReminder(profileId, profileName);
       await notifee.cancelDisplayedNotification(notifId);
       return;
     }
@@ -807,6 +971,7 @@ export function registerNotifeeForegroundHandler() {
     // ── DPSS: Sync Now ────────────────────────────────────────────────
     if (action === ACTION_DPSS_SYNC_NOW) {
       const userId = String(data.userId ?? "");
+      const pId = data.profileId;
       if (userId) {
         try {
           const { runSimulation } = await import("./deferredSyncService");
@@ -815,7 +980,14 @@ export function registerNotifeeForegroundHandler() {
         } catch (e) {
           log("[DPSS] runSimulation from notification failed:", e);
         }
-        router.push("/(tabs)/twin" as any);
+        if (pId && pId !== "self") {
+          router.push({
+            pathname: "/family/member-details",
+            params: { id: pId }
+          } as any);
+        } else {
+          router.push("/(tabs)/twin" as any);
+        }
       }
       if (notifId) await notifee.cancelDisplayedNotification(notifId);
       return;
@@ -824,6 +996,7 @@ export function registerNotifeeForegroundHandler() {
     // ── DPSS: Undo ────────────────────────────────────────────────────
     if (action === ACTION_DPSS_UNDO) {
       const userId = String(data.userId ?? "");
+      const pId = data.profileId;
       if (userId) {
         try {
           const { undoSimulation } = await import("./deferredSyncService");
@@ -832,7 +1005,14 @@ export function registerNotifeeForegroundHandler() {
         } catch (e) {
           log("[DPSS] undoSimulation from notification failed:", e);
         }
-        router.push("/(tabs)/twin" as any);
+        if (pId && pId !== "self") {
+          router.push({
+            pathname: "/family/member-details",
+            params: { id: pId }
+          } as any);
+        } else {
+          router.push("/(tabs)/twin" as any);
+        }
       }
       if (notifId) await notifee.cancelDisplayedNotification(notifId);
       return;
@@ -854,6 +1034,11 @@ export function registerNotifeeForegroundHandler() {
 // ─────────────────────────────────────────────────────────────────────────────
 if (Platform.OS === "android") {
   notifee.onBackgroundEvent(async ({ type, detail }) => {
+    if (type === EventType.DELIVERED) {
+      await saveDeliveredNotificationToDB(detail.notification);
+      return;
+    }
+
     if (type !== EventType.ACTION_PRESS) return;
 
     const action     = detail.pressAction?.id;
@@ -879,23 +1064,43 @@ if (Platform.OS === "android") {
     }
 
     if (action === ACTION_MEDICINE_TAKEN) {
-      await handleMedicineTaken(notifId, medicineId);
+      const profileId = String(data.profileId ?? "self");
+      const medicineName = String(data.medicineName ?? "");
+      const dose = String(data.dose ?? "");
+      const time = String(data.time ?? "");
+      const frequency = String(data.frequency ?? "");
+      await handleMedicineTaken(notifId, medicineId, profileId, medicineName, dose, time, frequency);
       await scheduleInactivityReminder().catch(() => {});
       return;
     }
 
     if (action === ACTION_MEDICINE_MISSED) {
-      await handleMedicineMissed(notifId, medicineId);
+      const profileId = String(data.profileId ?? "self");
+      const medicineName = String(data.medicineName ?? "");
+      const dose = String(data.dose ?? "");
+      const time = String(data.time ?? "");
+      await handleMedicineMissed(notifId, medicineId, profileId, medicineName, dose, time);
       await scheduleInactivityReminder().catch(() => {});
       return;
     }
 
     if (action === ACTION_MEDICINE_SNOOZE) {
+      const profileId = String(data.profileId ?? "self");
+      const profileName = String(data.profileName ?? "");
+      const medicineName = String(data.medicineName ?? "");
+      const dose = String(data.dose ?? "");
+      const time = String(data.time ?? "");
+      const frequency = String(data.frequency ?? "daily");
       await snoozeMedicine(
         detail.notification?.body || "Medicine reminder",
         medicineId,
-        String(data.frequency ?? "daily"),
-        5
+        frequency,
+        5,
+        profileId,
+        profileName,
+        medicineName,
+        dose,
+        time
       );
       await notifee.cancelDisplayedNotification(notifId);
       return;
@@ -910,21 +1115,25 @@ if (Platform.OS === "android") {
         action === ACTION_WATER_100 ? 100
         : action === ACTION_WATER_150 ? 150
         : 200;
+      const profileId = String(data.profileId || "self");
+      const profileName = String(data.profileName || "");
       try {
         const { addWaterFromNotification } = await import("../context/HydrationContext");
-        await addWaterFromNotification(ml);
+        await addWaterFromNotification(ml, profileId);
       } catch (err) {
         log("💧 [BG] HydrationContext import failed, writing directly to storage:", err);
         await saveWaterToStorage(ml);
       }
-      await scheduleHydrationReminder();
+      await scheduleHydrationReminder(profileId, profileName);
       await scheduleInactivityReminder().catch(() => {});
       await notifee.cancelDisplayedNotification(notifId);
       return;
     }
 
     if (action === ACTION_WATER_SKIP) {
-      await scheduleHydrationReminder();
+      const profileId = String(data.profileId || "self");
+      const profileName = String(data.profileName || "");
+      await scheduleHydrationReminder(profileId, profileName);
       await notifee.cancelDisplayedNotification(notifId);
       return;
     }

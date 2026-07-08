@@ -320,10 +320,10 @@ export async function syncAddMedicineHistory(entry: {
   status:       string;
   date:         string;
   takenAt:      string;
-}): Promise<void> {
+}, targetUid?: string): Promise<void> {
   if (!(await isVitalsSyncEnabled())) return;
   try {
-    const uid = await getUserId();
+    const uid = targetUid || await getUserId();
     if (!uid) return;
 
     await setDoc(doc(medicineHistCol(uid), entry.id), {
@@ -628,6 +628,31 @@ export async function fetchSymptomHistoryFromFirebaseForUser(uid: string): Promi
   return fetchSymptomHistoryFromFirebase(uid);
 }
 
+function normalizeDateToString(val: any): string {
+  if (!val) return "";
+  if (val === "ongoing") return "ongoing";
+  if (typeof val === "object") {
+    let d: Date | null = null;
+    if (typeof val.toDate === "function") {
+      d = val.toDate();
+    } else if (val.seconds) {
+      d = new Date(val.seconds * 1000);
+    } else {
+      d = new Date(val);
+    }
+    if (d && !isNaN(d.getTime())) {
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    }
+  }
+  if (typeof val === "string") {
+    if (val.includes("T")) {
+      return val.split("T")[0];
+    }
+    return val;
+  }
+  return String(val);
+}
+
 /**
  * Fetch all medicines from Firebase.
  * Used when restoring data on a new device.
@@ -638,7 +663,15 @@ export async function fetchMedicinesFromFirebase(uid?: string): Promise<any[]> {
     if (!userId) return [];
 
     const snap = await getDocs(medicinesCol(userId));
-    return snap.docs.map(d => d.data());
+    return snap.docs.map(d => {
+      const data = d.data();
+      return {
+        ...data,
+        startDate: normalizeDateToString(data.startDate),
+        endDate:   normalizeDateToString(data.endDate),
+        takenDate: data.takenDate ? normalizeDateToString(data.takenDate) : null,
+      };
+    });
   } catch (e) {
     log("⚠️ fetchMedicinesFromFirebase failed:", e);
     return [];

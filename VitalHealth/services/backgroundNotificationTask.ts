@@ -69,42 +69,69 @@ notifee.onBackgroundEvent(async ({ type, detail }) => {
   // 💊 MEDICINE ACTIONS
   ///////////////////////////////////////////////////
 
-  if (notifData?.type === "medicine_reminder") {
+  if (notifData?.type === "medicine_reminder" || notifData?.type === "medicine") {
+    const profileId = String((notification.data as any)?.profileId || "self");
+    const isMember = profileId && profileId !== "self";
 
     if (action === "MEDICINE_TAKEN") {
       try {
-        const {
-          getMedicineByNotificationId,
-          markMedicineTakenByNotificationId,
-          deleteMedicineByNotificationId,
-        } = await import("../database/medicineDB");
-        const { syncUpdateMedicineStatus } = await import("./firebaseSync");
+        const { syncUpdateMedicineStatus, syncDeleteMedicine } = await import("./firebaseSync");
+        const { addToMedicineHistory } = await import("../utils/medicineHistory");
 
-        const { addToMedicineHistory } =
-          await import("../utils/medicineHistory");
+        if (isMember) {
+          const medId = (notification.data as any)?.medicineId;
+          const medIdNum = parseInt(String(medId), 10);
+          const medicineName = String((notification.data as any)?.medicineName || "Medication");
+          const dose = String((notification.data as any)?.dose || "");
+          const time = String((notification.data as any)?.time || "");
+          const freq = String((notification.data as any)?.frequency || "");
 
-        const medicine = getMedicineByNotificationId(notificationId) as Medicine | null;
-
-        if (medicine) {
           await addToMedicineHistory({
-            medicineId: medicine.id,
-            medicineName: medicine.name,
-            dose: medicine.dose,
-            time: medicine.time,
+            medicineId: medIdNum,
+            medicineName,
+            dose,
+            time,
             status: "taken",
+            targetUid: profileId,
           });
 
-          if (medicine.frequency?.toLowerCase() === "once") {
-            deleteMedicineByNotificationId(notificationId);
-            log("💊 [BG] One-time medicine deleted");
-          } else {
-            markMedicineTakenByNotificationId(notificationId);
-            await syncUpdateMedicineStatus(medicine.id, "taken");
-            log("💊 [BG] Daily medicine marked taken");
-          }
-        }
+          await syncUpdateMedicineStatus(medIdNum, "taken", profileId);
 
-        await notifee.cancelNotification(notificationId);
+          if (freq.toLowerCase() === "once") {
+            await syncDeleteMedicine(medIdNum, profileId);
+            await notifee.cancelNotification(notificationId);
+          } else {
+            await notifee.cancelNotification(notificationId);
+          }
+        } else {
+          const {
+            getMedicineByNotificationId,
+            markMedicineTakenByNotificationId,
+            deleteMedicineByNotificationId,
+          } = await import("../database/medicineDB");
+
+          const medicine = getMedicineByNotificationId(notificationId) as Medicine | null;
+
+          if (medicine) {
+            await addToMedicineHistory({
+              medicineId: medicine.id,
+              medicineName: medicine.name,
+              dose: medicine.dose,
+              time: medicine.time,
+              status: "taken",
+            });
+
+            if (medicine.frequency?.toLowerCase() === "once") {
+              deleteMedicineByNotificationId(notificationId);
+              log("💊 [BG] One-time medicine deleted");
+            } else {
+              markMedicineTakenByNotificationId(notificationId);
+              await syncUpdateMedicineStatus(medicine.id, "taken");
+              log("💊 [BG] Daily medicine marked taken");
+            }
+          }
+          await notifee.cancelNotification(notificationId);
+        }
 
         log("✅ [BG] MEDICINE_TAKEN handled");
 
@@ -116,29 +143,47 @@ notifee.onBackgroundEvent(async ({ type, detail }) => {
 
     if (action === "MEDICINE_MISSED") {
       try {
-        const {
-          getMedicineByNotificationId,
-          markMedicineMissedByNotificationId,
-        } = await import("../database/medicineDB");
         const { syncUpdateMedicineStatus } = await import("./firebaseSync");
+        const { addToMedicineHistory } = await import("../utils/medicineHistory");
 
-        const { addToMedicineHistory } =
-          await import("../utils/medicineHistory");
+        if (isMember) {
+          const medId = (notification.data as any)?.medicineId;
+          const medIdNum = parseInt(String(medId), 10);
+          const medicineName = String((notification.data as any)?.medicineName || "Medication");
+          const dose = String((notification.data as any)?.dose || "");
+          const time = String((notification.data as any)?.time || "");
 
-        const medicine = getMedicineByNotificationId(notificationId) as Medicine | null;
-
-        if (medicine) {
           await addToMedicineHistory({
-            medicineId: medicine.id,
-            medicineName: medicine.name,
-            dose: medicine.dose,
-            time: medicine.time,
+            medicineId: medIdNum,
+            medicineName,
+            dose,
+            time,
             status: "missed",
+            targetUid: profileId,
           });
 
-          markMedicineMissedByNotificationId(notificationId);
-          await syncUpdateMedicineStatus(medicine.id, "missed");
-          log("💊 [BG] Daily medicine marked missed");
+          await syncUpdateMedicineStatus(medIdNum, "missed", profileId);
+        } else {
+          const {
+            getMedicineByNotificationId,
+            markMedicineMissedByNotificationId,
+          } = await import("../database/medicineDB");
+
+          const medicine = getMedicineByNotificationId(notificationId) as Medicine | null;
+
+          if (medicine) {
+            await addToMedicineHistory({
+              medicineId: medicine.id,
+              medicineName: medicine.name,
+              dose: medicine.dose,
+              time: medicine.time,
+              status: "missed",
+            });
+
+            markMedicineMissedByNotificationId(notificationId);
+            await syncUpdateMedicineStatus(medicine.id, "missed");
+            log("💊 [BG] Daily medicine marked missed");
+          }
         }
 
         await notifee.cancelNotification(notificationId);
@@ -154,12 +199,27 @@ notifee.onBackgroundEvent(async ({ type, detail }) => {
     if (action === "MEDICINE_SNOOZE") {
       try {
         const body = notification.body ?? "Take your medicine";
+        const medId = String((notification.data as any)?.medicineId || "");
+        const freq = String((notification.data as any)?.frequency || "daily");
+        const medicineName = String((notification.data as any)?.medicineName || "");
+        const dose = String((notification.data as any)?.dose || "");
+        const time = String((notification.data as any)?.time || "");
+        const profileName = String((notification.data as any)?.profileName || "");
 
         await notifee.createTriggerNotification(
           {
-            title: "💊 Snoozed Reminder",
+            title: profileName ? `💊 Snoozed Reminder (${profileName})` : "💊 Snoozed Reminder",
             body,
-            data: { type: "medicine_reminder" },
+            data: {
+              type: "medicine_reminder",
+              medicineId: medId,
+              frequency: freq,
+              profileId,
+              profileName,
+              medicineName,
+              dose,
+              time,
+            },
             android: {
               channelId: "health",
               actions: [

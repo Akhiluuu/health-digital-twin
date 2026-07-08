@@ -135,15 +135,43 @@ const va = StyleSheet.create({
   label:   { fontSize: 13, fontWeight: "600" },
 });
 
-///////////////////////////////////////////////////////////
-function formatDateString(val: string): string {
+function formatDateString(val: any): string {
   if (!val) return '';
   if (val === 'ongoing') return 'Ongoing';
-  let cleanVal = val;
-  if (val.includes('T')) {
-    cleanVal = val.split('T')[0];
+  
+  let strVal = '';
+  if (val && typeof val === 'object') {
+    if (typeof val.toDate === 'function') {
+      try {
+        const d = val.toDate();
+        return d.toLocaleDateString('en-US', { day: '2-digit', month: 'short', year: 'numeric' });
+      } catch {
+        return '';
+      }
+    } else if (val.seconds) {
+      try {
+        const d = new Date(val.seconds * 1000);
+        return d.toLocaleDateString('en-US', { day: '2-digit', month: 'short', year: 'numeric' });
+      } catch {
+        return '';
+      }
+    } else {
+      try {
+        const d = new Date(val);
+        if (!isNaN(d.getTime())) {
+          return d.toLocaleDateString('en-US', { day: '2-digit', month: 'short', year: 'numeric' });
+        }
+      } catch {}
+      return '';
+    }
+  } else {
+    strVal = String(val);
   }
-  const parts = cleanVal.split('-');
+
+  if (strVal.includes('T')) {
+    strVal = strVal.split('T')[0];
+  }
+  const parts = strVal.split('-');
   if (parts.length === 3) {
     const y = parseInt(parts[0], 10);
     const m = parseInt(parts[1], 10) - 1;
@@ -153,7 +181,7 @@ function formatDateString(val: string): string {
       return date.toLocaleDateString('en-US', { day: '2-digit', month: 'short', year: 'numeric' });
     }
   }
-  return val;
+  return strVal;
 }
 
 ///////////////////////////////////////////////////////////
@@ -161,6 +189,7 @@ function formatDateString(val: string): string {
 // Daily medicines from yesterday are never shown as ticked.
 ///////////////////////////////////////////////////////////
 function isTakenToday(medicine: Medicine): boolean {
+  if (!medicine) return false;
   if (medicine.taken !== 1) return false;
   if (!medicine.takenDate) return false;
   const today = getLocalDateString();
@@ -168,6 +197,7 @@ function isTakenToday(medicine: Medicine): boolean {
 }
 
 function isMissedToday(medicine: Medicine): boolean {
+  if (!medicine) return false;
   if (medicine.taken !== -1) return false;
   if (!medicine.takenDate) return false;
   const today = getLocalDateString();
@@ -202,7 +232,8 @@ export default function MedicationVault() {
   // FILTER
   /////////////////////////////////////////////////////////
 
-  const filteredMedicines = medicines.filter((med: Medicine) => {
+  const filteredMedicines = (medicines || []).filter((med: Medicine) => {
+    if (!med) return false;
     // 1. Status Filter
     const today = getLocalDateString();
     const isActive = med.endDate === "ongoing" || med.endDate >= today;
@@ -431,7 +462,7 @@ export default function MedicationVault() {
                     color: item.frequency === "once" ? "#f472b6" : "#22c55e",
                   }}
                 >
-                  {item.frequency.toUpperCase()}
+                  {(item.frequency || "daily").toUpperCase()}
                 </Text>
               </View>
             </View>

@@ -23,6 +23,7 @@ import { ActivityEntry, useNutrition } from "../context/NutritionContext";
 import { useProfile } from "../context/ProfileContext";
 import { useTheme } from "../context/ThemeContext";
 import { useBiogearsTwin } from "../context/BiogearsTwinContext";
+import { useFamily } from "../context/FamilyContext";
 import TimePicker from "../components/twin/TimePicker";
 
 // ─── MET table ───────────────────────────────────────────────────────────────
@@ -193,7 +194,11 @@ const ACTIVITY_COLORS: Record<string, string> = {
 export default function ActivityLab() {
   const router  = useRouter();
   const { theme } = useTheme();
-  const { weightKg } = useProfile();
+  const { weightKg: parentWeight } = useProfile();
+  const { activeProfile, isSwitched } = useFamily();
+  const weightKg = isSwitched && activeProfile?.weight
+    ? (parseFloat(String(activeProfile.weight).replace(/[^0-9.]/g, "")) || 60)
+    : parentWeight;
   const {
     activityEntries,
     addActivityEntry,

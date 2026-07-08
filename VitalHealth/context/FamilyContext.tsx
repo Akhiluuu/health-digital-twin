@@ -188,6 +188,14 @@ export const FamilyProvider = ({
         });
         setMembers(combined);
         await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(combined));
+        (async () => {
+          try {
+            const { syncAndScheduleAllFamilyMedicines } = require("../services/medicineSync");
+            await syncAndScheduleAllFamilyMedicines(combined);
+          } catch (err) {
+            log("⚠️ Background family medicine sync failed:", err);
+          }
+        })();
 
         // ── Self-heal: remove any entries from the familyMembers Firestore array
         // that are already covered by linkedMembers. This ensures future loads
@@ -210,8 +218,17 @@ export const FamilyProvider = ({
       if (stored) {
         let parsed: any = null;
         try { parsed = JSON.parse(stored); } catch { log('[FamilyContext] Corrupted member cache, clearing'); await AsyncStorage.removeItem(STORAGE_KEY); }
-        if (Array.isArray(parsed)) setMembers(parsed);
-        else { await AsyncStorage.removeItem(STORAGE_KEY); setMembers([]); }
+        if (Array.isArray(parsed)) {
+          setMembers(parsed);
+          (async () => {
+            try {
+              const { syncAndScheduleAllFamilyMedicines } = require("../services/medicineSync");
+              await syncAndScheduleAllFamilyMedicines(parsed);
+            } catch (err) {
+              log("⚠️ Background cached family medicine sync failed:", err);
+            }
+          })();
+        } else { await AsyncStorage.removeItem(STORAGE_KEY); setMembers([]); }
       }
     } catch (e) {
       error("❌ FamilyContext loadMembers error:", e);

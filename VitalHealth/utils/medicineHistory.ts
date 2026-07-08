@@ -7,12 +7,16 @@ import { getLocalDateString } from "./twinUtils";
 const HISTORY_STORAGE_KEY = "medicine_history";
 
 export const addToMedicineHistory = async (
-  medicine: Omit<MedicineHistoryEntry, "id" | "date" | "takenAt">
+  medicine: Omit<MedicineHistoryEntry, "id" | "date" | "takenAt"> & { targetUid?: string }
 ): Promise<MedicineHistoryEntry> => {
   try {
-    const existing = await AsyncStorage.getItem(HISTORY_STORAGE_KEY);
+    const isMember = medicine.targetUid && medicine.targetUid !== "self";
     let history: MedicineHistoryEntry[] = [];
-    if (existing) { try { const p = JSON.parse(existing); if (Array.isArray(p)) history = p; } catch {} }
+
+    if (!isMember) {
+      const existing = await AsyncStorage.getItem(HISTORY_STORAGE_KEY);
+      if (existing) { try { const p = JSON.parse(existing); if (Array.isArray(p)) history = p; } catch {} }
+    }
 
     const now = new Date();
 
@@ -27,14 +31,16 @@ export const addToMedicineHistory = async (
       takenAt:      now.toISOString(),
     };
 
-    // Add newest at top
-    history.unshift(newEntry);
+    if (!isMember) {
+      // Add newest at top
+      history.unshift(newEntry);
 
-    // Keep only last 200 records
-    if (history.length > 200) history = history.slice(0, 200);
+      // Keep only last 200 records
+      if (history.length > 200) history = history.slice(0, 200);
 
-    // 1️⃣ Save locally
-    await AsyncStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(history));
+      // 1️⃣ Save locally
+      await AsyncStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(history));
+    }
 
     // 2️⃣ ✅ Sync to Firebase in background
     syncAddMedicineHistory({
@@ -46,7 +52,7 @@ export const addToMedicineHistory = async (
       status:       newEntry.status,
       date:         newEntry.date,
       takenAt:      newEntry.takenAt,
-    });
+    }, medicine.targetUid);
 
     console.log("💊 Medicine history saved & synced to Firebase:", newEntry.medicineName, newEntry.status);
 

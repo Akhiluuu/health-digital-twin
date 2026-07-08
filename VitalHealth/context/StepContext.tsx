@@ -160,7 +160,7 @@ export const StepProvider: React.FC<{
   const [monthlySteps, setMonthlySteps] = useState<Array<{ date: string; steps: number }>>([]);
   const [yearlySteps, setYearlySteps] = useState<Array<{ date: string; steps: number }>>([]);
 
-  const { isSwitched, activeMemberId } = useFamily();
+  const { isSwitched, activeMemberId, activeProfile } = useFamily();
   const userUid  = isSwitched && activeMemberId ? activeMemberId : 'self';
   const userKeys = useMemo(() => KEY(userUid), [userUid]);
 
@@ -411,47 +411,49 @@ export const StepProvider: React.FC<{
       const mergedMap = new Map<string, number>();
 
       // 1. Load native/local historical steps
-      try {
-        if (Platform.OS === 'android') {
-          const wData = await getWeeklyStepsNative().catch(() => []);
-          if (Array.isArray(wData)) {
-            wData.forEach(d => {
-              if (d && d.date) {
-                const dateStr = String(d.date);
-                mergedMap.set(dateStr, Math.max(mergedMap.get(dateStr) || 0, Number(d.steps) || 0));
+      if (!isSwitched) {
+        try {
+          if (Platform.OS === 'android') {
+            const wData = await getWeeklyStepsNative().catch(() => []);
+            if (Array.isArray(wData)) {
+              wData.forEach(d => {
+                if (d && d.date) {
+                  const dateStr = String(d.date);
+                  mergedMap.set(dateStr, Math.max(mergedMap.get(dateStr) || 0, Number(d.steps) || 0));
+                }
+              });
+            }
+            const mData = await getMonthlyStepsNative().catch(() => []);
+            if (Array.isArray(mData)) {
+              mData.forEach(d => {
+                if (d && d.date) {
+                  const dateStr = String(d.date);
+                  mergedMap.set(dateStr, Math.max(mergedMap.get(dateStr) || 0, Number(d.steps) || 0));
+                }
+              });
+            }
+          } else {
+            // iOS Pedometer loop
+            for (let i = 0; i < 30; i++) {
+              const start = new Date();
+              start.setDate(start.getDate() - i);
+              start.setHours(0, 0, 0, 0);
+              const end = new Date(start);
+              end.setHours(23, 59, 59, 999);
+              const dateStr = getLocalDateString(start);
+              try {
+                const r = await Pedometer.getStepCountAsync(start, end);
+                if (r) {
+                  mergedMap.set(dateStr, Math.max(mergedMap.get(dateStr) || 0, r.steps || 0));
+                }
+              } catch {
+                // ignore
               }
-            });
-          }
-          const mData = await getMonthlyStepsNative().catch(() => []);
-          if (Array.isArray(mData)) {
-            mData.forEach(d => {
-              if (d && d.date) {
-                const dateStr = String(d.date);
-                mergedMap.set(dateStr, Math.max(mergedMap.get(dateStr) || 0, Number(d.steps) || 0));
-              }
-            });
-          }
-        } else {
-          // iOS Pedometer loop
-          for (let i = 0; i < 30; i++) {
-            const start = new Date();
-            start.setDate(start.getDate() - i);
-            start.setHours(0, 0, 0, 0);
-            const end = new Date(start);
-            end.setHours(23, 59, 59, 999);
-            const dateStr = getLocalDateString(start);
-            try {
-              const r = await Pedometer.getStepCountAsync(start, end);
-              if (r) {
-                mergedMap.set(dateStr, Math.max(mergedMap.get(dateStr) || 0, r.steps || 0));
-              }
-            } catch {
-              // ignore
             }
           }
+        } catch (nativeErr) {
+          warn("⚠️ Failed loading native steps:", nativeErr);
         }
-      } catch (nativeErr) {
-        warn("⚠️ Failed loading native steps:", nativeErr);
       }
 
       // 2. Load Firestore synced cloud steps
@@ -555,6 +557,7 @@ export const StepProvider: React.FC<{
 
   const refreshFromNative = useCallback(async () => {
     if (Platform.OS !== 'android') return;
+    if (isSwitched) return;
     const { steps: nativeSteps, source } = await getTodayStepsNative();
     if (nativeSteps !== stepsRef.current) {
       stepsRef.current = nativeSteps;
@@ -562,7 +565,7 @@ export const StepProvider: React.FC<{
       setSteps(nativeSteps);
       setDataSource(source);
     }
-  }, []);
+  }, [isSwitched]);
 
   // ── Midnight auto-reset ───────────────────────────────────────────────────
   const scheduleMidnightReset = useCallback(() => {
@@ -680,7 +683,8 @@ export const StepProvider: React.FC<{
     setSessionSecs(0);
 
     if (Platform.OS === 'android') {
-      await startNativeTracking(userUid);
+      const profileName = activeProfile ? `${activeProfile.firstName} ${activeProfile.lastName || ""}`.trim() : "";
+      await startNativeTracking(userUid, profileName);
       startAndroidNativeSubscription();
       // Immediately pull current count from native DB
       await refreshFromNative();
@@ -696,7 +700,7 @@ export const StepProvider: React.FC<{
     startFlushLoop();
     scheduleMidnightReset();
     registerBgTask().catch(() => {});
-  }, [userKeys, userUid, startAndroidNativeSubscription, startIosSensors, refreshFromNative, startClock, startSedTimer, startFlushLoop, scheduleMidnightReset, registerBgTask, startNativePoll]);
+  }, [userKeys, userUid, activeProfile, startAndroidNativeSubscription, startIosSensors, refreshFromNative, startClock, startSedTimer, startFlushLoop, scheduleMidnightReset, registerBgTask, startNativePoll]);
 
   // ── STOP TRACKING ──────────────────────────────────────────────────────────
   const stopTracking = useCallback(async () => {
@@ -779,14 +783,19 @@ export const StepProvider: React.FC<{
 
         if (isNaN(savedSteps)) savedSteps = 0;
 
-        // On Android, always prefer native DB (most accurate)
-        if (Platform.OS === 'android') {
+        // On Android, always prefer native DB (most accurate) - only for self
+        if (Platform.OS === 'android' && !isSwitched) {
           const nativeData = await getTodayStepsNative().catch((err) => {
             warn("⚠️ [StepContext] getTodayStepsNative failed:", err);
             return { steps: 0, source: 'SENSOR_FUSION' as const };
           });
           if (nativeData.steps > savedSteps) { savedSteps = nativeData.steps; }
           setDataSource(nativeData.source);
+        }
+
+        // Force tracking off for family member profiles
+        if (isSwitched) {
+          savedTracking = false;
         }
 
         // ── Permission gate before restoring tracking state ───────────────────
@@ -836,7 +845,8 @@ export const StepProvider: React.FC<{
         if (savedTracking) {
           startClock(Date.now() - sessionStart);
           if (Platform.OS === 'android') {
-            await startNativeTracking(userUid).catch((err) => {
+            const profileName = activeProfile ? `${activeProfile.firstName} ${activeProfile.lastName || ""}`.trim() : "";
+            await startNativeTracking(userUid, profileName).catch((err) => {
               warn("⚠️ [StepContext] startNativeTracking failed:", err);
             });
             startAndroidNativeSubscription();
@@ -850,8 +860,12 @@ export const StepProvider: React.FC<{
         }
 
         // Get data source info
-        const info = await getDataSourceInfoNative().catch(() => null);
-        if (info) setDataSource(info.activeSource);
+        if (!isSwitched) {
+          const info = await getDataSourceInfoNative().catch(() => null);
+          if (info) setDataSource(info.activeSource);
+        } else {
+          setDataSource('CLOUD_SYNC');
+        }
 
         registerBgTask().catch(() => {});
         await refreshHistory().catch(() => {});

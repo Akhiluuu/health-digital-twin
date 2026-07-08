@@ -955,18 +955,20 @@ def build_batch_reconstruction(user_id, state_path, events: list, user_weight_kg
             engine_clock += (wait_time - _MAX_GAP_SIMULATE_S)
             wait_time = _MAX_GAP_SIMULATE_S
 
-        # If an event is genuinely behind the engine clock, skip it.
-        if wait_time < -60:
+        # If the event is behind the engine clock, do not skip it. Execute it immediately
+        # at the current engine time (effective_wait = 0) so that state-clearing events
+        # (like exercise_end, sleep_end, stress_end) are never lost, while log warnings
+        # alert developers to time-travel occurrences.
+        if wait_time < 0:
             _log.warning(
-                f"[{user_id}] Skipping event '{event.get('event_type')}' at "
-                f"{datetime.datetime.fromtimestamp(ev_ts).strftime('%H:%M')} — "
-                f"already past engine clock ({datetime.datetime.fromtimestamp(engine_clock).strftime('%H:%M')})."
+                f"[{user_id}] Event '{event.get('event_type')}' at "
+                f"{datetime.datetime.fromtimestamp(ev_ts).strftime('%H:%M')} is behind engine clock "
+                f"({datetime.datetime.fromtimestamp(engine_clock).strftime('%H:%M')}) — executing immediately."
             )
-            continue
+            effective_wait = 0
+        else:
+            effective_wait = max(wait_time, _MIN_ADVANCE_S)
 
-        # Enforce minimum advance so BioGears always has at least 10s between actions.
-        # Use _chunked_advance_xml so no single AdvanceTimeData node is > 1800 s.
-        effective_wait = max(wait_time, _MIN_ADVANCE_S)
         if effective_wait > 0:
             actions_xml  += _chunked_advance_xml(effective_wait)
             engine_clock += effective_wait

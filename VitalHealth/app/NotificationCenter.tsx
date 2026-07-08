@@ -417,7 +417,9 @@ export default function NotificationCenter() {
                         if (item.readStatus === 0) {
                           markRead(item.id, true);
                         }
-                        if (item.profileId && item.profileId !== "self") {
+                        if (item.deepLink) {
+                          router.push(item.deepLink as any);
+                        } else if (item.profileId && item.profileId !== "self") {
                           router.push({
                             pathname: "/family/member-details",
                             params: { id: item.profileId.toString() },

@@ -32,6 +32,7 @@ import Header from "../components/Header";
 import { doc, onSnapshot } from "firebase/firestore";
 import { db } from "../../services/firebase";
 import { getUserId } from "../../services/firebaseSync";
+import { subscribeToMemberHealth } from "../../services/familySync";
 
 const { width } = Dimensions.get("window");
 const CARD_SIZE = width / 2 - 22;
@@ -235,24 +236,30 @@ export default function HomeScreen() {
 
         setSpo2(0);
         setMeasuredHeartRate(null);
-        const ref = doc(db, "users", uid);
-        const unsub = onSnapshot(
-          ref,
-          (snapshot: any) => {
-            if (active && snapshot.exists()) {
-              const data = snapshot.data();
-              setSpo2(data.spo2 !== undefined ? data.spo2 : 0);
-              setMeasuredHeartRate(data.heartRate !== undefined ? Math.round(data.heartRate) : null);
-            }
-          },
-          (err: any) => {
-            console.log("⚠️ Dashboard Vitals onSnapshot error:", err);
-          }
-        );
 
-        if (!active) {
-          unsub();
+        if (isSwitched && activeMemberId && activeMemberId !== "self") {
+          const unsub = subscribeToMemberHealth(uid, (data) => {
+            if (active && data) {
+              if (data.spo2 !== undefined) setSpo2(data.spo2 || 0);
+              if (data.heartRate !== undefined) setMeasuredHeartRate(data.heartRate || null);
+            }
+          });
+          unsubscribe = unsub;
         } else {
+          const ref = doc(db, "users", uid);
+          const unsub = onSnapshot(
+            ref,
+            (snapshot: any) => {
+              if (active && snapshot.exists()) {
+                const data = snapshot.data();
+                setSpo2(data.spo2 !== undefined ? data.spo2 : 0);
+                setMeasuredHeartRate(data.heartRate !== undefined ? Math.round(data.heartRate) : null);
+              }
+            },
+            (err: any) => {
+              console.log("⚠️ Dashboard Vitals onSnapshot error:", err);
+            }
+          );
           unsubscribe = unsub;
         }
       } catch (error) {
@@ -534,11 +541,9 @@ export default function HomeScreen() {
         {/* ── MEDICINE TIMELINE ── */}
         <View style={styles.sectionHeaderRow}>
           <Text style={[styles.sectionTitle, { color: c.text }]}>Medications Timeline</Text>
-          {!isSwitched && (
-            <TouchableOpacity onPress={() => router.push("/MedicationVault")}>
-              <Text style={[styles.sectionLink, { color: c.accent }]}>Manage Vault</Text>
-            </TouchableOpacity>
-          )}
+          <TouchableOpacity onPress={() => router.push("/MedicationVault")}>
+            <Text style={[styles.sectionLink, { color: c.accent }]}>Manage Vault</Text>
+          </TouchableOpacity>
         </View>
 
         {isLoadingMemberMedicines ? (
@@ -621,11 +626,9 @@ export default function HomeScreen() {
         {/* ── SYMPTOMS MONITOR ── */}
         <View style={styles.sectionHeaderRow}>
           <Text style={[styles.sectionTitle, { color: c.text }]}>Symptom Signals</Text>
-          {!isSwitched && (
-            <TouchableOpacity onPress={() => router.push("/symptom-log")}>
-              <Text style={[styles.sectionLink, { color: c.accent }]}>Log New</Text>
-            </TouchableOpacity>
-          )}
+          <TouchableOpacity onPress={() => router.push("/symptom-log")}>
+            <Text style={[styles.sectionLink, { color: c.accent }]}>Log New</Text>
+          </TouchableOpacity>
         </View>
 
         {isLoadingMemberSymptoms ? (
@@ -673,117 +676,113 @@ export default function HomeScreen() {
         )}
 
         {/* ── QUICK ACTIONS HUB (DATA ENTRY) ── */}
-        {!isSwitched && (
-          <>
-            <View style={styles.sectionHeaderRow}>
-              <Text style={[styles.sectionTitle, { color: c.text }]}>Quick Health Log</Text>
+        <View style={styles.sectionHeaderRow}>
+          <Text style={[styles.sectionTitle, { color: c.text }]}>Quick Health Log</Text>
+        </View>
+        <View style={styles.quickGrid}>
+          <TouchableOpacity
+            style={[
+              styles.quickActionCard,
+              {
+                backgroundColor: c.card,
+                borderColor: c.border,
+                borderLeftColor: "#0284c7",
+                borderLeftWidth: 3.5,
+                shadowColor: "#0284c7",
+                shadowOpacity: theme === "dark" ? 0.2 : 0.08,
+                shadowRadius: 8,
+                shadowOffset: { width: 0, height: 4 },
+                elevation: 2,
+              }
+            ]}
+            onPress={() => router.push({ pathname: "/twin", params: { mode: "routine", tab: "water" } })}
+          >
+            <View style={[styles.quickActionIconWrapper, { backgroundColor: "#0284c715" }]}>
+              <Ionicons name="water" size={22} color="#0284c7" />
             </View>
-            <View style={styles.quickGrid}>
-              <TouchableOpacity
-                style={[
-                  styles.quickActionCard,
-                  {
-                    backgroundColor: c.card,
-                    borderColor: c.border,
-                    borderLeftColor: "#0284c7",
-                    borderLeftWidth: 3.5,
-                    shadowColor: "#0284c7",
-                    shadowOpacity: theme === "dark" ? 0.2 : 0.08,
-                    shadowRadius: 8,
-                    shadowOffset: { width: 0, height: 4 },
-                    elevation: 2,
-                  }
-                ]}
-                onPress={() => router.push({ pathname: "/twin", params: { mode: "routine", tab: "water" } })}
-              >
-                <View style={[styles.quickActionIconWrapper, { backgroundColor: "#0284c715" }]}>
-                  <Ionicons name="water" size={22} color="#0284c7" />
-                </View>
-                <Text style={[styles.quickActionLabel, { color: c.text }]}>Hydrate</Text>
-                <View style={styles.quickAddWaterRow}>
-                  <TouchableOpacity style={styles.quickAddBtn} onPress={() => handleQuickAddWater(250)}>
-                    <Text style={styles.quickAddBtnText}>+250ml</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity style={styles.quickAddBtn} onPress={() => handleQuickAddWater(500)}>
-                    <Text style={styles.quickAddBtnText}>+500ml</Text>
-                  </TouchableOpacity>
-                </View>
+            <Text style={[styles.quickActionLabel, { color: c.text }]}>Hydrate</Text>
+            <View style={styles.quickAddWaterRow}>
+              <TouchableOpacity style={styles.quickAddBtn} onPress={() => handleQuickAddWater(250)}>
+                <Text style={styles.quickAddBtnText}>+250ml</Text>
               </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[
-                  styles.quickActionCard,
-                  {
-                    backgroundColor: c.card,
-                    borderColor: c.border,
-                    borderLeftColor: "#10b981",
-                    borderLeftWidth: 3.5,
-                    shadowColor: "#10b981",
-                    shadowOpacity: theme === "dark" ? 0.2 : 0.08,
-                    shadowRadius: 8,
-                    shadowOffset: { width: 0, height: 4 },
-                    elevation: 2,
-                  }
-                ]}
-                onPress={() => router.push("/activity")}
-              >
-                <View style={[styles.quickActionIconWrapper, { backgroundColor: "#10b98115" }]}>
-                  <Ionicons name="fitness" size={22} color="#10b981" />
-                </View>
-                <Text style={[styles.quickActionLabel, { color: c.text }]}>Activity</Text>
-                <Text style={[styles.quickActionSub, { color: c.sub }]}>Log workouts</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[
-                  styles.quickActionCard,
-                  {
-                    backgroundColor: c.card,
-                    borderColor: c.border,
-                    borderLeftColor: "#f59e0b",
-                    borderLeftWidth: 3.5,
-                    shadowColor: "#f59e0b",
-                    shadowOpacity: theme === "dark" ? 0.2 : 0.08,
-                    shadowRadius: 8,
-                    shadowOffset: { width: 0, height: 4 },
-                    elevation: 2,
-                  }
-                ]}
-                onPress={() => router.push({ pathname: "/twin", params: { mode: "routine", tab: "meal" } })}
-              >
-                <View style={[styles.quickActionIconWrapper, { backgroundColor: "#f59e0b15" }]}>
-                  <Ionicons name="restaurant" size={20} color="#f59e0b" />
-                </View>
-                <Text style={[styles.quickActionLabel, { color: c.text }]}>Nutrition</Text>
-                <Text style={[styles.quickActionSub, { color: c.sub }]}>Log calories</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[
-                  styles.quickActionCard,
-                  {
-                    backgroundColor: c.card,
-                    borderColor: c.border,
-                    borderLeftColor: "#6366f1",
-                    borderLeftWidth: 3.5,
-                    shadowColor: "#6366f1",
-                    shadowOpacity: theme === "dark" ? 0.2 : 0.08,
-                    shadowRadius: 8,
-                    shadowOffset: { width: 0, height: 4 },
-                    elevation: 2,
-                  }
-                ]}
-                onPress={() => router.push({ pathname: "/twin", params: { mode: "routine", tab: "sleep" } })}
-              >
-                <View style={[styles.quickActionIconWrapper, { backgroundColor: "#6366f115" }]}>
-                  <Ionicons name="moon" size={20} color="#6366f1" />
-                </View>
-                <Text style={[styles.quickActionLabel, { color: c.text }]}>Sleep</Text>
-                <Text style={[styles.quickActionSub, { color: c.sub }]}>Log sleep cycle</Text>
+              <TouchableOpacity style={styles.quickAddBtn} onPress={() => handleQuickAddWater(500)}>
+                <Text style={styles.quickAddBtnText}>+500ml</Text>
               </TouchableOpacity>
             </View>
-          </>
-        )}
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[
+              styles.quickActionCard,
+              {
+                backgroundColor: c.card,
+                borderColor: c.border,
+                borderLeftColor: "#10b981",
+                borderLeftWidth: 3.5,
+                shadowColor: "#10b981",
+                shadowOpacity: theme === "dark" ? 0.2 : 0.08,
+                shadowRadius: 8,
+                shadowOffset: { width: 0, height: 4 },
+                elevation: 2,
+              }
+            ]}
+            onPress={() => router.push("/activity")}
+          >
+            <View style={[styles.quickActionIconWrapper, { backgroundColor: "#10b98115" }]}>
+              <Ionicons name="fitness" size={22} color="#10b981" />
+            </View>
+            <Text style={[styles.quickActionLabel, { color: c.text }]}>Activity</Text>
+            <Text style={[styles.quickActionSub, { color: c.sub }]}>Log workouts</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[
+              styles.quickActionCard,
+              {
+                backgroundColor: c.card,
+                borderColor: c.border,
+                borderLeftColor: "#f59e0b",
+                borderLeftWidth: 3.5,
+                shadowColor: "#f59e0b",
+                shadowOpacity: theme === "dark" ? 0.2 : 0.08,
+                shadowRadius: 8,
+                shadowOffset: { width: 0, height: 4 },
+                elevation: 2,
+              }
+            ]}
+            onPress={() => router.push({ pathname: "/twin", params: { mode: "routine", tab: "meal" } })}
+          >
+            <View style={[styles.quickActionIconWrapper, { backgroundColor: "#f59e0b15" }]}>
+              <Ionicons name="restaurant" size={20} color="#f59e0b" />
+            </View>
+            <Text style={[styles.quickActionLabel, { color: c.text }]}>Nutrition</Text>
+            <Text style={[styles.quickActionSub, { color: c.sub }]}>Log calories</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[
+              styles.quickActionCard,
+              {
+                backgroundColor: c.card,
+                borderColor: c.border,
+                borderLeftColor: "#6366f1",
+                borderLeftWidth: 3.5,
+                shadowColor: "#6366f1",
+                shadowOpacity: theme === "dark" ? 0.2 : 0.08,
+                shadowRadius: 8,
+                shadowOffset: { width: 0, height: 4 },
+                elevation: 2,
+              }
+            ]}
+            onPress={() => router.push({ pathname: "/twin", params: { mode: "routine", tab: "sleep" } })}
+          >
+            <View style={[styles.quickActionIconWrapper, { backgroundColor: "#6366f115" }]}>
+              <Ionicons name="moon" size={20} color="#6366f1" />
+            </View>
+            <Text style={[styles.quickActionLabel, { color: c.text }]}>Sleep</Text>
+            <Text style={[styles.quickActionSub, { color: c.sub }]}>Log sleep cycle</Text>
+          </TouchableOpacity>
+        </View>
 
         {/* ── BRAIN CALIBRATION BANNER ── */}
         <View style={styles.sectionHeaderRow}>

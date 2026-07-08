@@ -151,7 +151,7 @@ export const MedicineProvider = ({
   // MedicineProvider is always rendered inside FamilyProvider (see _layout.tsx),
   // so useFamily() is safe to call unconditionally at the top level.
   // Calling hooks inside try/catch is a React Rules of Hooks violation.
-  const { isSwitched, activeMemberId, reportLoading } = useFamily();
+  const { isSwitched, activeMemberId, reportLoading, activeProfile } = useFamily();
 
   React.useEffect(() => {
     if (reportLoading) {
@@ -356,10 +356,53 @@ export const MedicineProvider = ({
         // ✅ FIX: Collision-proof ID — Date.now() alone risks collision if two medicines
         // are added in the same millisecond (rapid saves on slow devices).
         const medId = Date.now() * 1000 + Math.floor(Math.random() * 1000);
+        let notifId: string | null = null;
+
+        if (reminder) {
+          try {
+            const dateObj = new Date(normalisedTimestamp);
+            const now     = new Date();
+            const freq    = frequency.toLowerCase();
+            const activeProfileName = activeProfile?.firstName
+              ? `${activeProfile.firstName} ${activeProfile.lastName || ""}`.trim()
+              : "Family Member";
+
+            if (freq === "once" && dateObj.getTime() > now.getTime()) {
+              notifId = await scheduleMedicineOnce(
+                `${name} — ${dose}`,
+                dateObj,
+                medId,
+                activeMemberId,
+                activeProfileName,
+                name,
+                dose,
+                time,
+                frequency
+              );
+            }
+            if (freq === "daily") {
+              notifId = await scheduleMedicineDaily(
+                `${name} — ${dose}`,
+                dateObj.getHours(),
+                dateObj.getMinutes(),
+                medId,
+                activeMemberId,
+                activeProfileName,
+                name,
+                dose,
+                time,
+                frequency
+              );
+            }
+          } catch (notifError) {
+            log("❌ Notification scheduling failed for family member:", notifError);
+          }
+        }
+
         await syncAddMedicine({
           id: medId, name, dose, type, time,
           timestamp: normalisedTimestamp, meal, frequency,
-          startDate, endDate, reminder, notificationId: null,
+          startDate, endDate, reminder, notificationId: notifId,
         }, activeMemberId);
         await loadMedicines();
         return;
@@ -378,17 +421,41 @@ export const MedicineProvider = ({
           const dateObj = new Date(normalisedTimestamp);
           const now     = new Date();
           const freq    = frequency.toLowerCase();
+          const activeProfileName = activeProfile?.firstName
+            ? `${activeProfile.firstName} ${activeProfile.lastName || ""}`.trim()
+            : "You";
 
           if (Platform.OS === "android") {
-            scheduleMedicineAlarm(lastMedicine.id, name, dose, normalisedTimestamp, frequency);
+            scheduleMedicineAlarm(lastMedicine.id, `${name} (${activeProfileName})`, dose, normalisedTimestamp, frequency);
             notifId = String(lastMedicine.id);
             updateMedicineNotificationId(lastMedicine.id, notifId);
           } else {
             if (freq === "once" && dateObj.getTime() > now.getTime()) {
-              notifId = await scheduleMedicineOnce(`${name} — ${dose}`, dateObj, lastMedicine.id);
+              notifId = await scheduleMedicineOnce(
+                `${name} — ${dose}`,
+                dateObj,
+                lastMedicine.id,
+                "self",
+                activeProfileName,
+                name,
+                dose,
+                time,
+                frequency
+              );
             }
             if (freq === "daily") {
-              notifId = await scheduleMedicineDaily(`${name} — ${dose}`, dateObj.getHours(), dateObj.getMinutes(), lastMedicine.id);
+              notifId = await scheduleMedicineDaily(
+                `${name} — ${dose}`,
+                dateObj.getHours(),
+                dateObj.getMinutes(),
+                lastMedicine.id,
+                "self",
+                activeProfileName,
+                name,
+                dose,
+                time,
+                frequency
+              );
             }
             if (notifId) {
               updateMedicineNotificationId(lastMedicine.id, notifId);
@@ -412,7 +479,7 @@ export const MedicineProvider = ({
     } catch (err) {
       log("💊 Add medicine error:", err);
     }
-  }, [isSwitched, activeMemberId]);
+  }, [isSwitched, activeMemberId, activeProfile]);
 
   ///////////////////////////////////////////////////////////
   // MARK TAKEN — when switched: directly in Firestore; when self: local SQLite + sync
@@ -494,6 +561,10 @@ export const MedicineProvider = ({
   const removeMedicine = React.useCallback(async (id: number) => {
     try {
       if (isSwitched && activeMemberId && activeMemberId !== "self") {
+        const item = medicines.find((m) => m.id === id);
+        if (item?.notificationId) {
+          await cancelMedicineNotification(item.notificationId);
+        }
         await syncDeleteMedicine(id, activeMemberId);
         await loadMedicines();
         return;
@@ -516,6 +587,11 @@ export const MedicineProvider = ({
   const clearAllMedicines = React.useCallback(async () => {
     try {
       if (isSwitched && activeMemberId && activeMemberId !== "self") {
+        for (const med of medicines) {
+          if (med.notificationId) {
+            await cancelMedicineNotification(med.notificationId);
+          }
+        }
         await syncDeleteAllMedicines(activeMemberId);
         await loadMedicines();
         return;

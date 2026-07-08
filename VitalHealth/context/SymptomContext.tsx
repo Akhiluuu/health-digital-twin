@@ -184,7 +184,7 @@ export function SymptomsProvider({ children }: { children: React.ReactNode }) {
   // NOTE: SymptomsProvider is always rendered inside FamilyProvider (see _layout.tsx).
   // useFamily() is safe to call unconditionally here. The previous try/catch pattern
   // was a React Rules of Hooks VIOLATION (hooks must never be called in try/catch).
-  const { isSwitched, activeMemberId, reportLoading } = useFamily();
+  const { isSwitched, activeMemberId, reportLoading, activeProfile } = useFamily();
 
   useEffect(() => {
     if (reportLoading) {
@@ -318,20 +318,25 @@ export function SymptomsProvider({ children }: { children: React.ReactNode }) {
 
       setActiveSymptoms((prev) => [...prev, newSymptom]);
 
+      const activeProfileName = activeProfile?.firstName
+        ? `${activeProfile.firstName} ${activeProfile.lastName || ""}`.trim()
+        : "";
+      const userUid = isSwitched && activeMemberId ? activeMemberId : "self";
+
+      try {
+        await scheduleSymptomHourly(name.trim(), userUid, activeProfileName);
+      } catch (err) {
+        log("❌ Symptom notification scheduling failed:", err);
+      }
+
       if (isSwitched && activeMemberId && activeMemberId !== "self") {
         syncWithRetry(() => syncAddSymptom({ ...newSymptom }, activeMemberId), "AddSymptom");
         return;
       }
 
-      try {
-        await scheduleSymptomHourly(name.trim());
-      } catch (err) {
-        log("❌ Symptom notification scheduling failed:", err);
-      }
-
       syncWithRetry(() => syncAddSymptom({ ...newSymptom }), "AddSymptom");
     },
-    [isSwitched, activeMemberId]
+    [isSwitched, activeMemberId, activeProfile]
   );
 
   //////////////////////////////////////////////////////////
@@ -412,17 +417,24 @@ export function SymptomsProvider({ children }: { children: React.ReactNode }) {
       setActiveSymptoms((prev) =>
         prev.map((s) => (s.id === id ? { ...s, ...updates } : s))
       );
+      const activeProfileName = activeProfile?.firstName
+        ? `${activeProfile.firstName} ${activeProfile.lastName || ""}`.trim()
+        : "";
+      const userUid = isSwitched && activeMemberId ? activeMemberId : "self";
+
+      if (updates.name) {
+        await cancelSymptomNotification();
+        await scheduleSymptomHourly(updates.name, userUid, activeProfileName);
+      }
+
       if (isSwitched && activeMemberId && activeMemberId !== "self") {
         syncWithRetry(() => syncUpdateSymptom(id, updates, activeMemberId), "UpdateSymptom");
         return;
       }
-      if (updates.name) {
-        await cancelSymptomNotification();
-        await scheduleSymptomHourly(updates.name);
-      }
+
       syncWithRetry(() => syncUpdateSymptom(id, updates), "UpdateSymptom");
     },
-    [isSwitched, activeMemberId]
+    [isSwitched, activeMemberId, activeProfile]
   );
 
   //////////////////////////////////////////////////////////

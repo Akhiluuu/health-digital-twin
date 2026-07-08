@@ -92,7 +92,7 @@ export const HydrationProvider = ({
   const [water, setWater] = useState<number>(0);
   const [history, setHistory] = useState<HydrationEntry[]>([]);
   const [isLoadingHydration, setIsLoadingHydration] = useState<boolean>(false);
-  const { isSwitched, activeMemberId, reportLoading } = useFamily();
+  const { isSwitched, activeMemberId, reportLoading, activeProfile } = useFamily();
 
   useEffect(() => {
     if (reportLoading) {
@@ -270,19 +270,23 @@ export const HydrationProvider = ({
       const value = await AsyncStorage.getItem("hydration_interval");
       const minutes = value ? Number(value) : 60;
       
+      const activeProfileName = activeProfile?.firstName
+        ? `${activeProfile.firstName} ${activeProfile.lastName || ""}`.trim()
+        : "";
+
       if (isNativeHydrationAlarmAvailable()) {
         cancelHydrationAlarm();
         scheduleHydrationAlarm(minutes);
         log(`💧 Native Hydration reminder scheduled for ${minutes} minutes`);
       } else {
         await cancelHydrationReminders();
-        await scheduleHydrationReminder();
-        log(`💧 Notifee Hydration reminder scheduled for ${minutes} minutes`);
+        await scheduleHydrationReminder(activeMemberId || "self", activeProfileName);
+        log(`💧 Notifee Hydration reminder scheduled for ${minutes} minutes for ${activeProfileName}`);
       }
     } catch (err) {
       log("❌ Hydration reminder error:", err);
     }
-  }, []);
+  }, [activeProfile, activeMemberId]);
 
   const waterRef = useRef<number>(0);
 
@@ -482,12 +486,26 @@ export const useHydration = () => {
   return ctx;
 };
 
-export const addWaterFromNotification = async (ml: number) => {
-  if (globalAddWater) {
+export const addWaterFromNotification = async (ml: number, profileId?: string) => {
+  const targetUid = profileId && profileId !== "self" ? profileId : "self";
+  if (globalAddWater && targetUid === "self") {
     log(`💧 Provider mounted — adding water via active context`);
     globalAddWater(ml, "notification");
   } else {
-    log(`💧 Provider not mounted — writing directly to storage/DB`);
-    await saveWaterToStorage(ml);
+    log(`💧 Writing directly to storage/DB/Firebase for target: ${targetUid}`);
+    if (targetUid !== "self") {
+      const { syncAddHydration } = await import("../services/firebaseSync");
+      const timestamp = Date.now();
+      const entry = {
+        id: timestamp,
+        amount: ml,
+        total: ml,
+        timestamp,
+        source: "notification" as const,
+      };
+      await syncAddHydration(entry, targetUid).catch(() => {});
+    } else {
+      await saveWaterToStorage(ml);
+    }
   }
 };

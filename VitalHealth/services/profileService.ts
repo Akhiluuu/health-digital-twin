@@ -9,6 +9,7 @@ import { auth, db } from "./firebase";
 import { log } from "../utils/logger";
 
 export interface UserProfile {
+  uid?: string;
   firstName: string;
   lastName: string;
   email: string;
@@ -123,6 +124,7 @@ export async function fetchProfile(uid?: string): Promise<UserProfile | null> {
       // ✅ Merge with default → prevents undefined crashes
       const safeProfile: UserProfile = {
         ...EMPTY_PROFILE,
+        uid: userId,
         ...data,
         emergencyContact: {
           ...EMPTY_PROFILE.emergencyContact,
