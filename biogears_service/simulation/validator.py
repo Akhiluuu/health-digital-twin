@@ -171,6 +171,15 @@ def validate_events(events: List[Dict[str, Any]]) -> List[str]:
             except (ValueError, TypeError):
                 errors.append(f"{label}: time_offset must be an integer, got '{offset}'.")
 
+        ts = e.get("timestamp")
+        if ts is not None:
+            try:
+                import time as _time
+                if float(ts) > _time.time() + 60:
+                    errors.append(f"{label}: timestamp cannot be in the future.")
+            except (ValueError, TypeError):
+                errors.append(f"{label}: timestamp must be a valid float Unix epoch.")
+
         # ── Per-type checks ────────────────────────────────────────────────
         if etype == "exercise":
             if val is None:
@@ -224,8 +233,7 @@ def validate_events(events: List[Dict[str, Any]]) -> List[str]:
                 errors.append(
                     f"{label}: meal_type '{mt}' unknown. Valid: {', '.join(sorted(VALID_MEAL_TYPES))}."
                 )
-            # For custom meals, warn if macros are missing but allow the simulation
-            # to proceed — the scenario_builder will fall back to balanced preset.
+            # For custom meals, warn if macros are missing; validate bounds if macros are provided.
             if mt == "custom":
                 missing = [m for m in ("carb_g", "fat_g", "protein_g") if e.get(m) is None]
                 if missing:
@@ -233,6 +241,15 @@ def validate_events(events: List[Dict[str, Any]]) -> List[str]:
                         f"{label}: meal_type 'custom' is missing macro fields: "
                         f"{missing}. Scenario builder will estimate from balanced preset."
                     )
+                else:
+                    for macro in ("carb_g", "fat_g", "protein_g"):
+                        mval = e.get(macro)
+                        try:
+                            fmval = float(mval)
+                            if fmval < 0 or fmval > 5000:
+                                errors.append(f"{label}: '{macro}' must be between 0 and 5000 g, got {mval}.")
+                        except (ValueError, TypeError):
+                            errors.append(f"{label}: '{macro}' must be a valid number, got '{mval}'.")
 
         elif etype == "water":
             if val is None or not (5 <= float(val) <= 10000):
@@ -259,6 +276,15 @@ def validate_events(events: List[Dict[str, Any]]) -> List[str]:
                 safe_max = info.get("safe_max", None)
                 safety_level = info.get("safety_level", "safe")
                 warning_text = info.get("warning")
+
+                # Generic safety cap to prevent overflow/crashes
+                if val is not None:
+                    try:
+                        fval = float(val)
+                        if fval > 100000.0:
+                            errors.append(f"{label}: Dose {val} exceeds the maximum allowable dose limit (100000 {unit}).")
+                    except (ValueError, TypeError):
+                        pass
 
                 # Hard block on truly dangerous substances above safe_max
                 if safe_max is not None and safe_max > 0 and val is not None and float(val) > safe_max:
@@ -292,6 +318,15 @@ def validate_events(events: List[Dict[str, Any]]) -> List[str]:
                 errors.append(f"{label}: 'value' (fasting hours, ≥ 1) is required.")
             elif float(val) > 48:
                 errors.append(f"{label}: Maximum fast duration is 48 hours. Got {val}.")
+
+        elif etype == "environment":
+            env = e.get("environment_name")
+            if not env:
+                errors.append(f"{label}: 'environment_name' is required for environment events.")
+            elif env not in VALID_ENVIRONMENTS:
+                errors.append(
+                    f"{label}: Environment '{env}' is not supported. Valid: {', '.join(sorted(VALID_ENVIRONMENTS))}."
+                )
 
     return errors
 

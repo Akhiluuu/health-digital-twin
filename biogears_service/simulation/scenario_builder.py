@@ -180,11 +180,16 @@ def _substance_xml(name: str, val: float, is_stacked: bool = False, unit: str = 
     ORAL uses SubstanceOralDoseData with dose in mg directly.
     NASAL uses SubstanceNasalDoseData with dose in ug directly.
     """
+    # Perform PK unit validation and conversion
+    val = validate_and_convert_substance_unit(name, val, unit)
+
+    effective_val = round(val * 1.15, 4) if is_stacked else round(val, 4)
+
     if name == "Caffeine":
         # BioGears does not natively ship with Caffeine.xml!
         # We mimic the sympathetic effect (HR increase) via AcuteStressData.
         # 100mg caffeine -> ~0.05 severity.
-        severity = min(0.15, val / 2000.0)
+        severity = min(0.15, effective_val / 2000.0)
         return (
             f'        <Action xsi:type="AcuteStressData">\n'
             f'            <Severity value="{severity:.4f}"/>\n'
@@ -198,14 +203,10 @@ def _substance_xml(name: str, val: float, is_stacked: bool = False, unit: str = 
             f'        <Action xsi:type="SubstanceBolusData" AdminRoute="Intravenous">\n'
             f'            <Substance>{name}</Substance>\n'
             f'            <Concentration value="1.0" unit="mg/mL"/>\n'
-            f'            <Dose value="{round(val, 4)}" unit="mL"/>\n'
+            f'            <Dose value="{effective_val}" unit="mL"/>\n'
             f'        </Action>\n'
         )
 
-    # Perform PK unit validation and conversion
-    val = validate_and_convert_substance_unit(name, val, unit)
-
-    effective_val = round(val * 1.15, 4) if is_stacked else round(val, 4)
     route = info["route"]
     unit_expected = info["unit"]   # "mg", "ug", "mL/min", or "U" (insulin units)
 
@@ -246,10 +247,10 @@ def _substance_xml(name: str, val: float, is_stacked: bool = False, unit: str = 
             conc_unit = "ug/mL"
             dose_vol  = round(effective_val / 1000.0, 6)  # ug ÷ (ug/mL) = mL
         elif unit_expected == "U":
-            # Insulin — Units dosed at 100 U/mL concentration
-            conc_val  = 100.0
-            conc_unit = "U/mL"
-            dose_vol  = round(effective_val / 100.0, 6)   # U ÷ (U/mL) = mL
+            # Insulin — Units dosed at 100 U/mL concentration (equivalent to 3.47 mg/mL, since 1 U = 0.0347 mg)
+            conc_val  = 3.47
+            conc_unit = "mg/mL"
+            dose_vol  = round(effective_val / 100.0, 6)   # U ÷ (100 U/mL) = mL
         else:
             # mg-dosed drugs: 1 mg/mL → volume = dose_mg numerically
             conc_val  = 1.0
@@ -940,7 +941,7 @@ def build_batch_reconstruction(user_id, state_path, events: list, user_weight_kg
     )
 
     # ── Replay each event at its correct engine time ─────────────────────────
-    last_substance_time = -99999
+    last_substance_time = None
     # Minimum advance between any two actions so BioGears doesn't receive
     # back-to-back actions with zero time (which can confuse the CDM parser).
     _MIN_ADVANCE_S = 10
@@ -1003,7 +1004,7 @@ def build_batch_reconstruction(user_id, state_path, events: list, user_weight_kg
             actions_xml += _water_xml(float(val or 0))
 
         elif etype == "substance":
-            is_stacked  = (ev_ts - (last_substance_time or 0)) < 14400
+            is_stacked  = (last_substance_time is not None) and ((ev_ts - last_substance_time) < 14400)
             sub_name    = event.get("substance_name", "Caffeine")
             passed_unit = event.get("unit")
             actions_xml += _substance_xml(sub_name, float(val or 0), is_stacked, unit=passed_unit)

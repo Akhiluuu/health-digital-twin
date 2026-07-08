@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, Response
 from fastapi.security.api_key import APIKeyHeader
 from starlette.routing import Match
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from typing import List, Optional, Dict, Any
 import shutil, os, math, json, threading, re
 import datetime
@@ -329,7 +329,15 @@ def _check_rate_limit(user_id: str):
 # ---------------------------------------------------------------------------
 # DATA MODELS
 # ---------------------------------------------------------------------------
-class RegistrationRequest(BaseModel):
+class SanitizedRequestModel(BaseModel):
+    @field_validator("user_id", check_fields=False)
+    @classmethod
+    def validate_user_id(cls, v: str) -> str:
+        if not re.match(r'^[a-zA-Z0-9_\-\.]+$', v) or '..' in v:
+            raise ValueError("Invalid user_id. Use only alphanumerics, underscores, hyphens, and dots.")
+        return v
+
+class RegistrationRequest(SanitizedRequestModel):
     user_id: str
     profile_name: Optional[str] = None
     age: int
@@ -350,6 +358,14 @@ class RegistrationRequest(BaseModel):
     fitness_level: Optional[str] = "sedentary"   # "sedentary" | "active" | "athlete"
     vo2max: Optional[float] = None       # mL/kg/min — aerobic fitness marker (affects exercise ceiling)
     current_medications: Optional[List[str]] = []  # e.g. ["Metformin", "Atorvastatin"]
+
+    @field_validator("sex")
+    @classmethod
+    def validate_sex(cls, v: str) -> str:
+        v_title = v.strip().title()
+        if v_title not in ("Male", "Female"):
+            raise ValueError("'sex' must be 'Male' or 'Female'.")
+        return v_title
 
 class HealthEvent(BaseModel):
     event_type: str          # "exercise"|"sleep"|"meal"|"substance"|"water"|"environment"|"stress"|"alcohol"|"fast"
@@ -372,11 +388,11 @@ class HealthEvent(BaseModel):
     notes: Optional[str]           = None   # free-text clinical notes
 
 
-class BatchSyncRequest(BaseModel):
+class BatchSyncRequest(SanitizedRequestModel):
     user_id: str
     events: List[HealthEvent]
 
-class SingleSyncRequest(BaseModel):
+class SingleSyncRequest(SanitizedRequestModel):
     user_id: str
     event_type: str
     value: float
@@ -388,16 +404,16 @@ class SingleSyncRequest(BaseModel):
     duration_seconds: Optional[int] = None
     environment_name: Optional[str] = None
 
-class PredictRequest(BaseModel):
+class PredictRequest(SanitizedRequestModel):
     user_id: str
     hours: Optional[float] = 4.0
 
-class WhatIfRequest(BaseModel):
+class WhatIfRequest(SanitizedRequestModel):
     user_id: str
     event: HealthEvent
     hours: Optional[float] = 4.0
 
-class AsyncSyncRequest(BaseModel):
+class AsyncSyncRequest(SanitizedRequestModel):
     user_id: str
     events: List[HealthEvent]
 
@@ -640,6 +656,57 @@ def _run_batch_sync_blocking_impl(user_id: str, events: list) -> dict:
             except Exception:
                 pass
 
+def _validate_vitals_dataframe(df: pd.DataFrame, user_id: str):
+    """
+    Validates the given dataframe for engine stability and critical vitals.
+    Raises HTTPException (500) if any NaN or 0.0 value is detected in latest row
+    of critical vitals.
+    """
+    critical_cols = [
+        col for col in [
+            'HeartRate', 'SystolicArterialPressure', 'OxygenSaturation',
+            'CoreTemperature', 'RespirationRate', 'Glucose-BloodConcentration'
+        ]
+        if col in df.columns
+    ]
+    # Clean critical columns with safe_float to convert platform-specific IND/Inf strings to float NaN or 0.0
+    for col in critical_cols:
+        df[col] = df[col].apply(result_parser.safe_float)
+
+    if len(df) == 0:
+        logger.error(f"❌ [{user_id}] Engine output is empty.")
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "message": "Simulation resulted in an empty vitals dataset.",
+                "log_snippet": engine_runner.get_latest_log(user_id) or ""
+            }
+        )
+
+    latest_row = df.iloc[-1]
+    nan_detected = any(math.isnan(latest_row[col]) for col in critical_cols)
+    zero_detected = any(latest_row[col] == 0.0 for col in critical_cols)
+
+    all_zero_hr = False
+    if 'HeartRate' in df.columns:
+        hr_series = df['HeartRate'].dropna()
+        all_zero_hr = (hr_series == 0.0).all() and len(hr_series) > 0
+
+    if nan_detected or zero_detected or all_zero_hr:
+        failure_reason = (
+            "NaN values in critical vitals" if nan_detected
+            else ("all-zero HeartRate (engine divergence)" if all_zero_hr
+                  else "zero/diverged value in critical vitals")
+        )
+        logger.error(f"❌ [{user_id}] Engine produced {failure_reason}. Raising exception.")
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "message": f"Simulation resulted in physiological failure ({failure_reason}).",
+                "log_snippet": engine_runner.get_latest_log(user_id) or ""
+            }
+        )
+
 
 def _run_batch_sync_blocking_core(
     user_id: str,
@@ -742,36 +809,12 @@ def _run_batch_sync_blocking_core(
     try:
         df = pd.read_csv(dest_csv, index_col=False)
         df = df.loc[:, ~df.columns.str.contains('^Unnamed')]
+        df.columns = [c.split('(')[0].strip() for c in df.columns]
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Engine output CSV is malformed: {e}")
 
     # Check for "Dead Twin" (NaNs or zeros in critical vitals)
-    # BioGears exits 0 even when it diverges — catch that here.
-    critical_cols = [
-        col for col in [
-            'HeartRate', 'SystolicArterialPressure', 'OxygenSaturation',
-            'CoreTemperature', 'RespirationRate', 'Glucose-BloodConcentration'
-        ]
-        if col in df.columns
-    ]
-    nan_detected = any(df[col].isnull().any() for col in critical_cols)
-    # Also check for all-zero HeartRate — engine crash can produce zeros
-    if 'HeartRate' in df.columns and not df['HeartRate'].isnull().all():
-        hr_nonzero = df['HeartRate'].dropna()
-        zero_hr = (hr_nonzero == 0.0).all() and len(hr_nonzero) > 0
-    else:
-        zero_hr = False
-
-    if nan_detected or zero_hr:
-        failure_reason = "NaN values in critical vitals" if nan_detected else "all-zero HeartRate (engine divergence)"
-        logger.error(f"❌ [{user_id}] Engine produced {failure_reason}. Raising exception.")
-        raise HTTPException(
-            status_code=500,
-            detail={
-                "message": f"Simulation resulted in physiological failure ({failure_reason}).",
-                "log_snippet": engine_runner.get_latest_log(user_id) or ""
-            }
-        )
+    _validate_vitals_dataframe(df, user_id)
 
     vitals = _build_vitals_from_df(df)
     report_url = visualizer.generate_health_report(user_id, custom_path=dest_csv)
@@ -1567,9 +1610,24 @@ def _predict_recovery_impl(data: PredictRequest):
     )
     try:
         if _run_biogears_via_celery(path, user_id=data.user_id):
+            csv_path = visualizer.get_csv_path(data.user_id, run_id=run_id, prefix="forecast_")
+            if csv_path and os.path.exists(str(csv_path)):
+                try:
+                    df = pd.read_csv(str(csv_path), index_col=False)
+                    df = df.loc[:, ~df.columns.str.contains('^Unnamed')]
+                    df.columns = [c.split('(')[0].strip() for c in df.columns]
+                    _validate_vitals_dataframe(df, data.user_id)
+                except Exception as val_err:
+                    try:
+                        os.remove(str(csv_path))
+                    except Exception:
+                        pass
+                    if isinstance(val_err, HTTPException):
+                        raise val_err
+                    raise HTTPException(status_code=500, detail=f"Forecast validation failed: {val_err}")
+
             chart_url = visualizer.generate_forecast_report(data.user_id, run_id=run_id)
             try:
-                csv_path = visualizer.get_csv_path(data.user_id, run_id=run_id, prefix="forecast_")
                 if csv_path and os.path.exists(str(csv_path)):
                     os.remove(str(csv_path))
             except Exception:
@@ -1747,7 +1805,7 @@ def export_user_data(user_id: str):
 
 # ── SSE STREAMING ENDPOINTS ──────────────────────────────────────────────
 
-class StreamSyncRequest(BaseModel):
+class StreamSyncRequest(SanitizedRequestModel):
     user_id: str
     events: List[HealthEvent]
 
@@ -1843,60 +1901,71 @@ def _predict_whatif_impl(data: WhatIfRequest):
             data.user_id, str(state_file), event_dict, hours=data.hours
         )
 
-    # Run baseline
-    if not _run_biogears_via_celery(base_path, user_id=data.user_id):
-        raise HTTPException(status_code=500, detail="Baseline simulation failed.")
+    base_candidates = []
+    evt_candidates = []
+    try:
+        # Run baseline
+        if not _run_biogears_via_celery(base_path, user_id=data.user_id):
+            raise HTTPException(status_code=500, detail="Baseline simulation failed.")
 
-    base_csv_name = f"{base_prefix}Results.csv"
-    # Check SCENARIO_API_DIR first (fast path) then fall back to rglob
-    base_direct = SCENARIO_API_DIR / base_csv_name
-    base_candidates = [base_direct] if base_direct.exists() else list(BIOGEARS_BIN_DIR.rglob(base_csv_name))
-    if not base_candidates:
-        raise HTTPException(status_code=500, detail="Baseline output CSV not found.")
-    base_df = pd.read_csv(str(base_candidates[0]), index_col=False)
-    base_df = base_df.loc[:, ~base_df.columns.str.contains('^Unnamed')]
-    base_df.columns = [c.split('(')[0].strip() for c in base_df.columns]
-    base_report = visualizer.generate_health_report(data.user_id, run_id=base_run_id,
-                                                    custom_path=base_candidates[0])
+        base_csv_name = f"{base_prefix}Results.csv"
+        # Check SCENARIO_API_DIR first (fast path) then fall back to rglob
+        base_direct = SCENARIO_API_DIR / base_csv_name
+        base_candidates = [base_direct] if base_direct.exists() else list(BIOGEARS_BIN_DIR.rglob(base_csv_name))
+        if not base_candidates:
+            raise HTTPException(status_code=500, detail="Baseline output CSV not found.")
+        base_df = pd.read_csv(str(base_candidates[0]), index_col=False)
+        base_df = base_df.loc[:, ~base_df.columns.str.contains('^Unnamed')]
+        base_df.columns = [c.split('(')[0].strip() for c in base_df.columns]
 
-    # Run intervention
-    if not _run_biogears_via_celery(evt_path, user_id=data.user_id):
-        raise HTTPException(status_code=500, detail="Intervention simulation failed.")
+        # Validate baseline
+        _validate_vitals_dataframe(base_df, data.user_id)
 
-    evt_csv_name = f"{evt_prefix}Results.csv"
-    # Check SCENARIO_API_DIR first (fast path) then fall back to rglob
-    evt_direct = SCENARIO_API_DIR / evt_csv_name
-    evt_candidates = [evt_direct] if evt_direct.exists() else list(BIOGEARS_BIN_DIR.rglob(evt_csv_name))
-    if not evt_candidates:
-        raise HTTPException(status_code=500, detail="Intervention output CSV not found.")
-    evt_df = pd.read_csv(str(evt_candidates[0]), index_col=False)
-    evt_df = evt_df.loc[:, ~evt_df.columns.str.contains('^Unnamed')]
-    evt_df.columns = [c.split('(')[0].strip() for c in evt_df.columns]
-    evt_report = visualizer.generate_health_report(data.user_id, run_id=evt_run_id,
-                                                   custom_path=evt_candidates[0])
+        base_report = visualizer.generate_health_report(data.user_id, run_id=base_run_id,
+                                                        custom_path=base_candidates[0])
 
-    intervention_label = (
-        f"{event_dict.get('event_type', 'event').title()}"
-        + (f" ({event_dict.get('substance_name', '')})" if event_dict.get("substance_name") else "")
-    )
-    comparison_report = visualizer.generate_comparison_report(
-        data.user_id, base_df, evt_df, intervention_label=intervention_label
-    )
+        # Run intervention
+        if not _run_biogears_via_celery(evt_path, user_id=data.user_id):
+            raise HTTPException(status_code=500, detail="Intervention simulation failed.")
 
-    # Clean up what-if XML and CSV files to avoid polluting disk
-    for path in [base_path, evt_path]:
-        try:
-            if os.path.exists(path):
-                os.remove(path)
-        except Exception:
-            pass
-    for candidates in [base_candidates, evt_candidates]:
-        if candidates:
+        evt_csv_name = f"{evt_prefix}Results.csv"
+        # Check SCENARIO_API_DIR first (fast path) then fall back to rglob
+        evt_direct = SCENARIO_API_DIR / evt_csv_name
+        evt_candidates = [evt_direct] if evt_direct.exists() else list(BIOGEARS_BIN_DIR.rglob(evt_csv_name))
+        if not evt_candidates:
+            raise HTTPException(status_code=500, detail="Intervention output CSV not found.")
+        evt_df = pd.read_csv(str(evt_candidates[0]), index_col=False)
+        evt_df = evt_df.loc[:, ~evt_df.columns.str.contains('^Unnamed')]
+        evt_df.columns = [c.split('(')[0].strip() for c in evt_df.columns]
+
+        # Validate intervention
+        _validate_vitals_dataframe(evt_df, data.user_id)
+
+        evt_report = visualizer.generate_health_report(data.user_id, run_id=evt_run_id,
+                                                       custom_path=evt_candidates[0])
+
+        intervention_label = (
+            f"{event_dict.get('event_type', 'event').title()}"
+            + (f" ({event_dict.get('substance_name', '')})" if event_dict.get("substance_name") else "")
+        )
+        comparison_report = visualizer.generate_comparison_report(
+            data.user_id, base_df, evt_df, intervention_label=intervention_label
+        )
+    finally:
+        # Clean up what-if XML and CSV files to avoid polluting disk
+        for path in [base_path, evt_path]:
             try:
-                if os.path.exists(str(candidates[0])):
-                    os.remove(str(candidates[0]))
+                if os.path.exists(path):
+                    os.remove(path)
             except Exception:
                 pass
+        for candidates in [base_candidates, evt_candidates]:
+            if candidates:
+                try:
+                    if os.path.exists(str(candidates[0])):
+                        os.remove(str(candidates[0]))
+                except Exception:
+                    pass
 
     return {
         "status": "success",

@@ -14,7 +14,8 @@ from pathlib import Path
 from typing import List, Optional, Any, Dict
 
 from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
+import re
 
 logger = logging.getLogger("DPSS.Router")
 
@@ -49,7 +50,15 @@ def _cfg():
 # REQUEST / RESPONSE MODELS
 # ---------------------------------------------------------------------------
 
-class StageEventRequest(BaseModel):
+class SanitizedRequestModel(BaseModel):
+    @field_validator("user_id", check_fields=False)
+    @classmethod
+    def validate_user_id(cls, v: str) -> str:
+        if not re.match(r'^[a-zA-Z0-9_\-\.]+$', v) or '..' in v:
+            raise ValueError("Invalid user_id. Use only alphanumerics, underscores, hyphens, and dots.")
+        return v
+
+class StageEventRequest(SanitizedRequestModel):
     user_id: str
     event_type: str
     event_timestamp: str           # ISO-8601 e.g. "2026-07-06T08:30:00"
@@ -58,17 +67,17 @@ class StageEventRequest(BaseModel):
     sequence_num: int = 0
 
 
-class StageBatchRequest(BaseModel):
+class StageBatchRequest(SanitizedRequestModel):
     user_id: str
     events: List[StageEventRequest]
 
 
-class RunSimulationRequest(BaseModel):
+class RunSimulationRequest(SanitizedRequestModel):
     user_id: str
     initiated_by: Optional[str] = "user"
 
 
-class UndoRequest(BaseModel):
+class UndoRequest(SanitizedRequestModel):
     user_id: str
 
 

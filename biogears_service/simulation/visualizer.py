@@ -33,7 +33,7 @@ _REPORTS_DIR.mkdir(parents=True, exist_ok=True)
 
 def get_csv_path(user_id, run_id=None, prefix="run_"):
     """Locates a BioGears output CSV by trying several candidate locations."""
-    filename = f"run_{run_id}Results.csv" if run_id else f"{prefix}{user_id}Results.csv"
+    filename = f"{prefix}{run_id}Results.csv" if run_id else f"{prefix}{user_id}Results.csv"
 
     candidates = [
         BIOGEARS_BIN_DIR / "Scenarios" / "API" / filename,
