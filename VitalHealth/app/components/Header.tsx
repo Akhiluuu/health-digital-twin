@@ -15,6 +15,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTheme } from "../../context/ThemeContext";
 import { colors as globalColors } from "../../theme/colors";
 import { useFamily } from "../../context/FamilyContext";
+import { useNotifications } from "../../context/NotificationContext";
 import * as Haptics from "expo-haptics";
 
 interface HeaderProps {
@@ -57,14 +58,8 @@ export default function Header({
     }
   };
 
-  let unreadCount = 0;
-  try {
-    const { useNotifications } = require("../../context/NotificationContext");
-    const notificationsCtx = useNotifications();
-    if (notificationsCtx) {
-      unreadCount = notificationsCtx.unreadCount;
-    }
-  } catch (_) {}
+  const notificationsCtx = useNotifications();
+  const unreadCount = notificationsCtx?.unreadCount ?? 0;
 
   return (
     <View

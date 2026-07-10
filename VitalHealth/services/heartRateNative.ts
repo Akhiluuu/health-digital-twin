@@ -10,35 +10,38 @@ if (Platform.OS === 'android' && HeartRateModule) {
 }
 
 // ── Types ─────────────────────────────────────────────────────────────────────
+
 export interface HeartRateFrameEvent {
   fingerDetected: boolean;
-  ppgValue: number;
+  ppgValue: number;       // green channel value for waveform
   avgRed: number;
   avgGreen: number;
   avgBlue: number;
-  timestamp: number;
+  timestamp: number;      // milliseconds
 }
 
 export interface HeartRateUpdateEvent {
   bpm: number;
+  spo2: number;
   confidence: number;       // 0–100
-  signalQuality: number;    // 0–100
-  source: string;           // FUSION | PEAK | FFT | DEFAULT
-  motionScore: number;      // 0–1
-  hasExcessiveMotion: boolean;
-  sampleCount: number;
-  progress: number;         // 0–1 (measurement progress)
+  status: string;           // CALIBRATING | MEASURING | TOO_MUCH_PRESSURE | MOTION_ARTIFACT_DETECTED | SIGNAL_LOW_QUALITY
+  pulseWave: number;        // latest bandpass-filtered PPG sample (for waveform)
+  snr: number;              // signal-to-noise ratio in dB
+  progress: number;         // 0–1 (fraction of 30-second window elapsed)
   qualityLabel: string;     // Excellent | Good | Fair | Poor
   confidenceLabel: string;  // Very High | High | Medium | Low
 }
 
 export interface HeartRateDoneEvent {
   bpm: number;
+  spo2: number;
   confidence: number;
   signalQuality: number;
   source: string;
   duration: number;
   timestamp: number;
+  progress: number;         // always 1.0
+  snr: number;             // signal-to-noise ratio in dB
   qualityLabel: string;
   confidenceLabel: string;
 }
@@ -58,6 +61,7 @@ export interface HeartRateReading {
 }
 
 // ── API ───────────────────────────────────────────────────────────────────────
+
 export function startHeartRateMeasurement(uid: string): void {
   if (Platform.OS !== 'android' || !HeartRateModule) return;
   HeartRateModule.startMeasurement(uid);
@@ -82,13 +86,33 @@ export async function getLatestHeartRate(uid: string): Promise<HeartRateReading 
   } catch { return null; }
 }
 
+export async function getHeartRateFftSpectrum(): Promise<number[]> {
+  if (Platform.OS !== 'android' || !HeartRateModule) return [];
+  try {
+    return await HeartRateModule.getFftSpectrum();
+  } catch { return []; }
+}
+
+export async function getHeartRateDetectedPeaks(): Promise<number[]> {
+  if (Platform.OS !== 'android' || !HeartRateModule) return [];
+  try {
+    return await HeartRateModule.getDetectedPeaks();
+  } catch { return []; }
+}
+
+export function calibrateHeartRateDevice(refHr: number, refSpo2: number): void {
+  if (Platform.OS !== 'android' || !HeartRateModule) return;
+  HeartRateModule.calibrateDevice(refHr, refSpo2);
+}
+
 // ── Event subscriptions ───────────────────────────────────────────────────────
+
 export function onHeartRateFrame(cb: (e: HeartRateFrameEvent) => void) {
   if (!emitter) return () => {};
   let lastTime = 0;
   const throttledCb = (e: HeartRateFrameEvent) => {
     const now = Date.now();
-    if (now - lastTime >= 33) {
+    if (now - lastTime >= 33) {   // ~30fps max
       lastTime = now;
       cb(e);
     }

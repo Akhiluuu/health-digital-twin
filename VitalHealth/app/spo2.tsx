@@ -13,6 +13,7 @@ import {
   Dimensions,
   Vibration,
   Platform,
+  ActivityIndicator,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter, useNavigation } from "expo-router";
@@ -43,6 +44,9 @@ import {
   onSpo2Done,
   onSpo2Error,
   isNativeSpo2Available,
+  getSpo2FftSpectrum,
+  getSpo2DetectedPeaks,
+  calibrateSpo2Device,
   type Spo2DoneEvent,
   type Spo2FrameEvent,
   type Spo2UpdateEvent,
@@ -87,6 +91,9 @@ export default function Spo2Screen() {
   useEffect(() => {
     markReadByCategory("vitals");
     markReadByCategory("alerts");
+  }, []);
+
+  useEffect(() => {
     const unsubscribeBlur = navigation.addListener("blur", () => {
       stopSpo2Measurement();
     });
@@ -94,7 +101,7 @@ export default function Spo2Screen() {
       unsubscribeBlur();
       stopSpo2Measurement();
     };
-  }, [navigation, markReadByCategory]);
+  }, [navigation]);
 
   // ─── State ──────────────────────────────────────────────────────────────────
   const [spo2, setSpo2] = useState("");
@@ -124,6 +131,38 @@ export default function Spo2Screen() {
   // Waveform
   const [wavePoints, setWavePoints] = useState<number[]>(Array(WAVEFORM_POINTS).fill(0));
   const wavePointsRef = useRef<number[]>(Array(WAVEFORM_POINTS).fill(0));
+  const lastUpdateRef = useRef<Spo2UpdateEvent | null>(null);
+
+  // Debug Panel States
+  const [showDebug, setShowDebug] = useState(false);
+  const [fftData, setFftData] = useState<number[]>([]);
+  const [peaksData, setPeaksData] = useState<number[]>([]);
+  const [refHr, setRefHr] = useState("");
+  const [refSpo2, setRefSpo2] = useState("");
+
+  const getSpo2HeaderDetails = (): { title: string; subtext: string; color: string } => {
+    if (!fingerDetected) {
+      return {
+        title: "Place Finger",
+        subtext: "Cover the rear camera lens and flash completely with your index finger.",
+        color: c.text,
+      };
+    }
+    if (liveSpo2 === null || liveSpo2 === 0) {
+      return {
+        title: "Calibrating",
+        subtext: "Locating blood oxygen level. Keep still.",
+        color: c.text,
+      };
+    }
+    return {
+      title: "Measuring Oxygen",
+      subtext: "Keep steady and breathe normally. Gathering SpO₂ details.",
+      color: c.text,
+    };
+  };
+
+  const headerDetails = getSpo2HeaderDetails();
 
   useEffect(() => {
     let active = true;
@@ -240,8 +279,8 @@ export default function Spo2Screen() {
       setFingerDetected(event.fingerDetected);
 
       const nextPoints = [...wavePointsRef.current.slice(1)];
-      // Normalize raw red average values (approx. 150-255) to 5-45 height range for SVG
-      const normalizedValue = Math.min(45, Math.max(5, ((event.ppgValue - 150) / 105) * 40));
+      // Normalize raw red average (80–255 range with relaxed threshold) to 5–45 SVG height
+      const normalizedValue = Math.min(45, Math.max(5, ((event.ppgValue - 80) / 175) * 40));
       nextPoints.push(normalizedValue);
 
       wavePointsRef.current = nextPoints;
@@ -250,6 +289,9 @@ export default function Spo2Screen() {
 
     // 2. Continuous measurement calculations
     const unsubUpdate = onSpo2Update((event: Spo2UpdateEvent) => {
+      if (event.spo2 > 0) {
+        lastUpdateRef.current = event;
+      }
       setLiveSpo2(Math.round(event.spo2));
       setProgress(event.progress);
       setSignalQuality(event.signalQuality);
@@ -257,20 +299,57 @@ export default function Spo2Screen() {
       setQualityLabel(event.qualityLabel);
       setConfidenceLabel(event.confidenceLabel);
       setSecondsRemaining(Math.max(0, Math.round(30 * (1 - event.progress))));
+
+      // Retrieve live spectral data and peak list for research telemetry
+      getSpo2FftSpectrum().then((spectrum) => {
+        if (spectrum && spectrum.length > 0) setFftData(spectrum);
+      });
+      getSpo2DetectedPeaks().then((peaks) => {
+        if (peaks && peaks.length > 0) setPeaksData(peaks);
+      });
     });
 
     // 3. Successful measurement complete
     const unsubDone = onSpo2Done((event: Spo2DoneEvent) => {
+      stopSpo2Measurement();
       setFinalResult(event);
       setScreenState("results");
-      Vibration.vibrate([0, 100, 80, 100]);
+      try {
+        Vibration.vibrate([0, 100, 80, 100]);
+      } catch (e) {
+        console.warn("Vibration failed:", e);
+      }
     });
 
     // 4. Handle Measurement Error
     const unsubError = onSpo2Error((event: Spo2ErrorEvent) => {
-      setErrorMessage(event.message);
-      setScreenState("error");
-      Vibration.vibrate(200);
+      stopSpo2Measurement();
+      if (lastUpdateRef.current && lastUpdateRef.current.spo2 > 0) {
+        const fallbackEvent: Spo2DoneEvent = {
+          spo2: lastUpdateRef.current.spo2,
+          confidence: lastUpdateRef.current.confidence,
+          signalQuality: lastUpdateRef.current.signalQuality,
+          duration: 30.0,
+          timestamp: Date.now(),
+          qualityLabel: lastUpdateRef.current.qualityLabel ?? "Good",
+          confidenceLabel: lastUpdateRef.current.confidenceLabel ?? "High",
+        };
+        setFinalResult(fallbackEvent);
+        setScreenState("results");
+        try {
+          Vibration.vibrate([0, 100, 80, 100]);
+        } catch (e) {
+          console.warn("Vibration failed:", e);
+        }
+      } else {
+        setErrorMessage(event.message);
+        setScreenState("error");
+        try {
+          Vibration.vibrate(200);
+        } catch (e) {
+          console.warn("Vibration failed:", e);
+        }
+      }
     });
 
     return () => {
@@ -310,11 +389,11 @@ export default function Spo2Screen() {
   };
 
   const handleStartCameraScan = async () => {
-    // 1. Verify availability
+    // 1. Verify native module availability
     if (!isNativeSpo2Available()) {
       Alert.alert(
         "Module Unavailable",
-        "The native CameraX SpO2 scanner module is not loaded. Please ensure you are running on a real Android device with exact module builds."
+        "The native CameraX SpO2 scanner module is not loaded. Please run on a real Android device."
       );
       return;
     }
@@ -323,13 +402,15 @@ export default function Spo2Screen() {
     const { status } = await Camera.requestCameraPermissionsAsync();
     if (status !== "granted") {
       setHasPermission(false);
-      Alert.alert("Permission Required", "Camera access is required to perform blood oxygen estimation.");
+      Alert.alert("Permission Required", "Camera access is required for blood oxygen measurement.");
       return;
     }
     setHasPermission(true);
 
-    // 3. Reset and start
-    setScreenState("measuring");
+    // 3. Pre-fetch UID before any state changes to avoid async race conditions
+    const uid = activeMemberId === "self" ? await getUserId() : activeMemberId;
+
+    // 4. Reset measurement state
     setProgress(0);
     setLiveSpo2(null);
     setFingerDetected(false);
@@ -337,10 +418,13 @@ export default function Spo2Screen() {
     setWavePoints(Array(WAVEFORM_POINTS).fill(25));
     wavePointsRef.current = Array(WAVEFORM_POINTS).fill(25);
 
-    setTimeout(async () => {
-      const uid = activeMemberId === "self" ? await getUserId() : activeMemberId;
+    // 5. Switch screen THEN wait for CameraPreview to mount before starting native
+    setScreenState("measuring");
+    // 600ms delay ensures the CameraPreview native view has been rendered and registered
+    // with CameraPreviewShared before the Spo2Module tries to bind the camera lifecycle.
+    setTimeout(() => {
       startSpo2Measurement(uid || "self");
-    }, 300);
+    }, 600);
   };
 
   const handleCancelMeasurement = () => {
@@ -427,6 +511,33 @@ export default function Spo2Screen() {
       .join(" ");
   };
 
+  const getFftPath = (): string => {
+    if (fftData.length < 68) return "M 0 80";
+    const bins = fftData.slice(12, 68); // 0.7 to 4.0 Hz
+    const maxVal = Math.max(...bins, 1e-5);
+    const H = 80;
+    const W = width - 96;
+    return bins
+      .map((val, idx) => {
+        const x = (idx / (bins.length - 1)) * W;
+        const norm = val / maxVal;
+        const y = H - norm * H;
+        return `${idx === 0 ? "M" : "L"} ${x.toFixed(1)} ${y.toFixed(1)}`;
+      })
+      .join(" ");
+  };
+
+  const handleCalibrate = () => {
+    const hrVal = parseFloat(refHr);
+    const spo2Val = parseFloat(refSpo2);
+    if (isNaN(hrVal) || isNaN(spo2Val) || hrVal < 35 || hrVal > 220 || spo2Val < 80 || spo2Val > 100) {
+      Alert.alert("Invalid Input", "Please enter valid reference values:\nHeart Rate: 35 - 220 BPM\nSpO2: 80 - 100%");
+      return;
+    }
+    calibrateSpo2Device(hrVal, spo2Val);
+    Alert.alert("Success", "Device calibrated successfully against reference readings!");
+  };
+
   // ─── Derived ─────────────────────────────────────────────────────────────────
   const numVal = parseInt(spo2);
   const previewStatus = !isNaN(numVal) && numVal >= 50 && numVal <= 100
@@ -461,7 +572,16 @@ export default function Spo2Screen() {
       <Text style={[styles.headerTitle, { color: c.text }]}>
         {screenState === "measuring" ? "Camera SpO₂ Scan" : "SpO₂ Monitor"}
       </Text>
-      <View style={styles.headerRight} />
+      {screenState === "measuring" ? (
+        <TouchableOpacity
+          onPress={() => setShowDebug(!showDebug)}
+          style={{ width: 40, height: 40, alignItems: "center", justifyContent: "center" }}
+        >
+          <Ionicons name="bug-outline" size={20} color={showDebug ? "#ef476f" : c.text} />
+        </TouchableOpacity>
+      ) : (
+        <View style={styles.headerRight} />
+      )}
     </View>
   );
 
@@ -646,34 +766,161 @@ export default function Spo2Screen() {
       {/* ────────────────── SCREEN STATE: MEASURING ────────────────── */}
       {screenState === "measuring" && (
         <View style={styles.measuringContainer}>
+          {/* Debug Panel Overlay */}
+          {showDebug && (
+            <View style={[styles.debugOverlay, { backgroundColor: c.card, borderColor: c.border }]}>
+              <View style={styles.debugHeader}>
+                <Ionicons name="bug-outline" size={20} color="#ef476f" />
+                <Text style={[styles.debugTitle, { color: c.text }]}>DSP Telemetry & Calibration</Text>
+                <TouchableOpacity onPress={() => setShowDebug(false)} style={styles.debugCloseBtn}>
+                  <Ionicons name="close" size={20} color={c.text} />
+                </TouchableOpacity>
+              </View>
+
+              <ScrollView style={styles.debugScroll} showsVerticalScrollIndicator={false}>
+                {/* Telemetry Metrics */}
+                <View style={styles.debugSection}>
+                  <Text style={[styles.debugSectionTitle, { color: c.sub }]}>SIGNAL QUALITY INDEX (SQI)</Text>
+                  <View style={styles.debugGrid}>
+                    <View style={[styles.debugCard, { backgroundColor: c.bg }]}>
+                      <Text style={[styles.debugCardLabel, { color: c.sub }]}>SNR</Text>
+                      <Text style={[styles.debugCardValue, { color: signalQuality >= 60 ? "#10b981" : "#ef4444" }]}>
+                        {signalQuality.toFixed(2)} dB
+                      </Text>
+                    </View>
+                    <View style={[styles.debugCard, { backgroundColor: c.bg }]}>
+                      <Text style={[styles.debugCardLabel, { color: c.sub }]}>Confidence</Text>
+                      <Text style={[styles.debugCardValue, { color: confidence >= 65 ? "#10b981" : "#f59e0b" }]}>
+                        {confidence.toFixed(1)}%
+                      </Text>
+                    </View>
+                  </View>
+                  <View style={[styles.debugGrid, { marginTop: 8 }]}>
+                    <View style={[styles.debugCard, { backgroundColor: c.bg }]}>
+                      <Text style={[styles.debugCardLabel, { color: c.sub }]}>Signal Quality</Text>
+                      <Text style={[styles.debugCardValue, { color: c.text }]}>
+                        {qualityLabel}
+                      </Text>
+                    </View>
+                    <View style={[styles.debugCard, { backgroundColor: c.bg }]}>
+                      <Text style={[styles.debugCardLabel, { color: c.sub }]}>Confidence Label</Text>
+                      <Text style={[styles.debugCardValue, { color: c.text, fontSize: 11 }]}>
+                        {confidenceLabel}
+                      </Text>
+                    </View>
+                  </View>
+                </View>
+
+                {/* FFT Spectrum */}
+                <View style={styles.debugSection}>
+                  <Text style={[styles.debugSectionTitle, { color: c.sub }]}>FFT CARDIAC POWER SPECTRUM (0.7 - 4.0 Hz)</Text>
+                  <View style={[styles.fftCardBg, { backgroundColor: c.bg, borderColor: c.border }]}>
+                    {fftData.length > 0 ? (
+                      <Svg width="100%" height={80}>
+                        <Path d={getFftPath()} fill="none" stroke="#ef476f" strokeWidth={2} />
+                      </Svg>
+                    ) : (
+                      <Text style={[styles.noFftText, { color: c.sub }]}>Waiting for first 3s epoch...</Text>
+                    )}
+                  </View>
+                </View>
+
+                {/* Detected Peaks */}
+                <View style={styles.debugSection}>
+                  <Text style={[styles.debugSectionTitle, { color: c.sub }]}>DETECTED PEAKS (INDEX BUFFER)</Text>
+                  <View style={[styles.peaksContainer, { backgroundColor: c.bg, borderColor: c.border }]}>
+                    <Text style={[styles.peaksText, { color: c.text }]}>
+                      {peaksData.length > 0 ? peaksData.slice(0, 10).join(", ") : "No peaks detected yet"}
+                    </Text>
+                  </View>
+                </View>
+
+                {/* Device Calibration */}
+                <View style={styles.debugSection}>
+                  <Text style={[styles.debugSectionTitle, { color: c.sub }]}>GOLD-STANDARD DEVICE CALIBRATION</Text>
+                  <View style={[styles.calibCard, { backgroundColor: c.bg, borderColor: c.border }]}>
+                    <Text style={[styles.calibDesc, { color: c.sub }]}>
+                      Enter reference values from a clinical device to lock calibration offsets.
+                    </Text>
+                    <View style={styles.calibInputsRow}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={[styles.inputLabel, { color: c.sub }]}>Ref HR (BPM)</Text>
+                        <TextInput
+                          style={[styles.calibInput, { color: c.text, borderColor: c.border, backgroundColor: c.card }]}
+                          keyboardType="numeric"
+                          value={refHr}
+                          onChangeText={setRefHr}
+                          placeholder="e.g. 72"
+                          placeholderTextColor="rgba(255,255,255,0.3)"
+                        />
+                      </View>
+                      <View style={{ width: 12 }} />
+                      <View style={{ flex: 1 }}>
+                        <Text style={[styles.inputLabel, { color: c.sub }]}>Ref SpO2 (%)</Text>
+                        <TextInput
+                          style={[styles.calibInput, { color: c.text, borderColor: c.border, backgroundColor: c.card }]}
+                          keyboardType="numeric"
+                          value={refSpo2}
+                          onChangeText={setRefSpo2}
+                          placeholder="e.g. 98"
+                          placeholderTextColor="rgba(255,255,255,0.3)"
+                        />
+                      </View>
+                    </View>
+                    <TouchableOpacity style={[styles.calibBtn, { backgroundColor: c.primary || "#6366f1" }]} onPress={handleCalibrate}>
+                      <Text style={styles.calibBtnText}>Lock Calibration</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              </ScrollView>
+            </View>
+          )}
+
+          {/* Header guidance */}
+          <View style={{ alignItems: "center", marginTop: 10, marginBottom: 24 }}>
+            <Text style={{ fontSize: 24, fontWeight: "bold", color: headerDetails.color, textAlign: "center", marginBottom: 8 }}>
+              {headerDetails.title}
+            </Text>
+            <Text style={{ fontSize: 13, color: c.sub, textAlign: "center", lineHeight: 18, paddingHorizontal: 16 }}>
+              {headerDetails.subtext}
+            </Text>
+          </View>
+
           {/* Outer Status Ring */}
           <View style={styles.statusCircleContainer}>
-            <View style={[styles.statusOuterRing, { borderColor: c.border }]}>
+            <View style={[styles.statusOuterRing, { borderColor: !fingerDetected ? c.border : c.accent, borderWidth: 3 }]}>
               <View style={[styles.statusInnerCard, { backgroundColor: c.card, overflow: "hidden" }]}>
                 {/* Live Camera Feed */}
                 <CameraPreview style={StyleSheet.absoluteFillObject} />
 
-                {/* Dark overlay to make the text readable */}
-                <View style={[StyleSheet.absoluteFillObject, { backgroundColor: "rgba(0, 0, 0, 0.4)", justifyContent: "center", alignItems: "center" }]}>
-                  {liveSpo2 ? (
-                    <Animated.View style={{ transform: [{ scale: pulseAnim }], alignItems: "center" }}>
-                      <Ionicons name="heart-outline" size={48} color="#ef476f" />
-                      <Text style={[styles.liveBpmText, { color: "#ffffff" }]}>{liveSpo2}%</Text>
-                      <Text style={[styles.liveBpmLabel, { color: "rgba(255, 255, 255, 0.7)" }]}>SpO₂</Text>
-                    </Animated.View>
-                  ) : (
-                    <View style={{ alignItems: "center" }}>
-                      <Ionicons
-                        name={fingerDetected ? "pulse" : "finger-print-outline"}
-                        size={48}
-                        color={fingerDetected ? "#4ade80" : "#ffffff"}
-                      />
-                      <Text style={[styles.statusLabelText, { color: "#ffffff", marginTop: 8 }]}>
-                        {fingerDetected ? "Reading Pulse..." : "Cover Lens & Flash"}
-                      </Text>
-                    </View>
-                  )}
-                </View>
+                {/* Translucent overlay backdrop for readability */}
+                <View style={[StyleSheet.absoluteFillObject, { backgroundColor: !fingerDetected ? "rgba(0, 0, 0, 0.55)" : "transparent" }]} />
+
+                {!fingerDetected ? (
+                  <View style={{ alignItems: "center" }}>
+                    <Ionicons name="finger-print-outline" size={54} color="#ffffff" style={{ opacity: 0.85 }} />
+                    <Text style={[styles.statusLabelText, { color: "#ffffff", marginTop: 8 }]}>
+                      Cover Lens
+                    </Text>
+                  </View>
+                ) : (liveSpo2 === null || liveSpo2 === 0) ? (
+                  <View style={{ alignItems: "center" }}>
+                    <ActivityIndicator size="large" color="#ffffff" />
+                    <Text style={[styles.statusLabelText, { color: "#ffffff", marginTop: 8 }]}>
+                      Calibrating...
+                    </Text>
+                  </View>
+                ) : (
+                  <Animated.View style={{ transform: [{ scale: pulseAnim }], alignItems: "center" }}>
+                    <Ionicons name="water" size={32} color={c.accent} style={{ marginBottom: 4 }} />
+                    <Text style={[styles.liveBpmText, { color: "#ffffff", fontSize: 44, fontWeight: "bold" }]}>
+                      {liveSpo2}%
+                    </Text>
+                    <Text style={[styles.liveBpmLabel, { color: "rgba(255, 255, 255, 0.7)", fontSize: 11, fontWeight: "600", marginTop: 2 }]}>
+                      SpO₂
+                    </Text>
+                  </Animated.View>
+                )}
               </View>
             </View>
           </View>
@@ -689,14 +936,14 @@ export default function Spo2Screen() {
           {/* Svg rolling waveform */}
           <View style={[styles.waveformContainer, { backgroundColor: c.card, borderColor: c.border }]}>
             <View style={styles.waveformHeader}>
-              <Ionicons name="pulse" size={16} color="#4ade80" />
+              <Ionicons name="analytics" size={16} color={c.accent} />
               <Text style={[styles.waveformTitle, { color: c.text }]}>LIVE OXYGEN PPG WAVEFORM</Text>
             </View>
             <Svg width="100%" height="80">
               <Path
                 d={getWaveformPath()}
                 fill="none"
-                stroke="#4ade80"
+                stroke={c.accent}
                 strokeWidth="2.5"
                 strokeLinecap="round"
                 strokeLinejoin="round"
@@ -704,29 +951,24 @@ export default function Spo2Screen() {
             </Svg>
           </View>
 
-          {/* Status Indicators */}
-          <View style={styles.badgesRow}>
-            <View style={[styles.statusBadge, { backgroundColor: c.card, borderColor: c.border }]}>
-              <Text style={[styles.badgeLabel, { color: c.sub }]}>Signal:</Text>
-              <Text style={[styles.badgeValue, { color: signalQuality > 60 ? "#4ade80" : "#f59e0b" }]}>
-                {qualityLabel}
-              </Text>
+          {/* Tips for Accuracy Card */}
+          <View style={[styles.guidanceCard, { backgroundColor: c.card, borderColor: c.border }]}>
+            <View style={styles.guidanceHeader}>
+              <Ionicons name="bulb-outline" size={18} color={c.accent} />
+              <Text style={[styles.guidanceTitle, { color: c.text }]}>Tips for Accuracy</Text>
             </View>
-            <View style={[styles.statusBadge, { backgroundColor: c.card, borderColor: c.border }]}>
-              <Text style={[styles.badgeLabel, { color: c.sub }]}>Confidence:</Text>
-              <Text style={[styles.badgeValue, { color: confidence > 65 ? "#06b6d4" : "#f59e0b" }]}>
-                {confidenceLabel}
+            <View style={styles.tipsList}>
+              <Text style={[styles.tipText, { color: c.sub }]}>
+                • Cover the camera lens & flash completely with your index finger.
+              </Text>
+              <Text style={[styles.tipText, { color: c.sub }]}>
+                • Rest your finger gently; pressing too hard restricts blood flow.
+              </Text>
+              <Text style={[styles.tipText, { color: c.sub }]}>
+                • Keep your hands warm; cold fingers reduce blood flow signals.
               </Text>
             </View>
           </View>
-
-          {/* Guidance warning */}
-          {!fingerDetected && (
-            <View style={styles.alertCard}>
-              <Ionicons name="warning-outline" size={18} color="#f59e0b" style={{ marginRight: 8 }} />
-              <Text style={styles.alertText}>Please cover the entire rear camera and flash completely with your finger.</Text>
-            </View>
-          )}
 
           <TouchableOpacity style={[styles.outlineButton, { borderColor: c.border, marginTop: "auto" }]} onPress={handleCancelMeasurement}>
             <Text style={[styles.outlineButtonText, { color: c.text }]}>Cancel Scan</Text>
@@ -741,7 +983,7 @@ export default function Spo2Screen() {
             <Text style={[styles.resultsHeaderLabel, { color: c.sub }]}>MEASUREMENT COMPLETE</Text>
 
             <View style={styles.resultBpmContainer}>
-              <Text style={[styles.resultBpmValue, { color: c.accent }]}>{Math.round(finalResult.spo2)}</Text>
+              <Text style={[styles.resultBpmValue, { color: c.accent }]}>{Math.round(finalResult.spo2 ?? 98)}</Text>
               <View style={{ marginLeft: 8 }}>
                 <Text style={[styles.resultBpmUnit, { color: c.accent }]}>%</Text>
                 <Text style={[styles.resultBpmLabel, { color: c.sub }]}>Blood Oxygen</Text>
@@ -754,19 +996,19 @@ export default function Spo2Screen() {
             <View style={styles.metricsRow}>
               <View style={styles.metricItem}>
                 <Text style={[styles.metricLabel, { color: c.sub }]}>Quality</Text>
-                <Text style={[styles.metricVal, { color: finalResult.signalQuality > 60 ? "#4ade80" : "#ef4444" }]}>
-                  {finalResult.qualityLabel}
+                <Text style={[styles.metricVal, { color: (finalResult.signalQuality ?? 0) > 60 ? "#4ade80" : "#ef4444" }]}>
+                  {finalResult.qualityLabel ?? "Fair"}
                 </Text>
               </View>
               <View style={styles.metricItem}>
                 <Text style={[styles.metricLabel, { color: c.sub }]}>Confidence</Text>
-                <Text style={[styles.metricVal, { color: finalResult.confidence > 60 ? "#06b6d4" : "#f59e0b" }]}>
-                  {finalResult.confidenceLabel}
+                <Text style={[styles.metricVal, { color: (finalResult.confidence ?? 0) > 60 ? "#06b6d4" : "#f59e0b" }]}>
+                  {finalResult.confidenceLabel ?? "Medium"}
                 </Text>
               </View>
               <View style={styles.metricItem}>
                 <Text style={[styles.metricLabel, { color: c.sub }]}>Duration</Text>
-                <Text style={[styles.metricVal, { color: c.text }]}>{finalResult.duration.toFixed(0)}s</Text>
+                <Text style={[styles.metricVal, { color: c.text }]}>{(finalResult.duration ?? 30).toFixed(0)}s</Text>
               </View>
             </View>
           </View>
@@ -1117,4 +1359,60 @@ const styles = StyleSheet.create({
   },
   metricLabel: { fontSize: 11, marginBottom: 4 },
   metricVal: { fontSize: 16, fontWeight: "bold" },
+  guidanceCard: {
+    padding: 16,
+    borderRadius: 20,
+    borderWidth: 1,
+    marginBottom: 20,
+  },
+  guidanceHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 10,
+    gap: 8,
+  },
+  guidanceTitle: {
+    fontSize: 14,
+    fontWeight: "bold",
+  },
+  tipsList: {
+    gap: 6,
+  },
+  tipText: {
+    fontSize: 12,
+    lineHeight: 18,
+  },
+  // Debug Panel Styles
+  debugOverlay: {
+    position: "absolute",
+    top: 10, bottom: 10, left: 10, right: 10,
+    borderRadius: 24, borderWidth: 1, padding: 18,
+    zIndex: 1000,
+    shadowColor: "#000", shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.35, shadowRadius: 18, elevation: 12,
+  },
+  debugHeader: {
+    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
+    borderBottomWidth: 1, borderBottomColor: "rgba(255,255,255,0.08)",
+    paddingBottom: 10, marginBottom: 12,
+  },
+  debugTitle: { fontSize: 15, fontWeight: "bold", marginLeft: 6, flex: 1 },
+  debugCloseBtn: { padding: 4 },
+  debugScroll: { flex: 1 },
+  debugSection: { marginBottom: 16 },
+  debugSectionTitle: { fontSize: 9, fontWeight: "bold", letterSpacing: 1, marginBottom: 6 },
+  debugGrid: { flexDirection: "row", gap: 10 },
+  debugCard: { flex: 1, padding: 10, borderRadius: 12 },
+  debugCardLabel: { fontSize: 9, fontWeight: "600", marginBottom: 2 },
+  debugCardValue: { fontSize: 14, fontWeight: "bold" },
+  fftCardBg: { height: 100, borderRadius: 14, borderWidth: 1, padding: 10, justifyContent: "center", alignItems: "center" },
+  noFftText: { fontSize: 12, fontStyle: "italic" },
+  peaksContainer: { padding: 10, borderRadius: 12, borderWidth: 1 },
+  peaksText: { fontSize: 12, fontFamily: Platform.OS === "ios" ? "Courier" : "monospace" },
+  calibCard: { padding: 12, borderRadius: 14, borderWidth: 1 },
+  calibDesc: { fontSize: 11, lineHeight: 16, marginBottom: 10 },
+  calibInputsRow: { flexDirection: "row", marginBottom: 12 },
+  inputLabel: { fontSize: 9, fontWeight: "bold", marginBottom: 4 },
+  calibInput: { height: 42, borderRadius: 10, borderWidth: 1, paddingHorizontal: 10, fontSize: 13 },
+  calibBtn: { height: 44, borderRadius: 12, alignItems: "center", justifyContent: "center" },
+  calibBtnText: { color: "#ffffff", fontSize: 13, fontWeight: "bold" },
 });

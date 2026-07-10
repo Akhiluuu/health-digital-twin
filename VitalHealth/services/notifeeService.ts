@@ -35,6 +35,7 @@ import { log } from "../utils/logger";
 ///////////////////////////////////////////////////////////
 
 export const medicineEventBus = new EventEmitter();
+export const notificationEventBus = new EventEmitter();
 
 ///////////////////////////////////////////////////////////
 // ACTION IDs
@@ -94,6 +95,54 @@ export async function setupNotifee() {
   log("✅ Notifee initialized");
 }
 
+export async function getProfileName(profileId?: string, profileName?: string): Promise<string> {
+  if (profileName && profileName.trim().length > 0) {
+    return profileName.trim();
+  }
+  try {
+    const pId = profileId || "self";
+    if (pId === "self") {
+      const { getAnyLocalProfile } = require("../database/userProfileDB");
+      const profile = await getAnyLocalProfile();
+      if (profile && profile.firstName) {
+        return profile.firstName.trim();
+      }
+      return "Me";
+    } else {
+      const stored = await AsyncStorage.getItem("vitalhealth_family_members");
+      if (stored) {
+        const members = JSON.parse(stored);
+        if (Array.isArray(members)) {
+          const nid = String(pId).trim();
+          const member = members.find(
+            (m: any) =>
+              String(m.id).trim() === nid ||
+              String(m.uid).trim() === nid ||
+              String(m.userId).trim() === nid
+          );
+          if (member && member.firstName) {
+            return member.firstName.trim();
+          }
+        }
+      }
+      // If not in family members, check if it matches the local profile uid
+      const { getAnyLocalProfile } = require("../database/userProfileDB");
+      const profile = await getAnyLocalProfile();
+      if (profile && profile.uid === pId && profile.firstName) {
+        return profile.firstName.trim();
+      }
+      return "Family Member";
+    }
+  } catch (err) {
+    return "Me";
+  }
+}
+
+export async function getFormattedTitle(baseTitle: string, profileId?: string, profileName?: string): Promise<string> {
+  const name = await getProfileName(profileId, profileName);
+  return `[${name}] ${baseTitle}`;
+}
+
 ///////////////////////////////////////////////////////////
 // 💊 ONE-TIME MEDICINE NOTIFICATION
 ///////////////////////////////////////////////////////////
@@ -112,10 +161,13 @@ export const scheduleMedicineOnce = async (
 ): Promise<string> => {
   const id = customNotifId || (profileId && profileId !== "self" && medicineId ? `med_${profileId}_${medicineId}` : `med_once_${Date.now()}`);
 
+  const resolvedName = await getProfileName(profileId, profileName);
+  const formattedTitle = `[${resolvedName}] 💊 Medicine Reminder`;
+
   await notifee.createTriggerNotification(
     {
       id,
-      title: profileName ? `💊 Medicine Reminder (${profileName})` : "💊 Medicine Reminder",
+      title: formattedTitle,
       body: title,
       data: {
         type:       "medicine",
@@ -125,7 +177,8 @@ export const scheduleMedicineOnce = async (
         time:         time || "",
         frequency:    frequency || "once",
         profileId:  profileId || "self",
-        profileName: profileName || "",
+        profileName: resolvedName,
+        snoozeCount: "0",
       },
       android: {
         channelId: CHANNEL_ID,
@@ -134,10 +187,6 @@ export const scheduleMedicineOnce = async (
           {
             title: "✅ Taken",
             pressAction: { id: ACTION_MEDICINE_TAKEN, launchActivity: "none" },
-          },
-          {
-            title: "❌ Missed",
-            pressAction: { id: ACTION_MEDICINE_MISSED, launchActivity: "none" },
           },
           {
             title: "⏰ Snooze 5min",
@@ -188,10 +237,13 @@ export const scheduleMedicineDaily = async (
 
   log("📅 Daily trigger at:", trigger.toISOString());
 
+  const resolvedName = await getProfileName(profileId, profileName);
+  const formattedTitle = `[${resolvedName}] 💊 Medicine Reminder`;
+
   await notifee.createTriggerNotification(
     {
       id,
-      title: profileName ? `💊 Medicine Reminder (${profileName})` : "💊 Medicine Reminder",
+      title: formattedTitle,
       body: title,
       data: {
         type:       "medicine",
@@ -201,7 +253,8 @@ export const scheduleMedicineDaily = async (
         time:         time || "",
         frequency:    frequency || "daily",
         profileId:  profileId || "self",
-        profileName: profileName || "",
+        profileName: resolvedName,
+        snoozeCount: "0",
       },
       android: {
         channelId: CHANNEL_ID,
@@ -210,10 +263,6 @@ export const scheduleMedicineDaily = async (
           {
             title: "✅ Taken",
             pressAction: { id: ACTION_MEDICINE_TAKEN, launchActivity: "none" },
-          },
-          {
-            title: "❌ Missed",
-            pressAction: { id: ACTION_MEDICINE_MISSED, launchActivity: "none" },
           },
           {
             title: "⏰ Snooze 5min",
@@ -249,25 +298,30 @@ export const snoozeMedicine = async (
   profileName: string = "",
   medicineName: string = "",
   dose:       string = "",
-  time:       string = ""
+  time:       string = "",
+  snoozeCount: number = 0
 ): Promise<string> => {
   const id        = `snooze_${Date.now()}`;
   const timestamp = Date.now() + minutes * 60 * 1000;
 
+  const resolvedName = await getProfileName(profileId, profileName);
+  const formattedTitle = `[${resolvedName}] 💊 Snoozed Reminder`;
+
   await notifee.createTriggerNotification(
     {
       id,
-      title: profileName ? `💊 Snoozed Reminder (${profileName})` : "💊 Snoozed Reminder",
+      title: formattedTitle,
       body,
       data: {
         type: "medicine",
         medicineId,
         frequency,
         profileId,
-        profileName,
+        profileName: resolvedName,
         medicineName,
         dose,
         time,
+        snoozeCount: String(snoozeCount),
       },
       android: {
         channelId: CHANNEL_ID,
@@ -276,10 +330,6 @@ export const snoozeMedicine = async (
           {
             title: "✅ Taken",
             pressAction: { id: ACTION_MEDICINE_TAKEN, launchActivity: "none" },
-          },
-          {
-            title: "❌ Missed",
-            pressAction: { id: ACTION_MEDICINE_MISSED, launchActivity: "none" },
           },
           {
             title: "⏰ Snooze 5min",
@@ -481,15 +531,18 @@ export const scheduleHydration = async (
   const id        = `hydration_${Date.now()}`;
   const timestamp = Date.now() + minutes * 60 * 1000;
 
+  const resolvedName = await getProfileName(profileId, profileName);
+  const formattedTitle = `[${resolvedName}] 💧 Drink Water`;
+
   await notifee.createTriggerNotification(
     {
       id,
-      title: profileName ? `💧 Drink Water (${profileName})` : "💧 Drink Water",
+      title: formattedTitle,
       body:  "Stay hydrated!",
       data:  {
         type: "hydration",
         profileId: profileId || "self",
-        profileName: profileName || "",
+        profileName: resolvedName,
       },
       android: {
         channelId: CHANNEL_ID,
@@ -535,10 +588,13 @@ export const snoozeHydrationReminder = async (profileId?: string, profileName?: 
 ///////////////////////////////////////////////////////////
 
 export const showSymptomNotification = async (symptom: string, profileId?: string, profileName?: string) => {
+  const resolvedName = await getProfileName(profileId, profileName);
+  const formattedTitle = `[${resolvedName}] 🩺 Symptom Check`;
+
   await notifee.displayNotification({
-    title: profileName ? `🩺 Symptom Check (${profileName})` : "🩺 Symptom Check",
+    title: formattedTitle,
     body:  `Are you experiencing ${symptom}?`,
-    data:  { type: "symptom", symptom, profileId: profileId || "self", profileName: profileName || "" },
+    data:  { type: "symptom", symptom, profileId: profileId || "self", profileName: resolvedName },
     android: {
       channelId: CHANNEL_ID,
       pressAction: { id: "default" },
@@ -552,12 +608,15 @@ export const showSymptomNotification = async (symptom: string, profileId?: strin
 export const scheduleSymptomHourly = async (symptom: string, profileId?: string, profileName?: string): Promise<string> => {
   const id = `symptom_hourly_${Date.now()}`;
 
+  const resolvedName = await getProfileName(profileId, profileName);
+  const formattedTitle = `[${resolvedName}] 🩺 Symptom Check`;
+
   await notifee.createTriggerNotification(
     {
       id,
-      title: profileName ? `🩺 Symptom Check (${profileName})` : "🩺 Symptom Check",
+      title: formattedTitle,
       body:  `Are you still experiencing ${symptom}?`,
-      data:  { type: "symptom", symptom, profileId: profileId || "self", profileName: profileName || "" },
+      data:  { type: "symptom", symptom, profileId: profileId || "self", profileName: resolvedName },
       android: {
         channelId: CHANNEL_ID,
         pressAction: { id: "default" },
@@ -628,15 +687,21 @@ export const scheduleRoutineReminder = async (
 
     log(`📅 Daily routine trigger [${tab}] scheduled at:`, trigger.toISOString());
 
+    const profileId = await AsyncStorage.getItem("vitalhealth_active_member_id") || "self";
+    const resolvedName = await getProfileName(profileId);
+    const formattedTitle = `[${resolvedName}] ${title}`;
+
     await notifee.createTriggerNotification(
       {
         id,
-        title,
+        title: formattedTitle,
         body,
         data: {
           type: "routine_reminder",
           tab,
           reminderId: id,
+          profileId,
+          profileName: resolvedName,
         },
         android: {
           channelId: CHANNEL_ID,
@@ -711,13 +776,19 @@ export const scheduleDailyLogReminder = async () => {
     // Cancel any existing daily log reminder trigger first
     await notifee.cancelNotification(id).catch(() => {});
 
+    const profileId = await AsyncStorage.getItem("vitalhealth_active_member_id") || "self";
+    const resolvedName = await getProfileName(profileId);
+    const formattedTitle = `[${resolvedName}] 🔄 Sync Digital Twin`;
+
     await notifee.createTriggerNotification(
       {
         id,
-        title: "🔄 Sync Digital Twin",
+        title: formattedTitle,
         body: "Keep your physiological twin synchronized! Tap to log today's routine events.",
         data: {
           type: "twin_reminder",
+          profileId,
+          profileName: resolvedName,
         },
         android: {
           channelId: CHANNEL_ID,
@@ -756,13 +827,19 @@ export const scheduleInactivityReminder = async () => {
 
     const triggerTime = now + 24 * 60 * 60 * 1000;
 
+    const profileId = await AsyncStorage.getItem("vitalhealth_active_member_id") || "self";
+    const resolvedName = await getProfileName(profileId);
+    const formattedTitle = `[${resolvedName}] ⏰ 24h Inactivity Reminder`;
+
     await notifee.createTriggerNotification(
       {
         id,
-        title: "⏰ 24h Inactivity Reminder",
+        title: formattedTitle,
         body: "You haven't logged any health data or updated your Digital Twin in 24 hours. Keep your twin synchronized!",
         data: {
           type: "twin_reminder",
+          profileId,
+          profileName: resolvedName,
         },
         android: {
           channelId: CHANNEL_ID,
@@ -800,7 +877,7 @@ async function saveDeliveredNotificationToDB(notification: any) {
     if (data.type === "medicine" || data.type === "medication") category = "medication";
     else if (data.type === "hydration") category = "vitals";
     else if (data.type === "symptom") category = "alerts";
-    else if (data.type === "dpss_sync" || data.type === "dpss_auto_complete") category = "system";
+    else if (data.type === "dpss_sync" || data.type === "dpss_auto_complete") category = "ai";
 
     let priority: any = "medium";
     if (category === "alerts") priority = "high";
@@ -814,10 +891,15 @@ async function saveDeliveredNotificationToDB(notification: any) {
     else if (data.type === "symptom") deepLink = "/symptom-log";
     else if (data.type === "twin_reminder" || data.type === "dpss_sync") deepLink = "/(tabs)/twin";
 
+    let title = notification.title || "Health Notification";
+    if (profileName && !title.startsWith("[")) {
+      title = `[${profileName}] ${title}`;
+    }
+
     const { addNotificationDB } = await import("../database/notificationDB");
     await addNotificationDB({
       id: notification.id,
-      title: notification.title || "Health Notification",
+      title,
       message: notification.body || "",
       profileId,
       profileName,
@@ -830,6 +912,7 @@ async function saveDeliveredNotificationToDB(notification: any) {
       actionButtons: null,
     });
     log("💾 Automatically saved delivered notification to DB:", notification.id);
+    notificationEventBus.emit("notification_received");
   } catch (err: any) {
     log("⚠️ Delivered notification already stored or ignored:", err.message || err);
   }
@@ -914,17 +997,23 @@ export function registerNotifeeForegroundHandler() {
 
     // ── Medicine: Snooze ─────────────────────────────────────────
     if (action === ACTION_MEDICINE_SNOOZE) {
-      await snoozeMedicine(
-         detail.notification?.body || "Medicine reminder",
-         medicineId,
-         frequency || "daily",
-         5,
-         profileId,
-         profileName,
-         medicineName,
-         dose,
-         time
-      );
+      const currentSnoozeCount = Number(data.snoozeCount ?? 0);
+      if (currentSnoozeCount >= 5) {
+        await handleMedicineMissed(notifId, medicineId, profileId, medicineName, dose, time);
+      } else {
+        await snoozeMedicine(
+           detail.notification?.body || "Medicine reminder",
+           medicineId,
+           frequency || "daily",
+           5,
+           profileId,
+           profileName,
+           medicineName,
+           dose,
+           time,
+           currentSnoozeCount + 1
+        );
+      }
       await notifee.cancelDisplayedNotification(notifId);
       return;
     }
@@ -1091,17 +1180,23 @@ if (Platform.OS === "android") {
       const dose = String(data.dose ?? "");
       const time = String(data.time ?? "");
       const frequency = String(data.frequency ?? "daily");
-      await snoozeMedicine(
-        detail.notification?.body || "Medicine reminder",
-        medicineId,
-        frequency,
-        5,
-        profileId,
-        profileName,
-        medicineName,
-        dose,
-        time
-      );
+      const currentSnoozeCount = Number(data.snoozeCount ?? 0);
+      if (currentSnoozeCount >= 5) {
+        await handleMedicineMissed(notifId, medicineId, profileId, medicineName, dose, time);
+      } else {
+        await snoozeMedicine(
+          detail.notification?.body || "Medicine reminder",
+          medicineId,
+          frequency,
+          5,
+          profileId,
+          profileName,
+          medicineName,
+          dose,
+          time,
+          currentSnoozeCount + 1
+        );
+      }
       await notifee.cancelDisplayedNotification(notifId);
       return;
     }
@@ -1219,14 +1314,21 @@ export const showPhysioSyncReady = async (
   // Cancel any existing dpss_ready notification for this user first
   await notifee.cancelNotification(id).catch(() => {});
 
+  const resolvedName = await getProfileName(profileId || userId);
+  let formattedTitle = customTitle || `🧬 Physiology Ready to Sync`;
+  if (resolvedName && !formattedTitle.startsWith("[")) {
+    formattedTitle = `[${resolvedName}] ${formattedTitle}`;
+  }
+
   await notifee.displayNotification({
     id,
-    title: customTitle || "🧬 Physiology Ready to Sync",
+    title: formattedTitle,
     body: customBody || `You have ${pendingCount} unprocessed health event${pendingCount > 1 ? "s" : ""}. Synchronize your Digital Twin now.`,
     data: {
       type: "dpss_sync",
       userId,
-      profileId: profileId || "",
+      profileId: profileId || userId,
+      profileName: resolvedName,
       action: "open_twin",
     },
     android: {
@@ -1261,14 +1363,22 @@ export const showAutoSyncCompleted = async (
   profileId?: string,
 ): Promise<void> => {
   const id = `dpss_auto_complete_${userId}_${simDate}`;
+
+  const resolvedName = await getProfileName(profileId || userId);
+  let formattedTitle = customTitle || `✅ Digital Twin Auto-Synced`;
+  if (resolvedName && !formattedTitle.startsWith("[")) {
+    formattedTitle = `[${resolvedName}] ${formattedTitle}`;
+  }
+
   await notifee.displayNotification({
     id,
-    title: customTitle || "✅ Digital Twin Auto-Synced",
+    title: formattedTitle,
     body: customBody || `Your physiology for ${simDate} was automatically synchronized overnight.`,
     data: {
       type: "dpss_auto_complete",
       userId,
-      profileId: profileId || "",
+      profileId: profileId || userId,
+      profileName: resolvedName,
       action: "open_twin",
     },
     android: {
@@ -1294,11 +1404,15 @@ export const showAutoSyncCompleted = async (
  */
 export const showSimUndone = async (userId: string): Promise<void> => {
   const id = `dpss_undone_${userId}_${Date.now()}`;
+
+  const resolvedName = await getProfileName(userId);
+  const formattedTitle = `[${resolvedName}] ⏪ Simulation Rolled Back`;
+
   await notifee.displayNotification({
     id,
-    title: "⏪ Simulation Rolled Back",
+    title: formattedTitle,
     body: "Your Digital Twin was restored to the previous checkpoint. Edit your events and re-run when ready.",
-    data: { type: "dpss_sync", userId, action: "open_twin" },
+    data: { type: "dpss_sync", userId, profileId: userId, profileName: resolvedName, action: "open_twin" },
     android: {
       channelId: CHANNEL_ID,
       pressAction: { id: "default" },
@@ -1317,11 +1431,18 @@ export const showSimFailed = async (
   profileId?: string,
 ): Promise<void> => {
   const id = `dpss_failed_${userId}_${simDate}`;
+
+  const resolvedName = await getProfileName(profileId || userId);
+  let formattedTitle = customTitle || `❌ Sync Failed`;
+  if (resolvedName && !formattedTitle.startsWith("[")) {
+    formattedTitle = `[${resolvedName}] ${formattedTitle}`;
+  }
+
   await notifee.displayNotification({
     id,
-    title: customTitle || "❌ Sync Failed",
+    title: formattedTitle,
     body: customBody || `The Digital Twin sync for ${simDate} encountered an error. Tap to retry manually.`,
-    data: { type: "dpss_sync", userId, profileId: profileId || "", action: "open_twin" },
+    data: { type: "dpss_sync", userId, profileId: profileId || userId, profileName: resolvedName, action: "open_twin" },
     android: {
       channelId: CHANNEL_ID,
       importance: AndroidImportance.HIGH,

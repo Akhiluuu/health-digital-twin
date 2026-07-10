@@ -26,6 +26,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import Svg, { Path } from "react-native-svg";
 
 import CameraPreview from "../components/CameraPreview";
+import PPGMeasurementScreen from "../components/PPGMeasurementScreen";
 import { Camera } from "expo-camera"; // Still used for permission checks at JS layer if needed, or CameraView
 
 import { useTheme } from "../context/ThemeContext";
@@ -200,55 +201,8 @@ export default function HeartScannerScreen() {
 
   // Active listeners for native module events
   useEffect(() => {
-    if (screenState !== "measuring") return;
-
-    // 1. Frame updates for waveform
-    const unsubFrame = onHeartRateFrame((event: HeartRateFrameEvent) => {
-      setFingerDetected(event.fingerDetected);
-      
-      // Update wave points (shifting left, appending new value)
-      const nextPoints = [...wavePointsRef.current.slice(1)];
-      // Scale PPG value to show beautifully inside SVG bounds (0-50 height range)
-      // Red value typically ranges 150-255. Let's normalize it relative to bounds.
-      const normalizedValue = Math.min(45, Math.max(5, ((event.ppgValue - 150) / 105) * 40));
-      nextPoints.push(normalizedValue);
-      
-      wavePointsRef.current = nextPoints;
-      setWavePoints(nextPoints);
-    });
-
-    // 2. Continuous measurement estimates
-    const unsubUpdate = onHeartRateUpdate((event: HeartRateUpdateEvent) => {
-      setLiveBpm(Math.round(event.bpm));
-      setProgress(event.progress);
-      setSignalQuality(event.signalQuality);
-      setConfidence(event.confidence);
-      setQualityLabel(event.qualityLabel);
-      setConfidenceLabel(event.confidenceLabel);
-      setHasExcessiveMotion(event.hasExcessiveMotion);
-      setSecondsRemaining(Math.max(0, Math.round(30 * (1 - event.progress))));
-    });
-
-    // 3. Successful complete
-    const unsubDone = onHeartRateDone((event: HeartRateDoneEvent) => {
-      setFinalResult(event);
-      setScreenState("results");
-      Vibration.vibrate([0, 100, 80, 100]);
-    });
-
-    // 4. Error handling
-    const unsubError = onHeartRateError((event: HeartRateErrorEvent) => {
-      setErrorMessage(event.message);
-      setScreenState("error");
-      Vibration.vibrate(200);
-    });
-
-    return () => {
-      unsubFrame();
-      unsubUpdate();
-      unsubDone();
-      unsubError();
-    };
+    // Measurement listeners are fully encapsulated inside HeartRateScanner component
+    return;
   }, [screenState]);
 
   // Actions
@@ -260,17 +214,6 @@ export default function HeartScannerScreen() {
     }
 
     setScreenState("measuring");
-    setProgress(0);
-    setLiveBpm(null);
-    setFingerDetected(false);
-    setSecondsRemaining(30);
-    setWavePoints(Array(WAVEFORM_POINTS).fill(25));
-    wavePointsRef.current = Array(WAVEFORM_POINTS).fill(25);
-    
-    setTimeout(async () => {
-      const uid = activeMemberId === "self" ? await getUserId() : activeMemberId;
-      startHeartRateMeasurement(uid || "self");
-    }, 300);
   };
 
   const handleCancel = () => {
@@ -289,7 +232,6 @@ export default function HeartScannerScreen() {
           bpm: finalResult.bpm,
           confidence: finalResult.confidence / 100.0,
           hrv_ms: 0, // Placeholder or native computation if added later
-          spo2: 98, // Simulated baseline, PPG scanner concentrates on heart rate
           timestamp: serverTimestamp(),
         });
 
@@ -451,100 +393,29 @@ export default function HeartScannerScreen() {
       )}
 
       {screenState === "measuring" && (
-        <View style={styles.measuringContainer}>
-          {/* Medical Pulse Ring / Status Circle */}
-          <View style={styles.statusCircleContainer}>
-            <View style={[styles.statusOuterRing, { borderColor: c.border }]}>
-              <View style={[styles.statusInnerCard, { backgroundColor: c.card, overflow: "hidden" }]}>
-                {/* Live Camera Feed */}
-                <CameraPreview style={StyleSheet.absoluteFillObject} />
-
-                {/* Dark overlay to make the text readable */}
-                <View style={[StyleSheet.absoluteFillObject, { backgroundColor: "rgba(0, 0, 0, 0.4)", justifyContent: "center", alignItems: "center" }]}>
-                  {liveBpm ? (
-                    <Animated.View style={{ transform: [{ scale: pulseAnim }], alignItems: "center" }}>
-                      <Ionicons name="heart" size={48} color="#ef476f" />
-                      <Text style={[styles.liveBpmText, { color: "#ffffff" }]}>{liveBpm}</Text>
-                      <Text style={[styles.liveBpmLabel, { color: "rgba(255, 255, 255, 0.7)" }]}>BPM</Text>
-                    </Animated.View>
-                  ) : (
-                    <View style={{ alignItems: "center" }}>
-                      <Ionicons
-                        name={fingerDetected ? "pulse" : "finger-print-outline"}
-                        size={48}
-                        color={fingerDetected ? "#4ade80" : "#ffffff"}
-                      />
-                      <Text style={[styles.statusLabelText, { color: "#ffffff", marginTop: 8 }]}>
-                        {fingerDetected ? "Pulse Detected" : "Cover Sensor"}
-                      </Text>
-                    </View>
-                  )}
-                </View>
-              </View>
-            </View>
-          </View>
-
-          {/* Countdown & Progress bar */}
-          <View style={styles.progressContainer}>
-            <Text style={[styles.countdownText, { color: c.text }]}>{secondsRemaining}s remaining</Text>
-            <View style={[styles.progressBarBg, { backgroundColor: c.border }]}>
-              <View style={[styles.progressBarFill, { width: `${progress * 100}%`, backgroundColor: c.accent }]} />
-            </View>
-          </View>
-
-          {/* Waveform Visualization */}
-          <View style={[styles.waveformContainer, { backgroundColor: c.card, borderColor: c.border }]}>
-            <View style={styles.waveformHeader}>
-              <Ionicons name="pulse" size={16} color="#4ade80" />
-              <Text style={[styles.waveformTitle, { color: c.text }]}>LIVE PPG WAVEFORM</Text>
-            </View>
-            <Svg width="100%" height="80">
-              <Path
-                d={getWaveformPath()}
-                fill="none"
-                stroke="#4ade80"
-                strokeWidth="2.5"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </Svg>
-          </View>
-
-          {/* Real-time Status Badges */}
-          <View style={styles.badgesRow}>
-            <View style={[styles.statusBadge, { backgroundColor: c.card, borderColor: c.border }]}>
-              <Text style={[styles.badgeLabel, { color: c.sub }]}>Quality:</Text>
-              <Text style={[styles.badgeValue, { color: signalQuality > 60 ? "#4ade80" : "#f59e0b" }]}>
-                {qualityLabel}
-              </Text>
-            </View>
-            <View style={[styles.statusBadge, { backgroundColor: c.card, borderColor: c.border }]}>
-              <Text style={[styles.badgeLabel, { color: c.sub }]}>Confidence:</Text>
-              <Text style={[styles.badgeValue, { color: confidence > 65 ? "#06b6d4" : "#f59e0b" }]}>
-                {confidenceLabel}
-              </Text>
-            </View>
-          </View>
-
-          {/* Alert messages */}
-          {!fingerDetected && (
-            <View style={styles.alertCard}>
-              <Ionicons name="warning-outline" size={18} color="#f59e0b" style={{ marginRight: 8 }} />
-              <Text style={styles.alertText}>Please place your index finger over the camera lens and flash.</Text>
-            </View>
-          )}
-
-          {fingerDetected && hasExcessiveMotion && (
-            <View style={[styles.alertCard, { backgroundColor: "#f59e0b15" }]}>
-              <Ionicons name="walk" size={18} color="#f59e0b" style={{ marginRight: 8 }} />
-              <Text style={[styles.alertText, { color: "#f59e0b" }]}>Too much movement. Please hold your hand completely still.</Text>
-            </View>
-          )}
-
-          <TouchableOpacity style={[styles.outlineButton, { borderColor: c.border }]} onPress={handleCancel}>
-            <Text style={[styles.outlineButtonText, { color: c.text }]}>Cancel</Text>
-          </TouchableOpacity>
-        </View>
+        <PPGMeasurementScreen
+          uid={activeMemberId === "self" ? "self" : activeMemberId}
+          onFinish={(bpm, spo2, confidence, status, snr) => {
+            setFinalResult({
+              bpm,
+              spo2,
+              confidence,
+              signalQuality: confidence,
+              source: status,
+              duration: 30.0,
+              timestamp: Date.now(),
+              progress: 1.0,
+              snr,
+              qualityLabel: snr >= 6.0 ? "Excellent" : snr >= 2.5 ? "Good" : snr >= 0.0 ? "Fair" : "Poor",
+              confidenceLabel: confidence >= 80.0 ? "Very High" : confidence >= 60.0 ? "High" : confidence >= 40.0 ? "Medium" : "Low",
+            });
+            setScreenState("results");
+            Vibration.vibrate([0, 100, 80, 100]);
+          }}
+          onCancel={() => {
+            setScreenState("intro");
+          }}
+        />
       )}
 
       {screenState === "results" && finalResult && (
@@ -552,11 +423,13 @@ export default function HeartScannerScreen() {
           <View style={[styles.resultsCard, { backgroundColor: c.card, borderColor: c.border }]}>
             <Text style={[styles.resultsHeaderLabel, { color: c.sub }]}>MEASUREMENT COMPLETE</Text>
             
-            <View style={styles.resultBpmContainer}>
-              <Text style={[styles.resultBpmValue, { color: c.accent }]}>{finalResult.bpm.toFixed(0)}</Text>
-              <View style={{ marginLeft: 8 }}>
-                <Text style={[styles.resultBpmUnit, { color: c.accent }]}>BPM</Text>
-                <Text style={[styles.resultBpmLabel, { color: c.sub }]}>Heart Rate</Text>
+            <View style={{ alignItems: "center", marginVertical: 20 }}>
+              <View style={styles.resultBpmContainer}>
+                <Text style={[styles.resultBpmValue, { color: c.accent }]}>{(finalResult.bpm ?? 0).toFixed(0)}</Text>
+                <View style={{ marginLeft: 8 }}>
+                  <Text style={[styles.resultBpmUnit, { color: c.accent }]}>BPM</Text>
+                  <Text style={[styles.resultBpmLabel, { color: c.sub }]}>Heart Rate</Text>
+                </View>
               </View>
             </View>
 
@@ -566,21 +439,21 @@ export default function HeartScannerScreen() {
             <View style={styles.metricsRow}>
               <View style={styles.metricItem}>
                 <Text style={[styles.metricLabel, { color: c.sub }]}>Quality</Text>
-                <Text style={[styles.metricVal, { color: finalResult.signalQuality > 60 ? "#4ade80" : "#ef4444" }]}>
-                  {finalResult.qualityLabel}
+                <Text style={[styles.metricVal, { color: (finalResult.signalQuality ?? 0) > 60 ? "#4ade80" : "#ef4444" }]}>
+                  {finalResult.qualityLabel ?? "Fair"}
                 </Text>
               </View>
 
               <View style={styles.metricItem}>
                 <Text style={[styles.metricLabel, { color: c.sub }]}>Confidence</Text>
-                <Text style={[styles.metricVal, { color: finalResult.confidence > 60 ? "#06b6d4" : "#f59e0b" }]}>
-                  {finalResult.confidenceLabel}
+                <Text style={[styles.metricVal, { color: (finalResult.confidence ?? 0) > 60 ? "#06b6d4" : "#f59e0b" }]}>
+                  {finalResult.confidenceLabel ?? "Medium"}
                 </Text>
               </View>
 
               <View style={styles.metricItem}>
                 <Text style={[styles.metricLabel, { color: c.sub }]}>Duration</Text>
-                <Text style={[styles.metricVal, { color: c.text }]}>{finalResult.duration.toFixed(0)}s</Text>
+                <Text style={[styles.metricVal, { color: c.text }]}>{(finalResult.duration ?? 30).toFixed(0)}s</Text>
               </View>
             </View>
 

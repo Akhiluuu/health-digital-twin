@@ -62,7 +62,14 @@ export default function MedicineHistory() {
     try {
       const saved = await AsyncStorage.getItem(HISTORY_STORAGE_KEY);
       let local: MedicineHistoryEntry[] = [];
-      if (saved) { try { const p = JSON.parse(saved); if (Array.isArray(p)) local = p; } catch {} }
+      if (saved) {
+        try {
+          const p = JSON.parse(saved);
+          if (Array.isArray(p)) {
+            local = p.filter((h) => h && h.medicineName && h.medicineName.trim() !== "");
+          }
+        } catch {}
+      }
 
       // Sort and set state immediately for fast response
       local.sort(
@@ -75,19 +82,25 @@ export default function MedicineHistory() {
       try {
         const firebaseHistory = await fetchMedicineHistoryFromFirebase();
         if (firebaseHistory && firebaseHistory.length > 0) {
-          const normalizedFirebase: MedicineHistoryEntry[] = firebaseHistory.map((h: any) => ({
-            id:           h.id           ?? `${Date.now()}-${Math.random()}`,
-            medicineId:   h.medicineId   ?? 0,
-            medicineName: h.medicineName ?? "",
-            dose:         h.dose         ?? "",
-            time:         h.time         ?? "",
-            status:       h.status       ?? "taken",
-            date:         h.date         ?? "",
-            takenAt:      h.takenAt      ?? new Date().toISOString(),
-          }));
+          const normalizedFirebase: MedicineHistoryEntry[] = firebaseHistory
+            .filter((h: any) => h && h.medicineName && h.medicineName.trim() !== "")
+            .map((h: any) => ({
+              id:           h.id           ?? `${Date.now()}-${Math.random()}`,
+              medicineId:   h.medicineId   ?? 0,
+              medicineName: h.medicineName ?? "",
+              dose:         h.dose         ?? "",
+              time:         h.time         ?? "",
+              status:       h.status       ?? "taken",
+              date:         h.date         ?? "",
+              takenAt:      h.takenAt      ?? new Date().toISOString(),
+            }));
 
           const merged = [...local, ...normalizedFirebase].filter(
-            (item, index, self) => index === self.findIndex((t) => t.id === item.id)
+            (item, index, self) =>
+              item &&
+              item.medicineName &&
+              item.medicineName.trim() !== "" &&
+              index === self.findIndex((t) => t.id === item.id)
           );
 
           merged.sort(

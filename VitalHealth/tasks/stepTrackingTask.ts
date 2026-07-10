@@ -109,12 +109,16 @@ async function sendSedentaryNotif(): Promise<void> {
   _notifSent = true;
   try {
     const notifee = (await import("@notifee/react-native")).default;
+    const { getProfileName } = require("../services/notifeeService");
+    const profileId = await AsyncStorage.getItem("vitalhealth_active_member_id") || "self";
+    const name = await getProfileName(profileId);
+
     const channelId = await notifee.createChannel({
       id:   "steps",
       name: "Step & Activity Alerts",
     });
     await notifee.displayNotification({
-      title: "🚶 Time to Move!",
+      title: `[${name}] 🚶 Time to Move!`,
       body:  "You've been sitting for 1 hour. A short walk keeps you healthy!",
       data:  { type: "sedentary_alert" },
       android: {

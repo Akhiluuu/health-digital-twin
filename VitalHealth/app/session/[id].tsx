@@ -93,6 +93,13 @@ export default function SessionDetailScreen() {
                     {session.has_anomaly ? 'ANOMALY DETECTED' : 'PHYSIOLOGICALLY STABLE'}
                  </Text>
               </View>
+              {session.is_automatic && (
+                 <View style={[styles.statusBadge, { backgroundColor: '#a78bfa25', marginLeft: 8, borderWidth: 0.5, borderColor: '#a78bfa60' }]}>
+                    <Text style={{ color: '#c084fc', fontWeight: '700' }}>
+                       🤖 AUTO-RUN
+                    </Text>
+                 </View>
+              )}
            </View>
            <Text style={[styles.timestamp, { color: c.sub }]}>
               Simulated at: {new Date(session.timestamp).toLocaleString()}

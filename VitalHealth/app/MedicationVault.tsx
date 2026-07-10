@@ -233,7 +233,7 @@ export default function MedicationVault() {
   /////////////////////////////////////////////////////////
 
   const filteredMedicines = (medicines || []).filter((med: Medicine) => {
-    if (!med) return false;
+    if (!med || !med.name || !med.name.trim()) return false;
     // 1. Status Filter
     const today = getLocalDateString();
     const isActive = med.endDate === "ongoing" || med.endDate >= today;

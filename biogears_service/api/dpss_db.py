@@ -603,7 +603,7 @@ def get_latest_snapshot(user_id: str) -> Optional[Dict[str, Any]]:
                     SELECT ss.* FROM simulation_snapshots ss
                     JOIN simulation_history sh ON ss.sim_id = sh.sim_id
                     WHERE ss.user_id=%s AND sh.status='SUCCESS'
-                    ORDER BY ss.created_at DESC LIMIT 1
+                    ORDER BY ss.sim_date DESC, ss.created_at DESC LIMIT 1
                     """,
                     (user_id,)
                 )
@@ -616,7 +616,7 @@ def get_latest_snapshot(user_id: str) -> Optional[Dict[str, Any]]:
                 SELECT ss.* FROM simulation_snapshots ss
                 JOIN simulation_history sh ON ss.sim_id = sh.sim_id
                 WHERE ss.user_id=? AND sh.status='SUCCESS'
-                ORDER BY ss.created_at DESC LIMIT 1
+                ORDER BY ss.sim_date DESC, ss.created_at DESC LIMIT 1
                 """,
                 (user_id,)
             )

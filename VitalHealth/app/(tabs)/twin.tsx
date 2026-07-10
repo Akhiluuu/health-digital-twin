@@ -2044,9 +2044,24 @@ export default function TwinScreen() {
                   <Ionicons name={s.has_anomaly ? 'warning' : 'checkmark-circle'} size={22} color={s.has_anomaly ? '#ef4444' : '#10b981'} />
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={[ss.sessionName, { color: c.text }]}>{s.name || 'Simulation'}</Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                    <Text style={[ss.sessionName, { color: c.text }]}>{s.name || 'Simulation'}</Text>
+                    {s.is_automatic && (
+                      <View style={{ backgroundColor: '#a78bfa25', borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2, borderWidth: 0.5, borderColor: '#a78bfa60' }}>
+                        <Text style={{ color: '#c084fc', fontSize: 10, fontWeight: '700' }}>🤖 Auto-Run</Text>
+                      </View>
+                    )}
+                  </View>
                   <Text style={[ss.sessionMeta, { color: c.sub }]}>
-                    {s.timestamp ? new Date(s.timestamp).toLocaleDateString('en-IN') : 'Recent'} · {s.event_count ?? 0} events
+                    {s.timestamp 
+                      ? new Date(s.timestamp).toLocaleString('en-IN', {
+                          day: 'numeric',
+                          month: 'short',
+                          hour: '2-digit',
+                          minute: '2-digit',
+                          hour12: true
+                        })
+                      : 'Recent'} · {s.event_count ?? 0} events
                   </Text>
                   {s.ai_insights?.[0] && (
                     <Text style={[ss.sessionInsight, { color: c.sub }]} numberOfLines={1}>{s.ai_insights[0]}</Text>

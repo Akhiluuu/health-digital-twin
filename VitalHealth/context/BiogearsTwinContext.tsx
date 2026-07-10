@@ -43,6 +43,7 @@ import {
   getLastSimulation,
   recordToVitals,
   getSimulationHistory,
+  deleteSimulationResult,
 } from '../database/simulationHistoryDB';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -1282,6 +1283,62 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
           ...existing,
           ...meta,
         });
+      }
+
+      // Fetch and merge DPSS server simulation history
+      try {
+        const { getSimHistory } = await import('../services/deferredSyncService');
+        const dpssHistRes = await getSimHistory(twinUserId, 100).catch(() => null);
+        if (dpssHistRes && Array.isArray(dpssHistRes.history)) {
+          for (const h of dpssHistRes.history) {
+            if (h.status === 'UNDONE') {
+              // Delete from local SQLite if it was undone/rolled back on the server
+              await deleteSimulationResult(twinUserId, h.sim_id).catch(() => {});
+              mergedMap.delete(h.sim_id);
+              continue;
+            }
+            if (h.status !== 'SUCCESS') continue;
+
+            const existing = mergedMap.get(h.sim_id);
+            const name = h.sim_type === 'AUTOMATIC'
+              ? `Auto Sim ${new Date(h.started_at).toLocaleDateString('en-IN')}`
+              : (existing?.name || `Sim ${new Date(h.started_at).toLocaleDateString('en-IN')}`);
+
+            mergedMap.set(h.sim_id, {
+              session_id: h.sim_id,
+              name,
+              timestamp: h.started_at,
+              is_automatic: h.sim_type === 'AUTOMATIC',
+              sim_type: h.sim_type,
+              vitals_snapshot: h.post_vitals ? {
+                heart_rate: h.post_vitals.heart_rate ?? undefined,
+                blood_pressure: h.post_vitals.blood_pressure ?? undefined,
+                glucose: h.post_vitals.glucose ?? undefined,
+                respiration: h.post_vitals.respiration ?? undefined,
+                spo2: h.post_vitals.spo2 ?? undefined,
+                core_temperature: h.post_vitals.core_temperature ?? undefined,
+                cardiac_output: h.post_vitals.cardiac_output ?? undefined,
+                map: h.post_vitals.map ?? undefined,
+                stroke_volume: h.post_vitals.stroke_volume ?? undefined,
+                tidal_volume: h.post_vitals.tidal_volume ?? undefined,
+                exercise_level: h.post_vitals.exercise_level ?? undefined,
+              } : existing?.vitals_snapshot,
+              has_anomaly: h.has_anomaly === 1,
+              event_count: h.input_events ? h.input_events.length : (existing?.event_count ?? 0),
+              ai_insights: h.anomaly_labels || existing?.ai_insights || [],
+              events: h.input_events ? h.input_events.map((e: any) => ({
+                event_type: e.event_type,
+                value: e.payload?.value ?? e.value,
+                wallTime: e.event_timestamp ? new Date(e.event_timestamp).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false }) : '12:00',
+                timestamp: e.payload?.timestamp ?? (e.event_timestamp ? Math.round(new Date(e.event_timestamp).getTime() / 1000) : undefined),
+                displayLabel: e.event_type.toUpperCase(),
+                displayIcon: '📝',
+              })) : existing?.events,
+            });
+          }
+        }
+      } catch (dpssHistErr) {
+        warn('[BiogearsTwin] Failed to fetch server DPSS history:', dpssHistErr);
       }
 
       const mergedList = Array.from(mergedMap.values()).sort(

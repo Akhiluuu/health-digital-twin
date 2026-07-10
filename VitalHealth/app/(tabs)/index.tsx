@@ -551,7 +551,7 @@ export default function HomeScreen() {
             <ActivityIndicator size="small" color={c.accent} />
             <Text style={{ color: c.sub, marginTop: 8, fontSize: 13 }}>Loading schedule...</Text>
           </View>
-        ) : medicines.length === 0 ? (
+        ) : medicines.filter((m) => m && m.name && m.name.trim() !== "").length === 0 ? (
           <View style={[styles.successStateCard, { backgroundColor: c.card, borderColor: c.border }]}>
             <View style={[styles.successIconWrapper, { backgroundColor: "#10b98115" }]}>
               <Ionicons name="checkmark-circle" size={28} color="#10b981" />
@@ -561,7 +561,10 @@ export default function HomeScreen() {
           </View>
         ) : (
           <View style={styles.medicineList}>
-            {medicines.slice(0, 2).map((m) => {
+            {medicines
+              .filter((m) => m && m.name && m.name.trim() !== "")
+              .slice(0, 2)
+              .map((m) => {
               const takenToday = isTakenToday(m);
               const missedToday = isMissedToday(m);
               return (
@@ -609,13 +612,13 @@ export default function HomeScreen() {
                 </View>
               );
             })}
-            {medicines.length > 2 && (
+            {medicines.filter((m) => m && m.name && m.name.trim() !== "").length > 2 && (
               <TouchableOpacity 
                 style={[styles.medicineMoreRow, { backgroundColor: c.card, borderColor: c.border }]} 
                 onPress={() => router.push("/MedicationVault")}
               >
                 <Text style={{ color: c.accent, fontWeight: "bold", fontSize: 13 }}>
-                  +{medicines.length - 2} more scheduled doses
+                  +{medicines.filter((m) => m && m.name && m.name.trim() !== "").length - 2} more scheduled doses
                 </Text>
                 <Ionicons name="arrow-forward" size={14} color={c.accent} />
               </TouchableOpacity>

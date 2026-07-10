@@ -19,7 +19,7 @@ import DatePicker from "../components/twin/DatePicker";
 import { useRouter } from "expo-router";
 
 import { useMedicine } from "../context/MedicineContext";
-import { log, error } from "../utils/logger"; import { addToMedicineHistory } from "../utils/medicineHistory";
+import { log, error } from "../utils/logger";
 import { useTheme } from "./../context/ThemeContext";
 import { colors } from "./../theme/colors";
 
@@ -123,18 +123,6 @@ export default function AddMedicine() {
       );
 
       log("Medicine added successfully");
-
-      /////////////////////////////////////////////////
-      // ADD TO MEDICINE HISTORY
-      /////////////////////////////////////////////////
-
-      await addToMedicineHistory({
-        medicineId: Date.now(),
-        medicineName: name.trim(),
-        dose: dose.trim(),
-        time: formatted,
-        status: "taken"
-      });
 
       /////////////////////////////////////////////////
       // SUCCESS MESSAGE

@@ -64,6 +64,25 @@ export function stopSpo2Measurement(): void {
   Spo2Module?.stopMeasurement();
 }
 
+export async function getSpo2FftSpectrum(): Promise<number[]> {
+  if (Platform.OS !== 'android' || !Spo2Module) return [];
+  try {
+    return await Spo2Module.getFftSpectrum();
+  } catch { return []; }
+}
+
+export async function getSpo2DetectedPeaks(): Promise<number[]> {
+  if (Platform.OS !== 'android' || !Spo2Module) return [];
+  try {
+    return await Spo2Module.getDetectedPeaks();
+  } catch { return []; }
+}
+
+export function calibrateSpo2Device(refHr: number, refSpo2: number): void {
+  if (Platform.OS !== 'android' || !Spo2Module) return;
+  Spo2Module.calibrateDevice(refHr, refSpo2);
+}
+
 // Event Listeners
 const eventEmitter = Spo2Module ? new NativeEventEmitter(Spo2Module) : null;
 

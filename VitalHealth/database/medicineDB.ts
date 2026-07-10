@@ -131,11 +131,13 @@ export function getMedicines(): Medicine[] {
   const today = todayStr();
   const rows = db.getAllSync<Medicine>("SELECT * FROM medicines ORDER BY timestamp ASC");
 
-  return rows.map((med) => ({
-    ...med,
-    // ✅ Only show the tick if taken was set TODAY
-    taken: med.takenDate === today ? med.taken : 0,
-  }));
+  return rows
+    .filter((med) => med && med.name && med.name.trim() !== "")
+    .map((med) => ({
+      ...med,
+      // ✅ Only show the tick if taken was set TODAY
+      taken: med.takenDate === today ? med.taken : 0,
+    }));
 }
 
 ///////////////////////////////////////////////////////////

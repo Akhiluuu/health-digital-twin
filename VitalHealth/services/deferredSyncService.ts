@@ -50,6 +50,9 @@ export interface DPSSSimHistory {
   completed_at: string | null;
   duration_ms: number | null;
   post_vitals: Record<string, any> | null;
+  has_anomaly?: number;
+  anomaly_labels?: string[] | null;
+  input_events?: any[] | null;
 }
 
 export interface DPSSNotification {

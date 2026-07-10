@@ -568,6 +568,8 @@ export interface LocalSessionMeta {
   events?: BiogearsHealthEvent[];
   event_count?: number;
   ai_insights?: string[];
+  is_automatic?: boolean;
+  sim_type?: string;
 }
 
 export async function saveSessionMeta(userId: string, meta: LocalSessionMeta, ownerUid?: string): Promise<void> {

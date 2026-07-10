@@ -76,9 +76,16 @@ export default function SessionDetailScreen() {
           <Ionicons name="chevron-back" size={24} color={c.text} />
         </TouchableOpacity>
         <View style={{ flex: 1 }}>
-          <Text style={[sd.title, { color: c.text }]} numberOfLines={1}>
-            {session.name || 'Simulation'}
-          </Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+            <Text style={[sd.title, { color: c.text }]} numberOfLines={1}>
+              {session.name || 'Simulation'}
+            </Text>
+            {session.is_automatic && (
+              <View style={{ backgroundColor: '#a78bfa25', borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2, borderWidth: 0.5, borderColor: '#a78bfa60' }}>
+                <Text style={{ color: '#c084fc', fontSize: 9, fontWeight: '700' }}>🤖 Auto-Run</Text>
+              </View>
+            )}
+          </View>
           <Text style={[sd.subtitle, { color: c.sub }]}>
             {session.timestamp ? new Date(session.timestamp).toLocaleString('en-IN') : ''}
             {session.event_count != null ? ` · ${session.event_count} events` : ''}

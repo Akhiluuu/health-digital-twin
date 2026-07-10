@@ -226,15 +226,20 @@ async def run_simulation(req: RunSimulationRequest, background_tasks: Background
             detail=f"Twin '{req.user_id}' not found. Register first."
         )
 
+    from biogears_service.api.dpss_scheduler import _parse_event_timestamp_to_unix
+
     # Convert DB events to raw dicts
     events_raw = []
     for e in events:
         payload = e.get("payload", {})
+        ts_val = payload.get("timestamp")
+        if ts_val is None:
+            ts_val = _parse_event_timestamp_to_unix(e.get("event_timestamp"))
         row = {
             "event_id": e.get("event_id"),
             "event_type": e.get("event_type"),
             "value": payload.get("value", 0),
-            "timestamp": payload.get("timestamp"),
+            "timestamp": ts_val,
             "substance_name": payload.get("substance_name"),
             "unit": payload.get("unit"),
             "meal_type": payload.get("meal_type"),

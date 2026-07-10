@@ -98,6 +98,19 @@ export async function saveSimulationResult(
   }
 }
 
+export async function deleteSimulationResult(uid: string, sessionId: string): Promise<void> {
+  try {
+    await db.runAsync(
+      "DELETE FROM simulation_history WHERE uid = ? AND session_id = ?",
+      [uid, sessionId]
+    );
+    log("🗑️ Simulation result deleted locally:", sessionId);
+  } catch (error) {
+    log("❌ deleteSimulationResult error:", error);
+  }
+}
+
+
 // ─── Get the most recent simulation for a user ────────────────────────────────
 
 export async function getLastSimulation(uid: string): Promise<SimulationRecord | null> {

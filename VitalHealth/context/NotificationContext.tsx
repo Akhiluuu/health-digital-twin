@@ -23,6 +23,7 @@ import {
 import { useFamily } from "./FamilyContext";
 import { useProfile } from "./ProfileContext";
 import { log, error } from "../utils/logger";
+import { notificationEventBus } from "../services/notifeeService";
 
 interface NotificationContextType {
   notifications: NotificationItem[];
@@ -107,6 +108,23 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
       if (item.category === "ai" && !prefs.reportsEnabled) return; // group AI under reports
       if (item.category === "system" && targetProfileId === "global" && !prefs.twinReminderEnabled) return;
 
+      // Format title with profile name if not already formatted
+      let formattedTitle = item.title;
+      const resolvedName = item.profileName || (item.profileId === "self" ? (selfProfile?.firstName || "Me") : "");
+      if (resolvedName && !formattedTitle.startsWith("[")) {
+        let cleanBase = formattedTitle;
+        const namePrefixPattern = new RegExp(`^(✓|❌|⚠️|🚨)?\\s*${resolvedName}\\s*`, "i");
+        const match = cleanBase.match(namePrefixPattern);
+        if (match) {
+          const emoji = match[1] || "";
+          cleanBase = cleanBase.replace(namePrefixPattern, "").trim();
+          if (emoji) {
+            cleanBase = `${emoji} ${cleanBase}`;
+          }
+        }
+        formattedTitle = `[${resolvedName}] ${cleanBase}`;
+      }
+
       // 2. Smart Grouping: Check if multiple medicines are taken/missed within 5 minutes
       if (item.category === "medication" && item.profileId) {
         const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
@@ -140,8 +158,8 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
           const uniqueList = Array.from(new Set(currentList));
           const count = uniqueList.length;
           
-          const groupTitle = `${item.profileName} Activity`;
-          const groupMessage = `✓ ${item.profileName} completed ${count} medicines (${uniqueList.join(", ")}).`;
+          const groupTitle = `[${resolvedName || item.profileName}] Activity`;
+          const groupMessage = `✓ ${resolvedName || item.profileName} completed ${count} medicines (${uniqueList.join(", ")}).`;
           
           // Update SQLite
           const { db } = require("../database/index");
@@ -170,7 +188,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
       // 3. Trigger Local Push Notification via Notifee
       await notifee.displayNotification({
         id: item.id,
-        title: item.title,
+        title: formattedTitle,
         body: item.message,
         android: {
           channelId: CHANNEL_ID,
@@ -190,12 +208,12 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
       }
 
       // 5. Store in SQLite & Reload
-      await addNotificationDB(item);
+      await addNotificationDB({ ...item, title: formattedTitle });
       await loadNotifications();
     } catch (err) {
       error("❌ [NotificationContext] addNotification error:", err);
     }
-  }, [notifications, loadNotifications]);
+  }, [notifications, loadNotifications, selfProfile]);
 
   /**
    * Mark a single notification as read
@@ -476,6 +494,17 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
     loadNotifications();
   }, [loadNotifications]);
 
+  // Listen to incoming delivered notifications to reload local DB state in real-time
+  useEffect(() => {
+    const handleNotificationReceived = () => {
+      loadNotifications();
+    };
+    notificationEventBus.on("notification_received", handleNotificationReceived);
+    return () => {
+      notificationEventBus.off("notification_received", handleNotificationReceived);
+    };
+  }, [loadNotifications]);
+
   const syncDPSSNotifications = useCallback(async () => {
     try {
       if (!selfProfile) return;
@@ -523,7 +552,11 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
               if (alreadyExists) continue;
 
               // Display the system push notification
-              const title = notif.payload?.title || "Digital Twin Sync Alert";
+              const resolvedName = target.name || (target.id === "self" ? (selfProfile?.firstName || "Me") : "");
+              let formattedTitle = notif.payload?.title || "Digital Twin Sync Alert";
+              if (resolvedName && !formattedTitle.startsWith("[")) {
+                formattedTitle = `[${resolvedName}] ${formattedTitle}`;
+              }
               const body = notif.payload?.body || "Update available.";
 
               if (notif.notif_type === "SIM_READY" || notif.notif_type === "MULTIPLE_PENDING") {
@@ -531,7 +564,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
                   notif.payload?.pending_count || 1,
                   target.twinId,
                   localId,
-                  title,
+                  formattedTitle,
                   body,
                   target.id
                 );
@@ -539,7 +572,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
                 await showAutoSyncCompleted(
                   target.twinId,
                   notif.sim_date,
-                  title,
+                  formattedTitle,
                   body,
                   target.id
                 );
@@ -547,7 +580,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
                 await showSimFailed(
                   target.twinId,
                   notif.sim_date,
-                  title,
+                  formattedTitle,
                   body,
                   target.id
                 );
@@ -555,7 +588,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
                 // Generic display
                 await notifee.displayNotification({
                   id: localId,
-                  title,
+                  title: formattedTitle,
                   body,
                   data: {
                     type: "dpss_sync",
@@ -573,13 +606,13 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
               // Add it to the local SQLite database so it appears in the Notification Inbox (NotificationCenter)
               await addNotificationDB({
                 id: localId,
-                title,
+                title: formattedTitle,
                 message: body,
                 profileId: target.id,
                 profileName: target.name,
                 relationship: target.relationship,
                 profilePhoto: target.photo,
-                category: "system",
+                category: "ai",
                 priority: notif.notif_type === "SIM_FAILED" ? "high" : "medium",
                 timestamp: notif.created_at || new Date().toISOString(),
                 deepLink: target.id === "self" ? "/profile" : `/family/member-details?id=${target.id}`,

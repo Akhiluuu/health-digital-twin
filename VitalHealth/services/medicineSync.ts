@@ -13,9 +13,27 @@
 // ─────────────────────────────────────────────────────────────────
 
 import { db } from "../database/index";
-import { fetchMedicinesFromFirebase } from "./firebaseSync";
+import { fetchMedicinesFromFirebase, syncDeleteMedicine } from "./firebaseSync";
+import { Platform } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import { log } from "../utils/logger";
+
+function getNextTriggerTime(timestamp: number, frequency: string): number {
+  const dateObj = new Date(timestamp);
+  const now = new Date();
+  
+  if (frequency.toLowerCase() === "daily") {
+    const trigger = new Date();
+    trigger.setHours(dateObj.getHours(), dateObj.getMinutes(), 0, 0);
+    if (trigger.getTime() <= now.getTime()) {
+      trigger.setDate(trigger.getDate() + 1);
+    }
+    return trigger.getTime();
+  }
+  
+  return dateObj.getTime();
+}
 
 export async function syncMedicinesFromFirebase(): Promise<void> {
   try {
@@ -30,6 +48,15 @@ export async function syncMedicinesFromFirebase(): Promise<void> {
     let skipped  = 0;
 
     for (const med of remoteMedicines) {
+      // Skip empty medicines and delete them from Firebase
+      if (!med || !med.name || !med.name.trim()) {
+        log(`[medicineSync] Skipping and cleaning empty remote medicine ID: ${med?.id}`);
+        if (med && med.id) {
+          syncDeleteMedicine(med.id).catch(() => {});
+        }
+        continue;
+      }
+
       // ✅ KEY FIX: check by Firebase id (which equals the SQLite id)
       const existing = db.getFirstSync<{ id: number }>(
         "SELECT id FROM medicines WHERE id = ?",
@@ -108,19 +135,39 @@ export async function syncMedicinesFromFirebase(): Promise<void> {
             const freq    = (med.frequency ?? "").toLowerCase();
             let notifId: string | null = null;
 
-            if (freq === "once" && dateObj.getTime() > now.getTime()) {
-              notifId = await scheduleMedicineOnce(
-                `${med.name} — ${med.dose}`,
-                dateObj,
-                med.id
+            if (Platform.OS === "android") {
+              const { scheduleMedicineAlarm } = require("./medicineAlarmNative");
+              const { getAnyLocalProfile } = require("../database/userProfileDB");
+              const profile = await getAnyLocalProfile();
+              const profileName = profile?.firstName
+                ? `${profile.firstName} ${profile.lastName || ""}`.trim()
+                : "You";
+
+              const alarmTitle = `${med.name} (${profileName})`;
+              const triggerTime = getNextTriggerTime(med.timestamp, freq);
+              scheduleMedicineAlarm(
+                med.id,
+                alarmTitle,
+                med.dose,
+                triggerTime,
+                freq
               );
-            } else if (freq === "daily") {
-              notifId = await scheduleMedicineDaily(
-                `${med.name} — ${med.dose}`,
-                dateObj.getHours(),
-                dateObj.getMinutes(),
-                med.id
-              );
+              notifId = String(med.id);
+            } else {
+              if (freq === "once" && dateObj.getTime() > now.getTime()) {
+                notifId = await scheduleMedicineOnce(
+                  `${med.name} — ${med.dose}`,
+                  dateObj,
+                  med.id
+                );
+              } else if (freq === "daily") {
+                notifId = await scheduleMedicineDaily(
+                  `${med.name} — ${med.dose}`,
+                  dateObj.getHours(),
+                  dateObj.getMinutes(),
+                  med.id
+                );
+              }
             }
 
             if (notifId) {
@@ -173,61 +220,116 @@ export async function syncAndScheduleAllFamilyMedicines(members: any[]): Promise
       const now = new Date();
 
       for (const med of meds) {
-        if (!med.id) continue;
+        if (!med || !med.id || !med.name || !med.name.trim()) continue;
         const deterministicId = `med_${memberId}_${med.id}`;
 
         if (med.reminder) {
           activeMedNotifIds.add(deterministicId);
 
-          if (!scheduledIds.has(deterministicId)) {
+          if (Platform.OS === "android") {
             try {
-              const dateObj = new Date(med.timestamp);
+              const { scheduleMedicineAlarm } = require("./medicineAlarmNative");
+              const alarmTitle = `${med.name} (${profileName})`;
               const freq = (med.frequency ?? "").toLowerCase();
-              let scheduledId = "";
-
-              if (freq === "once" && dateObj.getTime() > now.getTime()) {
-                scheduledId = await scheduleMedicineOnce(
-                  `${med.name} — ${med.dose}`,
-                  dateObj,
-                  med.id,
-                  memberId,
-                  profileName,
-                  med.name,
-                  med.dose,
-                  med.time,
-                  med.frequency
-                );
-              } else if (freq === "daily") {
-                scheduledId = await scheduleMedicineDaily(
-                  `${med.name} — ${med.dose}`,
-                  dateObj.getHours(),
-                  dateObj.getMinutes(),
-                  med.id,
-                  memberId,
-                  profileName,
-                  med.name,
-                  med.dose,
-                  med.time,
-                  med.frequency
-                );
-              }
-
-              if (scheduledId) {
-                log(`🔔 Scheduled notification for ${profileName}'s medicine: ${med.name} (${scheduledId})`);
-              }
+              const triggerTime = getNextTriggerTime(med.timestamp, freq);
+              
+              scheduleMedicineAlarm(
+                med.id,
+                alarmTitle,
+                med.dose,
+                triggerTime,
+                freq
+              );
+              log(`🔔 Scheduled native alarm for ${profileName}'s medicine: ${med.name}`);
             } catch (err) {
-              log(`❌ Failed to schedule medicine ${med.name} for ${profileName}:`, err);
+              log(`❌ Failed to schedule native medicine ${med.name} for ${profileName}:`, err);
+            }
+          } else {
+            if (!scheduledIds.has(deterministicId)) {
+              try {
+                const dateObj = new Date(med.timestamp);
+                const freq = (med.frequency ?? "").toLowerCase();
+                let scheduledId = "";
+
+                if (freq === "once" && dateObj.getTime() > now.getTime()) {
+                  scheduledId = await scheduleMedicineOnce(
+                    `${med.name} — ${med.dose}`,
+                    dateObj,
+                    med.id,
+                    memberId,
+                    profileName,
+                    med.name,
+                    med.dose,
+                    med.time,
+                    med.frequency
+                  );
+                } else if (freq === "daily") {
+                  scheduledId = await scheduleMedicineDaily(
+                    `${med.name} — ${med.dose}`,
+                    dateObj.getHours(),
+                    dateObj.getMinutes(),
+                    med.id,
+                    memberId,
+                    profileName,
+                    med.name,
+                    med.dose,
+                    med.time,
+                    med.frequency
+                  );
+                }
+
+                if (scheduledId) {
+                  log(`🔔 Scheduled notification for ${profileName}'s medicine: ${med.name} (${scheduledId})`);
+                }
+              } catch (err) {
+                log(`❌ Failed to schedule medicine ${med.name} for ${profileName}:`, err);
+              }
+            }
+          }
+        } else {
+          // If reminder is off, cancel it
+          if (Platform.OS === "android") {
+            try {
+              const { cancelMedicineAlarm } = require("./medicineAlarmNative");
+              cancelMedicineAlarm(med.id);
+            } catch (err) {
+              log(`❌ Failed to cancel native alarm for ${profileName}'s medicine: ${med.name}`, err);
             }
           }
         }
       }
 
       // Clean up orphaned or turned-off alarms for this member
-      for (const t of triggers) {
-        const notifId = t.notification.id;
-        if (notifId && notifId.startsWith(`med_${memberId}_`) && !activeMedNotifIds.has(notifId)) {
-          log(`🗑 Cancelling orphaned notification for ${profileName}: ${notifId}`);
-          await cancelMedicineNotification(notifId).catch(() => {});
+      if (Platform.OS === "android") {
+        const { cancelMedicineAlarm } = require("./medicineAlarmNative");
+        const cacheKey = `family_med_ids_${memberId}`;
+        try {
+          const cachedIdsStr = await AsyncStorage.getItem(cacheKey);
+          const cachedIds: number[] = cachedIdsStr ? JSON.parse(cachedIdsStr) : [];
+          
+          for (const cachedId of cachedIds) {
+            // If it was scheduled before, but is no longer in active meds, cancel it!
+            if (!activeMedNotifIds.has(`med_${memberId}_${cachedId}`)) {
+              log(`🗑 Cancelling deleted native alarm for ${profileName}: med_${memberId}_${cachedId}`);
+              cancelMedicineAlarm(cachedId);
+            }
+          }
+          
+          // Save new scheduled IDs
+          const newScheduledIds = meds
+            .filter((m: any) => m && m.id && m.reminder)
+            .map((m: any) => m.id);
+          await AsyncStorage.setItem(cacheKey, JSON.stringify(newScheduledIds));
+        } catch (err) {
+          log(`⚠️ Failed to clean up deleted native alarms for ${profileName}:`, err);
+        }
+      } else {
+        for (const t of triggers) {
+          const notifId = t.notification.id;
+          if (notifId && notifId.startsWith(`med_${memberId}_`) && !activeMedNotifIds.has(notifId)) {
+            log(`🗑 Cancelling orphaned notification for ${profileName}: ${notifId}`);
+            await cancelMedicineNotification(notifId).catch(() => {});
+          }
         }
       }
     }

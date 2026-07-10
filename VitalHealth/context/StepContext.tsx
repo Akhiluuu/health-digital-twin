@@ -289,9 +289,13 @@ export const StepProvider: React.FC<{
       const last = parseInt(raw ?? String(Date.now()), 10);
       if ((Date.now() - last) / 60000 >= 60) {
         try {
+          const { getProfileName } = require('../services/notifeeService');
+          const profileId = await AsyncStorage.getItem("vitalhealth_active_member_id") || "self";
+          const name = await getProfileName(profileId);
+
           await notifee.createChannel({ id: 'health', name: 'Health Notifications', importance: AndroidImportance.HIGH });
           await notifee.displayNotification({
-            title: 'Move a little! 🚶',
+            title: `[${name}] Move a little! 🚶`,
             body: "You've been inactive for over an hour.",
             android: { channelId: 'health', pressAction: { id: 'default' } },
           });

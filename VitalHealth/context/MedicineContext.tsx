@@ -8,6 +8,7 @@
 
 import React, { createContext, useContext, useEffect, useState } from "react";
 import { AppState, Platform } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import {
   addMedicine as dbAddMedicine,
@@ -47,6 +48,21 @@ import { useFamily } from "./FamilyContext";
 
 import { log } from "../utils/logger";
 import { getLocalDateString } from "../utils/twinUtils";
+function getNextTriggerTime(timestamp: number, frequency: string): number {
+  const dateObj = new Date(timestamp);
+  const now = new Date();
+  
+  if (frequency.toLowerCase() === "daily") {
+    const trigger = new Date();
+    trigger.setHours(dateObj.getHours(), dateObj.getMinutes(), 0, 0);
+    if (trigger.getTime() <= now.getTime()) {
+      trigger.setDate(trigger.getDate() + 1);
+    }
+    return trigger.getTime();
+  }
+  
+  return dateObj.getTime();
+}
 
 ///////////////////////////////////////////////////////////
 // TYPE
@@ -177,12 +193,36 @@ export const MedicineProvider = ({
         log("💊 Loading medicines from Firebase for member:", activeMemberId);
         const memberMeds = await fetchMemberMedicinesFromFirebase(activeMemberId);
         if (!isMountedRef.current) return;
-        setMedicines(memberMeds);
-        log(`💊 Loaded ${memberMeds.length} medicines for member:`, activeMemberId);
+
+        // Filter out empty medicines
+        const cleanMemberMeds = memberMeds.filter((m) => m && m.name && m.name.trim() !== "");
+        const emptyMemberMeds = memberMeds.filter((m) => !m || !m.name || !m.name.trim());
+        
+        // Clean up empty ones from Firebase
+        if (emptyMemberMeds.length > 0) {
+          for (const em of emptyMemberMeds) {
+            log(`[MedicineContext] Cleaning up empty member medicine ${em.id} from Firebase`);
+            syncDeleteMedicine(em.id, activeMemberId).catch(() => {});
+          }
+        }
+
+        setMedicines(cleanMemberMeds);
+        log(`💊 Loaded ${cleanMemberMeds.length} medicines for member:`, activeMemberId);
       } else {
         // ── Self: load from local SQLite ───────────────────
-        const data = getMedicines() as Medicine[];
+        let data = getMedicines() as Medicine[];
         if (!isMountedRef.current) return;
+
+        // Clean up empty ones from local SQLite and Firebase
+        const emptyMeds = data.filter((m) => !m || !m.name || !m.name.trim());
+        if (emptyMeds.length > 0) {
+          for (const em of emptyMeds) {
+            log(`[MedicineContext] Cleaning up empty medicine ${em.id} from SQLite & Firebase`);
+            deleteMedicine(em.id);
+            syncDeleteMedicine(em.id).catch(() => {});
+          }
+          data = data.filter((m) => m && m.name && m.name.trim() !== "");
+        }
 
         // Auto-clean notifications for expired medicines
         const todayStr = getLocalDateString();
@@ -205,6 +245,13 @@ export const MedicineProvider = ({
 
               // 1. Sync Firebase -> SQLite (heal missing)
               for (const fm of firebaseMeds) {
+                // If it's an empty medicine in Firebase, clean it up and skip
+                if (!fm || !fm.name || !fm.name.trim()) {
+                  log(`[MedicineContext] Cleaning up empty medicine ${fm.id} from Firebase`);
+                  syncDeleteMedicine(fm.id).catch(() => {});
+                  continue;
+                }
+
                 const exists = data.some((lm) => lm.id === fm.id);
                 if (!exists) {
                   insertOrReplaceMedicine({
@@ -228,7 +275,11 @@ export const MedicineProvider = ({
               }
 
               // 2. Sync SQLite -> Firebase (upload missing)
-              const fbIds = new Set(firebaseMeds.map((fm) => fm.id));
+              const fbIds = new Set(
+                firebaseMeds
+                  .filter((fm) => fm && fm.name && fm.name.trim())
+                  .map((fm) => fm.id)
+              );
               for (const lm of data) {
                 if (!fbIds.has(lm.id)) {
                   await syncAddMedicine({
@@ -249,7 +300,9 @@ export const MedicineProvider = ({
               }
 
               if (didChange && isMountedRef.current) {
-                const updated = getMedicines() as Medicine[];
+                const updated = (getMedicines() as Medicine[]).filter(
+                  (m) => m && m.name && m.name.trim() !== ""
+                );
                 setMedicines([...updated]);
               }
             } else if (data.length > 0) {
@@ -367,32 +420,57 @@ export const MedicineProvider = ({
               ? `${activeProfile.firstName} ${activeProfile.lastName || ""}`.trim()
               : "Family Member";
 
-            if (freq === "once" && dateObj.getTime() > now.getTime()) {
-              notifId = await scheduleMedicineOnce(
-                `${name} — ${dose}`,
-                dateObj,
+            if (Platform.OS === "android") {
+              const { scheduleMedicineAlarm } = require("../services/medicineAlarmNative");
+              const alarmTitle = `${name} (${activeProfileName})`;
+              const triggerTime = getNextTriggerTime(normalisedTimestamp, freq);
+              scheduleMedicineAlarm(
                 medId,
-                activeMemberId,
-                activeProfileName,
-                name,
+                alarmTitle,
                 dose,
-                time,
-                frequency
+                triggerTime,
+                freq
               );
-            }
-            if (freq === "daily") {
-              notifId = await scheduleMedicineDaily(
-                `${name} — ${dose}`,
-                dateObj.getHours(),
-                dateObj.getMinutes(),
-                medId,
-                activeMemberId,
-                activeProfileName,
-                name,
-                dose,
-                time,
-                frequency
-              );
+              notifId = String(medId);
+
+              // Append to cache registry so it's not marked deleted on next sync pass
+              const cacheKey = `family_med_ids_${activeMemberId}`;
+              try {
+                const cachedIdsStr = await AsyncStorage.getItem(cacheKey);
+                const cachedIds: number[] = cachedIdsStr ? JSON.parse(cachedIdsStr) : [];
+                if (!cachedIds.includes(medId)) {
+                  cachedIds.push(medId);
+                  await AsyncStorage.setItem(cacheKey, JSON.stringify(cachedIds));
+                }
+              } catch (_) {}
+            } else {
+              if (freq === "once" && dateObj.getTime() > now.getTime()) {
+                notifId = await scheduleMedicineOnce(
+                  `${name} — ${dose}`,
+                  dateObj,
+                  medId,
+                  activeMemberId,
+                  activeProfileName,
+                  name,
+                  dose,
+                  time,
+                  frequency
+                );
+              }
+              if (freq === "daily") {
+                notifId = await scheduleMedicineDaily(
+                  `${name} — ${dose}`,
+                  dateObj.getHours(),
+                  dateObj.getMinutes(),
+                  medId,
+                  activeMemberId,
+                  activeProfileName,
+                  name,
+                  dose,
+                  time,
+                  frequency
+                );
+              }
             }
           } catch (notifError) {
             log("❌ Notification scheduling failed for family member:", notifError);
@@ -562,7 +640,17 @@ export const MedicineProvider = ({
     try {
       if (isSwitched && activeMemberId && activeMemberId !== "self") {
         const item = medicines.find((m) => m.id === id);
-        if (item?.notificationId) {
+        if (Platform.OS === "android") {
+          const { cancelMedicineAlarm } = require("../services/medicineAlarmNative");
+          cancelMedicineAlarm(id);
+          const cacheKey = `family_med_ids_${activeMemberId}`;
+          try {
+            const cachedIdsStr = await AsyncStorage.getItem(cacheKey);
+            let cachedIds: number[] = cachedIdsStr ? JSON.parse(cachedIdsStr) : [];
+            cachedIds = cachedIds.filter((cid) => cid !== id);
+            await AsyncStorage.setItem(cacheKey, JSON.stringify(cachedIds));
+          } catch (_) {}
+        } else if (item?.notificationId) {
           await cancelMedicineNotification(item.notificationId);
         }
         await syncDeleteMedicine(id, activeMemberId);
@@ -588,9 +676,15 @@ export const MedicineProvider = ({
     try {
       if (isSwitched && activeMemberId && activeMemberId !== "self") {
         for (const med of medicines) {
-          if (med.notificationId) {
+          if (Platform.OS === "android") {
+            const { cancelMedicineAlarm } = require("../services/medicineAlarmNative");
+            cancelMedicineAlarm(med.id);
+          } else if (med.notificationId) {
             await cancelMedicineNotification(med.notificationId);
           }
+        }
+        if (Platform.OS === "android") {
+          await AsyncStorage.removeItem(`family_med_ids_${activeMemberId}`);
         }
         await syncDeleteAllMedicines(activeMemberId);
         await loadMedicines();

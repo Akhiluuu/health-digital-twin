@@ -50,7 +50,25 @@ def _resolve_profile_name(user_id: str) -> str:
     return user_id
 
 
-def _run_sim(user_id: str, events: list, sim_type: str = "AUTOMATIC") -> dict:
+def _parse_event_timestamp_to_unix(ts) -> float:
+    if ts is None:
+        return time.time()
+    if isinstance(ts, (int, float)):
+        return float(ts)
+    if isinstance(ts, (datetime.datetime, datetime.date)):
+        if isinstance(ts, datetime.date) and not isinstance(ts, datetime.datetime):
+            ts = datetime.datetime.combine(ts, datetime.time())
+        return ts.timestamp()
+    if isinstance(ts, str):
+        ts_clean = ts.replace("Z", "+00:00")
+        try:
+            return datetime.datetime.fromisoformat(ts_clean).timestamp()
+        except Exception:
+            pass
+    return time.time()
+
+
+def _run_sim(user_id: str, events: list, sim_type: str = "AUTOMATIC", sim_date: Optional[str] = None) -> dict:
     """
     Core simulation executor used by the scheduler.
     Mirrors _run_batch_sync_blocking from server.py but logs into
@@ -140,7 +158,7 @@ def _run_sim(user_id: str, events: list, sim_type: str = "AUTOMATIC") -> dict:
             db_m.mark_events_simulated(event_ids)
 
         # Save snapshot
-        today_str = datetime.date.today().isoformat()
+        today_str = sim_date if sim_date else datetime.date.today().isoformat()
         post_state_path = str(gz_file) if gz_file.exists() else str(state_file)
         db_m.create_snapshot(
             sim_id=sim_id,
@@ -278,12 +296,13 @@ class DPSSScheduler:
         # 1. Evaluate readiness and send SIM_READY notifications
         self._evaluate_readiness()
 
-        # 2. Midnight sweep — fire once per calendar day between 00:05 and 00:59
-        if now.hour == 0 and now.minute >= 5:
-            if self._last_midnight_date != today:
-                logger.info(f"🌙 Midnight sweep for {today}")
-                self._midnight_sweep()
-                self._last_midnight_date = today
+        # 2. Midnight sweep / Day-change catchup
+        # Trigger if either self._last_midnight_date is None (first run after startup)
+        # OR if a new day has started (today != self._last_midnight_date)
+        if self._last_midnight_date != today:
+            logger.info(f"🌙 Midnight sweep/catchup for {today} (last run: {self._last_midnight_date})")
+            self._midnight_sweep()
+            self._last_midnight_date = today
 
     def _evaluate_readiness(self):
         """
@@ -479,11 +498,14 @@ class DPSSScheduler:
                             payload = json.loads(payload)
                         except Exception:
                             payload = {}
+                    ts_val = payload.get("timestamp")
+                    if ts_val is None:
+                        ts_val = _parse_event_timestamp_to_unix(e.get("event_timestamp"))
                     row = {
                         "event_id": e.get("event_id"),
                         "event_type": e.get("event_type"),
                         "value": payload.get("value", 0),
-                        "timestamp": payload.get("timestamp"),
+                        "timestamp": ts_val,
                         "time_offset": payload.get("time_offset"),
                         "substance_name": payload.get("substance_name"),
                         "unit": payload.get("unit"),
@@ -496,7 +518,7 @@ class DPSSScheduler:
                     }
                     events_raw.append({k: v for k, v in row.items() if v is not None})
 
-            result = _run_sim(user_id, events_raw, sim_type="AUTOMATIC")
+            result = _run_sim(user_id, events_raw, sim_type="AUTOMATIC", sim_date=day_str)
 
             # Create an AUTO_COMPLETED notification
             today_str = datetime.date.today().isoformat()

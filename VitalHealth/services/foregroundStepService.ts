@@ -64,10 +64,15 @@ async function ensureChannel(): Promise<void> {
 export async function updateForegroundNotification(steps: number, calories: number): Promise<void> {
   if (Platform.OS !== 'android') return;
   try {
+    const { getProfileName } = require('./notifeeService');
+    const AsyncStorage = require('@react-native-async-storage/async-storage').default;
+    const profileId = await AsyncStorage.getItem("vitalhealth_active_member_id") || "self";
+    const name = await getProfileName(profileId);
+
     await ensureChannel();
     await notifee.displayNotification({
       id:    NOTIF_ID,
-      title: `👟 ${steps.toLocaleString('en-IN')} steps today`,
+      title: `[${name}] 👟 ${steps.toLocaleString('en-IN')} steps today`,
       body:  `${calories} kcal burned · tap to open`,
       android: {
         channelId:           CHANNEL_ID,

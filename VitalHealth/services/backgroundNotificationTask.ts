@@ -205,40 +205,83 @@ notifee.onBackgroundEvent(async ({ type, detail }) => {
         const dose = String((notification.data as any)?.dose || "");
         const time = String((notification.data as any)?.time || "");
         const profileName = String((notification.data as any)?.profileName || "");
+        const currentSnoozeCount = Number((notification.data as any)?.snoozeCount ?? 0);
 
-        await notifee.createTriggerNotification(
-          {
-            title: profileName ? `💊 Snoozed Reminder (${profileName})` : "💊 Snoozed Reminder",
-            body,
-            data: {
-              type: "medicine_reminder",
-              medicineId: medId,
-              frequency: freq,
-              profileId,
-              profileName,
+        if (currentSnoozeCount >= 5) {
+          // 6th snooze click. Mark as missed / not taken
+          const { syncUpdateMedicineStatus } = await import("./firebaseSync");
+          const { addToMedicineHistory } = await import("../utils/medicineHistory");
+
+          if (isMember) {
+            const medIdNum = parseInt(String(medId), 10);
+            await addToMedicineHistory({
+              medicineId: medIdNum,
               medicineName,
               dose,
               time,
-            },
-            android: {
-              channelId: "health",
-              actions: [
-                { title: "Taken", pressAction: { id: "MEDICINE_TAKEN" } },
-                { title: "Missed", pressAction: { id: "MEDICINE_MISSED" } },
-                { title: "Snooze", pressAction: { id: "MEDICINE_SNOOZE" } },
-              ],
-            },
-          },
-          {
-            type: TriggerType.TIMESTAMP,
-            timestamp: Date.now() + 10 * 60 * 1000,
+              status: "missed",
+              targetUid: profileId,
+            });
+
+            await syncUpdateMedicineStatus(medIdNum, "missed", profileId);
+          } else {
+            const {
+              getMedicineByNotificationId,
+              markMedicineMissedByNotificationId,
+            } = await import("../database/medicineDB");
+
+            const medicine = getMedicineByNotificationId(notificationId) as Medicine | null;
+
+            if (medicine) {
+              await addToMedicineHistory({
+                medicineId: medicine.id,
+                medicineName: medicine.name,
+                dose: medicine.dose,
+                time: medicine.time,
+                status: "missed",
+              });
+
+              markMedicineMissedByNotificationId(notificationId);
+              await syncUpdateMedicineStatus(medicine.id, "missed");
+              log("💊 [BG] Daily medicine marked missed");
+            }
           }
-        );
+          await notifee.cancelNotification(notificationId);
+          log("✅ [BG] MEDICINE_SNOOZE (Max Limit reached) -> marked missed");
+        } else {
+          // Reschedule snooze notification for 5 minutes (300,000 ms)
+          await notifee.createTriggerNotification(
+            {
+              title: profileName ? `💊 Snoozed Reminder (${profileName})` : "💊 Snoozed Reminder",
+              body,
+              data: {
+                type: "medicine_reminder",
+                medicineId: medId,
+                frequency: freq,
+                profileId,
+                profileName,
+                medicineName,
+                dose,
+                time,
+                snoozeCount: String(currentSnoozeCount + 1),
+              },
+              android: {
+                channelId: "health",
+                actions: [
+                  { title: "Taken", pressAction: { id: "MEDICINE_TAKEN" } },
+                  { title: "Snooze", pressAction: { id: "MEDICINE_SNOOZE" } },
+                ],
+              },
+            },
+            {
+              type: TriggerType.TIMESTAMP,
+              timestamp: Date.now() + 5 * 60 * 1000,
+            }
+          );
 
-        await notifee.cancelNotification(notificationId);
-
-        log("⏰ [BG] Medicine snoozed");
-
+          await notifee.cancelNotification(notificationId);
+          log(`⏰ [BG] Medicine snoozed (count=${currentSnoozeCount + 1})`);
+        }
       } catch (e) {
         log("❌ [BG] MEDICINE_SNOOZE error:", e);
       }
