@@ -3,6 +3,8 @@ Description=VitalHealth Medication Vault API
 Documentation=https://github.com/Akhiluuu/health-digital-twin
 After=network-online.target postgresql.service
 Wants=network-online.target
+StartLimitIntervalSec=60
+StartLimitBurst=5
 
 [Service]
 Type=simple
@@ -21,8 +23,6 @@ ExecStart={{PROJECT_DIR}}/med_venv/bin/uvicorn \
 
 Restart=always
 RestartSec=5
-StartLimitIntervalSec=60
-StartLimitBurst=5
 
 StandardOutput=journal
 StandardError=journal

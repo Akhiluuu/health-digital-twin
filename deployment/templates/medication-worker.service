@@ -2,6 +2,8 @@
 Description=VitalHealth Medication Celery Worker + Beat Scheduler
 After=network-online.target medication.service
 Wants=network-online.target
+StartLimitIntervalSec=120
+StartLimitBurst=3
 
 [Service]
 Type=simple
@@ -20,8 +22,6 @@ ExecStart={{PROJECT_DIR}}/med_venv/bin/celery \
 
 Restart=always
 RestartSec=10
-StartLimitIntervalSec=120
-StartLimitBurst=3
 
 StandardOutput=journal
 StandardError=journal
