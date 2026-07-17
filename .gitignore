@@ -60,7 +60,7 @@ desktop.ini
 *.rar
 
 # Test artifacts
-test_*.py
+test_scratch*.py
 debug_*.py
 
 # VitalHealth secrets — never commit
