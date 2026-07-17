@@ -89,7 +89,7 @@ info "Step 2 — Setting up PostgreSQL database..."
 
 DB_NAME="twins_db"
 DB_USER="postgres"
-DB_PASS="password"
+DB_PASS="Cave@123"
 
 # Check if twins_db already exists (created by existing BioGears deployment)
 if sudo -u postgres psql -lqt | cut -d \| -f 1 | grep -qw "$DB_NAME"; then
@@ -103,10 +103,15 @@ fi
 info "Configuring postgres user password..."
 sudo -u postgres psql -c "ALTER USER postgres PASSWORD '${DB_PASS}';" || warn "Failed to alter postgres password"
 
-# Check DATABASE_URL in .env
+# Check DATABASE_URL in .env or update if using old password
+NEW_DB_URL="postgresql://${DB_USER}:${DB_PASS}@localhost:5432/${DB_NAME}"
 if ! grep -q "DATABASE_URL" "$ENV_FILE" 2>/dev/null; then
-    echo "DATABASE_URL=postgresql://${DB_USER}:${DB_PASS}@localhost:5432/${DB_NAME}" >> "$ENV_FILE"
+    echo "DATABASE_URL=${NEW_DB_URL}" >> "$ENV_FILE"
     success "DATABASE_URL written to .env"
+elif grep -q "postgres:password@" "$ENV_FILE" 2>/dev/null; then
+    info "Updating DATABASE_URL password in .env..."
+    sed -i "s|postgres:password@|postgres:${DB_PASS}@|g" "$ENV_FILE"
+    success "DATABASE_URL password updated in .env"
 else
     success "DATABASE_URL already in .env"
 fi
