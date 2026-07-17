@@ -71,7 +71,7 @@ export function estimateBioAge(profile: any, currentVitals: any): number {
 /**
  * Returns YYYY-MM-DD in the local timezone for a given Date, timestamp (seconds or ms), or ISO string.
  */
-export function getLocalDateString(dateInput?: Date | string | number): string {
+export function getLocalDateString(dateInput?: Date | string | number | any): string {
   if (dateInput === undefined || dateInput === null) {
     const now = new Date();
     const yyyy = now.getFullYear();
@@ -83,6 +83,10 @@ export function getLocalDateString(dateInput?: Date | string | number): string {
   let date: Date;
   if (dateInput instanceof Date) {
     date = dateInput;
+  } else if (dateInput && typeof dateInput === "object" && typeof (dateInput as any).toDate === "function") {
+    date = (dateInput as any).toDate();
+  } else if (dateInput && typeof dateInput === "object" && "seconds" in dateInput && typeof (dateInput as any).seconds === "number") {
+    date = new Date((dateInput as any).seconds * 1000);
   } else if (typeof dateInput === "number") {
     // If it's in seconds (like UNIX timestamp in todayEvents: e.g. 1783009865), convert to ms
     // Standard UNIX timestamps for our times are around 1.7e9, whereas millisecond timestamps are 1.7e12.

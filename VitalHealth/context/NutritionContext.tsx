@@ -695,12 +695,14 @@ export function NutritionProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!state.loaded) return;
 
-    // Build a stable fingerprint of the current food entries
+    // Build a stable fingerprint of the current food entries and sessions
     const currentFoodFingerprint = state.foodEntries.map(f => f.id).join(',');
+    const sessionsFingerprint = (sessions || []).map(s => s?.session_id || '').join(',');
+    const fingerprint = `${currentFoodFingerprint}|${sessionsFingerprint}`;
 
-    // Skip if food entries haven't changed (prevents infinite re-render loop)
-    if (currentFoodFingerprint === lastSyncedFoodIdsRef.current) return;
-    lastSyncedFoodIdsRef.current = currentFoodFingerprint;
+    // Skip if food entries and sessions haven't changed (prevents infinite re-render loop)
+    if (fingerprint === lastSyncedFoodIdsRef.current) return;
+    lastSyncedFoodIdsRef.current = fingerprint;
 
     const mealIcons: Record<string, string> = {
       breakfast: "🍳",
@@ -712,8 +714,24 @@ export function NutritionProvider({ children }: { children: React.ReactNode }) {
       snacks: "🍎",
     };
 
+    // Build a set of all simulated event IDs from sessions to prevent simulated events from returning to the queue
+    const simulatedEventIds = new Set<string>();
+    if (Array.isArray(sessions)) {
+      for (const s of sessions) {
+        if (s && Array.isArray(s.events)) {
+          for (const ev of s.events) {
+            const anyEv = ev as any;
+            if (anyEv && anyEv.id) {
+              simulatedEventIds.add(anyEv.id);
+            }
+          }
+        }
+      }
+    }
+
+    const todayStr = getLocalDateString();
     const mappedMealEvents = state.foodEntries
-      .filter(fe => fe && fe.id && fe.calories >= 0)
+      .filter(fe => fe && fe.id && fe.calories >= 0 && getLocalDateString(fe.timestamp) === todayStr && !simulatedEventIds.has(`food_${fe.id}`))
       .map((fe) => {
         const cal = fe.calories || 0;
         const estimatedCarb    = fe.carbs  || Math.round(cal * 0.40 / 4);
@@ -769,7 +787,7 @@ export function NutritionProvider({ children }: { children: React.ReactNode }) {
   // ⚠️ CRITICAL: DO NOT add todayEvents or setTodayEvents to this dependency array.
   // setTodayEvents is stable (useCallback with empty deps in BiogearsTwinContext).
   // Adding todayEvents would cause an infinite loop.
-  }, [state.foodEntries, state.loaded]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [state.foodEntries, state.loaded, sessions]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Persist whenever relevant state changes (only for SELF)
   useEffect(() => {

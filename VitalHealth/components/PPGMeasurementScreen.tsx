@@ -25,9 +25,6 @@ import {
   onHeartRateUpdate,
   onHeartRateDone,
   onHeartRateError,
-  getHeartRateFftSpectrum,
-  getHeartRateDetectedPeaks,
-  calibrateHeartRateDevice,
 } from "../services/heartRateNative";
 
 const { width } = Dimensions.get("window");
@@ -64,13 +61,6 @@ export default function PPGMeasurementScreen({
   const [pulseWave, setPulseWave] = useState(0);
   const [progressSecs, setProgressSecs] = useState(0);
   const [waveHistory, setWaveHistory] = useState<number[]>(Array(60).fill(0));
-
-  // Debug Panel States
-  const [showDebug, setShowDebug] = useState(false);
-  const [fftData, setFftData] = useState<number[]>([]);
-  const [peaksData, setPeaksData] = useState<number[]>([]);
-  const [refHr, setRefHr] = useState("");
-  const [refSpo2, setRefSpo2] = useState("");
 
   // Animations
   const pulseScale = useRef(new Animated.Value(1)).current;
@@ -176,14 +166,6 @@ export default function PPGMeasurementScreen({
         next.push(nextPulse);
         return next;
       });
-
-      // Retrieve live spectral data and peak list for research telemetry
-      getHeartRateFftSpectrum().then((spectrum) => {
-        if (spectrum && spectrum.length > 0) setFftData(spectrum);
-      });
-      getHeartRateDetectedPeaks().then((peaks) => {
-        if (peaks && peaks.length > 0) setPeaksData(peaks);
-      });
     });
 
     // Done event — native module finished the 30-second window
@@ -277,33 +259,6 @@ export default function PPGMeasurementScreen({
       .join(" ");
   };
 
-  const getFftPath = (): string => {
-    if (fftData.length < 68) return "M 0 80";
-    const bins = fftData.slice(12, 68); // 0.7 to 4.0 Hz
-    const maxVal = Math.max(...bins, 1e-5);
-    const H = 80;
-    const W = width - 96;
-    return bins
-      .map((val, idx) => {
-        const x = (idx / (bins.length - 1)) * W;
-        const norm = val / maxVal;
-        const y = H - norm * H;
-        return `${idx === 0 ? "M" : "L"} ${x.toFixed(1)} ${y.toFixed(1)}`;
-      })
-      .join(" ");
-  };
-
-  const handleCalibrate = () => {
-    const hrVal = parseFloat(refHr);
-    const spo2Val = parseFloat(refSpo2);
-    if (isNaN(hrVal) || isNaN(spo2Val) || hrVal < 35 || hrVal > 220 || spo2Val < 80 || spo2Val > 100) {
-      Alert.alert("Invalid Input", "Please enter valid reference values:\nHeart Rate: 35 - 220 BPM\nSpO2: 80 - 100%");
-      return;
-    }
-    calibrateHeartRateDevice(hrVal, spo2Val);
-    Alert.alert("Success", "Device calibrated successfully against reference readings!");
-  };
-
   const secondsRemaining = Math.max(0, TOTAL_SECS - Math.floor(progressSecs));
   const progressRatio = Math.min(1, progressSecs / TOTAL_SECS);
   const circumference = 2 * Math.PI * 95;
@@ -319,122 +274,10 @@ export default function PPGMeasurementScreen({
         <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", width: "100%", paddingHorizontal: 4 }}>
           <View style={{ width: 32 }} />
           <Text style={[styles.title, { color: hdr.color, flex: 1, textAlign: "center" }]}>{hdr.title}</Text>
-          <TouchableOpacity onPress={() => setShowDebug(!showDebug)} style={{ width: 32, height: 32, alignItems: "center", justifyContent: "center" }}>
-            <Ionicons name="bug-outline" size={22} color={showDebug ? "#ef476f" : c.text} />
-          </TouchableOpacity>
+          <View style={{ width: 32 }} />
         </View>
         <Text style={[styles.subtext, { color: c.sub || "rgba(255,255,255,0.6)" }]}>{hdr.sub}</Text>
       </View>
-
-      {/* Debug Panel Overlay */}
-      {showDebug && (
-        <View style={[styles.debugOverlay, { backgroundColor: c.card, borderColor: c.border }]}>
-          <View style={styles.debugHeader}>
-            <Ionicons name="bug-outline" size={20} color="#ef476f" />
-            <Text style={[styles.debugTitle, { color: c.text }]}>DSP Telemetry & Calibration</Text>
-            <TouchableOpacity onPress={() => setShowDebug(false)} style={styles.debugCloseBtn}>
-              <Ionicons name="close" size={20} color={c.text} />
-            </TouchableOpacity>
-          </View>
-
-          <ScrollView style={styles.debugScroll} showsVerticalScrollIndicator={false}>
-            {/* Telemetry Metrics */}
-            <View style={styles.debugSection}>
-              <Text style={[styles.debugSectionTitle, { color: c.sub }]}>SIGNAL QUALITY INDEX (SQI)</Text>
-              <View style={styles.debugGrid}>
-                <View style={[styles.debugCard, { backgroundColor: c.bg }]}>
-                  <Text style={[styles.debugCardLabel, { color: c.sub }]}>SNR</Text>
-                  <Text style={[styles.debugCardValue, { color: snr >= 2.5 ? "#10b981" : "#ef4444" }]}>
-                    {snr.toFixed(2)} dB
-                  </Text>
-                </View>
-                <View style={[styles.debugCard, { backgroundColor: c.bg }]}>
-                  <Text style={[styles.debugCardLabel, { color: c.sub }]}>Confidence</Text>
-                  <Text style={[styles.debugCardValue, { color: confidence >= 65 ? "#10b981" : "#f59e0b" }]}>
-                    {confidence.toFixed(1)}%
-                  </Text>
-                </View>
-              </View>
-              <View style={[styles.debugGrid, { marginTop: 8 }]}>
-                <View style={[styles.debugCard, { backgroundColor: c.bg }]}>
-                  <Text style={[styles.debugCardLabel, { color: c.sub }]}>PPG AC/DC</Text>
-                  <Text style={[styles.debugCardValue, { color: c.text }]}>
-                    {pulseWave.toFixed(4)}
-                  </Text>
-                </View>
-                <View style={[styles.debugCard, { backgroundColor: c.bg }]}>
-                  <Text style={[styles.debugCardLabel, { color: c.sub }]}>DSP Status</Text>
-                  <Text style={[styles.debugCardValue, { color: c.text, fontSize: 11 }]}>
-                    {status}
-                  </Text>
-                </View>
-              </View>
-            </View>
-
-            {/* FFT Spectrum */}
-            <View style={styles.debugSection}>
-              <Text style={[styles.debugSectionTitle, { color: c.sub }]}>FFT CARDIAC POWER SPECTRUM (0.7 - 4.0 Hz)</Text>
-              <View style={[styles.fftCardBg, { backgroundColor: c.bg, borderColor: c.border }]}>
-                {fftData.length > 0 ? (
-                  <Svg width="100%" height={80}>
-                    <Path d={getFftPath()} fill="none" stroke="#ef476f" strokeWidth={2} />
-                  </Svg>
-                ) : (
-                  <Text style={[styles.noFftText, { color: c.sub }]}>Waiting for first 3s epoch...</Text>
-                )}
-              </View>
-            </View>
-
-            {/* Detected Peaks */}
-            <View style={styles.debugSection}>
-              <Text style={[styles.debugSectionTitle, { color: c.sub }]}>DETECTED PEAKS (INDEX BUFFER)</Text>
-              <View style={[styles.peaksContainer, { backgroundColor: c.bg, borderColor: c.border }]}>
-                <Text style={[styles.peaksText, { color: c.text }]}>
-                  {peaksData.length > 0 ? peaksData.slice(0, 10).join(", ") : "No peaks detected yet"}
-                </Text>
-              </View>
-            </View>
-
-            {/* Device Calibration */}
-            <View style={styles.debugSection}>
-              <Text style={[styles.debugSectionTitle, { color: c.sub }]}>GOLD-STANDARD DEVICE CALIBRATION</Text>
-              <View style={[styles.calibCard, { backgroundColor: c.bg, borderColor: c.border }]}>
-                <Text style={[styles.calibDesc, { color: c.sub }]}>
-                  Enter reference values from a clinical device to lock calibration offsets.
-                </Text>
-                <View style={styles.calibInputsRow}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={[styles.inputLabel, { color: c.sub }]}>Ref HR (BPM)</Text>
-                    <TextInput
-                      style={[styles.calibInput, { color: c.text, borderColor: c.border, backgroundColor: c.card }]}
-                      keyboardType="numeric"
-                      value={refHr}
-                      onChangeText={setRefHr}
-                      placeholder="e.g. 72"
-                      placeholderTextColor="rgba(255,255,255,0.3)"
-                    />
-                  </View>
-                  <View style={{ width: 12 }} />
-                  <View style={{ flex: 1 }}>
-                    <Text style={[styles.inputLabel, { color: c.sub }]}>Ref SpO2 (%)</Text>
-                    <TextInput
-                      style={[styles.calibInput, { color: c.text, borderColor: c.border, backgroundColor: c.card }]}
-                      keyboardType="numeric"
-                      value={refSpo2}
-                      onChangeText={setRefSpo2}
-                      placeholder="e.g. 98"
-                      placeholderTextColor="rgba(255,255,255,0.3)"
-                    />
-                  </View>
-                </View>
-                <TouchableOpacity style={[styles.calibBtn, { backgroundColor: c.primary || "#6366f1" }]} onPress={handleCalibrate}>
-                  <Text style={styles.calibBtnText}>Lock Calibration</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          </ScrollView>
-        </View>
-      )}
 
       {/* Center ring zone */}
       <View style={styles.centerZone}>
@@ -672,37 +515,4 @@ const styles = StyleSheet.create({
   metaVal: { fontSize: 13, fontWeight: "600" },
   saveBtn: { height: 52, borderRadius: 16, flexDirection: "row", alignItems: "center", justifyContent: "center" },
   saveBtnText: { color: "#ffffff", fontSize: 15, fontWeight: "bold" },
-  // Debug Panel Styles
-  debugOverlay: {
-    position: "absolute",
-    top: 100, bottom: 20, left: 16, right: 16,
-    borderRadius: 24, borderWidth: 1, padding: 18,
-    zIndex: 1000,
-    shadowColor: "#000", shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.35, shadowRadius: 18, elevation: 12,
-  },
-  debugHeader: {
-    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
-    borderBottomWidth: 1, borderBottomColor: "rgba(255,255,255,0.08)",
-    paddingBottom: 10, marginBottom: 12,
-  },
-  debugTitle: { fontSize: 15, fontWeight: "bold", marginLeft: 6, flex: 1 },
-  debugCloseBtn: { padding: 4 },
-  debugScroll: { flex: 1 },
-  debugSection: { marginBottom: 16 },
-  debugSectionTitle: { fontSize: 9, fontWeight: "bold", letterSpacing: 1, marginBottom: 6 },
-  debugGrid: { flexDirection: "row", gap: 10 },
-  debugCard: { flex: 1, padding: 10, borderRadius: 12 },
-  debugCardLabel: { fontSize: 9, fontWeight: "600", marginBottom: 2 },
-  debugCardValue: { fontSize: 14, fontWeight: "bold" },
-  fftCardBg: { height: 100, borderRadius: 14, borderWidth: 1, padding: 10, justifyContent: "center", alignItems: "center" },
-  noFftText: { fontSize: 12, fontStyle: "italic" },
-  peaksContainer: { padding: 10, borderRadius: 12, borderWidth: 1 },
-  peaksText: { fontSize: 12, fontFamily: Platform.OS === "ios" ? "Courier" : "monospace" },
-  calibCard: { padding: 12, borderRadius: 14, borderWidth: 1 },
-  calibDesc: { fontSize: 11, lineHeight: 16, marginBottom: 10 },
-  calibInputsRow: { flexDirection: "row", marginBottom: 12 },
-  inputLabel: { fontSize: 9, fontWeight: "bold", marginBottom: 4 },
-  calibInput: { height: 42, borderRadius: 10, borderWidth: 1, paddingHorizontal: 10, fontSize: 13 },
-  calibBtn: { height: 44, borderRadius: 12, alignItems: "center", justifyContent: "center" },
-  calibBtnText: { color: "#ffffff", fontSize: 13, fontWeight: "bold" },
 });
