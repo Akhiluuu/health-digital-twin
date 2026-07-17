@@ -373,7 +373,7 @@ async def ocr_prescription(
     return ok(result, "OCR extraction complete")
 
 
-@router.post("/barcode", summary="Look up medication by barcode / NDC")
+@router.get("/barcode", summary="Look up medication by barcode / NDC")
 async def barcode_lookup(
     barcode: str = Query(..., min_length=4, max_length=50),
     user: CurrentUser = Depends(get_current_user),
