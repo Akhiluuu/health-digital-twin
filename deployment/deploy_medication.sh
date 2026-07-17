@@ -99,6 +99,10 @@ else
     sudo -u postgres createdb "$DB_NAME" || warn "DB creation failed — may already exist"
 fi
 
+# Ensure postgres user password matches DB_PASS
+info "Configuring postgres user password..."
+sudo -u postgres psql -c "ALTER USER postgres PASSWORD '${DB_PASS}';" || warn "Failed to alter postgres password"
+
 # Check DATABASE_URL in .env
 if ! grep -q "DATABASE_URL" "$ENV_FILE" 2>/dev/null; then
     echo "DATABASE_URL=postgresql://${DB_USER}:${DB_PASS}@localhost:5432/${DB_NAME}" >> "$ENV_FILE"
