@@ -52,7 +52,12 @@ echo ""
 # ── Step 1: System dependencies ───────────────────────────────────────────────
 info "Step 1 — Checking system dependencies..."
 
-sudo apt-get update -qq
+if ! sudo apt-get update -qq; then
+    warn "apt-get update failed, attempting self-healing (clearing corrupt lists)..."
+    sudo rm -rf /var/lib/apt/lists/*
+    sudo apt-get clean
+    sudo apt-get update -qq || fail "apt-get update failed even after self-healing. Please run 'sudo rm -rf /var/lib/apt/lists/* && sudo apt-get update' manually."
+fi
 
 # PostgreSQL 15
 if ! command -v psql &>/dev/null; then
