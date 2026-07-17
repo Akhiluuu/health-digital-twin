@@ -58,7 +58,7 @@ class MedicineRepository:
                 data.get("inventory_count", 30),
                 data.get("refill_count", 3),
                 data.get("barcode"),
-                json.dumps(data.get("custom_metadata", {})),
+                json.dumps(data.get("custom_metadata", {}), default=str),
                 actor,
             )
             medicine = dict(row)
@@ -80,7 +80,7 @@ class MedicineRepository:
                 """INSERT INTO medication_audit_trail
                 (user_id, actor_id, action, resource_type, resource_id, new_value)
                 VALUES ($1,$2,'CREATE','medicine',$3,$4)""",
-                user_id, actor, medicine["id"], json.dumps(data),
+                user_id, actor, medicine["id"], json.dumps(data, default=str),
             )
             return medicine
 
@@ -142,7 +142,7 @@ class MedicineRepository:
         for k, v in data.items():
             if k in allowed and v is not None:
                 fields.append(f"{k} = ${i}")
-                params.append(json.dumps(v) if isinstance(v, dict) else v)
+                params.append(json.dumps(v, default=str) if isinstance(v, dict) else v)
                 i += 1
         if not fields:
             return None
@@ -156,7 +156,7 @@ class MedicineRepository:
             if row:
                 await conn.execute(
                     "INSERT INTO medication_audit_trail (user_id, actor_id, action, resource_type, resource_id, new_value) VALUES ($1,$2,'UPDATE','medicine',$3,$4)",
-                    user_id, actor, medicine_id, json.dumps(data),
+                    user_id, actor, medicine_id, json.dumps(data, default=str),
                 )
         return dict(row) if row else None
 
