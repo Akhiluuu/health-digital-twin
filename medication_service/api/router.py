@@ -15,6 +15,7 @@ from fastapi import (
     APIRouter, BackgroundTasks, Depends, File, Form, HTTPException,
     Query, Request, Response, UploadFile, status,
 )
+from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from medication_service.domain.models import (
@@ -46,7 +47,7 @@ def _request_id(request: Request) -> str:
 
 
 def ok(data: Any = None, message: str = "OK") -> Dict:
-    return {"success": True, "message": message, "data": data}
+    return {"success": True, "message": message, "data": jsonable_encoder(data)}
 
 
 def err(msg: str, code: int = 400) -> HTTPException:

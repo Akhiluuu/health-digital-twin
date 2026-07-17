@@ -14,6 +14,16 @@ _pool = None
 
 async def get_pool():
     global _pool
+    import asyncio
+    if _pool is not None:
+        try:
+            current_loop = asyncio.get_running_loop()
+            if _pool._closed or _pool._loop is not current_loop or _pool._loop.is_closed():
+                logger.info("Database pool event loop changed or closed, resetting pool...")
+                _pool = None
+        except Exception:
+            _pool = None
+
     if _pool is None:
         import asyncpg
         database_url = os.environ.get("DATABASE_URL")
