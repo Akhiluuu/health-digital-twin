@@ -69,11 +69,20 @@ celery_app.conf.beat_schedule = {
 
 def _run_async(coro):
     import asyncio
+    from medication_service.database.connection import close_pool
     loop = asyncio.new_event_loop()
     try:
-        return loop.run_until_complete(coro)
+        asyncio.set_event_loop(loop)
+        async def main():
+            try:
+                return await coro
+            finally:
+                await close_pool()
+        return loop.run_until_complete(main())
     finally:
         loop.close()
+        asyncio.set_event_loop(None)
+
 
 
 def _get_all_user_ids():
