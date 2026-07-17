@@ -1,0 +1,35 @@
+[Unit]
+Description=VitalHealth Medication Vault API
+Documentation=https://github.com/Akhiluuu/health-digital-twin
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User={{USER}}
+Group={{GROUP}}
+WorkingDirectory={{PROJECT_DIR}}
+EnvironmentFile={{PROJECT_DIR}}/.env
+
+ExecStart={{PROJECT_DIR}}/med_venv/bin/uvicorn \
+    medication_service.api.app:app \
+    --host 127.0.0.1 \
+    --port 8002 \
+    --workers 2 \
+    --log-level info \
+    --access-log
+
+Restart=always
+RestartSec=5
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=medication
+
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
