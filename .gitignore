@@ -77,5 +77,6 @@ biogears_runtime/
 healthbot_venv/
 health_ai
 venv/
-/Screenshot*.png
-
+# Secrets & Firebase credentials
+firebase_admin.json
+firebase-adminsdk*.json
