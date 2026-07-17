@@ -59,13 +59,13 @@ if ! sudo apt-get update -qq; then
     sudo apt-get update -qq || fail "apt-get update failed even after self-healing. Please run 'sudo rm -rf /var/lib/apt/lists/* && sudo apt-get update' manually."
 fi
 
-# PostgreSQL 15
+# PostgreSQL
 if ! command -v psql &>/dev/null; then
-    info "Installing PostgreSQL 15..."
-    sudo apt-get install -y postgresql-15 postgresql-client-15 libpq-dev
+    info "Installing PostgreSQL..."
+    sudo apt-get install -y postgresql postgresql-client libpq-dev
     sudo systemctl enable postgresql
     sudo systemctl start postgresql
-    success "PostgreSQL 15 installed"
+    success "PostgreSQL installed"
 else
     success "PostgreSQL already installed: $(psql --version)"
 fi
