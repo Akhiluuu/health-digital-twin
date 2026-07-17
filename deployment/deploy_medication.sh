@@ -144,18 +144,7 @@ source "$VENV/bin/activate"
 pip install --upgrade pip --quiet
 
 info "Installing medication service dependencies..."
-pip install \
-    asyncpg>=0.29.0 \
-    fastapi>=0.128.0 \
-    uvicorn[standard]>=0.30.0 \
-    pydantic>=2.5.0 \
-    httpx>=0.27.0 \
-    celery>=5.3.0 \
-    redis>=5.0.0 \
-    psycopg2-binary>=2.9.9 \
-    python-multipart>=0.0.9 \
-    firebase-admin>=6.5.0 \
-    --quiet
+pip install -r medication_service/requirements.txt --quiet
 
 # Optional: PDF reports
 pip install reportlab --quiet 2>/dev/null || warn "reportlab not installed — PDF will fall back to CSV"
