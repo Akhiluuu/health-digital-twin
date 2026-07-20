@@ -29,7 +29,19 @@ current_actor = contextvars.ContextVar("current_actor", default="system")
 
 def get_connection():
     global _db_initialized
+    use_postgres = False
     if DATABASE_URL or (POSTGRES_HOST and POSTGRES_DB):
+        try:
+            import psycopg2
+            use_postgres = True
+        except ImportError:
+            import logging
+            logging.getLogger(__name__).warning(
+                "⚠️ PostgreSQL configuration detected (DATABASE_URL or POSTGRES_HOST/POSTGRES_DB is set), "
+                "but 'psycopg2' is not installed. Falling back to local SQLite database."
+            )
+
+    if use_postgres:
         import psycopg2
         if DATABASE_URL:
             conn = psycopg2.connect(DATABASE_URL)

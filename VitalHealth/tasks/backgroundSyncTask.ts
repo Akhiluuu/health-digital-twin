@@ -52,9 +52,27 @@ export async function runBackgroundSync() {
           });
         }
       }
-      console.log("✅ Background medicine sync successful");
     }
+    console.log("✅ Background medicine sync successful");
   } catch (e) {
     console.error("❌ Background medicine sync failed:", e);
+  }
+
+  // 3. Trigger the Personal Health Intelligence Engine (PIE)
+  try {
+    const STORAGE_KEY = "vitalhealth_steps_v2";
+    const raw = await AsyncStorage.getItem(STORAGE_KEY);
+    let steps = 0;
+    let goal = 8000;
+    if (raw) {
+      const d = JSON.parse(raw);
+      steps = d.steps ?? 0;
+      goal = d.goal ?? 8000;
+    }
+    const { runPIEOrchestrator } = await import("../services/pie/PersonalIntelligenceEngine");
+    await runPIEOrchestrator(steps, goal);
+    console.log("✅ PIE Orchestrator background run successful");
+  } catch (e) {
+    console.error("❌ PIE Orchestrator background run failed:", e);
   }
 }

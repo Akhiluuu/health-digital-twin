@@ -7,7 +7,7 @@ import { getLocalDateString } from "./twinUtils";
 const HISTORY_STORAGE_KEY = "medicine_history";
 
 export const addToMedicineHistory = async (
-  medicine: Omit<MedicineHistoryEntry, "id" | "date" | "takenAt"> & { targetUid?: string }
+  medicine: Omit<MedicineHistoryEntry, "id" | "date" | "takenAt"> & { targetUid?: string; reason?: string }
 ): Promise<MedicineHistoryEntry> => {
   try {
     const isMember = medicine.targetUid && medicine.targetUid !== "self";
@@ -29,6 +29,7 @@ export const addToMedicineHistory = async (
       status:       medicine.status,
       date:         getLocalDateString(now),
       takenAt:      now.toISOString(),
+      reason:       medicine.reason,
     };
 
     if (!isMember) {
@@ -52,7 +53,8 @@ export const addToMedicineHistory = async (
       status:       newEntry.status,
       date:         newEntry.date,
       takenAt:      newEntry.takenAt,
-    }, medicine.targetUid);
+      reason:       newEntry.reason,
+    } as any, medicine.targetUid);
 
     console.log("💊 Medicine history saved & synced to Firebase:", newEntry.medicineName, newEntry.status);
 

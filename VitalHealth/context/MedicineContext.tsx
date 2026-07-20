@@ -103,7 +103,7 @@ type ContextType = {
     endDate: string,
     reminder: number
   ) => Promise<void>;
-  removeMedicine: (id: number) => Promise<void>;
+  removeMedicine: (id: number, reason?: string) => Promise<void>;
   clearAllMedicines: () => Promise<void>;
   reloadMedicines: () => Promise<void>;
   markMedicineAsTaken: (notificationId?: string) => Promise<void>;
@@ -636,10 +636,24 @@ export const MedicineProvider = ({
   // REMOVE — when switched: directly from Firestore; when self: local SQLite + cancel notification + sync
   ///////////////////////////////////////////////////////////
 
-  const removeMedicine = React.useCallback(async (id: number) => {
+  const removeMedicine = React.useCallback(async (id: number, reason?: string) => {
     try {
+      const item = medicines.find((m) => m.id === id);
+      if (item) {
+        // Log to history first
+        const { addToMedicineHistory } = require("../utils/medicineHistory");
+        await addToMedicineHistory({
+          medicineId: item.id,
+          medicineName: item.name,
+          dose: item.dose,
+          time: item.time,
+          status: "deleted",
+          reason: reason || "User deleted",
+          targetUid: isSwitched ? activeMemberId : undefined,
+        });
+      }
+
       if (isSwitched && activeMemberId && activeMemberId !== "self") {
-        const item = medicines.find((m) => m.id === id);
         if (Platform.OS === "android") {
           const { cancelMedicineAlarm } = require("../services/medicineAlarmNative");
           cancelMedicineAlarm(id);
@@ -658,7 +672,6 @@ export const MedicineProvider = ({
         return;
       }
 
-      const item = medicines.find((m) => m.id === id);
       if (Platform.OS === "android") {
         cancelMedicineAlarm(id);
       } else if (item?.notificationId) {

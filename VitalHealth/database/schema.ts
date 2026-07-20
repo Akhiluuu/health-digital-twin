@@ -4,8 +4,8 @@
 // Call initAllTables() once at app startup (e.g. in _layout.tsx).
 
 import { db } from "./index";
-
 import { log, error } from "../utils/logger";
+import { initPIETables } from "./pieDB";
 
 export { db };
 
@@ -220,6 +220,9 @@ export const initAllTables = async (): Promise<void> => {
     );
 
     log("✅ VitalHealth DB — all tables initialised (v" + SCHEMA_VERSION + ")");
+
+    // Initialize PIE-specific tables
+    await initPIETables();
   } catch (err: unknown) {
     error("❌ initAllTables error:", err);
     throw error;

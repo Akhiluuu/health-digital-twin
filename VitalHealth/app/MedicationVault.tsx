@@ -242,11 +242,127 @@ export default function MedicationVault() {
     simulationProgress,
     lastVitals,
     healthScore: twinHealthScore,
+    sessions,
+    todayMacros,
   } = useBiogearsTwin();
 
   // Navigation State
   const [activePage, setActivePage] = useState<ActivePage>("dashboard");
   const [selectedMedicine, setSelectedMedicine] = useState<Medicine | null>(null);
+
+  // Real History State
+  const [historyList, setHistoryList] = useState<any[]>([]);
+
+  useFocusEffect(
+    useCallback(() => {
+      let active = true;
+      const loadRealHistory = async () => {
+        try {
+          const { getMedicineHistory } = require("../utils/medicineHistory");
+          const hist = await getMedicineHistory();
+          if (active) {
+            setHistoryList(hist || []);
+          }
+        } catch (err) {
+          console.log("Error loading history list:", err);
+        }
+      };
+      loadRealHistory();
+      return () => {
+        active = false;
+      };
+    }, [])
+  );
+
+  // Adherence compliance calculations
+  const { complianceRate, complianceStreak } = useMemo(() => {
+    const tracked = historyList.filter(
+      (h) => h.status === "taken" || h.status === "missed" || h.status === "skipped" || h.status === "late"
+    );
+    if (tracked.length === 0) {
+      return { complianceRate: null, complianceStreak: 0 };
+    }
+    const takenCount = tracked.filter((h) => h.status === "taken" || h.status === "late").length;
+    const rate = Math.round((takenCount / tracked.length) * 100);
+
+    const sorted = [...tracked].sort((a, b) => new Date(b.takenAt).getTime() - new Date(a.takenAt).getTime());
+    let streak = 0;
+    for (const entry of sorted) {
+      if (entry.status === "taken" || entry.status === "late") {
+        streak++;
+      } else {
+        break;
+      }
+    }
+    return { complianceRate: rate, complianceStreak: streak };
+  }, [historyList]);
+
+  // Dynamic Aria insights
+  const ariaInsights = useMemo(() => {
+    if (medicines.length === 0) {
+      return [
+        "No active medications in your vault. Add your current prescriptions to begin safety analysis.",
+        "Ensure your health profile and allergies are updated under Settings.",
+      ];
+    }
+
+    const insights = [];
+
+    // Adherence observation:
+    const tracked = historyList.filter(
+      (h) => h.status === "taken" || h.status === "missed" || h.status === "skipped" || h.status === "late"
+    );
+    if (tracked.length > 0) {
+      const takenCount = tracked.filter((h) => h.status === "taken" || h.status === "late").length;
+      const rate = Math.round((takenCount / tracked.length) * 100);
+      insights.push(
+        `Based on logged history, your medication adherence is ${rate}%. ${
+          rate >= 90 ? "Excellent adherence streak!" : "Consider setting reminders to stay on track."
+        }`
+      );
+    } else {
+      insights.push(
+        "No medication logs recorded yet. Once you log your daily doses, I will evaluate your adherence trends."
+      );
+    }
+
+    // Simulation observation:
+    let daysSinceLastSim = 999;
+    if (sessions && sessions.length > 0) {
+      const latestSim = sessions[0];
+      if (latestSim.timestamp) {
+        const diffMs = Date.now() - new Date(latestSim.timestamp).getTime();
+        daysSinceLastSim = diffMs / (1000 * 60 * 60 * 24);
+      }
+    }
+
+    if (daysSinceLastSim > 8) {
+      insights.push(
+        "⚠️ Safety Warning: You have not run a Digital Twin simulation in the last 8 days. Without recent physiological calibration, taking active medications carries increased risk of unmonitored side effects. Run a simulation under 'Twin' to verify safety."
+      );
+    } else {
+      insights.push(
+        "✅ Recent simulation verified. Your Digital Twin shows stable vital markers for the current regimen."
+      );
+    }
+
+    // Metformin food safety:
+    const hasMetformin = medicines.some((m) => m.name.toLowerCase().includes("metformin"));
+    if (hasMetformin) {
+      const loggedCalories = todayMacros?.calories || 0;
+      if (loggedCalories === 0) {
+        insights.push(
+          "⚠️ Safety Warning: Metformin should strictly be taken with or after meals to prevent gastrointestinal damage or lactic acidosis. No food intake has been logged today. Please update Nutrition before dosing."
+        );
+      } else {
+        insights.push(
+          "✅ Metformin food synchronization verified. Taking Metformin with meals minimizes gastrointestinal distress."
+        );
+      }
+    }
+
+    return insights;
+  }, [medicines, historyList, sessions, todayMacros]);
 
   // Metadata Cache State
   const [metadataCache, setMetadataCache] = useState<Record<number, MedicineMeta>>({});
@@ -566,64 +682,97 @@ export default function MedicationVault() {
     }
   };
 
-  const handleStartOCRScan = () => {
-    setIsScanningPrescription(true);
-    setScanStep(1);
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+  const handleStartOCRScan = async () => {
+    try {
+      setIsScanningPrescription(true);
+      setScanStep(1);
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
-    // Simulate scanning steps
-    setTimeout(() => {
-      setScanStep(2); // OCR parsing
-      setTimeout(() => {
-        setScanStep(3); // Completed
-        setTimeout(() => {
-          setIsScanningPrescription(false);
-          setScanStep(0);
-          // Populate form fields with OCR mock extraction
-          setAddName("Metformin");
-          setAddBrand("Glucophage");
-          setAddGeneric("Metformin Hydrochloride");
-          setAddDose("1 tablet");
-          setAddStrength("500mg");
-          setAddPurpose("Type 2 Diabetes Mellitus");
-          setAddDoctor("Dr. Sarah Jenkins");
-          setAddHospital("Metro Health");
-          setAddMethod("manual");
-          Alert.alert("OCR Scan Successful", "Prescription data extracted and auto-filled.");
-        }, 1500);
-      }, 2000);
-    }, 2500);
+      // extractTextFromImage handles the image picker and OCR internally.
+      // It returns null if the user cancels or if OCR yields no text.
+      const { extractTextFromImage } = await import('../services/textExtraction');
+      setScanStep(2);
+      const extracted = await extractTextFromImage();
+      setScanStep(3);
+
+      setIsScanningPrescription(false);
+      setScanStep(0);
+
+      if (!extracted || extracted.trim().length === 0) {
+        Alert.alert(
+          'OCR Extraction Failed',
+          'No readable text was found in the selected image. Please ensure the prescription is clearly photographed and try again.',
+        );
+        return;
+      }
+
+      // Place extracted text in the name field as a starting point for manual review.
+      // The user MUST verify and complete all remaining fields — never auto-fill silently.
+      setAddName(extracted.trim().slice(0, 100));
+      Alert.alert(
+        'Prescription Scanned',
+        'Text was extracted from the image and placed in the Medication Name field. Please review and complete all fields manually before saving.',
+        [{ text: 'OK' }],
+      );
+    } catch (err) {
+      setIsScanningPrescription(false);
+      setScanStep(0);
+      log('OCR scan error:', err);
+      Alert.alert('Scan Error', 'Unable to process the prescription image. Please try again or enter details manually.');
+    }
   };
 
-  // Dr. Aria AI Queries
-  const handleSendAiMessage = () => {
+  // Dr. Aria AI Queries — routed to real backend Medication Vault AI service
+  const handleSendAiMessage = async () => {
     if (!aiInput.trim()) return;
     const userMsg = aiInput.trim();
     setAiMessages((prev) => [...prev, { sender: "user", text: userMsg }]);
     setAiInput("");
-
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 
-    // Simulate clinical AI response
-    setTimeout(() => {
-      let responseText =
-        "Based on your BioGears digital twin simulation, taking your current regimen presents no immediate drug-drug conflicts. Please ensure Metformin is taken with food to reduce transient abdominal side effects.";
+    // Show a loading placeholder while waiting for the real backend response
+    setAiMessages((prev) => [...prev, { sender: "aria", text: "…" }]);
 
-      const lowerMsg = userMsg.toLowerCase();
-      if (lowerMsg.includes("alcohol") || lowerMsg.includes("drink")) {
-        responseText =
-          "⚠️ Clinical Warning: Combining Metformin or Aspirin with excessive alcohol increases risks of lactic acidosis and GI bleeding respectively. It is strongly recommended to limit alcohol intake to under 1 standard unit and space it at least 6 hours from doses.";
-      } else if (lowerMsg.includes("miss") || lowerMsg.includes("forgot")) {
-        responseText =
-          "If you miss a dose of Metformin, take it as soon as you remember with food. However, if it is almost time for your next dose, skip the missed dose and resume your regular schedule. Do not double doses.";
-      } else if (lowerMsg.includes("ibuprofen") || lowerMsg.includes("aspirin")) {
-        responseText =
-          "⚠️ Moderate Interaction Alert: Taking Ibuprofen concurrently with Aspirin may reduce Aspirin's cardioprotective efficacy and increase mucosal bleeding risk in the stomach. Consider spacing doses by 4 hours or consulting your cardiologist.";
-      }
+    try {
+      const { chatWithAria } = await import('../services/medicationVaultAPI');
+      // Forward active medicine IDs so the backend can personalise the response
+      const activeMedIds = medicines
+        .filter((m) => m && m.name)
+        .map((m) => String(m.id))
+        .filter(Boolean);
 
-      setAiMessages((prev) => [...prev, { sender: "aria", text: responseText }]);
+      const res = await chatWithAria({
+        message: userMsg,
+        context_medicine_ids: activeMedIds,
+      });
+
+      const responseText: string =
+        (res as any)?.data?.response ||
+        (res as any)?.response ||
+        'Dr. Aria is unable to respond at this time. Please try again later.';
+
+      setAiMessages((prev) => {
+        const updated = [...prev];
+        // Replace the loading placeholder with the real response
+        const lastIdx = updated.map((m) => m.sender).lastIndexOf('aria');
+        if (lastIdx !== -1) updated[lastIdx] = { sender: 'aria', text: responseText };
+        return updated;
+      });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    }, 1500);
+    } catch (err) {
+      log('Dr. Aria AI chat error:', err);
+      setAiMessages((prev) => {
+        const updated = [...prev];
+        const lastIdx = updated.map((m) => m.sender).lastIndexOf('aria');
+        if (lastIdx !== -1) {
+          updated[lastIdx] = {
+            sender: 'aria',
+            text: 'Dr. Aria is currently unavailable. Please check your internet connection or try again later. For urgent medication questions, contact your prescribing physician.',
+          };
+        }
+        return updated;
+      });
+    }
   };
 
   // Render Page Selection wrapper
@@ -980,11 +1129,13 @@ export default function MedicationVault() {
             <Ionicons name="sparkles" size={18} color={c.accent} />
             <Text style={[styles.insightTitle, { color: c.text }]}>Digital Twin Observations</Text>
           </View>
-          <Text style={[styles.insightBody, { color: c.text }]}>
-            • You have maintained a <Text style={{ fontWeight: "700", color: "#22c55e" }}>94% adherence streak</Text> over the last 14 days. Great work!{"\n"}
-            • Vitamin D doses are occasionally missed on Sundays. Consider tying them to breakfast.{"\n"}
-            • Taking Metformin strictly with or after meals has successfully mitigated minor gastric irritation alerts.
-          </Text>
+          <View style={{ gap: 8 }}>
+            {ariaInsights.map((insight, index) => (
+              <Text key={index} style={[styles.insightBody, { color: c.text }]}>
+                • {insight}
+              </Text>
+            ))}
+          </View>
         </LinearGradient>
       </ScrollView>
     );
@@ -1073,14 +1224,22 @@ export default function MedicationVault() {
                   style={[styles.footerActionBtn, { borderColor: c.border }]}
                   onPress={() => {
                     Alert.alert(
-                      "Delete Medicine",
-                      `Are you sure you want to delete ${med.name}?`,
+                      "Reason for Deletion",
+                      `Please select the reason for deleting ${med.name}:`,
                       [
                         { text: "Cancel", style: "cancel" },
                         {
-                          text: "Delete",
+                          text: "Doctor Stopped It",
+                          onPress: () => removeMedicine(med.id, "Doctor stopped it"),
+                        },
+                        {
+                          text: "Side Effects",
+                          onPress: () => removeMedicine(med.id, "Experienced side effects"),
+                        },
+                        {
+                          text: "No Longer Needed",
                           style: "destructive",
-                          onPress: () => removeMedicine(med.id),
+                          onPress: () => removeMedicine(med.id, "No longer needed"),
                         },
                       ]
                     );
@@ -1559,25 +1718,44 @@ export default function MedicationVault() {
           Historical event log auditing doses taken, missed, delayed, and clinical adjustments.
         </Text>
         <View style={[styles.timelineCard, { backgroundColor: c.card, borderColor: c.border }]}>
-          {medicines.map((med) => {
-            const meta = metadataCache[med.id] || DEFAULT_META;
-            return (
-              <View key={med.id} style={styles.historyLogItem}>
-                <View style={styles.historyLogLeft}>
-                  <Ionicons name="checkmark-circle" size={24} color="#22c55e" />
+          {historyList.length === 0 ? (
+            <View style={{ padding: 20, alignItems: "center" }}>
+              <Ionicons name="time-outline" size={32} color={c.sub} />
+              <Text style={{ color: c.sub, marginTop: 8 }}>No history logs found.</Text>
+            </View>
+          ) : (
+            historyList.map((entry) => {
+              const isDeleted = entry.status === "deleted";
+              const isMissed = entry.status === "missed" || entry.status === "skipped";
+              const iconColor = isDeleted ? "#6b7280" : isMissed ? "#ef4444" : "#22c55e";
+              const iconName = isDeleted ? "trash" : isMissed ? "close-circle" : "checkmark-circle";
+              return (
+                <View key={entry.id} style={styles.historyLogItem}>
+                  <View style={styles.historyLogLeft}>
+                    <Ionicons name={iconName} size={24} color={iconColor} />
+                  </View>
+                  <View style={{ flex: 1, marginLeft: 12 }}>
+                    <Text style={[styles.historyLogMed, { color: c.text, textDecorationLine: isDeleted ? "line-through" : "none" }]}>
+                      {entry.medicineName} {isDeleted ? "(Deleted)" : "Logged"}
+                    </Text>
+                    <Text style={[styles.historyLogTime, { color: c.sub }]}>
+                      Dose: {entry.dose} · {new Date(entry.takenAt).toLocaleString()}
+                    </Text>
+                    {entry.reason && (
+                      <Text style={{ fontSize: 12, color: "#8b5cf6", marginTop: 2, fontWeight: "500" }}>
+                        Reason: {entry.reason}
+                      </Text>
+                    )}
+                  </View>
+                  <View style={[styles.historyLogBadge, { backgroundColor: isDeleted ? "#f3f4f6" : isMissed ? "#fef2f2" : "#f0fdf4" }]}>
+                    <Text style={[styles.historyLogBadgeTxt, { color: iconColor }]}>
+                      {entry.status.toUpperCase()}
+                    </Text>
+                  </View>
                 </View>
-                <View style={{ flex: 1, marginLeft: 12 }}>
-                  <Text style={[styles.historyLogMed, { color: c.text }]}>{med.name} Logged</Text>
-                  <Text style={[styles.historyLogTime, { color: c.sub }]}>
-                    Dose {med.dose} · Taken at {med.time} today
-                  </Text>
-                </View>
-                <View style={styles.historyLogBadge}>
-                  <Text style={styles.historyLogBadgeTxt}>SUCCESS</Text>
-                </View>
-              </View>
-            );
-          })}
+              );
+            })
+          )}
         </View>
       </ScrollView>
     );
@@ -1585,27 +1763,58 @@ export default function MedicationVault() {
 
   // 7. COMPLIANCE PAGE (CALENDAR HEATMAP, STREAK COUNTERS)
   const renderCompliance = () => {
+    // Generate last 28 days status
+    const heatmapSquares = Array.from({ length: 28 }).map((_, i) => {
+      const targetDate = new Date();
+      targetDate.setDate(targetDate.getDate() - (27 - i));
+      const dateString = targetDate.toISOString().split("T")[0];
+
+      const dayEntries = historyList.filter((h) => h.date === dateString);
+      if (dayEntries.length === 0) {
+        return "empty";
+      }
+      const hasMissed = dayEntries.some((h) => h.status === "missed" || h.status === "skipped");
+      return hasMissed ? "missed" : "taken";
+    });
+
     return (
       <ScrollView contentContainerStyle={styles.scrollPadding}>
         <View style={[styles.complianceHeaderCard, { backgroundColor: c.card, borderColor: c.border }]}>
           <Text style={[styles.complianceScoreLabel, { color: c.sub }]}>AVERAGE COMPLIANCE RATE</Text>
-          <Text style={[styles.complianceScore, { color: "#22c55e" }]}>94%</Text>
-          <Text style={[styles.complianceStreak, { color: c.text }]}>🔥 14-Day Streak</Text>
+          {complianceRate !== null ? (
+            <>
+              <Text style={[styles.complianceScore, { color: complianceRate >= 80 ? "#22c55e" : "#ef4444" }]}>
+                {complianceRate}%
+              </Text>
+              <Text style={[styles.complianceStreak, { color: c.text }]}>
+                {complianceStreak > 0 ? `🔥 ${complianceStreak}-Day Streak` : "0-Day Streak"}
+              </Text>
+            </>
+          ) : (
+            <>
+              <Text style={[styles.complianceScore, { color: c.sub, fontSize: 24, marginTop: 8 }]}>
+                No Data
+              </Text>
+              <Text style={[styles.complianceStreak, { color: c.sub, fontSize: 13, marginTop: 4 }]}>
+                Start logging your medicines to calculate compliance.
+              </Text>
+            </>
+          )}
         </View>
 
         {/* Heatmap Grid */}
         <Text style={[styles.sectionTitle, { color: c.text }]}>Adherence Grid</Text>
         <View style={[styles.heatmapCard, { backgroundColor: c.card, borderColor: c.border }]}>
           <View style={styles.heatmapGrid}>
-            {Array.from({ length: 28 }).map((_, i) => {
-              const compliance = i === 5 || i === 12 || i === 22 ? "missed" : "taken";
+            {heatmapSquares.map((status, i) => {
+              const bgColor = status === "taken" ? "#22c55e" : status === "missed" ? "#ef4444" : c.border;
               return (
                 <View
                   key={i}
                   style={[
                     styles.heatmapSquare,
                     {
-                      backgroundColor: compliance === "taken" ? "#22c55e" : "#ef4444",
+                      backgroundColor: bgColor,
                     },
                   ]}
                 />
@@ -1620,6 +1829,10 @@ export default function MedicationVault() {
             <View style={{ flexDirection: "row", alignItems: "center", marginLeft: 15 }}>
               <View style={[styles.legendBox, { backgroundColor: "#ef4444" }]} />
               <Text style={{ color: c.sub, fontSize: 11, marginLeft: 4 }}>Missed</Text>
+            </View>
+            <View style={{ flexDirection: "row", alignItems: "center", marginLeft: 15 }}>
+              <View style={[styles.legendBox, { backgroundColor: c.border }]} />
+              <Text style={{ color: c.sub, fontSize: 11, marginLeft: 4 }}>No Schedule</Text>
             </View>
           </View>
         </View>

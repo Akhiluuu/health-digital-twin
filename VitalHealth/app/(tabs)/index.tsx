@@ -214,9 +214,15 @@ export default function HomeScreen() {
     if (isFocused.current) return;
     isFocused.current = true;
     refreshSymptoms();
+
+    // Trigger Personal Intelligence Engine (PIE) cycle on focus
+    import("../../services/pie/PersonalIntelligenceEngine")
+      .then(({ runPIEOrchestrator }) => runPIEOrchestrator(steps, goal))
+      .catch((err) => console.error("❌ Failed to trigger PIE orchestrator:", err));
+
     setTimeout(() => { isFocused.current = false; }, 1000);
     return () => { isFocused.current = false; };
-  }, [refreshSymptoms]));
+  }, [refreshSymptoms, steps, goal]));
 
   // ✅ Vitals (SpO₂ & Heart Rate) Subscription logic
   useEffect(() => {
@@ -407,7 +413,7 @@ export default function HomeScreen() {
           />
           <TelemetryCard
             title="HEART RATE"
-            value={measuredHeartRate !== null ? measuredHeartRate.toString() : (lastVitals?.heart_rate ? Math.round(lastVitals.heart_rate).toString() : "78")}
+            value={measuredHeartRate !== null ? measuredHeartRate.toString() : (lastVitals?.heart_rate ? Math.round(lastVitals.heart_rate).toString() : "--")}
             unit="BPM"
             icon={<PulsingHeart color="#ef4444" />}
             accent="#ef4444"

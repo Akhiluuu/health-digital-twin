@@ -279,14 +279,10 @@ export default function AddMemberScreen() {
         return;
       }
 
-      const { newId, fakePhoneSuffix, inviteCode } = result;
+      const { newId, inviteCode } = result;
 
       await registerTwin({
-        user_id: getTwinId({
-          firstName: depFirstName.trim(),
-          lastName: depLastName.trim(),
-          phone: fakePhoneSuffix,
-        } as any),
+        user_id: newId,
         profile_name: `${depFirstName.trim()} ${depLastName.trim()}`.trim(),
         age,
         weight: w,

@@ -475,26 +475,9 @@ export const StepProvider: React.FC<{
         warn("⚠️ Failed loading cloud steps:", cloudErr);
       }
       
-      // If mergedMap is empty or total steps is 0, seed realistic mock steps for the last 30 days
-      let totalStepsSum = 0;
-      mergedMap.forEach(s => { totalStepsSum += s; });
-      if (totalStepsSum === 0) {
-        for (let i = 29; i >= 0; i--) {
-          const d = new Date();
-          d.setDate(d.getDate() - i);
-          const dateStr = getLocalDateString(d);
-          
-          let seedSteps = 0;
-          if (i === 0) {
-            seedSteps = stepsRef.current;
-          } else {
-            const dayOfWeek = d.getDay();
-            const base = (dayOfWeek === 0 || dayOfWeek === 6) ? 7500 : 5000;
-            seedSteps = Math.round(base + Math.random() * 4000);
-          }
-          mergedMap.set(dateStr, seedSteps);
-        }
-      }
+      // No seeding of fake data: if no native or cloud steps exist for a date,
+      // it will render as 0 steps, which is the honest representation.
+      // Charts must only display data that originated from real sensors or cloud sync.
 
       // 3. Generate structured 7-day and 30-day arrays without gaps
       const last7Days: string[] = [];

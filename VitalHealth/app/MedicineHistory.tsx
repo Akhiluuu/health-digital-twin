@@ -32,6 +32,7 @@ export type MedicineHistoryEntry = {
   date: string;
   takenAt: string;
   status: "taken" | "skipped" | "missed" | "late" | "scheduled" | "deleted";
+  reason?: string;
 };
 
 const HISTORY_STORAGE_KEY = "medicine_history";
@@ -93,6 +94,7 @@ export default function MedicineHistory() {
               status:       h.status       ?? "taken",
               date:         h.date         ?? "",
               takenAt:      h.takenAt      ?? new Date().toISOString(),
+              reason:       h.reason       ?? undefined,
             }));
 
           const merged = [...local, ...normalizedFirebase].filter(
@@ -266,6 +268,12 @@ export default function MedicineHistory() {
                   <Text style={{ color: c.sub }}>
                     Status: {(selectedEntry.status || "").toUpperCase()}
                   </Text>
+
+                  {selectedEntry.reason && (
+                    <Text style={{ color: c.sub, fontWeight: "600", marginTop: 4 }}>
+                      Reason: {selectedEntry.reason}
+                    </Text>
+                  )}
 
                   <Text style={{ color: c.sub }}>
                     Logged At:{" "}

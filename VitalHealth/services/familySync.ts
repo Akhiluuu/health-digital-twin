@@ -409,16 +409,13 @@ export async function createDependentProfile(details: {
   height: string;
   weight: string;
   relation: string;
-}): Promise<{ newId: string; fakePhoneSuffix: string; inviteCode: string } | null> {
+}): Promise<{ newId: string; inviteCode: string } | null> {
   try {
     const myUid = await getMyUid();
     if (!myUid) return null;
 
     // Not a Firebase Auth UID — just a unique document ID for this person.
     const newId = `dep_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-    // Stash a clean 4-digit number of only digits as "fake phone" so getTwinId()
-    // never collides and gets parsed cleanly by replace(/\D/g, "")
-    const fakePhoneSuffix = Math.floor(1000 + Math.random() * 9000).toString();
 
     // Generate a truly unique Health ID / inviteCode.
     // Mix UID + timestamp + random to eliminate collisions even if
@@ -432,7 +429,8 @@ export async function createDependentProfile(details: {
       firstName: details.firstName,
       lastName: details.lastName,
       email: "",
-      phone: fakePhoneSuffix,
+      // Dependent profiles have no phone number — store empty string, never fabricate one.
+      phone: "",
       dateOfBirth: details.dateOfBirth,
       dob: details.dateOfBirth,
       gender: details.gender,
@@ -471,7 +469,7 @@ export async function createDependentProfile(details: {
       await setDoc(doc(db, "users", myUid), { linkedMembers: { [newId]: linkEntry } }, { merge: true });
     });
 
-    return { newId, fakePhoneSuffix, inviteCode: depCode };
+    return { newId, inviteCode: depCode };
   } catch (e) {
     log("❌ createDependentProfile error:", e);
     return null;
