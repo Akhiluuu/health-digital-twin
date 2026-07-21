@@ -71,10 +71,10 @@ async function generateMorningBrief(
   // Blood pressure pending check (from history records)
   try {
     const { db } = await import('../../database/index');
-    const bpRow = await db.getFirstAsync<{ cnt: number }>(
+    const bpRow = (await db.getFirstAsync(
       `SELECT COUNT(*) as cnt FROM history WHERE type = 'blood_pressure' AND date >= ?`,
       [todayStr]
-    );
+    )) as { cnt: number } | null;
     if ((bpRow?.cnt ?? 0) === 0) {
       bulletPoints.push('• Blood pressure measurement pending');
     }

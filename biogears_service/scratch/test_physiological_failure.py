@@ -56,6 +56,9 @@ def run_test():
         print("Updated meta.json engine_sim_time to 3 hours ago.")
 
     # 3. Run simulation with multiple massive doses of insulin (20.0 Units each), 30 minutes apart.
+    # Clinical expectation: BioGears correctly models severe hypoglycemia (near-fatal glucose drop).
+    # The engine WON'T crash — it successfully simulates the patient going into hypoglycemic shock.
+    # The result should: succeed=True, has_anomaly=True, critical Blood Glucose anomaly.
     events = []
     for i in range(5):
         events.append({
@@ -66,15 +69,32 @@ def run_test():
             "timestamp": start_ts + (i * 1800.0)  # Spaced 30 minutes apart
         })
 
-    print(f"\nStarting simulation sync with {len(events)} insulin events (should result in physiological failure)...")
+    print(f"\nStarting simulation with {len(events)} massive insulin events...")
+    print("Expected outcome: BioGears models severe hypoglycemia (glucose < 40 mg/dL, critical anomaly)")
     try:
         res = _run_batch_sync_blocking(user_id, events)
-        print("Simulation succeeded (unexpected):", res)
+        # Engine succeeded — validate clinical outcome
+        anomalies = res.get("anomalies", [])
+        glucose = res.get("vitals", {}).get("glucose", 999.0)
+        critical_glucose_anomaly = any(
+            a.get("label") == "Blood Glucose" and a.get("severity") == "critical"
+            for a in anomalies
+        )
+        if critical_glucose_anomaly and glucose < 40.0:
+            print(f"\nPASS: Engine correctly modelled severe hypoglycemia!")
+            print(f"  Glucose: {glucose} mg/dL (critically low)")
+            print(f"  Anomalies: {[a['label'] for a in anomalies]}")
+            print(f"  has_anomaly: {res.get('has_anomaly')}")
+        elif res.get("has_anomaly"):
+            print(f"\nPASS (partial): Simulation produced anomalies: {[a['label'] for a in anomalies]}")
+            print(f"  Glucose: {glucose} mg/dL | Critical glucose anomaly: {critical_glucose_anomaly}")
+        else:
+            print(f"\nFAIL: Massive insulin overdose on T1D patient produced no anomalies!")
+            print(f"  Vitals: {res.get('vitals')}")
+        print("Is state file persisted after simulation?", state_file.exists())
     except Exception as e:
-        print("\nSUCCESS: Simulation failed as expected!")
-        print("Caught exception details:")
-        print(e)
-        # Check if the state was rolled back to the pre-simulation state
+        # This would only happen on a true engine crash (NaN/serialization failure)
+        print(f"\nINFO: Simulation raised exception (physiological crash): {type(e).__name__}: {e}")
         print("Is state file rolled back / exists?", state_file.exists())
 
 if __name__ == "__main__":

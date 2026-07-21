@@ -23,13 +23,13 @@ export async function buildTwinContext(
     const { db } = await import('../../database/index');
 
     // Most recent simulation for this user
-    const row = await db.getFirstAsync<any>(
+    const row = (await db.getFirstAsync(
       `SELECT run_at, has_anomaly, anomaly_labels FROM simulation_history
        WHERE uid = ?
        ORDER BY run_at DESC
        LIMIT 1`,
       [uid]
-    );
+    )) as any;
 
     if (!row) {
       return {
@@ -57,10 +57,10 @@ export async function buildTwinContext(
     const hasStepsLogged = behaviorCtx.stepsTodayReal >= 500;
     let hasMealsLogged = false;
     try {
-      const mealRow = await db.getFirstAsync<any>(
+      const mealRow = (await db.getFirstAsync(
         `SELECT COUNT(*) as cnt FROM nutrition_log WHERE date = ?`,
         [new Date().toISOString().slice(0, 10)]
-      ).catch(() => null);
+      ).catch(() => null)) as { cnt: number } | null;
       hasMealsLogged = (mealRow?.cnt ?? 0) > 0;
     } catch { /* nutrition_log table may not exist in all versions */ }
 

@@ -6,7 +6,7 @@ from __future__ import annotations
 from datetime import date, datetime, time
 from typing import Any, Dict, List, Optional
 from uuid import UUID
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from enum import Enum
 
 
@@ -92,12 +92,11 @@ class DoctorCreate(BaseModel):
     notes: Optional[str] = None
 
 class DoctorOut(DoctorCreate):
+    model_config = ConfigDict(from_attributes=True)
     id: UUID
     user_id: str
     created_at: datetime
     updated_at: datetime
-    class Config:
-        from_attributes = True
 
 
 # ─── Medicine ─────────────────────────────────────────────────────────────────
@@ -170,6 +169,7 @@ class MedicineUpdate(BaseModel):
 
 
 class MedicineOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
     id: UUID
     user_id: str
     name: str
@@ -204,8 +204,6 @@ class MedicineOut(BaseModel):
     created_at: datetime
     updated_at: datetime
     version: int
-    class Config:
-        from_attributes = True
 
 
 # ─── Dose ─────────────────────────────────────────────────────────────────────
@@ -219,6 +217,7 @@ class DoseLogRequest(BaseModel):
     delay_minutes: Optional[int] = None
 
 class DoseOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
     id: UUID
     medicine_id: UUID
     user_id: str
@@ -230,8 +229,6 @@ class DoseOut(BaseModel):
     notes: Optional[str]
     biogears_sim_id: Optional[str]
     created_at: datetime
-    class Config:
-        from_attributes = True
 
 
 # ─── Interaction Check ─────────────────────────────────────────────────────────
@@ -268,6 +265,7 @@ class PrescriptionCreate(BaseModel):
     summary: Optional[str] = None
 
 class PrescriptionOut(PrescriptionCreate):
+    model_config = ConfigDict(from_attributes=True)
     id: UUID
     user_id: str
     status: str
@@ -276,8 +274,6 @@ class PrescriptionOut(PrescriptionCreate):
     file_url: Optional[str]
     is_verified: bool
     created_at: datetime
-    class Config:
-        from_attributes = True
 
 
 # ─── Inventory ────────────────────────────────────────────────────────────────
@@ -293,6 +289,7 @@ class InventoryUpdate(BaseModel):
     pharmacy_phone: Optional[str] = None
 
 class InventoryOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
     id: UUID
     medicine_id: UUID
     user_id: str
@@ -311,8 +308,6 @@ class InventoryOut(BaseModel):
     consumption_rate: Optional[float]
     is_low: bool = False
     days_remaining: Optional[int] = None
-    class Config:
-        from_attributes = True
 
 
 # ─── Compliance ───────────────────────────────────────────────────────────────

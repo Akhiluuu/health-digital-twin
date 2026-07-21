@@ -2236,20 +2236,23 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
     setSimulationProgress('Queuing simulation...');
 
     try {
-      // Prepare events — ensure timestamps are set
-      const events: BiogearsHealthEvent[] = todayEvents.map(e => ({
-        event_type: e.event_type,
-        value: e.value,
-        timestamp: e.timestamp ?? wallTimeToTimestamp(e.wallTime),
-        substance_name: e.substance_name,
-        meal_type: e.meal_type,
-        carb_g: e.carb_g,
-        fat_g: e.fat_g,
-        protein_g: e.protein_g,
-        duration_seconds: e.duration_seconds,
-        environment_name: e.environment_name,
-        notes: e.notes,
-      }));
+      // Prepare events — ensure timestamps are set and filter out future ones
+      const nowSecs = Math.floor(Date.now() / 1000);
+      const events: BiogearsHealthEvent[] = todayEvents
+        .map(e => ({
+          event_type: e.event_type,
+          value: e.value,
+          timestamp: e.timestamp ?? wallTimeToTimestamp(e.wallTime),
+          substance_name: e.substance_name,
+          meal_type: e.meal_type,
+          carb_g: e.carb_g,
+          fat_g: e.fat_g,
+          protein_g: e.protein_g,
+          duration_seconds: e.duration_seconds,
+          environment_name: e.environment_name,
+          notes: e.notes,
+        }))
+        .filter(e => (e.timestamp ?? 0) <= nowSecs);
 
       const weightVal = parseKg(profile?.weight);
       const heightVal = parseCm(profile?.height);

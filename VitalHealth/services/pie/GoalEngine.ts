@@ -24,18 +24,18 @@ async function getMedicationStreak(): Promise<{ currentStreak: number; bestStrea
 
     // Count consecutive days where at least one dose was taken
     // medicine_history.takenAt is an ISO timestamp
-    const rows = await db.getAllAsync<{ takenDate: string }>(
+    const rows = (await db.getAllAsync(
       `SELECT DISTINCT date(takenAt) as takenDate
        FROM medicine_history
        ORDER BY takenDate DESC
        LIMIT 90`
-    );
+    )) as { takenDate: string }[];
 
     if (!rows || rows.length === 0) return { currentStreak: 0, bestStreak: 0, totalDoses: 0 };
 
-    const totalDosesRow = await db.getFirstAsync<{ cnt: number }>(
+    const totalDosesRow = (await db.getFirstAsync(
       `SELECT COUNT(*) as cnt FROM medicine_history`
-    );
+    )) as { cnt: number } | null;
     const totalDoses = totalDosesRow?.cnt ?? 0;
 
     const dates = rows.map(r => r.takenDate);
@@ -109,10 +109,10 @@ export async function buildGoalContext(
   try {
     const { db } = await import('../../database/index');
     const cutoff = new Date(Date.now() - 365 * 86400_000).toISOString().slice(0, 10);
-    const checkupRow = await db.getFirstAsync<{ cnt: number }>(
+    const checkupRow = (await db.getFirstAsync(
       `SELECT COUNT(*) as cnt FROM history WHERE type = 'checkup' AND date >= ?`,
       [cutoff]
-    ).catch(() => null);
+    ).catch(() => null)) as { cnt: number } | null;
     if ((checkupRow?.cnt ?? 0) === 0) {
       milestones.push({
         type: 'checkup_due',

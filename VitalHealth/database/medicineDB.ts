@@ -129,11 +129,11 @@ export function insertOrReplaceMedicine(med: {
 
 export function getMedicines(): Medicine[] {
   const today = todayStr();
-  const rows = db.getAllSync<Medicine>("SELECT * FROM medicines ORDER BY timestamp ASC");
+  const rows = db.getAllSync("SELECT * FROM medicines ORDER BY timestamp ASC") as Medicine[];
 
   return rows
-    .filter((med) => med && med.name && med.name.trim() !== "")
-    .map((med) => ({
+    .filter((med: Medicine) => med && med.name && med.name.trim() !== "")
+    .map((med: Medicine) => ({
       ...med,
       // ✅ Only show the tick if taken was set TODAY
       taken: med.takenDate === today ? med.taken : 0,
@@ -308,10 +308,10 @@ export async function getTodayMedicineStats() {
 
 export function getMedicineByNotificationId(notificationId: string): Medicine | null {
   try {
-    const result = db.getAllSync<Medicine>(
+    const result = db.getAllSync(
       "SELECT * FROM medicines WHERE notificationId = ?",
       [notificationId]
-    );
+    ) as Medicine[];
     return result.length > 0 ? result[0] : null;
   } catch (error) {
     log("❌ getMedicineByNotificationId error:", error);

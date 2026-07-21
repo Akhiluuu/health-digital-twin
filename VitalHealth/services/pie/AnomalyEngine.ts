@@ -56,12 +56,12 @@ export async function buildAnomalyContext(
   if (twinCtx.lastAnomalies.length > 0) {
     try {
       const { db } = await import('../../database/index');
-      const rows = await db.getAllAsync<any>(
+      const rows = (await db.getAllAsync(
         `SELECT anomaly_labels FROM simulation_history
          WHERE uid = ? AND has_anomaly = 1
          ORDER BY run_at DESC LIMIT 3`,
         [uid]
-      );
+      )) as any[];
       if (rows.length >= 3) {
         const firstLabels: string[] = JSON.parse(rows[0].anomaly_labels || '[]');
         const allMatch = rows.every((r: any) => {
@@ -85,15 +85,15 @@ export async function buildAnomalyContext(
   // ── ANOM-04: Resting heart rate trend elevated (from simulation_history) ──
   try {
     const { db } = await import('../../database/index');
-    const hrRows = await db.getAllAsync<{ heart_rate: number }>(
+    const hrRows = (await db.getAllAsync(
       `SELECT heart_rate FROM simulation_history
        WHERE uid = ? AND heart_rate IS NOT NULL
        ORDER BY run_at DESC LIMIT 10`,
       [uid]
-    );
+    )) as { heart_rate: number }[];
     if (hrRows.length >= 5) {
-      const recent3Avg = hrRows.slice(0, 3).reduce((s, r) => s + (r.heart_rate ?? 0), 0) / 3;
-      const older3Avg  = hrRows.slice(5, 8).reduce((s, r) => s + (r.heart_rate ?? 0), 0) / 3;
+      const recent3Avg = hrRows.slice(0, 3).reduce((s: number, r: { heart_rate: number }) => s + (r.heart_rate ?? 0), 0) / 3;
+      const older3Avg  = hrRows.slice(5, 8).reduce((s: number, r: { heart_rate: number }) => s + (r.heart_rate ?? 0), 0) / 3;
       if (recent3Avg > 0 && older3Avg > 0 && recent3Avg - older3Avg >= 10) {
         anomalies.push({
           ruleId: 'ANOM-04-HR-TREND-ELEVATED',

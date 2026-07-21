@@ -201,12 +201,12 @@ export function CognitiveProvider({ children }: { children: React.ReactNode }) {
 
   const loadFromSQLite = useCallback(async (): Promise<CognitiveSession[]> => {
     try {
-      const rows = await sqliteDb.getAllAsync<any>(
+      const rows = (await sqliteDb.getAllAsync(
         `SELECT * FROM cognitive_sessions WHERE uid = ? ORDER BY completed_at DESC`,
         [uid]
-      );
+      )) as any[];
       if (!rows) return [];
-      return rows.map((r) => ({
+      return rows.map((r: any) => ({
         id: r.session_id,
         overallScore: r.overall_score,
         domainScores: {

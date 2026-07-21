@@ -400,6 +400,8 @@ export default function RootLayout() {
                           <Stack.Screen name="MedicationVault"      options={{ animation: 'slide_from_right', gestureEnabled: true, fullScreenGestureEnabled: true }} />
                           <Stack.Screen name="MedicineHistory"      options={{ animation: 'slide_from_right', gestureEnabled: true, fullScreenGestureEnabled: true }} />
                           <Stack.Screen name="AddMedicine"          options={{ animation: 'slide_from_right', gestureEnabled: true, fullScreenGestureEnabled: true }} />
+                          <Stack.Screen name="LogVitalsScreen"      options={{ animation: 'slide_from_right', gestureEnabled: true, fullScreenGestureEnabled: true }} />
+                          <Stack.Screen name="VitalsHistoryScreen"  options={{ animation: 'slide_from_right', gestureEnabled: true, fullScreenGestureEnabled: true }} />
                           <Stack.Screen name="member-health"        options={{ animation: 'slide_from_right', gestureEnabled: true, fullScreenGestureEnabled: true }} />
                           <Stack.Screen name="backup-restore"       options={{ animation: 'slide_from_right', gestureEnabled: true, fullScreenGestureEnabled: true }} />
                           <Stack.Screen name="activity"             options={{ animation: 'slide_from_right', gestureEnabled: true, fullScreenGestureEnabled: true }} />

@@ -540,7 +540,7 @@ def _check_state_file_validity(state_file: Path, user_id: str) -> None:
 
 
 def _run_batch_sync_blocking(user_id: str, events: list) -> dict:
-    """Wrapper that acquires user lock to prevent overlapping jobs."""
+    """Wrapper that acquires user lock to prevent overlapping jobs and applies simulation caching."""
     user_lock = engine_runner.get_user_lock(user_id)
     if not user_lock.acquire(blocking=False):
         raise HTTPException(
@@ -549,8 +549,72 @@ def _run_batch_sync_blocking(user_id: str, events: list) -> dict:
         )
     state_file = USER_STATES_DIR / f"{user_id}.xml"
     try:
+        import hashlib, json, gzip
+        
+        # Calculate pre-simulation state hash from decompressed content
+        gz_path = state_file.with_suffix(".xml.gz")
+        state_hash = ""
+        if gz_path.exists():
+            hasher = hashlib.md5()
+            with gzip.open(gz_path, "rb") as f:
+                for chunk in iter(lambda: f.read(65536), b""):
+                    hasher.update(chunk)
+            state_hash = hasher.hexdigest()
+        elif state_file.exists():
+            hasher = hashlib.md5()
+            with open(state_file, "rb") as f:
+                for chunk in iter(lambda: f.read(65536), b""):
+                    hasher.update(chunk)
+            state_hash = hasher.hexdigest()
+            
+        # Calculate events hash
+        event_dicts = [e if isinstance(e, dict) else e.dict() for e in events]
+        cleaned_events = []
+        for e in event_dicts:
+            cleaned_events.append({
+                "event_type": e.get("event_type"),
+                "value": e.get("value"),
+                "timestamp": e.get("timestamp"),
+                "substance_name": e.get("substance_name"),
+                "unit": e.get("unit"),
+                "meal_type": e.get("meal_type"),
+                "carb_g": e.get("carb_g"),
+                "fat_g": e.get("fat_g"),
+                "protein_g": e.get("protein_g"),
+                "duration_seconds": e.get("duration_seconds"),
+                "environment_name": e.get("environment_name")
+            })
+        cleaned_events = sorted(cleaned_events, key=lambda x: (x.get("timestamp") or 0.0, x.get("event_type") or ""))
+        events_hash = hashlib.md5(json.dumps(cleaned_events, sort_keys=True).encode('utf-8')).hexdigest()
+        
+        cache_key = f"sync_{state_hash}_{events_hash}"
+        cache_dir = BASE_DIR / "simulation_cache"
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        
+        cache_json_path = cache_dir / f"{cache_key}.json"
+        cache_xml_path = cache_dir / f"{cache_key}.xml.gz"
+        
+        if cache_json_path.exists() and cache_xml_path.exists():
+            logger.info(f"✨ [Simulation Cache] Cache hit for key {cache_key}! Reusing simulation results.")
+            # Restore state file from cache directly
+            with gzip.open(cache_xml_path, "rb") as f_in:
+                with open(state_file, "wb") as f_out:
+                    shutil.copyfileobj(f_in, f_out)
+            return json.loads(cache_json_path.read_text(encoding="utf-8"))
+            
+        # Cache miss — run the simulation
         decompress_state_file(state_file)
-        return _run_batch_sync_blocking_impl(user_id, events)
+        result = _run_batch_sync_blocking_impl(user_id, events)
+        
+        # After successful simulation, write to cache
+        if state_file.exists():
+            with open(state_file, "rb") as f_in:
+                with gzip.open(cache_xml_path, "wb") as f_out:
+                    shutil.copyfileobj(f_in, f_out)
+            cache_json_path.write_text(json.dumps(result), encoding="utf-8")
+            logger.info(f"💾 [Simulation Cache] Cached results for key {cache_key}.")
+            
+        return result
     finally:
         compress_state_file(state_file)
         user_lock.release()
@@ -1605,6 +1669,35 @@ def _predict_recovery_impl(data: PredictRequest):
     state_file = USER_STATES_DIR / f"{data.user_id}.xml"
     _check_state_file_validity(state_file, data.user_id)
 
+    # Cache check
+    import hashlib, json, gzip
+    gz_path = state_file.with_suffix(".xml.gz")
+    state_hash = ""
+    if gz_path.exists():
+        hasher = hashlib.md5()
+        with gzip.open(gz_path, "rb") as f:
+            for chunk in iter(lambda: f.read(65536), b""):
+                hasher.update(chunk)
+        state_hash = hasher.hexdigest()
+    elif state_file.exists():
+        hasher = hashlib.md5()
+        with open(state_file, "rb") as f:
+            for chunk in iter(lambda: f.read(65536), b""):
+                hasher.update(chunk)
+        state_hash = hasher.hexdigest()
+
+    cache_key = f"recovery_{state_hash}_{data.hours}"
+    cache_dir = BASE_DIR / "simulation_cache"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    cache_json_path = cache_dir / f"{cache_key}.json"
+
+    if cache_json_path.exists():
+        logger.info(f"✨ [Recovery Cache] Cache hit for key {cache_key}! Reusing forecast results.")
+        try:
+            return json.loads(cache_json_path.read_text(encoding="utf-8"))
+        except Exception as e:
+            logger.warning(f"Failed to read cached JSON for {cache_key}: {e}")
+
     path, run_id, _csv_prefix = scenario_builder.build_forecast_scenario(
         data.user_id, str(state_file), hours=data.hours
     )
@@ -1632,7 +1725,13 @@ def _predict_recovery_impl(data: PredictRequest):
                     os.remove(str(csv_path))
             except Exception:
                 pass
-            return {"status": "success", "forecast_chart": chart_url, "hours": data.hours}
+            res = {"status": "success", "forecast_chart": chart_url, "hours": data.hours}
+            try:
+                cache_json_path.write_text(json.dumps(res), encoding="utf-8")
+                logger.info(f"💾 [Recovery Cache] Cached forecast results for key {cache_key}.")
+            except Exception as e:
+                logger.warning(f"Failed to write cache for {cache_key}: {e}")
+            return res
         raise HTTPException(status_code=500, detail="Forecast engine failed.")
     finally:
         try:
@@ -1896,6 +1995,38 @@ def _predict_whatif_impl(data: WhatIfRequest):
     if errors:
         raise HTTPException(status_code=422, detail={"validation_errors": errors})
 
+    # Cache check
+    import hashlib, json, gzip
+    gz_path = state_file.with_suffix(".xml.gz")
+    state_hash = ""
+    if gz_path.exists():
+        hasher = hashlib.md5()
+        with gzip.open(gz_path, "rb") as f:
+            for chunk in iter(lambda: f.read(65536), b""):
+                hasher.update(chunk)
+        state_hash = hasher.hexdigest()
+    elif state_file.exists():
+        hasher = hashlib.md5()
+        with open(state_file, "rb") as f:
+            for chunk in iter(lambda: f.read(65536), b""):
+                hasher.update(chunk)
+        state_hash = hasher.hexdigest()
+
+    event_str = json.dumps(event_dict, sort_keys=True)
+    whatif_hash = hashlib.md5(f"{event_str}_{data.hours}".encode("utf-8")).hexdigest()
+    
+    cache_key = f"whatif_{state_hash}_{whatif_hash}"
+    cache_dir = BASE_DIR / "simulation_cache"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    cache_json_path = cache_dir / f"{cache_key}.json"
+
+    if cache_json_path.exists():
+        logger.info(f"✨ [What-If Cache] Cache hit for key {cache_key}! Reusing prediction charts.")
+        try:
+            return json.loads(cache_json_path.read_text(encoding="utf-8"))
+        except Exception as e:
+            logger.warning(f"Failed to read cached JSON for {cache_key}: {e}")
+
     base_path, evt_path, base_run_id, evt_run_id, base_prefix, evt_prefix = \
         scenario_builder.build_whatif_scenario(
             data.user_id, str(state_file), event_dict, hours=data.hours
@@ -1967,7 +2098,7 @@ def _predict_whatif_impl(data: WhatIfRequest):
                 except Exception:
                     pass
 
-    return {
+    res = {
         "status": "success",
         "hours": data.hours,
         "baseline_chart": base_report,
@@ -1975,6 +2106,13 @@ def _predict_whatif_impl(data: WhatIfRequest):
         "comparison_chart": comparison_report,
         "intervention_label": intervention_label,
     }
+    try:
+        cache_json_path.write_text(json.dumps(res), encoding="utf-8")
+        logger.info(f"💾 [What-If Cache] Cached prediction charts for key {cache_key}.")
+    except Exception as e:
+        logger.warning(f"Failed to write cache for {cache_key}: {e}")
+        
+    return res
 
 
 # ── ENGINE LOG VIEWER ─────────────────────────────────────────────────────────

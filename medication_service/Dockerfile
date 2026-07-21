@@ -4,7 +4,7 @@ WORKDIR /app
 
 # Install OS-level dependencies for psycopg2 and pytesseract
 RUN apt-get update && apt-get install -y \
-    libpq-dev gcc tesseract-ocr \
+    libpq-dev gcc tesseract-ocr curl \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Python dependencies

@@ -58,10 +58,10 @@ export async function syncMedicinesFromFirebase(): Promise<void> {
       }
 
       // ✅ KEY FIX: check by Firebase id (which equals the SQLite id)
-      const existing = db.getFirstSync<{ id: number }>(
+      const existing = db.getFirstSync(
         "SELECT id FROM medicines WHERE id = ?",
         [med.id]
-      );
+      ) as { id: number } | null;
 
       if (existing) {
         // Row already in local DB — skip to avoid duplicate

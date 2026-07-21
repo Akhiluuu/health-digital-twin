@@ -17,13 +17,13 @@ export async function buildCognitiveContext(uid: string): Promise<CogCtx> {
   try {
     const { db } = await import('../../database/index');
 
-    const rows = await db.getAllAsync<any>(
+    const rows = (await db.getAllAsync(
       `SELECT overall_score, completed_at FROM cognitive_sessions
        WHERE uid = ?
        ORDER BY completed_at DESC
        LIMIT 10`,
       [uid]
-    );
+    )) as any[];
 
     if (!rows || rows.length === 0) {
       return { lastSessionAt: null, daysSinceLastSession: null, lastScore: null, sessionCount: 0, trendDirection: 'unknown' };

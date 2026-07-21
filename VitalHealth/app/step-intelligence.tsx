@@ -923,7 +923,7 @@ const s = StyleSheet.create({
   historySummaryRow: { flexDirection: "row", justifyContent: "space-between", marginBottom: 16, paddingHorizontal: 4 },
   historySummaryVal: { fontSize: 18, fontWeight: "900" },
   historySummaryLbl: { fontSize: 9, letterSpacing: 0.5, marginTop: 2 },
-  chartContainer: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-end", height: 110, paddingTop: 10, paddingBottom: 5 },
+  chartContainer: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-end", height: 130, paddingTop: 10, paddingBottom: 5 },
   chartColumn: { alignItems: "center", flex: 1 },
   chartBarValue: { fontSize: 8, fontWeight: "700", marginBottom: 4 },
   chartBarBg: { width: 14, height: 80, borderRadius: 7, overflow: "hidden", justifyContent: "flex-end" },

@@ -93,7 +93,7 @@ export async function processEngagementSignals(profileId: string): Promise<void>
     const { db } = await import('../../database/index');
 
     // Find any rules that were dismissed or ignored 3+ times in a row
-    const ignoredRules = await db.getAllAsync<any>(
+    const ignoredRules = (await db.getAllAsync(
       `SELECT trigger_rule_id, COUNT(*) as cnt
        FROM pie_audit_log
        WHERE profile_id = ? AND decision = 'approved'
@@ -103,7 +103,7 @@ export async function processEngagementSignals(profileId: string): Promise<void>
          )
        GROUP BY trigger_rule_id
        HAVING cnt >= 3`
-    );
+    )) as any[];
 
     for (const row of ignoredRules) {
       const ruleId = row.trigger_rule_id;

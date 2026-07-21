@@ -127,10 +127,10 @@ export async function savePersonaToDB(persona: PersonaModel): Promise<void> {
 
 export async function loadPersonaFromDB(uid: string): Promise<PersonaModel | null> {
   try {
-    const row = await db.getFirstAsync<any>(
+    const row = (await db.getFirstAsync(
       `SELECT * FROM pie_persona WHERE uid = ?`,
       [uid]
-    );
+    )) as any;
     if (!row) return null;
     return {
       uid: row.uid,
@@ -214,13 +214,13 @@ export async function recordInteractionSignal(signal: PIEInteractionSignal): Pro
 export async function getInteractionSignals(profileId: string, limitDays = 30): Promise<PIEInteractionSignal[]> {
   try {
     const cutoff = new Date(Date.now() - limitDays * 86400_000).toISOString();
-    const rows = await db.getAllAsync<any>(
+    const rows = (await db.getAllAsync(
       `SELECT * FROM pie_interaction_signals
        WHERE profile_id = ? AND interacted_at >= ?
        ORDER BY interacted_at DESC`,
       [profileId, cutoff]
-    );
-    return rows.map(r => ({
+    )) as any[];
+    return rows.map((r: any) => ({
       candidateId: r.candidate_id,
       profileId: r.profile_id,
       interaction: r.interaction,
@@ -239,10 +239,10 @@ export async function getInteractionSignals(profileId: string, limitDays = 30): 
 
 export async function getRuleState(ruleId: string, profileId: string) {
   try {
-    return await db.getFirstAsync<any>(
+    return (await db.getFirstAsync(
       `SELECT * FROM pie_rule_state WHERE rule_id = ? AND profile_id = ?`,
       [ruleId, profileId]
-    );
+    )) as any;
   } catch {
     return null;
   }
@@ -275,10 +275,10 @@ export async function updateRuleState(
 export async function wasBriefSentToday(profileId: string, briefType: 'morning' | 'evening' | 'weekly'): Promise<boolean> {
   try {
     const today = new Date().toISOString().slice(0, 10);
-    const row = await db.getFirstAsync<any>(
+    const row = (await db.getFirstAsync(
       `SELECT sent_at FROM pie_brief_state WHERE profile_id = ? AND brief_type = ?`,
       [profileId, briefType]
-    );
+    )) as any;
     if (!row) return false;
     return String(row.sent_at).slice(0, 10) === today;
   } catch {

@@ -94,12 +94,12 @@ export async function getTodayWater() {
 
 export async function getHydrationHistory(days: number = 7): Promise<{ date: string; amount: number }[]> {
   try {
-    return (await db.getAllAsync<{ date: string; amount: number }>(
+    return ((await db.getAllAsync(
       `SELECT date, amount FROM hydration
        ORDER BY date DESC
        LIMIT ?`,
       [days]
-    )) || [];
+    )) as { date: string; amount: number }[]) || [];
   } catch (error) {
     log("❌ Hydration history error:", error);
     return [];

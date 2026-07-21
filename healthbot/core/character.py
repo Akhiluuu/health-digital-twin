@@ -118,7 +118,7 @@ FAREWELL_RESPONSE = (
 )
 # ── Context window ────────────────────────────────────────────────────────────
 
-MAX_HISTORY_TURNS = 0  # each turn = 1 user + 1 AI message
+MAX_HISTORY_TURNS = 3  # each turn = 1 user + 1 AI message
 
 # ── Keyword sets ──────────────────────────────────────────────────────────────
 

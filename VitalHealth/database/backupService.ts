@@ -18,6 +18,7 @@
 
 import * as WebBrowser from "expo-web-browser";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import * as SecureStore from "expo-secure-store";
 import { db } from "./index";
 
 import { log, warn, error } from "../utils/logger";
@@ -155,8 +156,8 @@ export async function importDBFromJSON(json: string): Promise<void> {
 
 async function getStoredAccessToken(): Promise<string | null> {
   try {
-    const token = await AsyncStorage.getItem(ACCESS_TOKEN_KEY);
-    const expiry = await AsyncStorage.getItem(TOKEN_EXPIRY_KEY);
+    const token = await SecureStore.getItemAsync(ACCESS_TOKEN_KEY);
+    const expiry = await SecureStore.getItemAsync(TOKEN_EXPIRY_KEY);
     if (token && expiry && Date.now() < Number(expiry)) return token;
     return null;
   } catch {
@@ -165,11 +166,15 @@ async function getStoredAccessToken(): Promise<string | null> {
 }
 
 async function storeAccessToken(token: string, expiresInSeconds: number) {
-  await AsyncStorage.setItem(ACCESS_TOKEN_KEY, token);
-  await AsyncStorage.setItem(
-    TOKEN_EXPIRY_KEY,
-    String(Date.now() + expiresInSeconds * 1000 - 60_000) // 1-min buffer
-  );
+  try {
+    await SecureStore.setItemAsync(ACCESS_TOKEN_KEY, token);
+    await SecureStore.setItemAsync(
+      TOKEN_EXPIRY_KEY,
+      String(Date.now() + expiresInSeconds * 1000 - 60_000) // 1-min buffer
+    );
+  } catch (err) {
+    warn("⚠️ Failed to securely store access token:", err);
+  }
 }
 
 export async function signInWithGoogle(): Promise<string> {
@@ -222,17 +227,21 @@ export async function signInWithGoogle(): Promise<string> {
   if (!code) throw new Error("No authorization code in redirect.");
 
   // Exchange the code for an access token
+  const tokenParams: Record<string, string> = {
+    code,
+    client_id: GOOGLE_CLIENT_ID,
+    redirect_uri: REDIRECT_URI,
+    grant_type: "authorization_code",
+    code_verifier: codeVerifier,
+  };
+  if (GOOGLE_CLIENT_SECRET) {
+    tokenParams.client_secret = GOOGLE_CLIENT_SECRET;
+  }
+
   const tokenResponse = await fetch("https://oauth2.googleapis.com/token", {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({
-      code,
-      client_id: GOOGLE_CLIENT_ID,
-      client_secret: GOOGLE_CLIENT_SECRET,
-      redirect_uri: REDIRECT_URI,
-      grant_type: "authorization_code",
-      code_verifier: codeVerifier,
-    }).toString(),
+    body: new URLSearchParams(tokenParams).toString(),
   });
 
   const tokenData = await tokenResponse.json();
@@ -245,8 +254,10 @@ export async function signInWithGoogle(): Promise<string> {
 }
 
 export async function signOutGoogle() {
-  await AsyncStorage.removeItem(ACCESS_TOKEN_KEY);
-  await AsyncStorage.removeItem(TOKEN_EXPIRY_KEY);
+  try {
+    await SecureStore.deleteItemAsync(ACCESS_TOKEN_KEY);
+    await SecureStore.deleteItemAsync(TOKEN_EXPIRY_KEY);
+  } catch (_) {}
   log("✅ Google Drive signed out.");
 }
 

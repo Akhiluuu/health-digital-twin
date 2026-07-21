@@ -6,6 +6,7 @@
 import { db } from "./index";
 import { log, error } from "../utils/logger";
 import { initPIETables } from "./pieDB";
+import { initVitalsDB } from "./vitalsDB";
 
 export { db };
 
@@ -191,6 +192,25 @@ export const initAllTables = async (): Promise<void> => {
         twinReminderEnabled INTEGER DEFAULT 1,
         muted               INTEGER DEFAULT 0
       );
+
+      -- ── Vitals Log ───────────────────────────────────────────────────────────
+      CREATE TABLE IF NOT EXISTS vitals_log (
+        id                  TEXT PRIMARY KEY NOT NULL,
+        timestamp           INTEGER NOT NULL,
+        date                TEXT NOT NULL,
+        time                TEXT NOT NULL,
+        heartRate           INTEGER,
+        bpSystolic          INTEGER,
+        bpDiastolic         INTEGER,
+        spo2                INTEGER,
+        temperature         REAL,
+        respiratoryRate     INTEGER,
+        weight              REAL,
+        bloodGlucose        INTEGER,
+        feeling             TEXT,
+        medicationTaken     INTEGER,
+        notes               TEXT
+      );
     `);
 
     // Migrate simulation_history table for older installations
@@ -223,6 +243,9 @@ export const initAllTables = async (): Promise<void> => {
 
     // Initialize PIE-specific tables
     await initPIETables();
+    
+    // Initialize Vitals Log table
+    await initVitalsDB();
   } catch (err: unknown) {
     error("❌ initAllTables error:", err);
     throw error;

@@ -24,10 +24,10 @@ export async function buildBehaviorContext(
     try {
       const { db } = await import('../../database/index');
       const today = new Date().toISOString().slice(0, 10);
-      const hydRow = await db.getFirstAsync<{ amount: number }>(
+      const hydRow = (await db.getFirstAsync(
         `SELECT amount FROM hydration WHERE date = ?`,
         [today]
-      );
+      )) as { amount: number } | null;
       hydrationTodayMl = hydRow?.amount ?? 0;
 
       const AsyncStorage = (await import('@react-native-async-storage/async-storage')).default;
@@ -48,10 +48,10 @@ export async function buildBehaviorContext(
         const d = new Date();
         d.setDate(d.getDate() - i);
         const dateStr = d.toISOString().slice(0, 10);
-        const row = await db.getFirstAsync<{ steps: number }>(
+        const row = (await db.getFirstAsync(
           `SELECT steps FROM steps WHERE date = ?`,
           [dateStr]
-        ).catch(() => null);
+        ).catch(() => null)) as { steps: number } | null;
         const daySteps = row?.steps ?? (i === 0 ? stepsTodayReal : null);
         if (daySteps == null) break;
         if (daySteps >= ACTIVE_THRESHOLD) {

@@ -115,7 +115,7 @@ export const getNotificationsDB = async (options?: {
     // Newest first
     queryStr += ` ORDER BY timestamp DESC`;
 
-    const rows = await db.getAllAsync<any>(queryStr, params);
+    const rows = (await db.getAllAsync(queryStr, params)) as any[];
 
     return rows.map((r) => ({
       id: r.id,
@@ -242,10 +242,10 @@ export const getNotificationPrefsDB = async (
   profileId: string
 ): Promise<NotificationPrefs> => {
   try {
-    const row = await db.getFirstAsync<any>(
+    const row = (await db.getFirstAsync(
       `SELECT * FROM notification_preferences WHERE profileId = ?`,
       [profileId]
-    );
+    )) as any;
     if (row) {
       return {
         profileId: row.profileId,

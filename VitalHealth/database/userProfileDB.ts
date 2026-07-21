@@ -76,10 +76,10 @@ export async function saveUserProfile(profile: Partial<UserProfile> & { uid: str
 
 export async function getLocalProfile(uid: string): Promise<UserProfile | null> {
   try {
-    return (await db.getFirstAsync<UserProfile>(
+    return ((await db.getFirstAsync(
       "SELECT * FROM user_profile WHERE uid = ?",
       [uid]
-    )) ?? null;
+    )) as UserProfile | null) ?? null;
   } catch (error) {
     log("❌ getLocalProfile error:", error);
     return null;
@@ -90,9 +90,9 @@ export async function getLocalProfile(uid: string): Promise<UserProfile | null> 
 
 export async function getAnyLocalProfile(): Promise<UserProfile | null> {
   try {
-    return (await db.getFirstAsync<UserProfile>(
+    return ((await db.getFirstAsync(
       "SELECT * FROM user_profile ORDER BY registered_at DESC LIMIT 1"
-    )) ?? null;
+    )) as UserProfile | null) ?? null;
   } catch (error) {
     log("❌ getAnyLocalProfile error:", error);
     return null;

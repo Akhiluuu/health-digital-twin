@@ -443,6 +443,30 @@ export default function HomeScreen() {
           />
         </View>
 
+        {/* ── LOG VITALS TAB ── */}
+        <TouchableOpacity
+          style={[
+            styles.logVitalsTab,
+            {
+              backgroundColor: c.card,
+              borderColor: c.border,
+            }
+          ]}
+          onPress={() => router.push("/LogVitalsScreen" as any)}
+          activeOpacity={0.8}
+        >
+          <View style={styles.logVitalsContent}>
+            <View style={[styles.logVitalsIconWrapper, { backgroundColor: c.accent + "15" }]}>
+              <Ionicons name="clipboard-outline" size={22} color={c.accent} />
+            </View>
+            <View style={styles.logVitalsTextWrapper}>
+              <Text style={[styles.logVitalsTitle, { color: c.text }]}>Log Vitals</Text>
+              <Text style={[styles.logVitalsSub, { color: c.sub }]}>Record your latest health measurements</Text>
+            </View>
+          </View>
+          <Ionicons name="chevron-forward" size={18} color={c.sub} />
+        </TouchableOpacity>
+
         {/* ── GOALS CONVERGENCE DASHBOARD ── */}
         <View style={styles.sectionHeaderRow}>
           <Text style={[styles.sectionTitle, { color: c.text }]}>Goals Convergence</Text>
@@ -1397,5 +1421,44 @@ const styles = StyleSheet.create({
   toastText: {
     fontWeight: "700",
     fontSize: 13,
+  },
+  logVitalsTab: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    padding: 16,
+    borderRadius: 20,
+    borderWidth: 1,
+    marginTop: 10,
+    marginBottom: 20,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.03,
+    shadowRadius: 10,
+    elevation: 2,
+  },
+  logVitalsContent: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    flex: 1,
+  },
+  logVitalsIconWrapper: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  logVitalsTextWrapper: {
+    flex: 1,
+    gap: 2,
+  },
+  logVitalsTitle: {
+    fontSize: 15,
+    fontWeight: "800",
+  },
+  logVitalsSub: {
+    fontSize: 12,
   },
 });

@@ -7,6 +7,7 @@ import os
 import json
 import sqlite3
 import contextvars
+import threading
 from typing import Optional, Dict, Any
 from pathlib import Path
 from biogears_service.simulation.config import BASE_DIR
@@ -23,6 +24,7 @@ POSTGRES_PORT = os.environ.get("POSTGRES_PORT", "5432")
 SQLITE_PATH = BASE_DIR / "twins_database.db"
 
 _db_initialized = False
+_db_init_lock = threading.Lock()
 
 # ContextVar to track the requester for HIPAA compliance auditing
 current_actor = contextvars.ContextVar("current_actor", default="system")
@@ -54,28 +56,30 @@ def get_connection():
                 port=POSTGRES_PORT
             )
         if not _db_initialized:
-            with conn.cursor() as cur:
-                # Core profiles table
-                cur.execute("""
-                    CREATE TABLE IF NOT EXISTS profiles (
-                        user_id VARCHAR(255) PRIMARY KEY,
-                        metadata JSONB NOT NULL
-                    );
-                """)
-                # PHI Access Audit trail table
-                cur.execute("""
-                    CREATE TABLE IF NOT EXISTS audit_logs (
-                        id SERIAL PRIMARY KEY,
-                        timestamp TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-                        user_id VARCHAR(255) NOT NULL,
-                        action VARCHAR(50) NOT NULL,
-                        performed_by VARCHAR(255) NOT NULL,
-                        details TEXT
-                    );
-                """)
-                cur.execute("CREATE INDEX IF NOT EXISTS idx_audit_logs_user_id ON audit_logs(user_id);")
-                conn.commit()
-            _db_initialized = True
+            with _db_init_lock:
+                if not _db_initialized:
+                    with conn.cursor() as cur:
+                        # Core profiles table
+                        cur.execute("""
+                            CREATE TABLE IF NOT EXISTS profiles (
+                                user_id VARCHAR(255) PRIMARY KEY,
+                                metadata JSONB NOT NULL
+                            );
+                        """)
+                        # PHI Access Audit trail table
+                        cur.execute("""
+                            CREATE TABLE IF NOT EXISTS audit_logs (
+                                id SERIAL PRIMARY KEY,
+                                timestamp TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+                                user_id VARCHAR(255) NOT NULL,
+                                action VARCHAR(50) NOT NULL,
+                                performed_by VARCHAR(255) NOT NULL,
+                                details TEXT
+                            );
+                        """)
+                        cur.execute("CREATE INDEX IF NOT EXISTS idx_audit_logs_user_id ON audit_logs(user_id);")
+                        conn.commit()
+                    _db_initialized = True
         return conn, True
     else:
         conn = sqlite3.connect(str(SQLITE_PATH), timeout=30.0)
@@ -87,27 +91,29 @@ def get_connection():
             logging.getLogger(__name__).warning(f"⚠️ Failed to set SQLite PRAGMAs: {pragma_err}")
 
         if not _db_initialized:
-            with conn:
-                # Core profiles table
-                conn.execute("""
-                    CREATE TABLE IF NOT EXISTS profiles (
-                        user_id TEXT PRIMARY KEY,
-                        metadata TEXT NOT NULL
-                    );
-                """)
-                # PHI Access Audit trail table
-                conn.execute("""
-                    CREATE TABLE IF NOT EXISTS audit_logs (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
-                        user_id TEXT NOT NULL,
-                        action TEXT NOT NULL,
-                        performed_by TEXT NOT NULL,
-                        details TEXT
-                    );
-                """)
-                conn.execute("CREATE INDEX IF NOT EXISTS idx_audit_logs_user_id ON audit_logs(user_id);")
-            _db_initialized = True
+            with _db_init_lock:
+                if not _db_initialized:
+                    with conn:
+                        # Core profiles table
+                        conn.execute("""
+                            CREATE TABLE IF NOT EXISTS profiles (
+                                user_id TEXT PRIMARY KEY,
+                                metadata TEXT NOT NULL
+                            );
+                        """)
+                        # PHI Access Audit trail table
+                        conn.execute("""
+                            CREATE TABLE IF NOT EXISTS audit_logs (
+                                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+                                user_id TEXT NOT NULL,
+                                action TEXT NOT NULL,
+                                performed_by TEXT NOT NULL,
+                                details TEXT
+                            );
+                        """)
+                        conn.execute("CREATE INDEX IF NOT EXISTS idx_audit_logs_user_id ON audit_logs(user_id);")
+                    _db_initialized = True
         return conn, False
 
 
@@ -245,8 +251,7 @@ def delete_profile(user_id: str) -> bool:
             with conn:
                 cur = conn.cursor()
                 cur.execute("DELETE FROM profiles WHERE user_id = ?;", (user_id,))
-                changes = conn.total_changes
-                existed = changes > 0
+                existed = cur.rowcount > 0
                 if existed:
                     write_audit_log(conn, is_pg, user_id, "DELETE", actor, "Profile deleted")
                 return existed

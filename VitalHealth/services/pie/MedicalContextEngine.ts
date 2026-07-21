@@ -115,9 +115,9 @@ export async function buildMedicalContext(profileId: string): Promise<MedicalCon
     let lastTakenAt: string | null = null;
     try {
       const { db } = await import('../../database/index');
-      const row = await db.getFirstAsync<any>(
+      const row = (await db.getFirstAsync(
         `SELECT takenAt FROM medicine_history ORDER BY takenAt DESC LIMIT 1`
-      );
+      )) as { takenAt: string } | null;
       lastTakenAt = row?.takenAt ?? null;
     } catch {
       // Ignore

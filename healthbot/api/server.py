@@ -21,6 +21,7 @@ import socket
 import tempfile
 import re
 import time as _time
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import List, Optional, Dict
 
@@ -55,23 +56,28 @@ except Exception:
 
 log = get_logger(__name__)
 
-# ── App ───────────────────────────────────────────────────────────────────────
+# ── Singletons ────────────────────────────────────────────────────────────────
 
-app = FastAPI(
-    title="Health AI v3",
-    description="Offline personal medical AI — Dr. Aria powered by Qwen2.5-14B-Instruct.",
-    version="3.0.0",
-)
+_embedder: Optional[EmbeddingModel] = None
+_llm:      Optional[LLMEngine]      = None
+_chunker:  Optional[TextChunker]    = None
+_reader:   Optional[DocumentReader] = None
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
 
+def _get_local_ip() -> str:
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80))
+        ip = s.getsockname()[0]
+        s.close()
+        return ip
+    except Exception:
+        return "127.0.0.1"
+
+
+# ── Env loading ───────────────────────────────────────────────────────────────
 # Set env var DIGITAL_TWIN_API_KEY to require callers to pass an API key.
+
 def _load_env_fallback():
     for path in [
         Path(".env"),
@@ -152,27 +158,11 @@ async def require_api_key(
         detail="Invalid or missing API key (X-API-Key) or Firebase ID Token (Bearer)."
     )
 
-# ── Singletons ────────────────────────────────────────────────────────────────
 
-_embedder: Optional[EmbeddingModel] = None
-_llm:      Optional[LLMEngine]      = None
-_chunker:  Optional[TextChunker]    = None
-_reader:   Optional[DocumentReader] = None
+# ── Lifespan (replaces deprecated @app.on_event) ─────────────────────────────
 
-
-def _get_local_ip() -> str:
-    try:
-        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        s.connect(("8.8.8.8", 80))
-        ip = s.getsockname()[0]
-        s.close()
-        return ip
-    except Exception:
-        return "127.0.0.1"
-
-
-@app.on_event("startup")
-async def startup():
+@asynccontextmanager
+async def lifespan(application: FastAPI):
     global _embedder, _llm, _chunker, _reader
 
     port   = int(os.environ.get("PORT", 8000))
@@ -203,6 +193,26 @@ async def startup():
     print("\n" + "═" * 58)
     print("  ✅  Dr. Aria is ready!")
     print("═" * 58 + "\n")
+
+    yield  # Application runs
+
+
+# ── App ───────────────────────────────────────────────────────────────────────
+
+app = FastAPI(
+    title="Health AI v3",
+    description="Offline personal medical AI — Dr. Aria powered by Qwen2.5-14B-Instruct.",
+    version="3.0.0",
+    lifespan=lifespan,
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 # ── Request / Response models ─────────────────────────────────────────────────
@@ -1254,16 +1264,16 @@ async def generate(request: GenerateRequest, auth: dict = Depends(require_api_ke
 # ── v2 compatibility routes ───────────────────────────────────────────────────
 
 
-@app.post("/generate/{profile_id}", response_model=GenerateResponse, tags=["v2 compat"], dependencies=[Depends(require_api_key)])
-async def generate_compat(profile_id: str, request: GenerateRequest):
+@app.post("/generate/{profile_id}", response_model=GenerateResponse, tags=["v2 compat"])
+async def generate_compat(profile_id: str, request: GenerateRequest, auth: dict = Depends(require_api_key)):
     log.info(f"v2 compat: /generate/{profile_id}")
-    return await generate(request)
+    return await generate(request, auth=auth)
 
 
-@app.post("/query/{profile_id}", response_model=GenerateResponse, tags=["v2 compat"], dependencies=[Depends(require_api_key)])
-async def query_compat(profile_id: str, request: GenerateRequest):
+@app.post("/query/{profile_id}", response_model=GenerateResponse, tags=["v2 compat"])
+async def query_compat(profile_id: str, request: GenerateRequest, auth: dict = Depends(require_api_key)):
     log.info(f"v2 compat: /query/{profile_id}")
-    return await generate(request)
+    return await generate(request, auth=auth)
 
 
 @app.post("/upload-and-embed/{profile_id}", response_model=UploadResponse,

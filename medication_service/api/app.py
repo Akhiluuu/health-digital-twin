@@ -6,6 +6,7 @@ import logging
 import os
 import time
 import uuid
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -17,6 +18,34 @@ from medication_service.database.migrations import run_migrations
 
 logger = logging.getLogger(__name__)
 
+
+# ── Lifespan (replaces deprecated @app.on_event) ─────────────────────────────
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # ── Startup ───────────────────────────────────────────────────────────────
+    logging.basicConfig(level=logging.INFO)
+    logger.info("🚀 Medication Vault API starting up...")
+    try:
+        import psycopg2
+        database_url = os.environ.get("DATABASE_URL")
+        if database_url:
+            conn = psycopg2.connect(database_url)
+            run_migrations(conn)
+    except Exception as e:
+        logger.warning(f"Migration on startup failed (may already be applied): {e}")
+    try:
+        await get_pool()
+        logger.info("✅ Database pool ready")
+    except Exception as e:
+        logger.error(f"❌ Database pool failed: {e}")
+
+    yield  # Application runs
+
+    # ── Shutdown ──────────────────────────────────────────────────────────────
+    await close_pool()
+    logger.info("👋 Medication Vault API shutdown complete")
+
+
 app = FastAPI(
     title="VitalHealth Medication Vault API",
     description="Enterprise-grade Medication Intelligence Center — REST API for the VitalHealth Digital Twin Platform.",
@@ -24,6 +53,7 @@ app = FastAPI(
     docs_url="/api/v1/medication/docs",
     redoc_url="/api/v1/medication/redoc",
     openapi_url="/api/v1/medication/openapi.json",
+    lifespan=lifespan,
 )
 
 # ── CORS ──────────────────────────────────────────────────────────────────────
@@ -58,32 +88,6 @@ async def global_exception_handler(request: Request, exc: Exception):
         status_code=500,
         content={"success": False, "message": "Internal server error", "detail": str(exc)},
     )
-
-
-# ── Lifespan ──────────────────────────────────────────────────────────────────
-@app.on_event("startup")
-async def startup():
-    logging.basicConfig(level=logging.INFO)
-    logger.info("🚀 Medication Vault API starting up...")
-    try:
-        import psycopg2, os
-        database_url = os.environ.get("DATABASE_URL")
-        if database_url:
-            conn = psycopg2.connect(database_url)
-            run_migrations(conn)
-    except Exception as e:
-        logger.warning(f"Migration on startup failed (may already be applied): {e}")
-    try:
-        await get_pool()
-        logger.info("✅ Database pool ready")
-    except Exception as e:
-        logger.error(f"❌ Database pool failed: {e}")
-
-
-@app.on_event("shutdown")
-async def shutdown():
-    await close_pool()
-    logger.info("👋 Medication Vault API shutdown complete")
 
 
 # ── Routers ───────────────────────────────────────────────────────────────────

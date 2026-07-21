@@ -38,10 +38,10 @@ export async function addHydrationEntry(
 ) {
   try {
     // Prevent duplicate entries with the exact same timestamp
-    const existing = db.getFirstSync<{ id: number }>(
+    const existing = db.getFirstSync(
       `SELECT id FROM hydration_history WHERE timestamp = ?`,
       [timestamp]
-    );
+    ) as { id: number } | null;
     if (existing) {
       log(`💧 History entry with timestamp ${timestamp} already exists in SQLite, skipping.`);
       return;

@@ -115,10 +115,10 @@ export async function deleteSimulationResult(uid: string, sessionId: string): Pr
 
 export async function getLastSimulation(uid: string): Promise<SimulationRecord | null> {
   try {
-    return (await db.getFirstAsync<SimulationRecord>(
+    return ((await db.getFirstAsync(
       "SELECT * FROM simulation_history WHERE uid = ? ORDER BY run_at DESC LIMIT 1",
       [uid]
-    )) ?? null;
+    )) as SimulationRecord | null) ?? null;
   } catch (error) {
     log("❌ getLastSimulation error:", error);
     return null;
@@ -129,10 +129,10 @@ export async function getLastSimulation(uid: string): Promise<SimulationRecord |
 
 export async function getSimulationHistory(uid: string, limit: number = 10000): Promise<SimulationRecord[]> {
   try {
-    return (await db.getAllAsync<SimulationRecord>(
+    return ((await db.getAllAsync(
       "SELECT * FROM simulation_history WHERE uid = ? ORDER BY run_at DESC LIMIT ?",
       [uid, limit]
-    )) || [];
+    )) as SimulationRecord[]) || [];
   } catch (error) {
     log("❌ getSimulationHistory error:", error);
     return [];
