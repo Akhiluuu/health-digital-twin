@@ -12,7 +12,7 @@ Endpoints:
     POST /generate              LLM generation from query + chunks
     GET  /health                Health check
     GET  /server/info           Server metadata
-    GET  /greeting              Dr. Aria's welcome message
+    GET  /greeting              Personal Health Assistant's welcome message
 """
 
 import asyncio
@@ -169,7 +169,7 @@ async def lifespan(application: FastAPI):
     lan_ip = _get_local_ip()
 
     print("\n" + "═" * 58)
-    print("  🩺  Health AI v3  —  Dr. Aria is loading …")
+    print("  🩺  Health AI v3  —  Personal Health Assistant is loading …")
     print("═" * 58)
     print(f"  Local:   http://localhost:{port}")
     print(f"  Network: http://{lan_ip}:{port}   ← use this in the app")
@@ -191,7 +191,7 @@ async def lifespan(application: FastAPI):
     _reader  = DocumentReader()
 
     print("\n" + "═" * 58)
-    print("  ✅  Dr. Aria is ready!")
+    print("  ✅  Personal Health Assistant is ready!")
     print("═" * 58 + "\n")
 
     yield  # Application runs
@@ -201,7 +201,7 @@ async def lifespan(application: FastAPI):
 
 app = FastAPI(
     title="Health AI v3",
-    description="Offline personal medical AI — Dr. Aria powered by Qwen2.5-14B-Instruct.",
+    description="Offline personal medical AI — Personal Health Assistant powered by Qwen2.5-14B-Instruct.",
     version="3.0.0",
     lifespan=lifespan,
 )
@@ -554,7 +554,7 @@ async def _handle_medicine_query(query: str, q: str, medicines) -> str:
                 drug_hint = "Verified drug metadata is available."
             elif api_info.get("label"):
                 drug_hint = "Verified label information is available."
-        prompt = f"""You are Dr. Aria, a warm and simple health assistant.
+        prompt = f"""You are a warm and simple personal health assistant.
 
 Medicine: {name}
 Dose: {dose or "not listed"}
@@ -649,7 +649,7 @@ Keep it friendly and easy to understand."""
                                "interaction", "interactions", "contraindication")):
         blocks = []
         for i, med in enumerate(valid_meds, start=1):
-            prompt = f"""You are Dr. Aria, a warm and helpful health assistant.
+            prompt = f"""You are a warm and helpful personal health assistant.
 
 Medicine: {med.name}
 Dose: {med.dose or "not listed"}
@@ -714,7 +714,7 @@ async def _handle_symptom_query(query: str, q: str,
         if not valid_history:
             return "You don't have any resolved symptoms in your history yet. ✅"
         ctx = _build_symptom_context(valid_history)
-        return await _ask_llm(f"""You are Dr. Aria, a warm and supportive health assistant. 🩺
+        return await _ask_llm(f"""You are a warm and supportive personal health assistant. 🩺
 
 The user is reviewing their past symptoms.
 
@@ -735,7 +735,7 @@ Rules:
         specific = _find_mentioned_symptom(q, valid_history)
     if specific:
         ctx = _build_symptom_context(specific)
-        return await _ask_llm(f"""You are Dr. Aria, a warm and supportive health assistant. 🩺
+        return await _ask_llm(f"""You are a warm and supportive personal health assistant. 🩺
 
 The user is asking about a specific symptom.
 
@@ -782,7 +782,7 @@ Rules:
                     if (s.severity or "").lower() in ("critical", "severe", "high")]
         if critical:
             ctx = _build_symptom_context(critical)
-            return await _ask_llm(f"""You are Dr. Aria, a warm but precise health assistant. 🩺
+            return await _ask_llm(f"""You are a warm but precise personal health assistant. 🩺
 
 The user is concerned about the severity of their symptoms.
 
@@ -818,7 +818,7 @@ Rules:
                                "home remedy", "home remedies", "relief",
                                "treat", "treatment", "help with")):
         ctx = _build_symptom_context(valid_active)
-        return await _ask_llm(f"""You are Dr. Aria, a warm and practical health assistant. 🩺
+        return await _ask_llm(f"""You are a warm and practical personal health assistant. 🩺
 
 The user wants home-care advice for their symptoms.
 
@@ -849,7 +849,7 @@ Rules:
         if has_critical else ""
     )
 
-    return await _ask_llm(f"""You are Dr. Aria, a warm and supportive health assistant. 🩺
+    return await _ask_llm(f"""You are a warm and supportive personal health assistant. 🩺
 
 Active symptoms:
 {ctx}
@@ -904,7 +904,7 @@ async def _handle_food_lifestyle_query(query: str, q: str, medicines, active_sym
     if specific:
         med_ctx = _build_enriched_medicine_context(specific)
 
-    return await _ask_llm(f"""You are Dr. Aria, a warm and knowledgeable health assistant. 🩺
+    return await _ask_llm(f"""You are a warm and knowledgeable personal health assistant. 🩺
 
 The user has a food or lifestyle question related to their medicines and symptoms.
 
@@ -968,7 +968,7 @@ async def _handle_cross_domain_query(query: str, q: str,
     focused_med_ctx = _build_medicine_context(specific_med) if specific_med else med_ctx
     focused_sym_ctx = _build_symptom_context(specific_sym) if specific_sym else sym_ctx
 
-    return await _ask_llm(f"""You are Dr. Aria, a warm and analytical health assistant. 🩺
+    return await _ask_llm(f"""You are a warm and analytical personal health assistant. 🩺
 
 The user wants to understand whether their medicines and symptoms might be connected.
 
@@ -1056,8 +1056,8 @@ async def _route_patient_context_query(
 
 @app.get("/greeting", tags=["System"])
 async def greeting():
-    """Returns Dr. Aria's introduction message. Call on app startup."""
-    return {"message": GREETING_RESPONSE, "character": "Dr. Aria"}
+    """Returns introduction message. Call on app startup."""
+    return {"message": GREETING_RESPONSE, "character": "Personal Health Assistant"}
 
 
 @app.get("/health", tags=["System"])
@@ -1076,7 +1076,7 @@ async def server_info():
     port = int(os.environ.get("PORT", 8000))
     return {
         "server":          "Health AI v3",
-        "character":       "Dr. Aria",
+        "character":       "Personal Health Assistant",
         "lan_ip":          _get_local_ip(),
         "port":            port,
         "llm_ready":       (_llm is not None and _llm._loaded),

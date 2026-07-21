@@ -2,7 +2,7 @@
 safety.py — Red flag detection and disclaimer injection for Health AI v3.
 
 Red flags are medical emergencies or concerning query patterns that should
-trigger an urgent notice appended to Dr. Aria's response.
+trigger an urgent notice appended to Personal Health Assistant's response.
 """
 
 _URGENT_KEYWORDS = frozenset([
@@ -28,7 +28,7 @@ _URGENT_KEYWORDS = frozenset([
 # Disclaimer appended to EVERY response
 DISCLAIMER = (
     "\n\n---\n"
-    "*Dr. Aria is an AI assistant, not a licensed doctor. "
+    "*Personal Health Assistant is an AI assistant, not a licensed doctor. "
     "This information is for educational purposes only. "
     "Always consult a qualified healthcare professional for medical advice, "
     "diagnosis, or treatment.*"

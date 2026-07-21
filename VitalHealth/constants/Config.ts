@@ -88,7 +88,7 @@ export async function getCentralMedApiUrl(): Promise<string> {
   return `${base}/medication`;
 }
 
-/** Get the AI/Dr. Aria API base URL */
+/** Get the AI/Personal Health Assistant API base URL */
 export async function getCentralAiBaseUrl(): Promise<string> {
   const base = await getCentralBiogearsBaseUrl();
   return `${base}/ai`;

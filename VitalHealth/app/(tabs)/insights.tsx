@@ -71,7 +71,7 @@ function AIInsightsCard({
           <Text style={{ fontSize: 16 }}>🧬</Text>
         </LinearGradient>
         <View style={{ flex: 1, marginLeft: 12 }}>
-          <Text style={[S.aiTitle, { color: c.text }]}>Dr. Aria's Analysis</Text>
+          <Text style={[S.aiTitle, { color: c.text }]}>Assistant's Analysis</Text>
           <Text style={[S.aiSub, { color: c.sub }]}>
             {isLoading ? 'Generating personalised insights…' : 'AI-powered simulation insights'}
           </Text>
@@ -133,7 +133,7 @@ function SimulationChat({
 }: { lastVitals: any; querySimulation: (q: string) => Promise<string>; theme: any }) {
   const [messages, setMessages] = useState<ChatMessage[]>([{
     id: 'init', role: 'ai',
-    text: "Hi! I'm Dr. Aria 👩‍⚕️ Ask me anything about your latest simulation — your vitals, anomalies, or what the numbers mean for you.",
+    text: "Hi! I'm your Personal Health Assistant 👩‍⚕️ Ask me anything about your latest simulation — your vitals, anomalies, or what the numbers mean for you.",
   }]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
@@ -273,8 +273,8 @@ export default function InsightsScreen() {
         <Text style={[S.sectionTitle, { color: c.text }]}>AI Health Analysis</Text>
         <AIInsightsCard insightsText={lastAiInsightsText} bulletPoints={lastAiInsights} isLoading={aiInsightsLoading} theme={c} />
 
-        {/* ASK DR. ARIA */}
-        <Text style={[S.sectionTitle, { color: c.text }]}>Ask Dr. Aria</Text>
+        {/* ASK PERSONAL HEALTH ASSISTANT */}
+        <Text style={[S.sectionTitle, { color: c.text }]}>Ask Personal Health Assistant</Text>
         <SimulationChat lastVitals={lastVitals} querySimulation={querySimulation} theme={c} />
 
         {/* NUTRITION */}

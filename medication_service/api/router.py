@@ -392,7 +392,7 @@ async def barcode_lookup(
 
 # ─── AI ASSISTANT ─────────────────────────────────────────────────────────────
 
-@router.post("/ai/chat", summary="Chat with Dr. Aria AI medication assistant")
+@router.post("/ai/chat", summary="Chat with Personal Health Assistant AI medication assistant")
 async def ai_chat(
     payload: AIChatRequest,
     user: CurrentUser = Depends(get_current_user),

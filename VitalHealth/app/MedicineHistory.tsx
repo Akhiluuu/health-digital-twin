@@ -198,9 +198,7 @@ export default function MedicineHistory() {
             Medicine History
           </Text>
 
-          <TouchableOpacity onPress={handleClearAll}>
-            <Ionicons name="trash-outline" size={24} color="#ef4444" />
-          </TouchableOpacity>
+          <View style={{ width: 24 }} />
         </View>
 
         {/* History list */}
@@ -279,13 +277,6 @@ export default function MedicineHistory() {
                     Logged At:{" "}
                     {new Date(selectedEntry.takenAt).toLocaleString()}
                   </Text>
-
-                  <TouchableOpacity
-                    style={styles.deleteButton}
-                    onPress={() => handleDeleteEntry(selectedEntry.id)}
-                  >
-                    <Text style={{ color: "#fff" }}>Delete Entry</Text>
-                  </TouchableOpacity>
 
                   <TouchableOpacity onPress={() => setModalVisible(false)}>
                     <Text style={{ marginTop: 12, color: c.sub }}>

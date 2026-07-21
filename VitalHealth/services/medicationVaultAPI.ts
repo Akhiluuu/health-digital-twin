@@ -5,7 +5,7 @@
 // Architecture: All traffic goes through nginx on port 80.
 //   http://151.185.45.137/medication/  → localhost:8002 (Medication Vault)
 //   http://151.185.45.137/             → localhost:8000 (BioGears)
-//   http://151.185.45.137/ai/          → localhost:8001 (Dr. Aria)
+//   http://151.185.45.137/ai/          → localhost:8001 (Personal Health Assistant)
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { auth } from './firebase';
@@ -297,8 +297,9 @@ export const downloadReport = async (params: {
 
 // ── AI Chat ───────────────────────────────────────────────────────────────────
 
-export interface AriaPatientContext {
+export interface AssistantPatientContext {
   medicines: Array<{
+    id?: string;
     name?: string;
     dose?: string;
     type?: string;
@@ -326,13 +327,13 @@ export interface AriaPatientContext {
   }>;
 }
 
-export interface AriaChatPayload {
+export interface AssistantChatPayload {
   message: string;
   history?: string[];
-  patient_context?: AriaPatientContext;
+  patient_context?: AssistantPatientContext;
 }
 
-export const chatWithAria = async (payload: AriaChatPayload): Promise<{ data: AIChat }> => {
+export const chatWithAssistant = async (payload: AssistantChatPayload): Promise<{ data: AIChat }> => {
   // Route directly to the healthbot /generate endpoint which has full
   // LLM + patient-context-routing capabilities.
   const base = await getMedApiUrl();
@@ -340,6 +341,15 @@ export const chatWithAria = async (payload: AriaChatPayload): Promise<{ data: AI
   // Extract the VM base from the medication URL (strip /medication suffix)
   // e.g. http://151.185.45.137/medication → http://151.185.45.137
   let botBase = base.replace(/\/medication\/?$/, '');
+
+  // Smart environment routing: Nginx maps /ai/ to port 8001 (healthbot).
+  // In development environments with direct ports, rewrite :8002/:8000 to :8001.
+  let aiUrl = `${botBase}/ai/generate`;
+  if (botBase.includes(':8002')) {
+    aiUrl = botBase.replace(':8002', ':8001') + '/generate';
+  } else if (botBase.includes(':8000')) {
+    aiUrl = botBase.replace(':8000', ':8001') + '/generate';
+  }
 
   const headers = await getAuthHeaders();
 
@@ -352,14 +362,14 @@ export const chatWithAria = async (payload: AriaChatPayload): Promise<{ data: AI
   }
 
   try {
-    const res = await fetch(`${botBase}/generate`, {
+    const res = await fetch(aiUrl, {
       method: 'POST',
       headers: { ...headers, 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     });
-    if (!res.ok) throw new Error(`Aria /generate HTTP ${res.status}`);
+    if (!res.ok) throw new Error(`Assistant /generate HTTP ${res.status}`);
     const json = await res.json();
-    const reply: string = json.response || json.reply || json.answer || 'Dr. Aria is unable to respond at this time.';
+    const reply: string = json.response || json.reply || json.answer || 'Personal health assistant is unable to respond at this time.';
     return {
       data: {
         reply,

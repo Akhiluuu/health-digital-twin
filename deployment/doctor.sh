@@ -7,7 +7,7 @@ set -euo pipefail
 DEPLOY_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$DEPLOY_DIR/config/common.sh"
 
-section "System Diagnostics (Dr. Aria Doctor Tool)"
+section "System Diagnostics (Personal Health Assistant Doctor Tool)"
 
 # 1. OS Info
 echo "--- OS and Kernel ---"

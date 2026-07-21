@@ -426,6 +426,10 @@ export async function handleMedicineTaken(
           targetUid:    profileId,
         });
 
+        // Trigger care circle alert
+        const memberName = await getProfileName(profileId);
+        await showCareMemberTakenNotification(memberName, medicineName || "Medication", dose || "");
+
         if (frequency?.toLowerCase() === "once") {
           await firebaseDeleteMedicine(medIdNum, profileId);
           await notifee.cancelNotification(notifId);
@@ -1468,5 +1472,27 @@ export const cancelDPSSNotifications = async (userId: string): Promise<void> => 
     }
   } catch (err) {
     log("[DPSS] cancelDPSSNotifications error:", err);
+  }
+};
+
+/**
+ * Immediate alert for care member medication logging.
+ */
+export const showCareMemberTakenNotification = async (
+  memberName: string,
+  medicineName: string,
+  dose: string
+): Promise<void> => {
+  try {
+    await notifee.displayNotification({
+      title: "👥 Care Circle Alert",
+      body: `${memberName} has logged their medication: ${medicineName} (${dose}) as taken.`,
+      android: {
+        channelId: CHANNEL_ID,
+        pressAction: { id: "default" },
+      },
+    });
+  } catch (err) {
+    log("Error showing care member taken notification:", err);
   }
 };

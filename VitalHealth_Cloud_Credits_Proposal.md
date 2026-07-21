@@ -83,7 +83,7 @@ graph TD
         B1[BioGears API Server - FastAPI]
         B2[BioGears C++ CLI Engine]
         B3[Clinical Database - SQLite & Firebase Sync]
-        B4[Dr. Aria AI Server - FastAPI]
+        B4[Personal Health Assistant Server - FastAPI]
         B5[Local LLM Engine - Qwen2.5-14B GGUF]
     end
 
@@ -127,7 +127,7 @@ The system initializes the physiological twin using a multi-step demographic onb
     *   *Gut Health:* Measured via glucose fluctuation patterns.
     *   *Brain Health:* Evaluated through cerebral perfusion (MAP) and stress indicators.
 
-### 5.4 Privacy-Preserving On-Device RAG AI Chat (Dr. Aria)
+### 5.4 Privacy-Preserving On-Device RAG AI Chat (Personal Health Assistant)
 To maintain strict compliance with medical data privacy regulations, the platform runs a hybrid RAG system:
 *   **On-Device Extraction:** Text from uploaded medical PDFs or camera snapshots of prescriptions is extracted and chunked locally on the mobile device.
 *   **On-Device Vector Database:** Text chunks are converted into mathematical embeddings and stored locally using the mobile device's SQLite layer.
@@ -157,7 +157,7 @@ To ensure professional compliance, the user interfaces have been structured usin
 |---|---|---|---|
 | **1. Digital Twin Dashboard** | - Top: Circular organ health meters (Heart, Lungs, Gut, Brain) with color-coded grades (A-F).<br>- Center: 3D human physiology silhouette visualization.<br>- Bottom: 8-card grid showing active vitals (HR, BP, Glucose, $SpO_2$, Core Temp, MAP). | - `BiogearsTwinContext` state values.<br>- `/profiles/{user_id}` API metadata.<br>- Latest CSV timeseries output. | Serves as the primary real-time visualization hub for simulated vitals and system health grades. |
 | **2. Daily Routine Logger** | - Horizontal top tab bar (Nutrition, Hydration, Activity, Substances, Sleep, Stress, Fasting).<br>- Input forms with custom slider controls and text inputs for meal macronutrients, exercise intensity, and medication dosages. | - Event payload schemas.<br>- `substance_registry.py` API definitions.<br>- Local SQLite event queue. | Captures patient activity data and packages it into structured JSON objects to send to the simulation engine. |
-| **3. AI Health Chat (Dr. Aria)** | - Clean chat bubbles with message history.<br>- "Attach Document" button with thumbnail preview.<br>- Server latency indicator.<br>- Interactive settings panel to modify the API URL and API key. | - On-device vector store (`AsyncStorage`).<br>- `/ai/chat` endpoint payload.<br>- Retransmitted text context chunks. | Implements privacy-preserving patient consultations grounded in medical documents. |
+| **3. AI Health Chat (Personal Health Assistant)** | - Clean chat bubbles with message history.<br>- "Attach Document" button with thumbnail preview.<br>- Server latency indicator.<br>- Interactive settings panel to modify the API URL and API key. | - On-device vector store (`AsyncStorage`).<br>- `/ai/chat` endpoint payload.<br>- Retransmitted text context chunks. | Implements privacy-preserving patient consultations grounded in medical documents. |
 | **4. Brain Lab & Report** | - Minimalist testing interfaces (grid targets, tap alerts, sequence buttons).<br>- Report summary featuring a composite score (0-100), overall grade, and radar chart showing cognitive strengths/weaknesses. | - `brainEngine.ts` scoring metrics.<br>- Cognitive test response latency.<br>- Firebase user stats sync. | Orchestrates the 4-phase cognitive evaluation and stores historical progress. |
 
 ---
@@ -170,7 +170,7 @@ Securing a stable, year-round cloud credit allocation is a fundamental requireme
 The BioGears engine is a highly detailed computational model. It calculates gas fractions in the alveoli, blood pressure in the chambers of the heart, and fluid volume changes in the kidneys by solving systems of ordinary differential equations (ODEs). A single simulation run of a daily routine requires substantial CPU computation. Hosting this engine in the cloud allows us to run multiple simulations concurrently for active users without overloading their mobile devices or draining their batteries.
 
 ### 7.2 Local Deep Learning Model Execution
-To safeguard user privacy, the conversational AI (Dr. Aria) uses a locally hosted instance of the **Qwen2.5-14B** language model rather than relying on external public APIs. Running a 14-billion parameter neural network requires a high-performance virtual machine with at least 16 GB of system RAM, multi-core virtual CPUs, and fast solid-state storage. E2E Cloud hosts this model using virtualized resources, providing responsive chat interactions (inference times under 2 seconds) for users.
+To safeguard user privacy, the conversational AI (Personal Health Assistant) uses a locally hosted instance of the **Qwen2.5-14B** language model rather than relying on external public APIs. Running a 14-billion parameter neural network requires a high-performance virtual machine with at least 16 GB of system RAM, multi-core virtual CPUs, and fast solid-state storage. E2E Cloud hosts this model using virtualized resources, providing responsive chat interactions (inference times under 2 seconds) for users.
 
 ### 7.3 Open-Source Collaboration and Researcher Access
 The research team is preparing to release the VitalHealth codebase under an open-source MIT license on GitHub to encourage collaborative development.

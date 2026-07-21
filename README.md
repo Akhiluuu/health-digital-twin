@@ -5,7 +5,7 @@
 </h1>
 
 <p align="center">
-  <b>A full-stack, enterprise-grade health platform coupling a React Native mobile application with a BioGears physiological simulation engine, a local RAG AI doctor chatbot, and a secure Medication Vault.</b>
+  <b>A full-stack, enterprise-grade health platform coupling a React Native mobile application with a BioGears physiological simulation engine, a local RAG AI health assistant chatbot, and a secure Medication Vault.</b>
 </p>
 
 <p align="center">
@@ -65,7 +65,7 @@ The platform runs as a distributed system, routed through an **Nginx Reverse Pro
             / (Default Route)      │       /ai/    │   /medication/ │
                                    ▼               ▼                ▼
  ┌───────────────────────────────────┐ ┌───────────┴──────────┐ ┌───┴───────────────────────────────┐
- │       BioGears Twin Service       │ │     Dr. Aria AI      │ │       Medication Vault API        │
+ │       BioGears Twin Service       │ │Personal Health Assist│ │       Medication Vault API        │
  │         (FastAPI / Port 8000)     │ │ (FastAPI / Port 8001)│ │       (FastAPI / Port 8002)       │
  ├───────────────────────────────────┤ ├──────────────────────┤ ├───────────────────────────────────┤
  │ • Calibrates baseline physiology  │ │ • Local Qwen-14B LLM │ │ • Medication schedules & inventory│
@@ -97,14 +97,14 @@ The platform runs as a distributed system, routed through an **Nginx Reverse Pro
 ### 📱 Mobile App (VitalHealth Client)
 - **Digital Twin Dashboard**: Live vitals panel showing simulated HR, blood glucose, MAP, SpO₂, respiration rate, temperature, cardiac output, stroke volume, and tidal volume.
 - **Routine Logger**: 8-tab daily logger for Nutrition, Hydration, Activity, Substances, Sleep, Stress, Fasting, and Medications.
-- **On-Device RAG AI Doctor (Dr. Aria)**: Upload medical PDFs and image scans. Text is extracted via OCR, chunked, and embedded locally on-device. Grounded queries are sent to a local LLM to preserve complete privacy.
+- **On-Device RAG AI Assistant**: Upload medical PDFs and image scans. Text is extracted via OCR, chunked, and embedded locally on-device. Grounded queries are sent to a local LLM to preserve complete privacy.
 - **Brain Lab**: 4 neuropsychological tests run sequentially to calculate a composite cognitive score: Stroop test, Reaction speed test, Sequence memory span, and Visuospatial pattern memory.
 - **rPPG Heart Rate Scanner**: Camera-based non-contact heart rate and SpO₂ measurement using React Native Vision Camera.
 - **Medication Reminders**: Automated scheduling with local notifications and refill counts synced to the back-end vault.
 
 ### 🖥️ Microservices Platform
 * **BioGears Twin Service (`digitaltwin`)**: Calibrates and stabilizes baseline patient states from demographics and medical history. Replays event logs, runs async batch queue jobs, and generates clinical matplotlib health reports.
-* **Dr. Aria AI Service (`healthbot`)**: Runs a local high-performance Qwen2.5-14B LLM GGUF engine to serve secure clinical insights.
+* **Personal Health Assistant Service (`healthbot`)**: Runs a local high-performance Qwen2.5-14B LLM GGUF engine to serve secure clinical insights.
 * **Medication Vault Service (`medication` & `medication-worker`)**: High-performance REST API managing medication schedules, doctor directories, drug-drug interaction warning checks, inventory tracking, and push notification dispatches.
 
 ---
@@ -185,7 +185,7 @@ npx expo start
 Deploying the BioGears engine, Qwen2.5-14B model, Celery tasks, and configurations on Ubuntu 22.04 LTS:
 
 ```bash
-# Deploy BioGears Twin Service + Dr. Aria AI Chatbot
+# Deploy BioGears Twin Service + Personal Health Assistant
 chmod +x deployment/deploy.sh
 ./deployment/deploy.sh
 
@@ -229,7 +229,7 @@ Verify that each microservice is online and accessible via local port checks or 
 # BioGears Engine service (8000)
 curl -s http://localhost:8000/health
 
-# Dr. Aria AI service (8001)
+# Personal Health Assistant service (8001)
 curl -s http://localhost:8001/health
 
 # Medication Vault API (8002)
@@ -298,7 +298,7 @@ sudo systemctl status digitaltwin healthbot medication medication-worker nginx p
 # BioGears Twin logs
 journalctl -u digitaltwin -f
 
-# Dr. Aria LLM logs
+# Personal Health Assistant LLM logs
 journalctl -u healthbot -f
 
 # Medication Vault logs

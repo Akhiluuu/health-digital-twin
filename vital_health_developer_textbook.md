@@ -58,12 +58,12 @@ health-digital-twin/
 │       ├── substance_registry.py   # Registry mapping 79 substances and admin routes
 │       └── validator.py            # Input verification & safety dose capping
 │
-├── healthbot/                      # RAG Chatbot Service (Dr. Aria)
+├── healthbot/                      # RAG Chatbot Service (Personal Health Assistant)
 │   ├── api/                        # Chat API layer
 │   │   ├── server.py               # FastAPI endpoint hosting LLM & local searches
 │   │   └── main.py                 # Startup script
 │   ├── core/                       # Personality and safety layers
-│   │   ├── character.py            # Dr. Aria's system prompts and intent routers
+│   │   ├── character.py            # Personal Health Assistant's system prompts and intent routers
 │   │   └── safety.py               # Medical hallucination and safety validation
 │   ├── rag/                        # RAG pipeline
 │   │   ├── chunker.py              # Text segmenting logic
@@ -451,7 +451,7 @@ This provides a much more accurate physiological measurement, especially during 
 
 ---
 
-## Chapter 6: The Health AI Chatbot (Dr. Aria)
+## Chapter 6: The Health AI Chatbot (Personal Health Assistant)
 
 ### 6.1 Stateless Client-Side Chunking Architecture
 To keep the server lightweight and secure, the RAG chatbot architecture is stateless. The server does not host a persistent vector database:
@@ -463,7 +463,7 @@ To keep the server lightweight and secure, the RAG chatbot architecture is state
 [Relevant Chunks + Patient Context + User Query] ──► Server Chat API
                                                        │
                                                        ▼
-[Dr. Aria (LLM System Prompt)] ──► Qwen2.5 Engine ──► Final Medical Response
+[Personal Health Assistant (LLM System Prompt)] ──► Qwen2.5 Engine ──► Final Medical Response
 ```
 
 1.  **Upload & Chunking**: When a user uploads a medical record, the mobile app sends it to `POST /upload-and-embed`. The server reads the file, generates chunks, calculates embeddings, and returns them to the client.
@@ -598,7 +598,7 @@ WantedBy=multi-user.target
 #### 2. Chatbot Service (`/etc/systemd/system/healthbot.service`)
 ```ini
 [Unit]
-Description=Dr. Aria Health AI Chatbot Service
+Description=Personal Health Assistant Health AI Chatbot Service
 After=network.target
 
 [Service]
@@ -1667,7 +1667,7 @@ def undo_last_simulation(user_id: str, db, state_dir: Path) -> dict:
 
 ---
 
-## Chapter 14: Health AI (Dr. Aria) Conversational Agent
+## Chapter 14: Health AI (Personal Health Assistant) Conversational Agent
 
 ### 14.1 Stateless Server RAG
 The client runs local cosine similarity searches against medical document embeddings stored in SQLite, then packages the context and vitals into a request payload:
@@ -1701,7 +1701,7 @@ The server initializes the quantized LLM using `llama-cpp-python` and injects vi
 ```python
 from llama_cpp import Llama
 
-class DrAriaAgent:
+class PersonalHealthAssistantAgent:
     def __init__(self, model_path: str):
         # Initialize quantized 14B model
         self.llm = Llama(
@@ -1718,7 +1718,7 @@ class DrAriaAgent:
         context = "\n".join(payload["retrieved_context"])
         
         system_prompt = (
-            "You are Dr. Aria, an empathetic, clinical AI agent. Use the provided context "
+            "You are Personal Health Assistant, an empathetic, clinical AI agent. Use the provided context "
             "and patient vitals to answer queries. Avoid general medical statements. "
             "Be structured and explicit about safety boundaries."
         )
@@ -2136,7 +2136,7 @@ VitalHealth is deployed on an E2E Cloud Ubuntu 22.04 LTS instance (8 vCPU / 16 G
                     Path: /  │                          │ Path: /ai/
                              ▼                          ▼
                  ┌───────────────────────┐  ┌───────────────────────┐
-                 │    FastAPI Server     │  │  Dr. Aria AI chatbot  │
+                 │    FastAPI Server     │  │  Personal Health Assistant chatbot  │
                  │    (localhost:8000)   │  │    (localhost:8001)   │
                  └───────────┬───────────┘  └───────────────────────┘
                              │
@@ -2176,7 +2176,7 @@ server {
         proxy_send_timeout 600s;
     }
 
-    # Dr. Aria Health AI Chatbot API
+    # Personal Health Assistant Health AI Chatbot API
     location /ai/ {
         # Rewrite '/ai/chat' to '/chat' before sending to localhost:8001
         rewrite ^/ai/(.*) /$1 break;
@@ -2228,7 +2228,7 @@ WantedBy=multi-user.target
 #### 2. Chatbot service manager (`/etc/systemd/system/healthbot.service`)
 ```ini
 [Unit]
-Description=Dr. Aria Health AI Chatbot Service
+Description=Personal Health Assistant Health AI Chatbot Service
 After=network.target
 
 [Service]
@@ -2775,7 +2775,7 @@ Test your knowledge of clinical calculations, real-time event streaming, and off
 2. **Question**: Explain how the PKCE flow prevents authorization code interception attacks on public mobile clients. What role does the `code_verifier` play during token exchange?
 3. **Question**: Why is the Google Drive `appDataFolder` directory used for storing user backups instead of the user's standard root Drive folder?
 
-## Chapter 27: Health AI (Dr. Aria) Keyword Routing & Context Structuring
+## Chapter 27: Health AI (Personal Health Assistant) Keyword Routing & Context Structuring
 
 The chatbot backend (`healthbot/api/server.py`) operates as a stateless service. The mobile client holds the actual document chunks, history logs, and profile records, sending them to the backend in the request body of `POST /generate`. This preserves user data privacy on the local device.
 
@@ -3602,7 +3602,7 @@ To maintain privacy, the server stores no patient conversation context or file c
 
 1.  **`POST /upload-and-embed`**: Uploads a medical file (PDF, Image, or DOCX), executes optical character recognition (OCR) or text readers, splits text into small chunks, generates embedding vectors, and returns the vector index JSON block to the mobile client for offline storage.
 2.  **`POST /embed-query`**: Generates embedding vectors from a user's typed chat query and returns the vector representation to the client.
-3.  **`POST /generate`**: Receives relevant context chunks (retrieved client-side) and a prompt query from the user, forwards them to Dr. Aria (powered by a local Qwen 2.5-14B-Instruct engine), and streams the clinical response.
+3.  **`POST /generate`**: Receives relevant context chunks (retrieved client-side) and a prompt query from the user, forwards them to Personal Health Assistant (powered by a local Qwen 2.5-14B-Instruct engine), and streams the clinical response.
 
 ---
 

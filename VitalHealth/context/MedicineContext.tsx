@@ -110,7 +110,7 @@ type ContextType = {
     reviewInterval?: string,
     nextReviewDate?: string | null,
     reviewStatus?: string
-  ) => Promise<void>;
+  ) => Promise<number | undefined>;
   removeMedicine: (id: number, reason?: string) => Promise<void>;
   clearAllMedicines: () => Promise<void>;
   reloadMedicines: () => Promise<void>;
@@ -429,7 +429,7 @@ export const MedicineProvider = ({
     reviewInterval: string = "90 days",
     nextReviewDate: string | null = null,
     reviewStatus: string = "Started"
-  ) => {
+  ): Promise<number | undefined> => {
     try {
       const normalisedTimestamp =
         timestamp < 1_000_000_000_000 ? timestamp * 1000 : timestamp;
@@ -513,7 +513,7 @@ export const MedicineProvider = ({
           reviewInterval, nextReviewDate, reviewStatus,
         }, activeMemberId);
         await loadMedicines();
-        return;
+        return medId;
       }
 
       dbAddMedicine(
@@ -588,6 +588,7 @@ export const MedicineProvider = ({
 
       await loadMedicines();
       if (!isSwitched) await syncMedicineFile();
+      return lastMedicine.id;
     } catch (err) {
       log("💊 Add medicine error:", err);
     }
@@ -625,6 +626,29 @@ export const MedicineProvider = ({
     try {
       if (isSwitched && activeMemberId && activeMemberId !== "self") {
         await syncUpdateMedicineStatus(medicineId, status, activeMemberId);
+
+        // Log to history for family member
+        if (status !== "pending") {
+          const medicine = medicines.find((m) => m.id === medicineId);
+          if (medicine) {
+            const { addToMedicineHistory } = require("../utils/medicineHistory");
+            await addToMedicineHistory({
+              medicineId: medicine.id,
+              medicineName: medicine.name,
+              dose: medicine.dose,
+              time: medicine.time,
+              status: status as "taken" | "missed",
+              targetUid: activeMemberId,
+            });
+
+            if (status === "taken") {
+              const memberName = activeProfile?.firstName || "Family Member";
+              const { showCareMemberTakenNotification } = require("../services/notifeeService");
+              await showCareMemberTakenNotification(memberName, medicine.name, medicine.dose);
+            }
+          }
+        }
+
         await loadMedicines();
         return;
       }
@@ -664,7 +688,7 @@ export const MedicineProvider = ({
     } catch (err) {
       log("💊 setMedicineStatus error:", err);
     }
-  }, [isSwitched, activeMemberId, medicines]);
+  }, [isSwitched, activeMemberId, medicines, activeProfile]);
 
   ///////////////////////////////////////////////////////////
   // UPDATE REVIEW DETAILS

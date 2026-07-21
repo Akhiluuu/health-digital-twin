@@ -339,7 +339,7 @@ function ChatHistoryDrawer({
               <View style={styles.drawerEmpty}>
                 <Text style={{ fontSize: 36, marginBottom: 10 }}>🩺</Text>
                 <Text style={[styles.drawerEmptyTxt, { color: c.sub }]}>No past conversations yet.</Text>
-                <Text style={[styles.drawerEmptyTxt, { color: c.sub, marginTop: 4, fontSize: 12 }]}>Start chatting with Dr. Aria!</Text>
+                <Text style={[styles.drawerEmptyTxt, { color: c.sub, marginTop: 4, fontSize: 12 }]}>Start chatting with Personal Health Assistant!</Text>
               </View>
             ) : grouped.map(({ label, data }) => (
               <View key={label}>
@@ -635,10 +635,10 @@ export default function AIHealthScreen() {
       const res  = await fetch(`${baseUrl}/greeting`);
       if (!res.ok) throw new Error();
       const data = await res.json();
-      const text = data.message || "Good to see you. I'm **Dr. Aria**, your health assistant.\n\nAsk me about your symptoms, medications, or lab results — I'll give you a clear, honest answer. What's on your mind?";
+      const text = data.message || "Good to see you. I'm your **personal health assistant**.\n\nAsk me about your symptoms, medications, or lab results — I'll give you a clear, honest answer. What's on your mind?";
       setMessages([{ id: "welcome", text, sender: "ai", timestamp: new Date() }]);
     } catch {
-      setMessages([{ id: "welcome", text: "Good to see you. I'm **Dr. Aria**, your health assistant.\n\nAsk me about your symptoms, medications, or lab results — I'll give you a clear, honest answer. What's on your mind?", sender: "ai", timestamp: new Date() }]);
+      setMessages([{ id: "welcome", text: "Good to see you. I'm your **personal health assistant**.\n\nAsk me about your symptoms, medications, or lab results — I'll give you a clear, honest answer. What's on your mind?", sender: "ai", timestamp: new Date() }]);
     }
   };
 
@@ -820,7 +820,7 @@ export default function AIHealthScreen() {
     // ── Premium Welcome Card ──────────────────────────────────────────────────
     if (isWelcome) {
       const displayText = item.text === "__welcome__"
-        ? "Good to see you. I'm **Dr. Aria**, your health assistant.\n\nAsk me about your symptoms, medications, or lab results — I'll give you a clear, honest answer."
+        ? "Good to see you. I'm your **personal health assistant**.\n\nAsk me about your symptoms, medications, or lab results — I'll give you a clear, honest answer."
         : item.text;
       return (
         <View style={[styles.welcomeCard, { backgroundColor: c.card, borderColor: c.border }]}>
@@ -830,7 +830,7 @@ export default function AIHealthScreen() {
               <Ionicons name="medkit" size={26} color={c.accent} />
             </View>
             <View style={{ flex: 1 }}>
-              <Text style={[styles.welcomeName, { color: c.text }]}>Dr. Aria</Text>
+              <Text style={[styles.welcomeName, { color: c.text }]}>Personal Health Assistant</Text>
               <View style={styles.welcomeBadgeRow}>
                 <View style={[styles.welcomeBadge, { backgroundColor: connected ? '#10b98120' : '#ef444420' }]}>
                   <View style={[styles.welcomeBadgeDot, { backgroundColor: connected ? '#10b981' : '#ef4444' }]} />
@@ -917,7 +917,7 @@ export default function AIHealthScreen() {
               <Ionicons name="medkit" size={16} color={c.accent} />
             </View>
             <View>
-              <Text style={[styles.headerTitle, { color: c.text }]}>Dr. Aria</Text>
+              <Text style={[styles.headerTitle, { color: c.text }]}>Personal Health Assistant</Text>
               <View style={styles.headerStatusRow}>
                 <View style={[styles.headerStatusDot, { backgroundColor: connected ? "#10b981" : "#ef4444" }]} />
                 <Text style={[styles.headerStatusText, { color: connected ? "#10b981" : "#ef4444" }]}>
@@ -974,7 +974,7 @@ export default function AIHealthScreen() {
             <View style={[styles.inputWrapper, { backgroundColor: theme === 'light' ? '#f1f5f9' : '#0b1329', borderColor: c.border }]}>
               <TextInput
                 ref={inputRef} value={input} onChangeText={setInput}
-                placeholder="Message Dr. Aria..."
+                placeholder="Message Personal Health Assistant..."
                 placeholderTextColor={c.sub}
                 style={[styles.input, { color: c.text }]}
                 multiline returnKeyType="send" onSubmitEditing={sendMessage} blurOnSubmit={false}

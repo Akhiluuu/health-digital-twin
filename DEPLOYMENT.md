@@ -38,7 +38,7 @@ health-digital-twin/
 │       ├── engine_runner.py      ← Runs bg-cli binary
 │       └── result_parser.py      ← Parses CSV output
 │
-├── healthbot/                    # RAG Chatbot Service (Dr. Aria)
+├── healthbot/                    # RAG Chatbot Service (Personal Health Assistant)
 │   ├── api/
 │   │   └── server.py             # FastAPI server for LLM & search
 │   └── model/                    # Stores Qwen2.5-14B GGUF model shards

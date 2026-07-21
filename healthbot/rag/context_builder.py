@@ -52,7 +52,7 @@ def build_context(
         recent = history[-(MAX_HISTORY_TURNS * 2):]
         history_lines = []
         for i, msg in enumerate(recent):
-            role = "User" if i % 2 == 0 else "Dr. Aria"
+            role = "User" if i % 2 == 0 else "Personal Health Assistant"
             history_lines.append(f"{role}: {msg.strip()}")
         sections.append("[CONVERSATION HISTORY]\n" + "\n".join(history_lines))
 

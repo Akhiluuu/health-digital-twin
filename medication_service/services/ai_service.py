@@ -1,6 +1,6 @@
 """
 medication_service/services/ai_service.py
-Dr. Aria AI assistant — clinical Q&A, adherence advice, drug education.
+Personal Health Assistant — clinical Q&A, adherence advice, drug education.
 Integrates with the existing healthbot/BioGears LLM infrastructure.
 """
 from __future__ import annotations
@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 AI_BASE = os.environ.get("SERVER_BASE_URL", "http://localhost:8000")
 AI_API_KEY = os.environ.get("DIGITAL_TWIN_API_KEY", "")
 
-SYSTEM_PROMPT = """You are Dr. Aria, a certified AI Clinical Companion embedded in the VitalHealth Digital Twin platform.
+SYSTEM_PROMPT = """You are a certified Personal Health Assistant embedded in the VitalHealth Digital Twin platform.
 You provide evidence-based medication guidance to patients. You:
 - Explain medications clearly without excessive jargon
 - Give missed-dose advice per clinical guidelines
@@ -61,37 +61,52 @@ class AIService:
 
         formatted_history = []
         for h in history:
-            role = "User" if h["role"] == "user" else "Dr. Aria"
+            role = "User" if h["role"] == "user" else "Personal Health Assistant"
             formatted_history.append(f"{role}: {h['content']}")
 
         history.append({"role": "user", "content": message})
 
-        # Try BioGears AI generate endpoint
-        try:
-            async with httpx.AsyncClient(timeout=30) as client:
-                resp = await client.post(
-                    f"{AI_BASE}/generate",
-                    json={
-                        "query": message,
-                        "history": formatted_history,
-                        "patient_context": patient_context
-                    },
-                    headers={"X-API-Key": AI_API_KEY},
-                )
-                if resp.status_code == 200:
-                    data = resp.json()
-                    reply = data.get("response") or data.get("reply") or data.get("answer") or str(data)
-                    history.append({"role": "assistant", "content": reply})
-                    _conversations[conv_id] = history[-20:]  # keep last 20 turns
-                    return {
-                        "reply": reply,
-                        "conversation_id": conv_id,
-                        "clinical_citations": _extract_citations(reply),
-                        "suggested_actions": _extract_actions(message),
-                        "risk_flags": _detect_risks(message, medicine_context or []),
-                    }
-        except Exception as e:
-            logger.warning(f"AI backend call failed: {e}")
+        # Try Health AI /generate endpoint
+        ai_urls = ["http://127.0.0.1:8001/generate"]
+        if AI_BASE:
+            if "localhost:8000" in AI_BASE or "127.0.0.1:8000" in AI_BASE:
+                ai_urls.append(AI_BASE.replace(":8000", ":8001") + "/generate")
+            elif "web:8000" in AI_BASE:
+                ai_urls.append("http://healthbot:8001/generate")
+            else:
+                ai_urls.append(f"{AI_BASE.rstrip('/')}/ai/generate")
+                ai_urls.append(f"{AI_BASE.rstrip('/')}/generate")
+
+        resp = None
+        for url in ai_urls:
+            try:
+                async with httpx.AsyncClient(timeout=10) as client:
+                    resp = await client.post(
+                        url,
+                        json={
+                            "query": message,
+                            "history": formatted_history,
+                            "patient_context": patient_context
+                        },
+                        headers={"X-API-Key": AI_API_KEY},
+                    )
+                    if resp.status_code == 200:
+                        break
+            except Exception as e:
+                logger.warning(f"AI backend call to {url} failed: {e}")
+
+        if resp and resp.status_code == 200:
+            data = resp.json()
+            reply = data.get("response") or data.get("reply") or data.get("answer") or str(data)
+            history.append({"role": "assistant", "content": reply})
+            _conversations[conv_id] = history[-20:]  # keep last 20 turns
+            return {
+                "reply": reply,
+                "conversation_id": conv_id,
+                "clinical_citations": _extract_citations(reply),
+                "suggested_actions": _extract_actions(message),
+                "risk_flags": _detect_risks(message, medicine_context or []),
+            }
 
         # Fallback: rule-based clinical responses
         reply = _rule_based_response(message, medicine_context or [])
@@ -148,7 +163,7 @@ def _rule_based_response(message: str, medicines: List[Dict]) -> str:
             "using the Interactions Checker in your Medication Vault for a complete clinical analysis."
         )
     return (
-        "I'm Dr. Aria, your AI Clinical Companion. I can help you with medication questions, "
+        "I'm your Personal Health Assistant. I can help you with medication questions, "
         "missed dose guidance, food/alcohol compatibility, and side effect information. "
         "Please ask me a specific question about your medications."
     )

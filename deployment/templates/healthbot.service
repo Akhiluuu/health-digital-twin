@@ -1,5 +1,5 @@
 [Unit]
-Description=Health AI — Dr. Aria Chatbot (VitalHealth)
+Description=Health AI — Personal Health Assistant (VitalHealth)
 Documentation=https://github.com/Akhiluuu/health-digital-twin
 After=network-online.target
 Wants=network-online.target
