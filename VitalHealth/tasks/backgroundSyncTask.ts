@@ -49,6 +49,9 @@ export async function runBackgroundSync() {
             endDate: lm.endDate,
             reminder: lm.reminder,
             notificationId: lm.notificationId,
+            reviewInterval: lm.reviewInterval,
+            nextReviewDate: lm.nextReviewDate,
+            reviewStatus: lm.reviewStatus,
           });
         }
       }

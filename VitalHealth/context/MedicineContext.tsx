@@ -18,6 +18,7 @@ import {
   markMedicineTakenByNotificationId,
   updateMedicineNotificationId,
   insertOrReplaceMedicine,
+  updateMedicineReview,
 } from "../database/medicineDB";
 
 import {
@@ -42,6 +43,7 @@ import {
   syncUpdateMedicineNotificationId,
   fetchMedicinesFromFirebase,
   syncUpdateMedicineStatus,
+  syncUpdateMedicineReview,
 } from "../services/firebaseSync";
 
 import { useFamily } from "./FamilyContext";
@@ -83,6 +85,9 @@ export type Medicine = {
   notificationId: string | null;
   taken: number;
   takenDate: string | null;
+  reviewInterval: string;
+  nextReviewDate: string | null;
+  reviewStatus: string;
 };
 
 ///////////////////////////////////////////////////////////
@@ -101,13 +106,22 @@ type ContextType = {
     frequency: string,
     startDate: string,
     endDate: string,
-    reminder: number
+    reminder: number,
+    reviewInterval?: string,
+    nextReviewDate?: string | null,
+    reviewStatus?: string
   ) => Promise<void>;
   removeMedicine: (id: number, reason?: string) => Promise<void>;
   clearAllMedicines: () => Promise<void>;
   reloadMedicines: () => Promise<void>;
   markMedicineAsTaken: (notificationId?: string) => Promise<void>;
   setMedicineStatus: (medicineId: number, status: "taken" | "missed" | "pending") => Promise<void>;
+  updateMedicineReviewDetails: (
+    id: number,
+    reviewInterval: string,
+    nextReviewDate: string | null,
+    reviewStatus: string
+  ) => Promise<void>;
   isLoadingMemberMedicines: boolean;
 };
 
@@ -144,6 +158,9 @@ async function fetchMemberMedicinesFromFirebase(memberUid: string): Promise<Medi
       notificationId: m.notificationId ?? null,
       taken:          m.taken          ?? 0,
       takenDate:      m.takenDate      ?? null,
+      reviewInterval: m.reviewInterval ?? "90 days",
+      nextReviewDate: m.nextReviewDate ?? null,
+      reviewStatus:   m.reviewStatus   ?? "Started",
     }));
   } catch (e) {
     log("❌ fetchMemberMedicinesFromFirebase error:", e);
@@ -269,6 +286,9 @@ export const MedicineProvider = ({
                     notificationId: fm.notificationId,
                     taken: fm.taken,
                     takenDate: fm.takenDate,
+                    reviewInterval: fm.reviewInterval,
+                    nextReviewDate: fm.nextReviewDate,
+                    reviewStatus: fm.reviewStatus,
                   });
                   didChange = true;
                 }
@@ -295,6 +315,9 @@ export const MedicineProvider = ({
                     endDate: lm.endDate,
                     reminder: lm.reminder,
                     notificationId: lm.notificationId,
+                    reviewInterval: lm.reviewInterval,
+                    nextReviewDate: lm.nextReviewDate,
+                    reviewStatus: lm.reviewStatus,
                   }).catch(() => {});
                 }
               }
@@ -321,6 +344,9 @@ export const MedicineProvider = ({
                   endDate: lm.endDate,
                   reminder: lm.reminder,
                   notificationId: lm.notificationId,
+                  reviewInterval: lm.reviewInterval,
+                  nextReviewDate: lm.nextReviewDate,
+                  reviewStatus: lm.reviewStatus,
                 }).catch(() => {});
               }
             }
@@ -399,7 +425,10 @@ export const MedicineProvider = ({
     frequency: string,
     startDate: string,
     endDate: string,
-    reminder: number
+    reminder: number,
+    reviewInterval: string = "90 days",
+    nextReviewDate: string | null = null,
+    reviewStatus: string = "Started"
   ) => {
     try {
       const normalisedTimestamp =
@@ -481,12 +510,16 @@ export const MedicineProvider = ({
           id: medId, name, dose, type, time,
           timestamp: normalisedTimestamp, meal, frequency,
           startDate, endDate, reminder, notificationId: notifId,
+          reviewInterval, nextReviewDate, reviewStatus,
         }, activeMemberId);
         await loadMedicines();
         return;
       }
 
-      dbAddMedicine(name, dose, type, time, normalisedTimestamp, meal, frequency, startDate, endDate, reminder, null);
+      dbAddMedicine(
+        name, dose, type, time, normalisedTimestamp, meal, frequency, startDate, endDate, reminder, null,
+        reviewInterval, nextReviewDate, reviewStatus
+      );
 
       const allMedicines = getMedicines() as Medicine[];
       const lastMedicine = allMedicines[allMedicines.length - 1];
@@ -548,6 +581,7 @@ export const MedicineProvider = ({
         id: lastMedicine.id, name, dose, type, time,
         timestamp: normalisedTimestamp, meal, frequency,
         startDate, endDate, reminder, notificationId: notifId,
+        reviewInterval, nextReviewDate, reviewStatus,
       }).catch((err) => log("⚠️ syncAddMedicine (self) failed:", err));
 
       if (notifId) syncUpdateMedicineNotificationId(lastMedicine.id, notifId);
@@ -631,6 +665,32 @@ export const MedicineProvider = ({
       log("💊 setMedicineStatus error:", err);
     }
   }, [isSwitched, activeMemberId, medicines]);
+
+  ///////////////////////////////////////////////////////////
+  // UPDATE REVIEW DETAILS
+  ///////////////////////////////////////////////////////////
+
+  const updateMedicineReviewDetails = React.useCallback(async (
+    id: number,
+    reviewInterval: string,
+    nextReviewDate: string | null,
+    reviewStatus: string
+  ) => {
+    try {
+      updateMedicineReview(id, reviewInterval, nextReviewDate, reviewStatus);
+
+      if (isSwitched && activeMemberId && activeMemberId !== "self") {
+        await syncUpdateMedicineReview(id, reviewInterval, nextReviewDate, reviewStatus, activeMemberId);
+      } else {
+        await syncUpdateMedicineReview(id, reviewInterval, nextReviewDate, reviewStatus);
+      }
+
+      await loadMedicines();
+      if (!isSwitched) await syncMedicineFile();
+    } catch (err) {
+      log("💊 Update medicine review details error:", err);
+    }
+  }, [isSwitched, activeMemberId, loadMedicines]);
 
   ///////////////////////////////////////////////////////////
   // REMOVE — when switched: directly from Firestore; when self: local SQLite + cancel notification + sync
@@ -734,6 +794,7 @@ export const MedicineProvider = ({
         reloadMedicines,
         markMedicineAsTaken,
         setMedicineStatus,
+        updateMedicineReviewDetails,
         isLoadingMemberMedicines,
       }}
     >

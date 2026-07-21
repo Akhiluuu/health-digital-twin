@@ -210,9 +210,9 @@ export default function ServerConfigScreen() {
 
   // ── Quick-fill presets ────────────────────────────────────────────────────
   const presets = [
-    { label: "Local Dev", value: "http://10.172.0.79:8000", icon: "laptop-outline" as const },
-    { label: "E2E Cloud", value: "http://151.185.45.137", icon: "cloud-outline" as const },
-    { label: "HTTPS", value: "https://yourdomain.com", icon: "lock-closed-outline" as const },
+    { label: "Local Dev", value: "http://localhost:8000", icon: "laptop-outline" as const },
+    { label: "Staging VM", value: "http://151.185.45.137", icon: "cloud-outline" as const },
+    { label: "Production", value: "https://your-production-domain.com", icon: "lock-closed-outline" as const },
   ];
 
   const applyPreset = (presetUrl: string) => {

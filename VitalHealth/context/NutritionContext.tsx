@@ -777,7 +777,7 @@ export function NutritionProvider({ children }: { children: React.ReactNode }) {
     // foodEntries change, not when todayEvents change).
     // The ref prevents re-triggering on todayEvents changes.
     setTodayEvents(((prev: any[]) => {
-      const nonFoodEvents = prev.filter((ev: any) => !ev.id.startsWith("food_") && ev.event_type !== 'meal');
+      const nonFoodEvents = prev.filter((ev: any) => !ev.id.startsWith("food_"));
       const newEvents = [...nonFoodEvents, ...mappedMealEvents].sort(
         (a: any, b: any) => (a.timestamp || 0) - (b.timestamp || 0)
       );

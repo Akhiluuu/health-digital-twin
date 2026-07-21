@@ -58,7 +58,28 @@ export async function buildMedicalContext(profileId: string): Promise<MedicalCon
     const dueNowMeds: MedicalContext['dueNowMeds'] = [];
     const overdueMeds: MedicalContext['overdueMeds'] = [];
 
+    const overdueReviews: MedicalContext['overdueReviews'] = [];
+
     for (const med of allMeds) {
+      if (med.nextReviewDate && med.reviewStatus !== "Archived" && med.reviewStatus !== "Stop") {
+        try {
+          const reviewDateObj = new Date(med.nextReviewDate + "T00:00:00");
+          if (!isNaN(reviewDateObj.getTime())) {
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            const diffTime = today.getTime() - reviewDateObj.getTime();
+            const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+            if (diffDays > 0) {
+              overdueReviews.push({
+                id: med.id,
+                name: med.name,
+                daysOverdue: diffDays,
+              });
+            }
+          }
+        } catch {}
+      }
+
       if (!med.time || med.taken) continue; // already taken today
       const scheduledMin = timeToMinutes(med.time);
       const diff = now - scheduledMin;
@@ -139,6 +160,7 @@ export async function buildMedicalContext(profileId: string): Promise<MedicalCon
       dueNowMeds,
       overdueMeds,
       lowInventoryMeds,
+      overdueReviews,
       adherenceRate7d,
       lastTakenAt,
       pendingDocuments,
@@ -151,6 +173,7 @@ export async function buildMedicalContext(profileId: string): Promise<MedicalCon
       dueNowMeds: [],
       overdueMeds: [],
       lowInventoryMeds: [],
+      overdueReviews: [],
       adherenceRate7d: null,
       lastTakenAt: null,
       pendingDocuments: 0,
@@ -290,6 +313,30 @@ export function generateMedicalCandidates(
       deliveryChannel: 'push',
       requiresImmediateDelivery: false,
       suppressIfDoNotDisturb: true,
+      generatedAt: now,
+    });
+  }
+  // ── Rule MED-05: Overdue Clinical Review ──────────────────────────────────
+  for (const rev of ctx.overdueReviews || []) {
+    const daysStr = rev.daysOverdue === 1 ? '1 day' : `${rev.daysOverdue} days`;
+    candidates.push({
+      id: nanoid(),
+      category: 'medication',
+      priority: 'high',
+      title: 'Medication Review Overdue',
+      body: `Your clinical review for ${rev.name} is ${daysStr} overdue. Please review this medication to update your treatment plan.`,
+      deepLink: '/medication-vault',
+      actionButtons: [{ id: 'MANAGE_REVIEW', label: 'Review Now' }],
+      sourceEngineId: 'MedicalContextEngine',
+      triggerRuleId: 'MED-05-OVERDUE-REVIEW',
+      triggerData: { medicineId: rev.id, medicineName: rev.name, daysOverdue: rev.daysOverdue },
+      triggerEventId: String(rev.id),
+      profileId,
+      profileName,
+      profilePhoto: null,
+      deliveryChannel: 'push',
+      requiresImmediateDelivery: true,
+      suppressIfDoNotDisturb: false,
       generatedAt: now,
     });
   }

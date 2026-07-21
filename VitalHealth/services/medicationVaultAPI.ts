@@ -9,24 +9,22 @@
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { auth } from './firebase';
+import { getCentralMedApiUrl, MED_API_URL_KEY } from '../constants/Config';
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 
 // The medication service is proxied via nginx at /medication/
 // nginx strips the /medication/ prefix before forwarding to port 8002.
 // So the actual FastAPI routes are at: /api/v1/medication/...
-const MED_API_URL_KEY = '@medication_api_url';
-
-// Production: same server IP as BioGears, nginx routes /medication/ → port 8002
-const DEFAULT_MED_API_URL = 'http://151.185.45.137/medication';
 const API_BASE = '/api/v1/medication';
 
 export async function getMedApiUrl(): Promise<string> {
+  const centralMedUrl = await getCentralMedApiUrl();
   try {
     const stored = await AsyncStorage.getItem(MED_API_URL_KEY);
-    return stored || DEFAULT_MED_API_URL;
+    return stored || centralMedUrl;
   } catch {
-    return DEFAULT_MED_API_URL;
+    return centralMedUrl;
   }
 }
 
@@ -299,12 +297,88 @@ export const downloadReport = async (params: {
 
 // ── AI Chat ───────────────────────────────────────────────────────────────────
 
-export const chatWithAria = (payload: {
+export interface AriaPatientContext {
+  medicines: Array<{
+    name?: string;
+    dose?: string;
+    type?: string;
+    frequency?: string;
+    time?: string;
+    meal?: string;
+    taken?: number;
+    reminder?: number;
+    reviewInterval?: string;
+    nextReviewDate?: string | null;
+    reviewStatus?: string;
+  }>;
+  activeSymptoms: Array<{
+    name?: string;
+    severity?: string;
+    startedAt?: number;
+    notes?: string;
+  }>;
+  historySymptoms: Array<{
+    name?: string;
+    severity?: string;
+    startedAt?: number;
+    resolvedAt?: number;
+    notes?: string;
+  }>;
+}
+
+export interface AriaChatPayload {
   message: string;
-  context_medicine_ids?: string[];
-  conversation_id?: string;
-}): Promise<{ data: AIChat }> =>
-  medFetch('/ai/chat', { method: 'POST', body: JSON.stringify(payload) });
+  history?: string[];
+  patient_context?: AriaPatientContext;
+}
+
+export const chatWithAria = async (payload: AriaChatPayload): Promise<{ data: AIChat }> => {
+  // Route directly to the healthbot /generate endpoint which has full
+  // LLM + patient-context-routing capabilities.
+  const base = await getMedApiUrl();
+
+  // Extract the VM base from the medication URL (strip /medication suffix)
+  // e.g. http://151.185.45.137/medication → http://151.185.45.137
+  let botBase = base.replace(/\/medication\/?$/, '');
+
+  const headers = await getAuthHeaders();
+
+  const body: Record<string, any> = {
+    query: payload.message,
+    history: payload.history || [],
+  };
+  if (payload.patient_context) {
+    body.patient_context = payload.patient_context;
+  }
+
+  try {
+    const res = await fetch(`${botBase}/generate`, {
+      method: 'POST',
+      headers: { ...headers, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) throw new Error(`Aria /generate HTTP ${res.status}`);
+    const json = await res.json();
+    const reply: string = json.response || json.reply || json.answer || 'Dr. Aria is unable to respond at this time.';
+    return {
+      data: {
+        reply,
+        conversation_id: '',
+        clinical_citations: [],
+        suggested_actions: [],
+        risk_flags: [],
+      },
+    };
+  } catch (err) {
+    // Fallback to medication-vault /ai/chat if healthbot is unreachable
+    return medFetch('/ai/chat', { method: 'POST', body: JSON.stringify({
+      message: payload.message,
+      context_medicine_ids: (payload.patient_context?.medicines || [])
+        .map((m: any) => m.id)
+        .filter(Boolean),
+    }) });
+  }
+};
 
 // ── BioGears Simulation ───────────────────────────────────────────────────────
 
@@ -338,7 +412,7 @@ export const updateEmergencyProfile = (payload: {
 
 // ── OCR ───────────────────────────────────────────────────────────────────────
 
-export const ocrPrescription = async (fileUri: string, mimeType = 'image/jpeg'): Promise<{ data: any }> => {
+export const ocrPrescription = async (fileUri: string, mimeType = 'image/jpeg'): Promise<{ success: boolean; data: any }> => {
   const base = await getMedApiUrl();
   const headers = await getAuthHeaders();
   delete headers['Content-Type']; // FormData handles it
@@ -346,7 +420,7 @@ export const ocrPrescription = async (fileUri: string, mimeType = 'image/jpeg'):
   const form = new FormData();
   form.append('file', { uri: fileUri, type: mimeType, name: 'prescription' } as any);
 
-  const res = await fetch(`${base}${API_BASE}/ocr`, { method: 'POST', headers, body: form });
+  const res = await fetch(`${base}${API_BASE}/prescription/ocr`, { method: 'POST', headers, body: form });
   if (!res.ok) throw new Error(`OCR failed: HTTP ${res.status}`);
   return res.json();
 };

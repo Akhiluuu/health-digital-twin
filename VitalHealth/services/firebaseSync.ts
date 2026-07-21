@@ -177,6 +177,9 @@ export async function syncAddMedicine(
     endDate:        string;
     reminder:       number;
     notificationId: string | null;
+    reviewInterval?: string;
+    nextReviewDate?: string | null;
+    reviewStatus?:   string;
   },
   targetUid?: string
 ): Promise<void> {
@@ -301,6 +304,30 @@ export async function syncUpdateMedicineNotificationId(
     }, { merge: true });
   } catch (e) {
     log("⚠️ syncUpdateMedicineNotificationId failed (non-critical):", e);
+  }
+}
+
+export async function syncUpdateMedicineReview(
+  id: number,
+  reviewInterval: string,
+  nextReviewDate: string | null,
+  reviewStatus: string,
+  targetUid?: string
+): Promise<void> {
+  if (!(await isVitalsSyncEnabled())) return;
+  try {
+    const uid = targetUid || await getUserId();
+    if (!uid) return;
+
+    await setDoc(doc(medicinesCol(uid), String(id)), {
+      reviewInterval,
+      nextReviewDate,
+      reviewStatus,
+      updatedAt: serverTimestamp(),
+    }, { merge: true });
+    log("✅ Medicine review status synced to Firebase:", id);
+  } catch (e) {
+    log("⚠️ syncUpdateMedicineReview failed (non-critical):", e);
   }
 }
 

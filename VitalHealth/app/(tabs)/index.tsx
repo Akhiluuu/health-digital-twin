@@ -443,13 +443,21 @@ export default function HomeScreen() {
           />
         </View>
 
-        {/* ── LOG VITALS TAB ── */}
+        {/* ── LOG VITALS SECTION ── */}
+        <View style={styles.sectionHeaderRow}>
+          <Text style={[styles.sectionTitle, { color: c.text }]}>Vitals Logger</Text>
+          <TouchableOpacity onPress={() => router.push("/VitalsHistoryScreen" as any)}>
+            <Text style={[styles.sectionLink, { color: c.accent }]}>View History</Text>
+          </TouchableOpacity>
+        </View>
+
         <TouchableOpacity
           style={[
             styles.logVitalsTab,
             {
               backgroundColor: c.card,
               borderColor: c.border,
+              marginBottom: 16,
             }
           ]}
           onPress={() => router.push("/LogVitalsScreen" as any)}

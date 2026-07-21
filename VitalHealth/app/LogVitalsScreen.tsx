@@ -505,9 +505,15 @@ export default function LogVitalsScreen() {
             </Text>
           </View>
         </View>
-        <View style={[styles.headerIconWrapper, { backgroundColor: c.accent + "12" }]}>
-          <Ionicons name="clipboard" size={24} color={c.accent} />
-        </View>
+        <TouchableOpacity
+          onPress={() => router.push("/VitalsHistoryScreen" as any)}
+          activeOpacity={0.7}
+          style={[styles.headerIconWrapper, { backgroundColor: c.accent + "12" }]}
+          accessibilityLabel="View Vitals History"
+          hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}
+        >
+          <Ionicons name="time-outline" size={24} color={c.accent} />
+        </TouchableOpacity>
       </View>
 
       {loadingRecord ? (
@@ -858,6 +864,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     flex: 1,
+    marginRight: 16,
   },
   backButton: {
     padding: 4,
@@ -881,6 +888,8 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     justifyContent: "center",
     alignItems: "center",
+    zIndex: 99,
+    elevation: 9,
   },
   centerLoading: {
     flex: 1,

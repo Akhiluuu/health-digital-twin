@@ -50,6 +50,62 @@ def _resolve_profile_name(user_id: str) -> str:
     return user_id
 
 
+def _map_routine_event_to_date(event: dict, day_date: datetime.date) -> dict:
+    import re
+    # default hour and minute
+    hour, minute = 12, 0
+    
+    # 1. Try wallTime
+    wall_time = event.get("wallTime")
+    if wall_time and isinstance(wall_time, str):
+        # format could be HH:MM or HH:MM:SS or HH:MM AM/PM
+        parts = re.findall(r'\d+', wall_time)
+        if len(parts) >= 2:
+            try:
+                hour = int(parts[0])
+                minute = int(parts[1])
+                if "pm" in wall_time.lower() and hour < 12:
+                    hour += 12
+                elif "am" in wall_time.lower() and hour == 12:
+                    hour = 0
+            except Exception:
+                pass
+    else:
+        # 2. Try timestamp
+        ts = event.get("timestamp")
+        if ts is not None:
+            try:
+                dt = datetime.datetime.fromtimestamp(float(ts))
+                hour = dt.hour
+                minute = dt.minute
+            except Exception:
+                pass
+                
+    # Combine day_date and time
+    try:
+        combined_ts = int(datetime.datetime.combine(day_date, datetime.time(hour, minute)).timestamp())
+    except Exception:
+        combined_ts = int(datetime.datetime.combine(day_date, datetime.time(12, 0)).timestamp())
+    
+    # Build the mapped event
+    mapped = {
+        "event_type": event.get("event_type"),
+        "value": event.get("value", 0),
+        "timestamp": combined_ts,
+        "substance_name": event.get("substance_name"),
+        "unit": event.get("unit"),
+        "meal_type": event.get("meal_type"),
+        "carb_g": event.get("carb_g"),
+        "fat_g": event.get("fat_g"),
+        "protein_g": event.get("protein_g"),
+        "duration_seconds": event.get("duration_seconds"),
+        "notes": event.get("notes") or f"Routine {event.get('event_type')}",
+    }
+    # Remove None values
+    return {k: v for k, v in mapped.items() if v is not None}
+
+
+
 def _parse_event_timestamp_to_unix(ts) -> float:
     if ts is None:
         return time.time()
@@ -470,24 +526,45 @@ class DPSSScheduler:
             events_raw = []
             
             if not day_events:
-                # User did not log any events for this day. Generate standard baseline events.
-                logger.info(f"[{user_id}] Generating baseline calibration events for missed day {day_str}")
                 day_date = datetime.date.fromisoformat(day_str)
-                t_8_00 = int(datetime.datetime.combine(day_date, datetime.time(8, 0)).timestamp())
-                t_8_30 = int(datetime.datetime.combine(day_date, datetime.time(8, 30)).timestamp())
-                t_12_30 = int(datetime.datetime.combine(day_date, datetime.time(12, 30)).timestamp())
-                t_17_30 = int(datetime.datetime.combine(day_date, datetime.time(17, 30)).timestamp())
-                t_23_00 = int(datetime.datetime.combine(day_date, datetime.time(23, 0)).timestamp())
+                # Check for a saved default routine in profile metadata
+                profile = None
+                try:
+                    from biogears_service.api import db as biogears_db
+                    profile = biogears_db.get_profile(user_id)
+                except Exception as e:
+                    logger.warning(f"[{user_id}] Error reading profile for default routine: {e}")
 
-                events_raw = [
-                    {"event_type": "water", "value": 250.0, "timestamp": t_8_00, "notes": "Baseline hydration"},
-                    {"event_type": "meal", "value": 500.0, "timestamp": t_8_30, "meal_type": "balanced", "carb_g": 60, "fat_g": 15, "protein_g": 20, "notes": "Baseline breakfast"},
-                    {"event_type": "water", "value": 300.0, "timestamp": t_12_30, "notes": "Baseline hydration"},
-                    {"event_type": "meal", "value": 700.0, "timestamp": t_12_30, "meal_type": "balanced", "carb_g": 85, "fat_g": 22, "protein_g": 28, "notes": "Baseline lunch"},
-                    {"event_type": "water", "value": 300.0, "timestamp": t_17_30, "notes": "Baseline hydration"},
-                    {"event_type": "meal", "value": 800.0, "timestamp": t_17_30, "meal_type": "balanced", "carb_g": 100, "fat_g": 25, "protein_g": 35, "notes": "Baseline dinner"},
-                    {"event_type": "sleep", "value": 8.0, "timestamp": t_23_00, "duration_seconds": 28800, "notes": "Baseline sleep"}
-                ]
+                default_routine_events = profile.get("default_routine") if profile else None
+                
+                if default_routine_events and isinstance(default_routine_events, list):
+                    logger.info(f"[{user_id}] Generating events using default routine 'My Saved State' for missed day {day_str}")
+                    events_raw = []
+                    for ev in default_routine_events:
+                        if not isinstance(ev, dict):
+                            continue
+                        mapped_ev = _map_routine_event_to_date(ev, day_date)
+                        if mapped_ev:
+                            events_raw.append(mapped_ev)
+                
+                if not events_raw:
+                    # Fallback to generating standard baseline events.
+                    logger.info(f"[{user_id}] Generating baseline calibration events for missed day {day_str}")
+                    t_8_00 = int(datetime.datetime.combine(day_date, datetime.time(8, 0)).timestamp())
+                    t_8_30 = int(datetime.datetime.combine(day_date, datetime.time(8, 30)).timestamp())
+                    t_12_30 = int(datetime.datetime.combine(day_date, datetime.time(12, 30)).timestamp())
+                    t_17_30 = int(datetime.datetime.combine(day_date, datetime.time(17, 30)).timestamp())
+                    t_23_00 = int(datetime.datetime.combine(day_date, datetime.time(23, 0)).timestamp())
+
+                    events_raw = [
+                        {"event_type": "water", "value": 250.0, "timestamp": t_8_00, "notes": "Baseline hydration"},
+                        {"event_type": "meal", "value": 500.0, "timestamp": t_8_30, "meal_type": "balanced", "carb_g": 60, "fat_g": 15, "protein_g": 20, "notes": "Baseline breakfast"},
+                        {"event_type": "water", "value": 300.0, "timestamp": t_12_30, "notes": "Baseline hydration"},
+                        {"event_type": "meal", "value": 700.0, "timestamp": t_12_30, "meal_type": "balanced", "carb_g": 85, "fat_g": 22, "protein_g": 28, "notes": "Baseline lunch"},
+                        {"event_type": "water", "value": 300.0, "timestamp": t_17_30, "notes": "Baseline hydration"},
+                        {"event_type": "meal", "value": 800.0, "timestamp": t_17_30, "meal_type": "balanced", "carb_g": 100, "fat_g": 25, "protein_g": 35, "notes": "Baseline dinner"},
+                        {"event_type": "sleep", "value": 8.0, "timestamp": t_23_00, "duration_seconds": 28800, "notes": "Baseline sleep"}
+                    ]
             else:
                 logger.info(f"[{user_id}] Auto-simulating day {day_str} ({len(day_events)} events)")
                 for e in day_events:

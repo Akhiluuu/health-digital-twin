@@ -49,6 +49,7 @@ import {
   retrieveTopKChunks,
 } from "../../services/embeddingService";
 import { getApiKey } from "../../services/biogears";
+import { getCentralAiBaseUrl } from "../../constants/Config";
 
 // ─── Voice Recognition ────────────────────────────────────────────────────────
 let Voice: any = null;
@@ -59,17 +60,14 @@ try {
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
-
-// ── Production server — hardcoded, no user config needed ─────────────────────
-const PRODUCTION_AI_URL = "http://151.185.45.137/ai";
 const KEY_CHAT_HISTORY  = "@hai_chat_history";
 const TOP_K             = 5;
 const MAX_SAVED_SESSIONS = 30;
 
-// ─── Utility Functions ────────────────────────────────────────────────────────
-
-// Always resolves to the production AI server
-const getAiBaseUrl = (): string => PRODUCTION_AI_URL;
+// Always resolves to the central AI server
+const getAiBaseUrl = async (): Promise<string> => {
+  return await getCentralAiBaseUrl();
+};
 
 const genId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 
@@ -633,7 +631,8 @@ export default function AIHealthScreen() {
 
   const fetchGreeting = async () => {
     try {
-      const res  = await fetch(`${getAiBaseUrl()}/greeting`);
+      const baseUrl = await getAiBaseUrl();
+      const res  = await fetch(`${baseUrl}/greeting`);
       if (!res.ok) throw new Error();
       const data = await res.json();
       const text = data.message || "Good to see you. I'm **Dr. Aria**, your health assistant.\n\nAsk me about your symptoms, medications, or lab results — I'll give you a clear, honest answer. What's on your mind?";
@@ -663,7 +662,8 @@ export default function AIHealthScreen() {
       (async () => {
         try {
           // Ping the production server silently
-          const r = await fetch(`${getAiBaseUrl()}/health`);
+          const baseUrl = await getAiBaseUrl();
+          const r = await fetch(`${baseUrl}/health`);
           setConnected(r.ok);
           if (r.ok && messages.length <= 1) await fetchGreeting();
         } catch {
@@ -736,7 +736,7 @@ export default function AIHealthScreen() {
     setMessages((prev) => [...prev, { id: genId(), text: query, sender: "user", timestamp: new Date() }]);
     setLoading(true);
 
-    const baseUrl = getAiBaseUrl();
+    const baseUrl = await getAiBaseUrl();
     const history = [...historyRef.current];
 
     try {

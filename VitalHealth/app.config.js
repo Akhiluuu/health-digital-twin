@@ -1,3 +1,7 @@
+const backendUrl = process.env.EXPO_PUBLIC_BACKEND_URL || "";
+const isHttps = backendUrl.startsWith("https://");
+const usesCleartextTraffic = !isHttps;
+
 export default {
   expo: {
     name: "VitalHealth",
@@ -80,7 +84,7 @@ export default {
         "SCHEDULE_EXACT_ALARM",
       ],
 
-      usesCleartextTraffic: true,
+      usesCleartextTraffic: usesCleartextTraffic,
     },
 
     /////////////////////////////////////////////////////////
@@ -149,7 +153,7 @@ export default {
 
             useAndroidX: true,
             enableJetifier: true,
-            usesCleartextTraffic: true,
+            usesCleartextTraffic: usesCleartextTraffic,
 
             extraMavenRepos: [
               "$rootDir/../node_modules/@notifee/react-native/android/libs",

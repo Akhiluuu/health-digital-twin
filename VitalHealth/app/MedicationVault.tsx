@@ -39,6 +39,7 @@ import { useNotifications } from "../context/NotificationContext";
 import { useFamily } from "../context/FamilyContext";
 import { useProfile } from "../context/ProfileContext";
 import { useBiogearsTwin } from "../context/BiogearsTwinContext";
+import { useSymptoms } from "../context/SymptomContext";
 import { cancelRoutineReminder, scheduleRoutineReminder } from "../services/notifeeService";
 import { log } from "../utils/logger";
 import { addToMedicineHistory } from "../utils/medicineHistory";
@@ -219,6 +220,21 @@ function isMissedToday(medicine: Medicine): boolean {
   return medicine.takenDate === getLocalDateString();
 }
 
+function calculateReviewFromDate(fromDate: Date, interval: string): string {
+  const d = new Date(fromDate);
+  const match = interval.match(/^(\d+)\s+(day|month|year)s?$/i);
+  if (match) {
+    const val = parseInt(match[1]);
+    const unit = match[2].toLowerCase();
+    if (unit.startsWith("day")) d.setDate(d.getDate() + val);
+    else if (unit.startsWith("month")) d.setMonth(d.getMonth() + val);
+    else if (unit.startsWith("year")) d.setFullYear(d.getFullYear() + val);
+  } else {
+    d.setDate(d.getDate() + 90);
+  }
+  return d.toISOString().split("T")[0];
+}
+
 export default function MedicationVault() {
   const router = useRouter();
   const { theme } = useTheme();
@@ -232,6 +248,7 @@ export default function MedicationVault() {
     clearAllMedicines,
     setMedicineStatus,
     addMedicine,
+    updateMedicineReviewDetails,
   } = useMedicine();
   const { markReadByCategory } = useNotifications();
   const { isSwitched, activeMemberId, activeProfile, members, switchToMember, switchToSelf } = useFamily();
@@ -245,6 +262,7 @@ export default function MedicationVault() {
     sessions,
     todayMacros,
   } = useBiogearsTwin();
+  const { activeSymptoms, historySymptoms } = useSymptoms();
 
   // Navigation State
   const [activePage, setActivePage] = useState<ActivePage>("dashboard");
@@ -383,26 +401,7 @@ export default function MedicationVault() {
   ]);
 
   // Prescription Vault State
-  const [prescriptions, setPrescriptions] = useState([
-    {
-      id: "pres-1",
-      fileName: "Rx_Metformin_SarahJenkins.pdf",
-      date: "2026-06-15",
-      doctor: "Dr. Sarah Jenkins",
-      hospital: "Metro Health",
-      status: "Current",
-      summary: "Metformin HCl 500mg - Take 1 tablet twice daily with breakfast and dinner. Indefinite duration.",
-    },
-    {
-      id: "pres-2",
-      fileName: "Rx_Amoxicillin_ElizabethThorne.pdf",
-      date: "2026-07-02",
-      doctor: "Dr. Elizabeth Thorne",
-      hospital: "City Urgent Care",
-      status: "Expired",
-      summary: "Amoxicillin 500mg - Take 1 capsule 3 times daily for 7 days. Complete full course.",
-    },
-  ]);
+  const [prescriptions, setPrescriptions] = useState<any[]>([]);
   const [selectedPrescription, setSelectedPrescription] = useState<any>(null);
   const [isScanningPrescription, setIsScanningPrescription] = useState(false);
   const [scanStep, setScanStep] = useState(0); // 0 = Idle, 1 = Scanning Camera, 2 = OCR parsing, 3 = Completed
@@ -433,12 +432,38 @@ export default function MedicationVault() {
   const [addInventoryCount, setAddInventoryCount] = useState("30");
   const [addBiogearsLinked, setAddBiogearsLinked] = useState(true);
   const [addDiseaseLinked, setAddDiseaseLinked] = useState("General Health");
+  const [addReviewInterval, setAddReviewInterval] = useState("90 days");
+  const [addReviewStatus, setAddReviewStatus] = useState("Started");
+
+  const loadLivePrescriptions = useCallback(async () => {
+    try {
+      const { listPrescriptions } = await import("../services/medicationVaultAPI");
+      const res = await listPrescriptions();
+      if (res && res.data) {
+        setPrescriptions(res.data);
+      }
+    } catch (err) {
+      log("Error fetching live prescriptions:", err);
+    }
+  }, []);
 
   // Load and cache medication metadata on load
   useEffect(() => {
     reloadMedicines();
     markReadByCategory("medication");
-  }, []);
+    loadLivePrescriptions();
+  }, [loadLivePrescriptions]);
+
+  // Personalize Dr. Aria's greeting once the profile is loaded
+  useEffect(() => {
+    const name = selfProfile?.firstName;
+    if (name) {
+      setAiMessages([{
+        sender: "aria",
+        text: `Hello ${name}! I'm Dr. Aria, your personal AI Clinical Companion. I have access to your medication regimen, active symptoms, and health profile. I can explain your medications, check for interactions, advise on missed doses, or answer any health question you have. What's on your mind today?`,
+      }]);
+    }
+  }, [selfProfile?.firstName]);
 
   const loadMetadata = useCallback(async () => {
     const cached: Record<number, MedicineMeta> = {};
@@ -617,7 +642,10 @@ export default function MedicationVault() {
         addFrequency,
         addStartDate,
         finalEndDate,
-        1 // reminders enabled
+        1, // reminders enabled
+        addReviewInterval,
+        null, // calculated automatically by DB
+        addReviewStatus
       );
 
       // Wait a moment for context to write, then find the added medicine to save custom metadata
@@ -688,32 +716,58 @@ export default function MedicationVault() {
       setScanStep(1);
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
-      // extractTextFromImage handles the image picker and OCR internally.
-      // It returns null if the user cancels or if OCR yields no text.
-      const { extractTextFromImage } = await import('../services/textExtraction');
-      setScanStep(2);
-      const extracted = await extractTextFromImage();
-      setScanStep(3);
-
-      setIsScanningPrescription(false);
-      setScanStep(0);
-
-      if (!extracted || extracted.trim().length === 0) {
-        Alert.alert(
-          'OCR Extraction Failed',
-          'No readable text was found in the selected image. Please ensure the prescription is clearly photographed and try again.',
-        );
+      const ImagePicker = await import('expo-image-picker');
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permission Denied', 'Permission to access media library is required.');
+        setIsScanningPrescription(false);
+        setScanStep(0);
         return;
       }
 
-      // Place extracted text in the name field as a starting point for manual review.
-      // The user MUST verify and complete all remaining fields — never auto-fill silently.
-      setAddName(extracted.trim().slice(0, 100));
-      Alert.alert(
-        'Prescription Scanned',
-        'Text was extracted from the image and placed in the Medication Name field. Please review and complete all fields manually before saving.',
-        [{ text: 'OK' }],
-      );
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        quality: 0.9,
+        allowsEditing: false,
+      });
+
+      if (result.canceled || !result.assets || result.assets.length === 0) {
+        setIsScanningPrescription(false);
+        setScanStep(0);
+        return;
+      }
+
+      setScanStep(2);
+      const asset = result.assets[0];
+      const { ocrPrescription } = await import('../services/medicationVaultAPI');
+      const mimeType = asset.mimeType || 'image/jpeg';
+      const res = await ocrPrescription(asset.uri, mimeType);
+
+      setScanStep(3);
+      setIsScanningPrescription(false);
+      setScanStep(0);
+
+      if (res && res.success && res.data) {
+        const ocrResult = res.data.ocr;
+
+        if (ocrResult?.medicines && ocrResult.medicines.length > 0) {
+          const firstMed = ocrResult.medicines[0];
+          if (firstMed.name) setAddName(firstMed.name);
+          if (firstMed.strength) setAddDose(firstMed.strength);
+        } else if (ocrResult?.raw_text) {
+          setAddName(ocrResult.raw_text.trim().slice(0, 100));
+        }
+
+        loadLivePrescriptions();
+
+        Alert.alert(
+          'Prescription Scanned',
+          'Clinical metadata has been extracted and saved to your Vault. First detected medication has been filled in the form.',
+          [{ text: 'OK', onPress: () => setAddMethod("manual") }]
+        );
+      } else {
+        throw new Error("Invalid response structure from backend");
+      }
     } catch (err) {
       setIsScanningPrescription(false);
       setScanStep(0);
@@ -722,7 +776,8 @@ export default function MedicationVault() {
     }
   };
 
-  // Dr. Aria AI Queries — routed to real backend Medication Vault AI service
+  // Dr. Aria AI Queries — routed directly to the healthbot /generate endpoint
+  // with full patient context for user-specific, personalized responses.
   const handleSendAiMessage = async () => {
     if (!aiInput.trim()) return;
     const userMsg = aiInput.trim();
@@ -735,20 +790,83 @@ export default function MedicationVault() {
 
     try {
       const { chatWithAria } = await import('../services/medicationVaultAPI');
-      // Forward active medicine IDs so the backend can personalise the response
-      const activeMedIds = medicines
+
+      // ── Build full patient context ──────────────────────────────────────────
+      // 1. Medicines — send every clinical field the LLM can use
+      const patientMedicines = medicines
         .filter((m) => m && m.name)
-        .map((m) => String(m.id))
-        .filter(Boolean);
+        .map((m) => ({
+          name: m.name,
+          dose: m.dose || undefined,
+          type: m.type || undefined,
+          frequency: m.frequency || undefined,
+          time: m.time || undefined,
+          meal: m.meal || undefined,
+          reminder: m.reminder,
+          reviewInterval: m.reviewInterval || undefined,
+          nextReviewDate: m.nextReviewDate || undefined,
+          reviewStatus: m.reviewStatus || undefined,
+        }));
+
+      // 2. Symptoms — both active and resolved history
+      const patientActiveSymptoms = activeSymptoms.map((s) => ({
+        name: s.name,
+        severity: s.severity,
+        startedAt: s.startedAt,
+        notes: s.notes,
+      }));
+      const patientHistorySymptoms = historySymptoms.map((s) => ({
+        name: s.name,
+        severity: s.severity,
+        startedAt: s.startedAt,
+        resolvedAt: s.resolvedAt,
+        notes: s.notes,
+      }));
+
+      // 3. Conversation history — last 6 turns (3 user + 3 aria) for context
+      const conversationHistory = aiMessages
+        .slice(-6)
+        .map((m) => `${m.sender === "user" ? "User" : "Dr. Aria"}: ${m.text}`);
+
+      // 4. Enrich the user message with profile info in the query so the LLM
+      //    can address the user by name and reference their clinical profile.
+      const currentProfile = isSwitched && activeProfile
+        ? activeProfile
+        : selfProfile;
+      const patientName = currentProfile?.firstName
+        ? `${currentProfile.firstName}${currentProfile.lastName ? " " + currentProfile.lastName : ""}`
+        : "the patient";
+      const profileCtx = [
+        currentProfile?.dateOfBirth ? `Age: ${new Date().getFullYear() - new Date(currentProfile.dateOfBirth).getFullYear()}` : null,
+        currentProfile?.gender ? `Gender: ${currentProfile.gender}` : null,
+        currentProfile?.bloodGroup ? `Blood group: ${currentProfile.bloodGroup}` : null,
+        currentProfile?.weight ? `Weight: ${currentProfile.weight}` : null,
+        currentProfile?.height ? `Height: ${currentProfile.height}` : null,
+        (currentProfile?.allergies && currentProfile.allergies.length > 0) ? `Allergies: ${currentProfile.allergies.join(", ")}` : null,
+        currentProfile?.biogears_has_type1_diabetes ? "Condition: Type 1 Diabetes" : null,
+        currentProfile?.biogears_has_type2_diabetes ? "Condition: Type 2 Diabetes" : null,
+        currentProfile?.biogears_is_smoker ? "Smoker: Yes" : null,
+        currentProfile?.history?.diseases ? `Disease history: ${currentProfile.history.diseases}` : null,
+      ].filter(Boolean).join(" | ");
+
+      // Prepend profile hint to message so the LLM knows who it's talking to
+      const enrichedMessage = `[Patient: ${patientName}${profileCtx ? ` | ${profileCtx}` : ""}]\n${userMsg}`;
 
       const res = await chatWithAria({
-        message: userMsg,
-        context_medicine_ids: activeMedIds,
+        message: enrichedMessage,
+        history: conversationHistory,
+        patient_context: {
+          medicines: patientMedicines,
+          activeSymptoms: patientActiveSymptoms,
+          historySymptoms: patientHistorySymptoms,
+        },
       });
 
       const responseText: string =
+        (res as any)?.data?.reply ||
         (res as any)?.data?.response ||
         (res as any)?.response ||
+        (res as any)?.reply ||
         'Dr. Aria is unable to respond at this time. Please try again later.';
 
       setAiMessages((prev) => {
@@ -1022,6 +1140,63 @@ export default function MedicationVault() {
             <Text style={[styles.placeholderSub, { color: c.sub }]}>All scheduled doses are logged.</Text>
           </View>
         )}
+
+        {(() => {
+          const reviewAlerts = medicines.filter((med) => {
+            if (!med.nextReviewDate) return false;
+            try {
+              const reviewDateObj = new Date(med.nextReviewDate + "T00:00:00");
+              if (isNaN(reviewDateObj.getTime())) return false;
+              const today = new Date();
+              today.setHours(0, 0, 0, 0);
+              const diffTime = reviewDateObj.getTime() - today.getTime();
+              const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+              return diffDays <= 7 && med.reviewStatus !== "Archived" && med.reviewStatus !== "Stop";
+            } catch {
+              return false;
+            }
+          });
+
+          return reviewAlerts.map((med) => {
+            const reviewDateObj = new Date(med.nextReviewDate + "T00:00:00");
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            const diffDays = Math.ceil((reviewDateObj.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+            
+            let alertMsg = "";
+            if (diffDays < 0) {
+              alertMsg = `⚠️ Overdue: Clinical review for ${med.name} was due ${Math.abs(diffDays)} days ago.`;
+            } else if (diffDays === 0) {
+              alertMsg = `⚠️ Urgent: Clinical review for ${med.name} is due today!`;
+            } else {
+              alertMsg = `⏳ Action Required: Clinical review for ${med.name} is due in ${diffDays} days.`;
+            }
+
+            return (
+              <View key={`review-alert-${med.id}`} style={[styles.reviewAlertBanner, { backgroundColor: theme === "light" ? "#fef3c7" : "#451a03", borderColor: theme === "light" ? "#f59e0b" : "#d97706" }]}>
+                <Ionicons name="alert-circle" size={24} color="#d97706" />
+                <View style={{ flex: 1, marginLeft: 10 }}>
+                  <Text style={{ color: theme === "light" ? "#92400e" : "#fef3c7", fontWeight: "700", fontSize: 13 }}>
+                    Proactive Medication Review Alert
+                  </Text>
+                  <Text style={{ color: theme === "light" ? "#b45309" : "#fde68a", fontSize: 12, marginTop: 2 }}>
+                    {alertMsg}
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  style={{ backgroundColor: "#d97706", paddingHorizontal: 12, paddingVertical: 6, borderRadius: 6 }}
+                  onPress={() => {
+                    setSelectedMedicine(med);
+                    setActivePage("detail");
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                  }}
+                >
+                  <Text style={{ color: "#fff", fontWeight: "700", fontSize: 12 }}>Manage</Text>
+                </TouchableOpacity>
+              </View>
+            );
+          });
+        })()}
 
         {/* Quick Actions Grid */}
         <Text style={[styles.sectionTitle, { color: c.text }]}>Medication Operations</Text>
@@ -1480,6 +1655,24 @@ export default function MedicationVault() {
               </View>
             </View>
 
+            <Text style={[styles.labelHeader, { color: c.sub }]}>MEDICATION REVIEW ENGINE</Text>
+            <View style={styles.formRow}>
+              <View style={{ flex: 1 }}>
+                <Text style={{ color: c.text, fontSize: 13, marginBottom: 5 }}>Review Cycle Interval</Text>
+                <View style={[styles.priorityPicker, { backgroundColor: c.card, borderColor: c.border }]}>
+                  {["7 days", "30 days", "90 days", "6 months", "1 year"].map((interval) => (
+                    <TouchableOpacity
+                      key={interval}
+                      style={[styles.priorityTab, addReviewInterval === interval && { backgroundColor: c.accent }]}
+                      onPress={() => setAddReviewInterval(interval)}
+                    >
+                      <Text style={{ color: addReviewInterval === interval ? "#fff" : c.sub, fontSize: 11 }}>{interval}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+            </View>
+
             <View style={[styles.switchRow, { backgroundColor: c.card, borderColor: c.border }]}>
               <View style={{ flex: 1 }}>
                 <Text style={[styles.switchRowLabel, { color: c.text }]}>Link with BioGears Digital Twin</Text>
@@ -1662,6 +1855,170 @@ export default function MedicationVault() {
             </View>
           </View>
         )}
+
+        {/* Medication Review Engine Section */}
+        <View style={[styles.detailSectionCard, { backgroundColor: c.card, borderColor: c.border }]}>
+          <View style={styles.detailSectionHeader}>
+            <Ionicons name="shield-checkmark-outline" size={20} color="#3b82f6" />
+            <Text style={[styles.detailSectionTitle, { color: c.text }]}>Medication Review Engine</Text>
+          </View>
+          <Text style={[styles.detailText, { color: c.sub, fontSize: 13, lineHeight: 18 }]}>
+            Enforces periodic clinical reviews to prevent indefinite intake of medication without assessment.
+          </Text>
+
+          {/* Status & Next Date Grid */}
+          <View style={[styles.reviewInfoGrid, { borderColor: c.border, borderWidth: 1, borderRadius: 8, padding: 12, marginTop: 12, flexDirection: "row", justifyContent: "space-between" }]}>
+            <View style={{ flex: 1 }}>
+              <Text style={{ color: c.sub, fontSize: 10, fontWeight: "600" }}>CURRENT STATUS</Text>
+              <View style={[
+                styles.reviewStatusBadge,
+                {
+                  backgroundColor: 
+                    selectedMedicine.reviewStatus === "Stable" ? "#22c55e20" :
+                    selectedMedicine.reviewStatus === "Review Due" ? "#ef444420" :
+                    selectedMedicine.reviewStatus === "Doctor Review" ? "#8b5cf620" :
+                    "#3b82f620",
+                  alignSelf: "flex-start",
+                  marginTop: 4,
+                  paddingHorizontal: 8,
+                  paddingVertical: 3,
+                  borderRadius: 4
+                }
+              ]}>
+                <Text style={{
+                  fontSize: 12,
+                  fontWeight: "700",
+                  color: 
+                    selectedMedicine.reviewStatus === "Stable" ? "#22c55e" :
+                    selectedMedicine.reviewStatus === "Review Due" ? "#ef4444" :
+                    selectedMedicine.reviewStatus === "Doctor Review" ? "#8b5cf6" :
+                    "#3b82f6"
+                }}>
+                  {selectedMedicine.reviewStatus || "Started"}
+                </Text>
+              </View>
+            </View>
+
+            <View style={{ flex: 1, alignItems: "flex-end" }}>
+              <Text style={{ color: c.sub, fontSize: 10, fontWeight: "600" }}>NEXT REVIEW DATE</Text>
+              <Text style={{ 
+                color: selectedMedicine.nextReviewDate && new Date(selectedMedicine.nextReviewDate) <= new Date() ? "#ef4444" : c.text,
+                fontSize: 14,
+                fontWeight: "700",
+                marginTop: 4
+              }}>
+                {selectedMedicine.nextReviewDate || "Not Scheduled"}
+              </Text>
+            </View>
+          </View>
+
+          {/* Reschedule Interval Options */}
+          <Text style={[styles.knowledgeLabel, { color: c.text, marginTop: 15 }]}>Adjust Review Cycle Interval:</Text>
+          <View style={[styles.priorityPicker, { backgroundColor: c.card, borderColor: c.border, marginTop: 5 }]}>
+            {["7 days", "30 days", "90 days", "6 months", "1 year"].map((interval) => {
+              const isSelected = selectedMedicine.reviewInterval === interval;
+              return (
+                <TouchableOpacity
+                  key={interval}
+                  style={[styles.priorityTab, isSelected && { backgroundColor: c.accent }]}
+                  onPress={async () => {
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                    const newNextReviewDate = calculateReviewFromDate(new Date(), interval);
+                    
+                    await updateMedicineReviewDetails(
+                      selectedMedicine.id,
+                      interval,
+                      newNextReviewDate,
+                      selectedMedicine.reviewStatus
+                    );
+                    setSelectedMedicine({
+                      ...selectedMedicine,
+                      reviewInterval: interval,
+                      nextReviewDate: newNextReviewDate,
+                    });
+                    Alert.alert("Review Rescheduled", `Next review set to ${newNextReviewDate} (${interval} interval).`);
+                  }}
+                >
+                  <Text style={{ color: isSelected ? "#fff" : c.sub, fontSize: 11 }}>{interval}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
+          {/* Clinical Actions */}
+          <Text style={[styles.knowledgeLabel, { color: c.text, marginTop: 15 }]}>Doctor Review Outcomes:</Text>
+          <View style={{ flexDirection: "row", justifyContent: "space-between", marginTop: 8 }}>
+            <TouchableOpacity
+              style={{ flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", backgroundColor: "#22c55e", paddingVertical: 10, borderRadius: 8, marginRight: 6 }}
+              onPress={async () => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                const nextDate = calculateReviewFromDate(new Date(), selectedMedicine.reviewInterval || "90 days");
+                await updateMedicineReviewDetails(
+                  selectedMedicine.id,
+                  selectedMedicine.reviewInterval || "90 days",
+                  nextDate,
+                  "Stable"
+                );
+                setSelectedMedicine({
+                  ...selectedMedicine,
+                  reviewStatus: "Stable",
+                  nextReviewDate: nextDate,
+                });
+                Alert.alert("Review Complete", `Medication marked as Stable. Next review scheduled for ${nextDate}.`);
+              }}
+            >
+              <Ionicons name="checkmark-circle-outline" size={16} color="#fff" />
+              <Text style={{ color: "#fff", fontWeight: "700", marginLeft: 4, fontSize: 12 }}>Continue</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={{ flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", backgroundColor: "#f59e0b", paddingVertical: 10, borderRadius: 8, marginRight: 6 }}
+              onPress={async () => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                await updateMedicineReviewDetails(
+                  selectedMedicine.id,
+                  selectedMedicine.reviewInterval || "90 days",
+                  selectedMedicine.nextReviewDate,
+                  "Modify"
+                );
+                setSelectedMedicine({
+                  ...selectedMedicine,
+                  reviewStatus: "Modify",
+                });
+                Alert.alert("Therapy Modified", "Clinical status updated to 'Modify'. Adjust dosage/timing as prescribed.");
+              }}
+            >
+              <Ionicons name="create-outline" size={16} color="#fff" />
+              <Text style={{ color: "#fff", fontWeight: "700", marginLeft: 4, fontSize: 12 }}>Modify</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={{ flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", backgroundColor: "#ef4444", paddingVertical: 10, borderRadius: 8 }}
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+                Alert.alert(
+                  "Discontinue Medication",
+                  "Are you sure you want to stop and archive this medication? This will cancel all reminders and record the stopping event in history.",
+                  [
+                    { text: "Cancel", style: "cancel" },
+                    {
+                      text: "Stop & Archive",
+                      style: "destructive",
+                      onPress: async () => {
+                        await removeMedicine(selectedMedicine.id, "Discontinued during doctor review");
+                        setActivePage("dashboard");
+                        Alert.alert("Medication Stopped", `${selectedMedicine.name} has been archived.`);
+                      }
+                    }
+                  ]
+                );
+              }}
+            >
+              <Ionicons name="archive-outline" size={16} color="#fff" />
+              <Text style={{ color: "#fff", fontWeight: "700", marginLeft: 4, fontSize: 12 }}>Stop</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
 
         {/* Clinical Knowledge Cards */}
         <View style={[styles.detailSectionCard, { backgroundColor: c.card, borderColor: c.border }]}>
@@ -2038,20 +2395,20 @@ export default function MedicationVault() {
               <Ionicons name="document-text" size={32} color={c.accent} />
             </View>
             <View style={{ flex: 1, marginLeft: 12 }}>
-              <Text style={[styles.presFileName, { color: c.text }]}>{pres.fileName}</Text>
+              <Text style={[styles.presFileName, { color: c.text }]}>{pres.file_name || pres.fileName || "Scanned Prescription"}</Text>
               <Text style={[styles.presDoctor, { color: c.sub }]}>
-                {pres.doctor} · {pres.hospital}
+                {pres.doctor_name || pres.doctor || "Unknown Physician"} · {pres.hospital || "Unknown Facility"}
               </Text>
-              <Text style={[styles.presDate, { color: c.sub }]}>Uploaded: {pres.date}</Text>
+              <Text style={[styles.presDate, { color: c.sub }]}>Uploaded: {pres.created_at ? new Date(pres.created_at).toLocaleDateString() : pres.date || "N/A"}</Text>
             </View>
             <View
               style={[
                 styles.presStatusBadge,
-                { backgroundColor: pres.status === "Current" ? "#22c55e15" : "rgba(0,0,0,0.05)" },
+                { backgroundColor: (pres.status === "Current" || !pres.status) ? "#22c55e15" : "rgba(0,0,0,0.05)" },
               ]}
             >
-              <Text style={{ color: pres.status === "Current" ? "#22c55e" : c.sub, fontSize: 11, fontWeight: "700" }}>
-                {pres.status}
+              <Text style={{ color: (pres.status === "Current" || !pres.status) ? "#22c55e" : c.sub, fontSize: 11, fontWeight: "700" }}>
+                {pres.status || "Vaulted"}
               </Text>
             </View>
           </TouchableOpacity>
@@ -2070,20 +2427,20 @@ export default function MedicationVault() {
 
                 <View style={styles.ocrAuditBlock}>
                   <Text style={[styles.ocrAuditHeader, { color: c.accent }]}>AI CLINICAL EXTRACTION</Text>
-                  <Text style={[styles.ocrAuditBody, { color: c.text }]}>{selectedPrescription.summary}</Text>
+                  <Text style={[styles.ocrAuditBody, { color: c.text }]}>{selectedPrescription.raw_ocr_text || selectedPrescription.summary || "No extracted text"}</Text>
                 </View>
 
                 <View style={styles.ocrInfoRow}>
                   <Text style={{ color: c.sub }}>Physician:</Text>
-                  <Text style={{ color: c.text, fontWeight: "700" }}>{selectedPrescription.doctor}</Text>
+                  <Text style={{ color: c.text, fontWeight: "700" }}>{selectedPrescription.doctor_name || selectedPrescription.doctor || "Unknown"}</Text>
                 </View>
                 <View style={styles.ocrInfoRow}>
                   <Text style={{ color: c.sub }}>Hospital:</Text>
-                  <Text style={{ color: c.text, fontWeight: "700" }}>{selectedPrescription.hospital}</Text>
+                  <Text style={{ color: c.text, fontWeight: "700" }}>{selectedPrescription.hospital || "Unknown"}</Text>
                 </View>
                 <View style={styles.ocrInfoRow}>
                   <Text style={{ color: c.sub }}>Issue Date:</Text>
-                  <Text style={{ color: c.text, fontWeight: "700" }}>{selectedPrescription.date}</Text>
+                  <Text style={{ color: c.text, fontWeight: "700" }}>{selectedPrescription.created_at ? new Date(selectedPrescription.created_at).toLocaleDateString() : selectedPrescription.date || "N/A"}</Text>
                 </View>
 
                 <TouchableOpacity
@@ -3694,5 +4051,28 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginTop: 12,
     paddingVertical: 8,
+  },
+  reviewAlertBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    borderRadius: 16,
+    borderWidth: 1,
+    padding: 16,
+    marginBottom: 16,
+  },
+  reviewInfoGrid: {
+    borderWidth: 1,
+    borderRadius: 8,
+    padding: 12,
+    marginTop: 12,
+    flexDirection: "row",
+    justifyContent: "space-between",
+  },
+  reviewStatusBadge: {
+    alignSelf: "flex-start",
+    marginTop: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 4,
   },
 });

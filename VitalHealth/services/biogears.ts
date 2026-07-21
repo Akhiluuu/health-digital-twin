@@ -7,13 +7,12 @@ import { doc, setDoc, deleteDoc, writeBatch, collection, getDocs, getDoc, server
 import { db, auth } from "./firebase";
 
 import { log, warn } from "../utils/logger";
-
-// ─── Configuration ────────────────────────────────────────────────────────────
-// LOCAL DEV:  your laptop's Wi-Fi IP (e.g. 'http://10.172.0.79:8000')
-// PRODUCTION: change to your E2E Cloud URL (e.g. 'https://yourdomain.com')
-
-const DEFAULT_BASE_URL = 'http://151.185.45.137';
-const BASE_URL_KEY = '@biogears_base_url';
+import {
+  getCentralBiogearsBaseUrl,
+  getCentralHeartRateBaseUrl,
+  BASE_URL_KEY,
+  HEARTRATE_URL_KEY,
+} from "../constants/Config";
 
 /** Strip redundant/wrong ports from a BioGears URL.
  *  :8000 was incorrectly stored by early versions — nginx exposes port 80. */
@@ -33,13 +32,10 @@ function sanitizeBiogearsUrl(raw: string): string {
 }
 
 export async function getBiogearsBaseUrl(): Promise<string> {
-  // In production builds, always use the hardcoded cloud server.
-  // In dev mode (__DEV__), honour any AsyncStorage override so developers
-  // can point the app at a local instance without rebuilding.
-  if (!__DEV__) return DEFAULT_BASE_URL;
+  const centralUrl = await getCentralBiogearsBaseUrl();
   try {
     const stored = await AsyncStorage.getItem(BASE_URL_KEY);
-    const raw = stored || DEFAULT_BASE_URL;
+    const raw = stored || centralUrl;
     const url = sanitizeBiogearsUrl(raw);
 
     // Auto-heal: if we fixed a bad stored URL, persist the clean version
@@ -51,8 +47,8 @@ export async function getBiogearsBaseUrl(): Promise<string> {
     log(`[BioGears] Using Base URL: ${url}`);
     return url;
   } catch {
-    log(`[BioGears] Using Default Base URL (Fallback): ${DEFAULT_BASE_URL}`);
-    return DEFAULT_BASE_URL;
+    log(`[BioGears] Using Default Base URL (Fallback): ${centralUrl}`);
+    return centralUrl;
   }
 }
 
@@ -60,9 +56,8 @@ export async function setBiogearsBaseUrl(url: string): Promise<void> {
   await AsyncStorage.setItem(BASE_URL_KEY, url.replace(/\/$/, ''));
 }
 
-const HEARTRATE_URL_KEY = '@heartrate_base_url';
-
 export async function getHeartRateBaseUrl(): Promise<string> {
+  const centralHrUrl = await getCentralHeartRateBaseUrl();
   try {
     const stored = await AsyncStorage.getItem(HEARTRATE_URL_KEY);
     if (stored) return stored;
@@ -73,10 +68,10 @@ export async function getHeartRateBaseUrl(): Promise<string> {
       const u = new URL(biogearsUrl);
       return `${u.protocol}//${u.hostname}:5000`;
     } catch {
-      return 'http://151.185.45.137:5000';
+      return centralHrUrl;
     }
   } catch {
-    return 'http://151.185.45.137:5000';
+    return centralHrUrl;
   }
 }
 
@@ -830,3 +825,11 @@ export async function fetchPendingEvents(userId: string, ownerUid?: string): Pro
   }
   return null;
 }
+
+export async function updateProfileMetadata(userId: string, data: Record<string, any>): Promise<any> {
+  return apiFetch(`/profiles/${userId}/metadata`, {
+    method: 'POST',
+    body: JSON.stringify(data),
+  }, 15_000);
+}
+

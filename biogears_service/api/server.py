@@ -1209,6 +1209,27 @@ def delete_profile(user_id: str):
         raise HTTPException(status_code=500, detail="Deletion failed.")
 
 
+@app.post("/profiles/{user_id}/metadata", dependencies=[Depends(require_api_key)],
+          summary="Update profile metadata (e.g. default routine)")
+def update_profile_metadata(user_id: str, data: Dict[str, Any]):
+    # Security: prevent path traversal
+    if not re.match(r'^[a-zA-Z0-9_\-\.]+$', user_id) or '..' in user_id:
+        raise HTTPException(status_code=400, detail="Invalid user_id format.")
+    try:
+        profile = db.get_profile(user_id)
+        if not profile:
+            raise HTTPException(status_code=404, detail=f"Twin profile '{user_id}' not found.")
+        profile.update(data)
+        db.upsert_profile(user_id, profile)
+        logger.info(f"📝 Profile metadata updated for {user_id}.")
+        return {"status": "success", "message": "Profile metadata updated."}
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        logger.error(f"Metadata update failed: {e}")
+        raise HTTPException(status_code=500, detail="Metadata update failed.")
+
+
 # ── 3. REGISTRATION ───────────────────────────────────────────────────────────
 
 @app.post("/register", dependencies=[Depends(require_api_key)],

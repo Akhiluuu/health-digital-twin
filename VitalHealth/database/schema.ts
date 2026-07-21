@@ -42,7 +42,10 @@ export const initAllTables = async (): Promise<void> => {
         reminder       INTEGER,
         notificationId TEXT,
         taken          INTEGER DEFAULT 0,
-        takenDate      TEXT DEFAULT NULL
+        takenDate      TEXT DEFAULT NULL,
+        reviewInterval TEXT DEFAULT '90 days',
+        nextReviewDate TEXT DEFAULT NULL,
+        reviewStatus   TEXT DEFAULT 'Started'
       );
 
       -- ── Medicine history ────────────────────────────────────────────────────
@@ -231,6 +234,17 @@ export const initAllTables = async (): Promise<void> => {
     } catch (_) {}
     try {
       await db.execAsync("ALTER TABLE simulation_history ADD COLUMN event_count INTEGER DEFAULT 0;");
+    } catch (_) {}
+
+    // Migrate medicines table for reviews
+    try {
+      await db.execAsync("ALTER TABLE medicines ADD COLUMN reviewInterval TEXT DEFAULT '90 days';");
+    } catch (_) {}
+    try {
+      await db.execAsync("ALTER TABLE medicines ADD COLUMN nextReviewDate TEXT DEFAULT NULL;");
+    } catch (_) {}
+    try {
+      await db.execAsync("ALTER TABLE medicines ADD COLUMN reviewStatus TEXT DEFAULT 'Started';");
     } catch (_) {}
 
     // ── Write schema version ─────────────────────────────────────────────────

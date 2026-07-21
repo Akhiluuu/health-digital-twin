@@ -19,7 +19,8 @@
         "gradleCommand": ":app:assembleRelease"
       },
       "env": {
-        "NODE_ENV": "production"
+        "NODE_ENV": "production",
+        "EXPO_PUBLIC_BACKEND_URL": "http://151.185.45.137"
       }
     },
 
@@ -29,7 +30,8 @@
         "buildType": "app-bundle"
       },
       "env": {
-        "NODE_ENV": "production"
+        "NODE_ENV": "production",
+        "EXPO_PUBLIC_BACKEND_URL": "https://REQUIRED_PRODUCTION_HTTPS_DOMAIN"
       }
     }
   },

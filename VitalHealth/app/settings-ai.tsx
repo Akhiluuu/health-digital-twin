@@ -19,11 +19,11 @@ import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useTheme } from "../context/ThemeContext";
 import { colors } from "../theme/colors";
+import { getCentralAiBaseUrl } from "../constants/Config";
 
 const KEY_SERVER_IP   = "@hai_server_ip";
 const KEY_SERVER_PORT = "@hai_server_port";
 const DEFAULT_PORT    = "8000";
-const DEFAULT_AI_URL  = "http://151.185.45.137/ai";
 
 type TestStatus = "idle" | "testing" | "ok" | "fail";
 
@@ -49,10 +49,15 @@ export default function AIServerConfigScreen() {
           setIp(storedIp);
           setPort(storedPort || "");
         } else {
-          // Parse default
-          const u = new URL(DEFAULT_AI_URL);
-          setIp(u.protocol + "//" + u.hostname + u.pathname);
-          setPort(u.port || "");
+          const defaultUrl = await getCentralAiBaseUrl();
+          try {
+            const u = new URL(defaultUrl);
+            setIp(u.protocol + "//" + u.hostname + u.pathname);
+            setPort(u.port || "");
+          } catch {
+            setIp(defaultUrl);
+            setPort("");
+          }
         }
       } catch (e) {
         console.error("Failed to load AI settings:", e);
@@ -146,7 +151,7 @@ export default function AIServerConfigScreen() {
             <Ionicons name="globe-outline" size={20} color={c.sub} style={ss.icon} />
             <TextInput
               style={[ss.input, { color: c.text }]}
-              placeholder="e.g. http://151.185.45.137/ai"
+              placeholder="e.g. http://your-backend-ip/ai"
               placeholderTextColor={c.sub}
               value={ip}
               onChangeText={setIp}

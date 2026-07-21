@@ -25,6 +25,9 @@ export interface Medicine {
   taken: number;
   // ✅ NEW: date the `taken` flag was last set — used for daily reset
   takenDate: string | null;
+  reviewInterval: string;
+  nextReviewDate: string | null;
+  reviewStatus: string;
 }
 
 ///////////////////////////////////////////////////////////
@@ -35,6 +38,32 @@ export interface Medicine {
 function todayStr(): string {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+export function calculateNextReviewDate(startDate: string, interval: string): string {
+  const d = new Date(startDate + "T00:00:00");
+  if (isNaN(d.getTime())) {
+    return startDate;
+  }
+  const match = interval.match(/^(\d+)\s+(day|month|year)s?$/i);
+  if (match) {
+    const val = parseInt(match[1]);
+    const unit = match[2].toLowerCase();
+    if (unit.startsWith("day")) {
+      d.setDate(d.getDate() + val);
+    } else if (unit.startsWith("month")) {
+      d.setMonth(d.getMonth() + val);
+    } else if (unit.startsWith("year")) {
+      d.setFullYear(d.getFullYear() + val);
+    }
+  } else {
+    // Default to 90 days
+    d.setDate(d.getDate() + 90);
+  }
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
 }
 
 ///////////////////////////////////////////////////////////
@@ -52,6 +81,21 @@ export async function initMedicineDB() {
   } catch {
     // Column already exists — ignore the error
   }
+  try {
+    db.runSync(
+      `ALTER TABLE medicines ADD COLUMN reviewInterval TEXT DEFAULT '90 days'`
+    );
+  } catch {}
+  try {
+    db.runSync(
+      `ALTER TABLE medicines ADD COLUMN nextReviewDate TEXT DEFAULT NULL`
+    );
+  } catch {}
+  try {
+    db.runSync(
+      `ALTER TABLE medicines ADD COLUMN reviewStatus TEXT DEFAULT 'Started'`
+    );
+  } catch {}
   log("💊 Medicine DB ready (shared vital_health.db)");
 }
 
@@ -70,13 +114,17 @@ export function addMedicine(
   startDate: string,
   endDate: string,
   reminder: number,
-  notificationId: string | null
+  notificationId: string | null,
+  reviewInterval: string = "90 days",
+  nextReviewDate: string | null = null,
+  reviewStatus: string = "Started"
 ) {
+  const calculatedNextReviewDate = nextReviewDate || calculateNextReviewDate(startDate, reviewInterval);
   db.runSync(
     `INSERT INTO medicines
-    (name, dose, type, time, timestamp, meal, frequency, startDate, endDate, reminder, notificationId, taken, takenDate)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL)`,
-    [name, dose, type, time, timestamp, meal, frequency, startDate, endDate, reminder, notificationId]
+    (name, dose, type, time, timestamp, meal, frequency, startDate, endDate, reminder, notificationId, taken, takenDate, reviewInterval, nextReviewDate, reviewStatus)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, ?, ?, ?)`,
+    [name, dose, type, time, timestamp, meal, frequency, startDate, endDate, reminder, notificationId, reviewInterval, calculatedNextReviewDate, reviewStatus]
   );
 }
 
@@ -95,11 +143,17 @@ export function insertOrReplaceMedicine(med: {
   notificationId: string | null;
   taken?: number;
   takenDate?: string | null;
+  reviewInterval?: string;
+  nextReviewDate?: string | null;
+  reviewStatus?: string;
 }) {
+  const reviewInterval = med.reviewInterval || "90 days";
+  const nextReviewDate = med.nextReviewDate || calculateNextReviewDate(med.startDate, reviewInterval);
+  const reviewStatus = med.reviewStatus || "Started";
   db.runSync(
     `INSERT OR REPLACE INTO medicines
-    (id, name, dose, type, time, timestamp, meal, frequency, startDate, endDate, reminder, notificationId, taken, takenDate)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    (id, name, dose, type, time, timestamp, meal, frequency, startDate, endDate, reminder, notificationId, taken, takenDate, reviewInterval, nextReviewDate, reviewStatus)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       med.id,
       med.name,
@@ -115,6 +169,9 @@ export function insertOrReplaceMedicine(med: {
       med.notificationId,
       med.taken ?? 0,
       med.takenDate ?? null,
+      reviewInterval,
+      nextReviewDate,
+      reviewStatus,
     ]
   );
 }
@@ -329,6 +386,23 @@ export function deleteMedicineByNotificationId(notificationId: string) {
     log("🗑 Deleted medicine by notificationId");
   } catch (error) {
     log("❌ deleteMedicineByNotificationId error:", error);
+  }
+}
+
+export function updateMedicineReview(
+  id: number,
+  reviewInterval: string,
+  nextReviewDate: string | null,
+  reviewStatus: string
+) {
+  try {
+    db.runSync(
+      "UPDATE medicines SET reviewInterval = ?, nextReviewDate = ?, reviewStatus = ? WHERE id = ?",
+      [reviewInterval, nextReviewDate, reviewStatus, id]
+    );
+    log("🔄 Updated medicine review status in SQLite:", id);
+  } catch (error) {
+    log("❌ updateMedicineReview error:", error);
   }
 }
 

@@ -43,24 +43,44 @@ class AIService:
         history = _conversations.get(conv_id, [])
 
         # Build context from active medicines
-        med_context = ""
+        patient_context = {
+            "medicines": [],
+            "activeSymptoms": [],
+            "historySymptoms": []
+        }
         if medicine_context:
-            names = [m.get("name", "") for m in medicine_context[:5]]
-            med_context = f"\n\nPatient's active medications: {', '.join(names)}"
+            for m in medicine_context:
+                patient_context["medicines"].append({
+                    "name": m.get("name"),
+                    "dose": m.get("dose") or m.get("strength"),
+                    "type": m.get("type"),
+                    "frequency": m.get("frequency"),
+                    "time": m.get("time"),
+                    "meal": m.get("meal")
+                })
+
+        formatted_history = []
+        for h in history:
+            role = "User" if h["role"] == "user" else "Dr. Aria"
+            formatted_history.append(f"{role}: {h['content']}")
 
         history.append({"role": "user", "content": message})
 
-        # Try BioGears AI query endpoint first
+        # Try BioGears AI generate endpoint
         try:
             async with httpx.AsyncClient(timeout=30) as client:
                 resp = await client.post(
-                    f"{AI_BASE}/query",
-                    json={"user_id": user_id, "question": f"{SYSTEM_PROMPT}{med_context}\n\nUser: {message}"},
+                    f"{AI_BASE}/generate",
+                    json={
+                        "query": message,
+                        "history": formatted_history,
+                        "patient_context": patient_context
+                    },
                     headers={"X-API-Key": AI_API_KEY},
                 )
                 if resp.status_code == 200:
                     data = resp.json()
-                    reply = data.get("answer") or data.get("response") or data.get("reply") or str(data)
+                    reply = data.get("response") or data.get("reply") or data.get("answer") or str(data)
                     history.append({"role": "assistant", "content": reply})
                     _conversations[conv_id] = history[-20:]  # keep last 20 turns
                     return {

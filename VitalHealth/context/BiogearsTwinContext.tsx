@@ -1132,6 +1132,9 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
           await BiogearsAPI.setDefaultRoutine(twinUserId, routine.id, firestoreOwnerUid, true);
           setSavedRoutines([routine]);
           log('[BiogearsTwin] ✅ Auto-generated default routine "My Saved State" from habits');
+          BiogearsAPI.updateProfileMetadata(twinUserId, { default_routine: routine.events }).catch((err) => {
+            warn("[BiogearsTwinContext] Failed to sync auto-generated default routine to backend:", err);
+          });
           return;
         }
       } catch (e) {
@@ -1192,6 +1195,12 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
       if (needsRefresh) {
         const cleaned = await BiogearsAPI.loadSavedRoutines(twinUserId);
         setSavedRoutines(cleaned);
+        const def = cleaned.find(routine => routine.isDefault);
+        if (def) {
+          BiogearsAPI.updateProfileMetadata(twinUserId, { default_routine: def.events }).catch((err) => {
+            warn("[BiogearsTwinContext] Failed to sync default routine to backend:", err);
+          });
+        }
         return;
       }
     }
@@ -1235,6 +1244,13 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
     }
 
     setSavedRoutines(r);
+
+    const defaultRoutine = r.find(routine => routine.isDefault);
+    if (defaultRoutine) {
+      BiogearsAPI.updateProfileMetadata(twinUserId, { default_routine: defaultRoutine.events }).catch((err) => {
+        warn("[BiogearsTwinContext] Failed to sync default routine to backend:", err);
+      });
+    }
   };
 
   const refreshSessions = useCallback(async () => {
@@ -1790,6 +1806,9 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
     // If we just set a new default, clear isDefault on all others in storage
     if (routine.isDefault) {
       await BiogearsAPI.setDefaultRoutine(twinUserId, routine.id, firestoreOwnerUid);
+      BiogearsAPI.updateProfileMetadata(twinUserId, { default_routine: routine.events }).catch((err) => {
+        warn("[BiogearsTwinContext] Failed to sync default routine to backend:", err);
+      });
     }
     setSavedRoutines(prev => {
       const filtered = prev.filter(r => r.id !== routine.id);
@@ -1949,17 +1968,48 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
   const deleteRoutine = useCallback(async (routineId: string) => {
     if (!twinUserId) return;
     await BiogearsAPI.deleteRoutine(twinUserId, routineId, firestoreOwnerUid);
-    setSavedRoutines(prev => prev.filter(r => r.id !== routineId));
+    setSavedRoutines(prev => {
+      const filtered = prev.filter(r => r.id !== routineId);
+      const wasDefault = prev.find(r => r.id === routineId)?.isDefault;
+      if (wasDefault && filtered.length > 0) {
+        filtered[0].isDefault = true;
+        BiogearsAPI.saveRoutine(twinUserId, filtered[0], firestoreOwnerUid).catch(() => {});
+        BiogearsAPI.setDefaultRoutine(twinUserId, filtered[0].id, firestoreOwnerUid, true).catch(() => {});
+        BiogearsAPI.updateProfileMetadata(twinUserId, { default_routine: filtered[0].events }).catch((err) => {
+          warn("[BiogearsTwinContext] Failed to sync default routine to backend:", err);
+        });
+      }
+      return filtered;
+    });
   }, [twinUserId, firestoreOwnerUid]);
 
   const setDefaultRoutine = useCallback(async (routineId: string) => {
     if (!twinUserId) return;
     await BiogearsAPI.setDefaultRoutine(twinUserId, routineId, firestoreOwnerUid);
-    setSavedRoutines(prev => prev.map(r => ({
-      ...r,
-      isDefault: r.id === routineId ? !r.isDefault : false
-    })));
-  }, [twinUserId, firestoreOwnerUid]);
+    const routine = savedRoutines.find(r => r.id === routineId);
+    if (routine) {
+      const isNowDefault = !routine.isDefault;
+      if (isNowDefault) {
+        BiogearsAPI.updateProfileMetadata(twinUserId, { default_routine: routine.events }).catch((err) => {
+          warn("[BiogearsTwinContext] Failed to sync default routine to backend:", err);
+        });
+      }
+    }
+    setSavedRoutines(prev => {
+      const updated = prev.map(r => ({
+        ...r,
+        isDefault: r.id === routineId ? !r.isDefault : false
+      }));
+      const hasDefault = updated.some(r => r.isDefault);
+      if (updated.length > 0 && !hasDefault) {
+        updated[0].isDefault = true;
+        BiogearsAPI.saveRoutine(twinUserId, updated[0], firestoreOwnerUid).catch(() => {});
+        BiogearsAPI.setDefaultRoutine(twinUserId, updated[0].id, firestoreOwnerUid, true).catch(() => {});
+        BiogearsAPI.updateProfileMetadata(twinUserId, { default_routine: updated[0].events }).catch(() => {});
+      }
+      return updated;
+    });
+  }, [twinUserId, savedRoutines, firestoreOwnerUid]);
 
   // ── Session History ───────────────────────────────────────────────────────
 

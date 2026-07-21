@@ -112,6 +112,7 @@ export interface MedicalContext {
   dueNowMeds: Array<{ id: number; name: string; time: string; dose: string }>;
   overdueMeds: Array<{ id: number; name: string; overdueMins: number }>;
   lowInventoryMeds: Array<{ id: number; name: string; daysRemaining: number }>;
+  overdueReviews: Array<{ id: number; name: string; daysOverdue: number }>;
   adherenceRate7d: number | null;   // 0–1
   lastTakenAt: string | null;
   pendingDocuments: number;         // meds without linked prescription
