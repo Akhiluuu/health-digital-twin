@@ -297,6 +297,11 @@ export const StepProvider: React.FC<{
           await notifee.displayNotification({
             title: `[${name}] Move a little! 🚶`,
             body: "You've been inactive for over an hour.",
+            data: {
+              profileId: profileId,
+              type: "sedentary",
+              deepLink: "/(tabs)/twin",
+            },
             android: { channelId: 'health', pressAction: { id: 'default' } },
           });
         } catch { /* ignore */ }

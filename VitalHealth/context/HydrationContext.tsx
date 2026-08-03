@@ -276,7 +276,7 @@ export const HydrationProvider = ({
 
       if (isNativeHydrationAlarmAvailable()) {
         cancelHydrationAlarm();
-        scheduleHydrationAlarm(minutes);
+        scheduleHydrationAlarm(minutes, activeMemberId || "self", activeProfileName || "You");
         log(`💧 Native Hydration reminder scheduled for ${minutes} minutes`);
       } else {
         await cancelHydrationReminders();

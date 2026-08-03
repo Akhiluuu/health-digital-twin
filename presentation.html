@@ -4,253 +4,397 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 
-    <title>VitalHealth: AI-Powered Physiological Digital Twin</title>
+    <title>VitalHealth: AI-Powered Physiological Digital Twin — Architecture & Presentation Deck</title>
 
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/5.0.4/reset.min.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/5.0.4/reveal.min.css">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/5.0.4/theme/simple.min.css" id="theme">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/5.0.4/theme/black.min.css" id="theme">
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
 
     <style>
-        .reveal h1, .reveal h2, .reveal h3 { 
-            text-transform: none; 
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-            color: #2c3e50;
+        :root {
+            --bg-gradient: linear-gradient(135deg, #090d16 0%, #0f172a 50%, #1e1b4b 100%);
+            --accent-cyan: #38bdf8;
+            --accent-emerald: #34d399;
+            --accent-purple: #c084fc;
+            --accent-rose: #fb7185;
+            --accent-amber: #fbbf24;
+            --glass-bg: rgba(30, 41, 59, 0.7);
+            --glass-border: rgba(255, 255, 255, 0.12);
         }
-        .reveal h1 { font-size: 2.2em; font-weight: 700; margin-bottom: 20px;}
-        .reveal h2 { font-size: 1.6em; border-bottom: 2px solid #3498db; display: inline-block; padding-bottom: 10px; margin-bottom: 30px;}
-        .reveal h3 { font-size: 1.2em; color: #7f8c8d; }
-        .reveal .slides section { text-align: left; font-size: 0.85em; }
-        .reveal .slides section.center { text-align: center; margin-top: 10%; }
-        .reveal ul { margin-left: 1.5em; line-height: 1.4; }
-        .reveal li { margin-bottom: 15px; }
-        .highlight { color: #e74c3c; font-weight: bold; }
-        .highlight-blue { color: #3498db; font-weight: bold; }
-        .table-container { font-size: 0.7em; width: 100%; border-collapse: collapse; margin-top: 20px; }
-        .table-container th { background: #f8f9fa; border-bottom: 2px solid #dee2e6; padding: 12px; text-align: left;}
-        .table-container td { border-bottom: 1px solid #dee2e6; padding: 12px; }
-        .sub-text { font-size: 0.8em; color: #666; margin-top: 20px; }
-        .flex-container { display: flex; justify-content: space-between; gap: 30px;}
-        .flex-col { flex: 1; }
-        .glass-box { background: rgba(255, 255, 255, 0.9); border-radius: 12px; padding: 25px; box-shadow: 0 8px 16px rgba(0,0,0,0.05); border: 1px solid rgba(0,0,0,0.05); }
+
+        body {
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            background: var(--bg-gradient);
+            color: #f8fafc;
+        }
+
+        .reveal {
+            font-family: 'Plus Jakarta Sans', sans-serif;
+        }
+
+        .reveal h1, .reveal h2, .reveal h3, .reveal h4 {
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            text-transform: none;
+            font-weight: 700;
+            letter-spacing: -0.02em;
+        }
+
+        .reveal h1 {
+            font-size: 2.4em;
+            background: linear-gradient(135deg, #60a5fa 0%, #38bdf8 50%, #a78bfa 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 20px;
+        }
+
+        .reveal h2 {
+            font-size: 1.7em;
+            color: #f1f5f9;
+            border-bottom: 3px solid var(--accent-cyan);
+            display: inline-block;
+            padding-bottom: 8px;
+            margin-bottom: 25px;
+        }
+
+        .reveal h3 {
+            font-size: 1.25em;
+            color: #cbd5e1;
+        }
+
+        .reveal .slides section {
+            text-align: left;
+            font-size: 0.85em;
+        }
+
+        .reveal .slides section.center {
+            text-align: center;
+        }
+
+        /* Glassmorphism Cards */
+        .glass-card {
+            background: var(--glass-bg);
+            backdrop-filter: blur(16px);
+            border: 1px solid var(--glass-border);
+            border-radius: 16px;
+            padding: 24px;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
+            margin-bottom: 20px;
+        }
+
+        .flex-container {
+            display: flex;
+            justify-content: space-between;
+            gap: 20px;
+        }
+
+        .flex-col {
+            flex: 1;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 6px 14px;
+            border-radius: 20px;
+            font-size: 0.75em;
+            font-weight: 600;
+            margin-right: 8px;
+            background: rgba(56, 189, 248, 0.15);
+            color: var(--accent-cyan);
+            border: 1px solid rgba(56, 189, 248, 0.3);
+        }
+
+        .badge-green { background: rgba(52, 211, 153, 0.15); color: var(--accent-emerald); border-color: rgba(52, 211, 153, 0.3); }
+        .badge-purple { background: rgba(192, 132, 252, 0.15); color: var(--accent-purple); border-color: rgba(192, 132, 252, 0.3); }
+        .badge-rose { background: rgba(251, 113, 133, 0.15); color: var(--accent-rose); border-color: rgba(251, 113, 133, 0.3); }
+
+        /* Architecture Boxes */
+        .arch-node {
+            background: #1e293b;
+            border: 1px solid #334155;
+            border-radius: 10px;
+            padding: 14px;
+            text-align: center;
+            font-size: 0.8em;
+            font-weight: 600;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+        }
+
+        .arch-node.frontend { border-color: #38bdf8; background: rgba(56, 189, 248, 0.1); }
+        .arch-node.gateway { border-color: #fbbf24; background: rgba(251, 191, 36, 0.1); }
+        .arch-node.biogears { border-color: #34d399; background: rgba(52, 211, 153, 0.1); }
+        .arch-node.ai { border-color: #c084fc; background: rgba(192, 132, 252, 0.1); }
+        .arch-node.med { border-color: #fb7185; background: rgba(251, 113, 133, 0.1); }
+        .arch-node.db { border-color: #94a3b8; background: rgba(148, 163, 184, 0.1); }
+
+        .arrow {
+            text-align: center;
+            font-size: 1.2em;
+            color: #64748b;
+            margin: 6px 0;
+        }
+
+        ul {
+            margin-left: 1.2em;
+            line-height: 1.6;
+        }
+
+        li {
+            margin-bottom: 10px;
+        }
+
+        code {
+            font-family: 'JetBrains Mono', monospace;
+            background: rgba(0,0,0,0.4);
+            padding: 2px 6px;
+            border-radius: 4px;
+            color: var(--accent-cyan);
+        }
     </style>
 </head>
 <body>
     <div class="reveal">
         <div class="slides">
+
             <!-- Slide 1: Title -->
-            <section class="center" data-transition="fade">
-                <h1>🫀 VitalHealth</h1>
-                <h3>AI-Powered Physiological Digital Twin</h3>
-                <br>
-                <p>A full-stack open-source platform coupling a React Native app with a BioGears physiological simulation backend.</p>
-                <div class="sub-text" style="margin-top: 40px;">
-                    <strong>Tech Stack:</strong> React Native Expo, FastAPI, Python, BioGears (C++)
+            <section class="center">
+                <span class="badge badge-purple">College Capstone Defense</span>
+                <span class="badge badge-green">Full-Stack AI + Biophysics</span>
+                <h1 style="margin-top: 15px;">🫀 VitalHealth</h1>
+                <h3>AI-Powered Physiological Digital Twin & Medication Vault</h3>
+                <p style="color: #94a3b8; font-size: 0.9em; margin-top: 25px;">
+                    A living computational model of human physiology coupling React Native with C++ BioGears simulation & local LLM intelligence.
+                </p>
+                <div style="margin-top: 40px; font-size: 0.75em; color: #64748b;">
+                    <strong>Tech Stack:</strong> React Native Expo | FastAPI | C++ BioGears | Qwen2.5-14B LLM | PostgreSQL | Redis
                 </div>
             </section>
 
-            <!-- Slide 2: The Problem -->
-            <section data-transition="slide">
-                <h2>The Problem with Current Health Apps</h2>
+            <!-- Slide 2: The Core Analogy -->
+            <section>
+                <h2>💡 The High-Concept Analogy</h2>
+                <div class="glass-card" style="border-left: 4px solid var(--accent-amber);">
+                    <h3 style="color: var(--accent-amber);">✈️ "A Flight Simulator for the Human Body"</h3>
+                    <p style="margin-top: 10px; font-size: 0.9em; color: #cbd5e1;">
+                        Standard health apps are like <strong>flight logbooks</strong> — they only record where you flew after the flight ends.
+                    </p>
+                    <p style="margin-top: 10px; font-size: 0.9em; color: #cbd5e1;">
+                        <strong>VitalHealth is a Flight Simulator</strong>: When you eat a meal, take a medication, exercise, or sleep, it runs real fluid dynamic physics to compute second-by-second internal organ changes in real-time.
+                    </p>
+                </div>
+
+                <div class="flex-container" style="margin-top: 20px;">
+                    <div class="flex-col glass-card" style="margin-bottom:0;">
+                        <h4 style="color: var(--accent-rose);">❌ Typical Health Apps</h4>
+                        <ul style="font-size: 0.8em; color: #94a3b8;">
+                            <li>Passive data loggers.</li>
+                            <li>Use basic statistical averages.</li>
+                            <li>Cannot predict internal organ workload.</li>
+                        </ul>
+                    </div>
+                    <div class="flex-col glass-card" style="margin-bottom:0; border-color: var(--accent-emerald);">
+                        <h4 style="color: var(--accent-emerald);">✅ VitalHealth Platform</h4>
+                        <ul style="font-size: 0.8em; color: #e2e8f0;">
+                            <li>Mechanistic biological solver.</li>
+                            <li>Real organ circuit differential equations.</li>
+                            <li>Computes live trajectories for HR, BP, Glucose, SpO₂.</li>
+                        </ul>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Slide 3: Full System Architecture -->
+            <section>
+                <h2>🏛️ System Architecture Diagram</h2>
+                <div class="arch-node frontend" style="margin-bottom: 8px;">
+                    📱 MOBILE CLIENT APP (React Native + Expo Router)<br>
+                    <span style="font-size: 0.75em; font-weight: normal; color: #94a3b8;">
+                        Digital Twin Gauges | 8-Tab Routine Logger | Brain Lab | rPPG Camera Scanner | On-Device RAG
+                    </span>
+                </div>
+                <div class="arrow">⬇️ HTTPS (Port 80/443)</div>
+                <div class="arch-node gateway" style="margin-bottom: 8px;">
+                    🌐 NGINX API GATEWAY & REVERSE PROXY<br>
+                    <span style="font-size: 0.75em; font-weight: normal; color: #94a3b8;">
+                        SSL Termination | Ingress Security | Dynamic Route Forwarding
+                    </span>
+                </div>
+                <div class="arrow">↙️ &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; ⬇️ &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; ↘️</div>
                 <div class="flex-container">
-                    <div class="flex-col glass-box">
-                        <h3>Typical Apps</h3>
-                        <ul>
-                            <li><strong>Data Storage:</strong> They just log what you did.</li>
-                            <li><strong>Models:</strong> Rely on simple statistical estimates.</li>
-                            <li><strong>Vitals:</strong> Only use external sensor readings.</li>
+                    <div class="flex-col arch-node biogears">
+                        🧬 BioGears Twin Engine<br>
+                        <span style="font-size: 0.7em; color: #94a3b8;">(FastAPI :8000 + C++)</span><br>
+                        <span style="font-size: 0.65em; font-weight: normal;">• Biophysics Solver<br>• XML Scenario Builder<br>• SSE Vitals Stream</span>
+                    </div>
+                    <div class="flex-col arch-node ai">
+                        🤖 Health Assistant<br>
+                        <span style="font-size: 0.7em; color: #94a3b8;">(FastAPI :8001 + GGUF)</span><br>
+                        <span style="font-size: 0.65em; font-weight: normal;">• Qwen2.5-14B LLM<br>• Prompt Hydration<br>• Private Chat</span>
+                    </div>
+                    <div class="flex-col arch-node med">
+                        💊 Medication Vault<br>
+                        <span style="font-size: 0.7em; color: #94a3b8;">(FastAPI :8002)</span><br>
+                        <span style="font-size: 0.65em; font-weight: normal;">• Dose Scheduling<br>• Interaction Matrix<br>• Refill Inventory</span>
+                    </div>
+                </div>
+                <div class="arrow" style="margin-top: 8px;">⬇️ Task Queues & Persistence</div>
+                <div class="flex-container">
+                    <div class="flex-col arch-node db">⚙️ Celery Worker + Redis DB 1</div>
+                    <div class="flex-col arch-node db">🗄️ PostgreSQL (twins_db)</div>
+                    <div class="flex-col arch-node db">📂 BioGears XML States</div>
+                </div>
+            </section>
+
+            <!-- Slide 4: 5 Architectural Layers -->
+            <section>
+                <h2>🔍 The 5 Architectural Layers</h2>
+                <div class="glass-card" style="padding: 16px;">
+                    <ol style="font-size: 0.8em; line-height: 1.8;">
+                        <li><strong style="color: var(--accent-cyan);">Layer 1: Mobile Client App</strong> — Expo Router UI, 8-tab routine logger, Brain Lab games, rPPG camera sensor, and multi-profile <code>FamilyContext</code> engine.</li>
+                        <li><strong style="color: var(--accent-amber);">Layer 2: Nginx Gateway</strong> — Single ingress point managing SSL, rate limiting, and routing (<code>/</code>, <code>/ai/</code>, <code>/medication/</code>).</li>
+                        <li><strong style="color: var(--accent-emerald);">Layer 3: Microservices Core</strong> — 3 FastAPI services running BioGears C++ biophysics, Qwen2.5-14B LLM inference, and Medication Vault logic.</li>
+                        <li><strong style="color: var(--accent-purple);">Layer 4: Async Scheduler</strong> — Celery + Redis background worker executing DPSS (Deferred Physiology Synchronization System) midnight catch-ups.</li>
+                        <li><strong style="color: var(--accent-rose);">Layer 5: Data Persistence</strong> — PostgreSQL for relational clinical records, XML checkpoint files for exact biophysical state baselines.</li>
+                    </ol>
+                </div>
+            </section>
+
+            <!-- Slide 5: BioGears Engine Mechanics -->
+            <section>
+                <h2>🧬 BioGears Biophysics Simulation</h2>
+                <p>Peer-reviewed C++ human physiology simulator solving organ-level circuits.</p>
+                <div class="flex-container" style="margin-top: 15px;">
+                    <div class="flex-col glass-card">
+                        <h4 style="color: var(--accent-emerald);">Input Translation</h4>
+                        <ul style="font-size: 0.75em; color: #cbd5e1;">
+                            <li>Nutrition $\rightarrow$ Carbs, Lipids, Amino Acids.</li>
+                            <li>Activity $\rightarrow$ Work Output (Watts) & Heart Demand.</li>
+                            <li>Medications $\rightarrow$ Pharmacokinetic Concentration.</li>
                         </ul>
                     </div>
-                    <div class="flex-col glass-box" style="border: 1px solid #3498db;">
-                        <h3 class="highlight-blue">Our Approach</h3>
-                        <ul>
-                            <li><strong>Simulation:</strong> Simulates the true physiological response.</li>
-                            <li><strong>Models:</strong> Mechanistic organ-level simulation.</li>
-                            <li><strong>Vitals:</strong> BioGears engine (creates a continuous snapshot).</li>
+                    <div class="flex-col glass-card">
+                        <h4 style="color: var(--accent-cyan);">Calculated Trajectories</h4>
+                        <ul style="font-size: 0.75em; color: #cbd5e1;">
+                            <li>Heart Rate (BPM) & Blood Pressure (MAP).</li>
+                            <li>Blood Glucose & Plasma Insulin.</li>
+                            <li>Respiration Rate & Oxygen Saturation (SpO₂).</li>
                         </ul>
                     </div>
                 </div>
-                <p style="margin-top:30px; font-size: 1.1em; text-align: center;"><em>VitalHealth tracks what happens <span class="highlight">inside your body</span> as a result.</em></p>
+                <div class="glass-card" style="margin-top: 10px; padding: 14px;">
+                    <strong style="color: var(--accent-purple); font-size: 0.8em;">Clinical Risk Analytics Built-In:</strong>
+                    <span style="font-size: 0.75em; color: #94a3b8;"> Framingham 10-Year Cardiovascular Risk Score & ADAG HbA1c diabetic markers calculated directly from simulation data.</span>
+                </div>
             </section>
 
-            <!-- Slide 3: How it Works (BioGears) -->
-            <section data-transition="slide">
-                <h2>The Power of BioGears</h2>
-                <p><strong>BioGears Engine</strong> is a peer-reviewed, open-source C++ human physiology simulator.</p>
-                <div class="glass-box" style="margin-top: 20px;">
-                    <ul>
-                        <li>Creates a living computational model (a <span class="highlight-blue">Digital Twin</span>) of your body.</li>
-                        <li>When you log a meal, workout, or sleep — it runs a real physiological simulation.</li>
-                        <li>Computes second-by-second changes in:
-                            <ul style="margin-top: 10px; columns: 2;">
-                                <li>Heart Rate & Blood Pressure</li>
-                                <li>Blood Glucose & Insulin</li>
-                                <li>Oxygen Saturation (SpO₂)</li>
-                                <li>Core Temp & Cardiac Output</li>
-                            </ul>
-                        </li>
+            <!-- Slide 6: On-Device RAG AI Privacy -->
+            <section>
+                <h2>🔒 Privacy-First On-Device RAG AI</h2>
+                <div class="glass-card" style="border-left: 4px solid var(--accent-purple);">
+                    <h3 style="color: var(--accent-purple);">Why On-Device RAG?</h3>
+                    <p style="font-size: 0.8em; color: #cbd5e1;">
+                        Medical documents (lab reports, prescriptions) contain highly sensitive HIPAA/GDPR protected data. <strong>No raw medical files ever leave the user's phone.</strong>
+                    </p>
+                </div>
+                <div class="glass-card">
+                    <ol style="font-size: 0.8em; line-height: 1.8;">
+                        <li><strong>Step 1 (On Phone):</strong> User uploads medical PDF/Scan $\rightarrow$ Text extracted via local OCR.</li>
+                        <li><strong>Step 2 (On Phone):</strong> Text is chunked & converted to vector embeddings locally.</li>
+                        <li><strong>Step 3 (Query Time):</strong> Relevant context text is retrieved on-device.</li>
+                        <li><strong>Step 4 (Local Server):</strong> Only anonymized text context is passed to local Qwen2.5-14B LLM.</li>
+                    </ol>
+                </div>
+            </section>
+
+            <!-- Slide 7: Medication Vault & DPSS -->
+            <section>
+                <h2>💊 Medication Vault & Midnight Engine</h2>
+                <div class="flex-container">
+                    <div class="flex-col glass-card">
+                        <h4 style="color: var(--accent-rose);">Medication Vault API</h4>
+                        <ul style="font-size: 0.75em; color: #cbd5e1;">
+                            <li>Multi-dose schedule manager & refill tracking.</li>
+                            <li>Real-time Drug-Drug Interaction Matrix.</li>
+                            <li>Caregiver emergency alert dispatches.</li>
+                        </ul>
+                    </div>
+                    <div class="flex-col glass-card">
+                        <h4 style="color: var(--accent-amber);">DPSS Midnight Catchup</h4>
+                        <ul style="font-size: 0.75em; color: #cbd5e1;">
+                            <li>Autonomous background catchup engine.</li>
+                            <li>Runs if user misses app logins for days.</li>
+                            <li>Injects baseline routines to keep twin state updated.</li>
+                        </ul>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Slide 8: Brain Lab & Camera Sensing -->
+            <section>
+                <h2>🧠 Brain Lab & Camera Sensing</h2>
+                <div class="flex-container">
+                    <div class="flex-col glass-card" style="border-top: 3px solid var(--accent-purple);">
+                        <h4 style="color: var(--accent-purple);">Brain Lab Cognitive Suite</h4>
+                        <p style="font-size: 0.7em; color: #94a3b8;">4 validated neuro-cognitive tests:</p>
+                        <ul style="font-size: 0.75em; color: #cbd5e1;">
+                            <li><strong>Stroop Test</strong>: Cognitive control.</li>
+                            <li><strong>Reaction Speed</strong>: Reflex latency.</li>
+                            <li><strong>Memory Span</strong>: Sequence recall.</li>
+                            <li><strong>Visuospatial</strong>: Spatial memory grid.</li>
+                        </ul>
+                    </div>
+                    <div class="flex-col glass-card" style="border-top: 3px solid var(--accent-cyan);">
+                        <h4 style="color: var(--accent-cyan);">rPPG Camera Sensor</h4>
+                        <p style="font-size: 0.7em; color: #94a3b8;">Contactless biometric reading:</p>
+                        <ul style="font-size: 0.75em; color: #cbd5e1;">
+                            <li>Detects skin color micro-variations during heart beats.</li>
+                            <li>Calculates pulse rate (BPM) & SpO₂ non-invasively via camera.</li>
+                        </ul>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Slide 9: Data Flow Sequence -->
+            <section>
+                <h2>🔄 Data Flow Sequence</h2>
+                <div class="glass-card" style="font-size: 0.75em;">
+                    <div style="margin-bottom: 12px;"><strong>1. Routine Input</strong>: User logs meal/workout on React Native Mobile Client.</div>
+                    <div style="margin-bottom: 12px;"><strong>2. Route Ingress</strong>: Request hits Nginx Proxy $\rightarrow$ Forwarded to BioGears Service (:8000).</div>
+                    <div style="margin-bottom: 12px;"><strong>3. XML Generation</strong>: BioGears Service loads patient state XML & builds scenario action file.</div>
+                    <div style="margin-bottom: 12px;"><strong>4. Biophysics Execution</strong>: C++ BioGears binary runs simulation & outputs trajectory CSV.</div>
+                    <div style="margin-bottom: 12px;"><strong>5. Live Dashboard Update</strong>: Updated vitals stream via SSE back to app gauges.</div>
+                </div>
+            </section>
+
+            <!-- Slide 10: Conclusion & Defense Q&A -->
+            <section class="center">
+                <h1 style="font-size: 2.2em;">Thank You!</h1>
+                <h3>VitalHealth Platform Architecture Defense</h3>
+                <div class="glass-card" style="margin-top: 30px; text-align: left;">
+                    <h4 style="color: var(--accent-emerald);">Key Project Strengths for Defense:</h4>
+                    <ul style="font-size: 0.8em; color: #cbd5e1;">
+                        <li><strong>Determinism</strong>: Biophysics engine instead of ML guessing.</li>
+                        <li><strong>Data Privacy</strong>: On-device RAG + local Qwen-14B LLM.</li>
+                        <li><strong>Scalability</strong>: Clean 5-layer microservices architecture with Nginx gateway.</li>
                     </ul>
                 </div>
             </section>
 
-            <!-- Slide 4: Architecture -->
-            <section data-transition="slide">
-                <h2>System Architecture</h2>
-                <p style="margin-bottom: 20px;">Three main components interacting seamlessly:</p>
-                <div class="flex-container">
-                    <div class="flex-col glass-box" style="background:#f0f8ff;">
-                        <h3 style="color:#0056b3;">📱 Mobile App</h3>
-                        <p style="font-size:0.8em; margin-top:10px;">React Native & Expo Router</p>
-                        <ul style="font-size:0.8em;">
-                            <li>Twin Dashboard</li>
-                            <li>AI Health RAG</li>
-                            <li>Brain Lab Games</li>
-                        </ul>
-                    </div>
-                    <div class="flex-col glass-box" style="background:#e6f9ec;">
-                        <h3 style="color:#1d8348;">⚙️ Backend API</h3>
-                        <p style="font-size:0.8em; margin-top:10px;">Python FastAPI</p>
-                        <ul style="font-size:0.8em;">
-                            <li>Batch Simulation Sync</li>
-                            <li>SSE Vitals Streaming</li>
-                            <li>Analytics & Scoring</li>
-                        </ul>
-                    </div>
-                    <div class="flex-col glass-box" style="background:#fdf2e9;">
-                        <h3 style="color:#d35400;">🧬 Simulation Engine</h3>
-                        <p style="font-size:0.8em; margin-top:10px;">BioGears (C++)</p>
-                        <ul style="font-size:0.8em;">
-                            <li>Organ-Level Simulation</li>
-                            <li>XML Scenario Builder</li>
-                            <li>Anomaly Detection</li>
-                        </ul>
-                    </div>
-                </div>
-            </section>
-            
-            <!-- Slide 5: Mobile App Features -->
-            <section data-transition="slide">
-                <h2>Mobile App Features</h2>
-                <ul style="line-height: 1.6;">
-                    <li><strong class="highlight-blue">Digital Twin Dashboard:</strong> Live vitals panel tracking your physiological state.</li>
-                    <li><strong>7-Tab Routine Logger:</strong> Track Nutrition, Hydration, Activity, Substances, Sleep, Stress, Fasting.</li>
-                    <li><strong>Physiological Insights:</strong> Get exact Organ Health scores (Heart, Lungs, Gut, Brain) based on simulations.</li>
-                    <li><strong>Step & Calorie Intelligence:</strong> Auto-sync steps mapped to energy burn and glucose trajectories.</li>
-                </ul>
-            </section>
-
-            <!-- Slide 6: AI & Privacy -->
-            <section data-transition="slide">
-                <h2>AI Health Chat (Privacy-First)</h2>
-                <p>An <span class="highlight">On-Device RAG</span> (Retrieval-Augmented Generation) pipeline.</p>
-                <div class="glass-box" style="background: #f8f9fa;">
-                    <ol style="margin-left: 20px;">
-                        <li>Upload your medical records (PDFs & images).</li>
-                        <li><strong>On-Device:</strong> Text is extracted via OCR and intelligently chunked.</li>
-                        <li><strong>On-Device:</strong> Chunks are embedded and stored locally.</li>
-                        <li>When you chat, only relevant pieces are sent to a local LLM, guaranteeing <span class="highlight-blue">100% Privacy</span>.</li>
-                    </ol>
-                </div>
-                <p style="margin-top: 20px;"><strong>Symptom Logging:</strong> Dynamic flow with AI-generated follow-ups.</p>
-            </section>
-
-            <!-- Slide 7: Cognitive & Clinical Features -->
-            <section data-transition="slide">
-                <h2>Clinical & Cognitive Suite</h2>
-                <div class="flex-container">
-                    <div class="flex-col glass-box" style="border-top: 4px solid #8e44ad;">
-                        <h3 style="color: #8e44ad;">🧠 Brain Lab</h3>
-                        <p style="font-size:0.85em;">4 Scientifically-validated tests:</p>
-                        <ul style="font-size:0.8em;">
-                            <li>Pattern Test (Memory)</li>
-                            <li>Reaction Test (Speed)</li>
-                            <li>Memory Test (Span)</li>
-                            <li>Stroop Test (Executive Control)</li>
-                        </ul>
-                    </div>
-                    <div class="flex-col glass-box" style="border-top: 4px solid #c0392b;">
-                        <h3 style="color: #c0392b;">🏥 Clinical Tools</h3>
-                        <ul style="font-size:0.8em; margin-top:20px;">
-                            <li><strong>HR Scanner:</strong> Camera-based rPPG Heart Rate.</li>
-                            <li><strong>SpO₂ Estimator:</strong> Blood oxygen tracking via camera lens.</li>
-                            <li><strong>Medication Vault:</strong> Tracks drug schedules and validates interactions via BioGears.</li>
-                        </ul>
-                    </div>
-                </div>
-            </section>
-
-            <!-- Slide 8: Backend Analytics & Simulation -->
-            <section data-transition="slide">
-                <h2>Backend Analytics Engine</h2>
-                <table class="table-container">
-                    <thead>
-                        <tr>
-                            <th>Feature</th>
-                            <th>Description</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <tr>
-                            <td><strong>Twin Registration</strong></td>
-                            <td>Calibrates exact BioGears patient states from your demographics.</td>
-                        </tr>
-                        <tr>
-                            <td><strong>SSE Streaming</strong></td>
-                            <td>Streams dynamic vital signs straight into the React Native app.</td>
-                        </tr>
-                        <tr>
-                            <td><strong>CVD Risk & HbA1c</strong></td>
-                            <td>Calculates Framingham Risk Score & Time-in-Range for Diabetes.</td>
-                        </tr>
-                        <tr>
-                            <td><strong>Anomaly Detection</strong></td>
-                            <td>Real-time tracking of abnormal physiological output logic.</td>
-                        </tr>
-                        <tr>
-                            <td><strong>State Checkpointing</strong></td>
-                            <td>Runs auto-backups after successful simulations.</td>
-                        </tr>
-                    </tbody>
-                </table>
-            </section>
-
-            <!-- Slide 9: The Workflow -->
-            <section data-transition="slide">
-                <h2>End-to-End Workflow</h2>
-                <div style="font-size: 1.1em; line-height: 1.8; text-align: center; margin-top: 30px;">
-                    <div style="background: #e8f4f8; display: inline-block; border-radius: 8px; padding: 15px 30px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); width: 60%;">1. Build Twin Profile Form</div>
-                    <div style="margin: 10px 0; color: #bdc3c7;">⬇</div>
-                    <div style="background: #e8f4f8; display: inline-block; border-radius: 8px; padding: 15px 30px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); width: 60%;">2. Log Routine (Meals, Workouts)</div>
-                    <div style="margin: 10px 0; color: #bdc3c7;">⬇</div>
-                    <div style="background: #e8f4f8; display: inline-block; border-radius: 8px; padding: 15px 30px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); width: 60%;">3. Batch Sync into BioGears Node</div>
-                    <div style="margin: 10px 0; color: #bdc3c7;">⬇</div>
-                    <div style="background: #d4efdf; display: inline-block; border-radius: 8px; padding: 15px 30px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); width: 60%; font-weight: bold; color: #196f3d;">4. Render Live Dashboard Vitals & Insights</div>
-                </div>
-            </section>
-
-            <!-- Slide 10: Conclusion -->
-            <section class="center" data-transition="zoom">
-                <h1>Thank You!</h1>
-                <p style="font-size: 1.4em; color: #7f8c8d; margin-top:10px;">Time for the Demo</p>
-                <div style="display:inline-block; text-align:left; font-size:0.85em; margin-top: 40px; border-top: 1px solid #ddd; padding-top: 20px;">
-                    <div style="margin-bottom: 10px;">✅ <strong>Open Source Codebase</strong></div>
-                    <div style="margin-bottom: 10px;">✅ <strong>Validated Physiological Models</strong></div>
-                    <div>✅ <strong>Scalable API Architecture</strong></div>
-                </div>
-            </section>
         </div>
     </div>
 
-    <!-- Scripts -->
+    <!-- Reveal.js Scripts -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/5.0.4/reveal.min.js"></script>
     <script>
         Reveal.initialize({
             hash: true,
             transition: 'slide',
             center: false,
-            margin: 0.1,
-            width: 1024,
-            height: 768,
+            margin: 0.08,
+            width: 1080,
+            height: 720,
         });
     </script>
 </body>
 </html>
+

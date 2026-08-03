@@ -11,6 +11,7 @@ import "../tasks/stepTrackingTask";
 import { Stack, router } from "expo-router";
 import React, { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, View, LogBox } from "react-native";
+import * as Linking from "expo-linking";
 import * as SplashScreen from "expo-splash-screen";
 import notifee, { EventType } from "@notifee/react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
@@ -143,6 +144,31 @@ const StepProviderWrapper: React.FC<{ children: React.ReactNode }> = ({
 const NotificationNavigationBridge: React.FC = () => {
   const { switchToMember, switchToSelf } = useFamily();
 
+  // Handle deep link URL changes
+  const url = Linking.useURL();
+  useEffect(() => {
+    if (url) {
+      log("🔗 Deep link URL received in bridge:", url);
+      try {
+        const parsed = Linking.parse(url);
+        const pId = parsed.queryParams?.profileId ? String(parsed.queryParams.profileId) : undefined;
+        if (pId) {
+          if (pId !== "self") {
+            switchToMember(pId, true).catch((err) => {
+              console.error("Failed to switch to member from deep link:", err);
+            });
+          } else {
+            switchToSelf().catch((err) => {
+              console.error("Failed to switch to self from deep link:", err);
+            });
+          }
+        }
+      } catch (err) {
+        console.error("Failed to parse deep link URL:", err);
+      }
+    }
+  }, [url, switchToMember, switchToSelf]);
+
   useEffect(() => {
     // 1. Foreground listener
     const unsubscribe = notifee.onForegroundEvent(async ({ type, detail }) => {
@@ -164,7 +190,7 @@ const NotificationNavigationBridge: React.FC = () => {
         const pId = data.profileId ? String(data.profileId) : undefined;
         try {
           if (pId && pId !== "self") {
-            await switchToMember(pId);
+            await switchToMember(pId, true);
           } else if (pId === "self") {
             await switchToSelf();
           }
@@ -202,7 +228,7 @@ const NotificationNavigationBridge: React.FC = () => {
         const pId = data.profileId ? String(data.profileId) : undefined;
         try {
           if (pId && pId !== "self") {
-            await switchToMember(pId);
+            await switchToMember(pId, true);
           } else if (pId === "self") {
             await switchToSelf();
           }

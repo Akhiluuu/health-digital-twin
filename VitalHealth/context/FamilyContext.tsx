@@ -43,7 +43,7 @@ export type FamilyContextType = {
   isSwitched:       boolean;             // true when viewing another member
   isSwitchLoading:  boolean;             // true while fetching switched profile from Firebase
   activeMemberInfo: FamilyMember | null; // FamilyMember metadata for the active non-self member
-  switchToMember:   (memberUid: string)  => Promise<void>;
+  switchToMember:   (memberUid: string, force?: boolean)  => Promise<void>;
   switchToSelf:     ()                   => Promise<void>;
   updateActiveProfile: (newProfile: UserProfile) => Promise<void>;
   reportLoading?: (key: string, loading: boolean) => void;
@@ -384,7 +384,7 @@ export const FamilyProvider = ({
      This guarantees the switched profile has the exact same shape
      as the logged-in user's profile everywhere in the app.
   */
-  const switchToMember = useCallback(async (memberUid: string) => {
+  const switchToMember = useCallback(async (memberUid: string, force: boolean = false) => {
     if (!memberUid || memberUid === "self") return;
 
     // ✅ Guard: reject concurrent calls synchronously
@@ -394,8 +394,10 @@ export const FamilyProvider = ({
     }
 
     if (activeMemberId === memberUid) {
-      // Tapping active member again → switch back to self
-      await switchToSelf();
+      if (!force) {
+        // Tapping active member again → switch back to self
+        await switchToSelf();
+      }
       return;
     }
 

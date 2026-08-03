@@ -24,6 +24,7 @@ import { useFamily } from "./FamilyContext";
 import { useProfile } from "./ProfileContext";
 import { log, error } from "../utils/logger";
 import { notificationEventBus } from "../services/notifeeService";
+import { getLocalDateString } from "../utils/twinUtils";
 
 interface NotificationContextType {
   notifications: NotificationItem[];
@@ -173,6 +174,12 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
             id: baseNotif.id,
             title: groupTitle,
             body: groupMessage,
+            data: {
+              profileId: item.profileId || "self",
+              profileName: resolvedName || "",
+              deepLink: item.deepLink || "",
+              type: item.category || "",
+            },
             android: {
               channelId: CHANNEL_ID,
               pressAction: { id: "default" },
@@ -190,6 +197,12 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
         id: item.id,
         title: formattedTitle,
         body: item.message,
+        data: {
+          profileId: item.profileId || "self",
+          profileName: resolvedName || "",
+          deepLink: item.deepLink || "",
+          type: item.category || "",
+        },
         android: {
           channelId: CHANNEL_ID,
           pressAction: {
@@ -424,8 +437,9 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
                 lastMedicineStates.current[key] = curTaken;
 
                 // Only trigger if status transitioned from pending/unset to Taken (1) or Missed (-1) today
-                const today = new Date().toISOString().split("T")[0];
-                const isToday = med.takenDate === today;
+                const today = getLocalDateString();
+                const mDate = med.takenDate && med.takenDate.includes("T") ? med.takenDate.split("T")[0] : med.takenDate;
+                const isToday = mDate === today;
 
                 if (isToday) {
                   if (curTaken === 1 && prevTaken !== 1) {

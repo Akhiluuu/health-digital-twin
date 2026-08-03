@@ -420,11 +420,15 @@ export default function NotificationCenter() {
                         
                         try {
                           if (item.profileId && item.profileId !== "self") {
-                            await switchToMember(item.profileId);
+                            await switchToMember(item.profileId, true);
                           } else {
                             await switchToSelf();
                           }
-                          router.push("/(tabs)/twin" as any);
+                          if (item.deepLink) {
+                            router.push(item.deepLink as any);
+                          } else {
+                            router.push("/(tabs)/twin" as any);
+                          }
                         } catch (err) {
                           console.error("Failed to switch profile on notification tap:", err);
                           if (item.deepLink) {
@@ -506,11 +510,15 @@ export default function NotificationCenter() {
                               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
                               try {
                                 if (item.profileId && item.profileId !== "self") {
-                                  await switchToMember(item.profileId);
+                                  await switchToMember(item.profileId, true);
                                 } else {
                                   await switchToSelf();
                                 }
-                                router.push("/(tabs)/twin" as any);
+                                if (item.deepLink) {
+                                  router.push(item.deepLink as any);
+                                } else {
+                                  router.push("/(tabs)/twin" as any);
+                                }
                               } catch (err) {
                                 console.error("Failed to switch profile on notification action tap:", err);
                                 router.push(item.deepLink as any);

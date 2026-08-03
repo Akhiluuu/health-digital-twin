@@ -18,6 +18,7 @@ import {
 } from "firebase/firestore";
 import { auth, db } from "./firebase";
 
+import { getLocalDateString } from "../utils/twinUtils";
 import { log } from "../utils/logger";
 
 // ── Pending sync queue ───────────────────────────────────────────
@@ -265,12 +266,12 @@ export async function syncUpdateMedicineStatus(
     if (status === "taken") {
       updates.takenToday = true;
       updates.taken = 1;
-      updates.takenDate = new Date().toISOString().split("T")[0];
+      updates.takenDate = getLocalDateString();
       updates.takenAt = serverTimestamp();
     } else if (status === "missed") {
       updates.takenToday = false;
       updates.taken = -1;
-      updates.takenDate = new Date().toISOString().split("T")[0];
+      updates.takenDate = getLocalDateString();
       updates.takenAt = null;
     } else {
       updates.takenToday = false;
@@ -368,9 +369,9 @@ export async function syncAddMedicineHistory(entry: {
  * Fetch all medicine history from Firebase.
  * Called when loading history page on a new device.
  */
-export async function fetchMedicineHistoryFromFirebase(): Promise<any[]> {
+export async function fetchMedicineHistoryFromFirebase(targetUid?: string): Promise<any[]> {
   try {
-    const uid = await getUserId();
+    const uid = targetUid || await getUserId();
     if (!uid) return [];
 
     const snap = await getDocs(medicineHistCol(uid));

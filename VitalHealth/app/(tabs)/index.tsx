@@ -28,6 +28,7 @@ import { useBiogearsTwin } from "../../context/BiogearsTwinContext";
 import { useSymptoms } from "../../context/SymptomContext";
 import { useTheme } from "../../context/ThemeContext";
 import { colors } from "../../theme/colors";
+import { getLocalDateString } from "../../utils/twinUtils";
 import Header from "../components/Header";
 import { doc, onSnapshot } from "firebase/firestore";
 import { db } from "../../services/firebase";
@@ -195,13 +196,17 @@ export default function HomeScreen() {
   const isTakenToday = (medicine: any): boolean => {
     if (medicine.taken !== 1) return false;
     if (!medicine.takenDate) return false;
-    return medicine.takenDate === new Date().toISOString().split("T")[0];
+    const today = getLocalDateString();
+    const mDate = medicine.takenDate.includes("T") ? medicine.takenDate.split("T")[0] : medicine.takenDate;
+    return mDate === today;
   };
 
   const isMissedToday = (medicine: any): boolean => {
     if (medicine.taken !== -1) return false;
     if (!medicine.takenDate) return false;
-    return medicine.takenDate === new Date().toISOString().split("T")[0];
+    const today = getLocalDateString();
+    const mDate = medicine.takenDate.includes("T") ? medicine.takenDate.split("T")[0] : medicine.takenDate;
+    return mDate === today;
   };
 
   const [spo2, setSpo2] = useState<number>(0);

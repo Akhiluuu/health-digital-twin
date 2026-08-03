@@ -11,11 +11,12 @@ export function scheduleMedicineAlarm(
   name: string,
   dose: string,
   timestampMs: number,
-  frequency: string
+  frequency: string,
+  profileId: string = "self"
 ): void {
   if (Platform.OS !== 'android' || !MedicineAlarmModule) return;
   try {
-    MedicineAlarmModule.scheduleAlarm(id, name, dose, timestampMs, frequency);
+    MedicineAlarmModule.scheduleAlarm(id, name, dose, timestampMs, frequency, profileId);
   } catch (err: unknown) {
     error('❌ Failed to schedule native medicine alarm:', err);
   }

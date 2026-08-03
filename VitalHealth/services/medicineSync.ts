@@ -150,7 +150,8 @@ export async function syncMedicinesFromFirebase(): Promise<void> {
                 alarmTitle,
                 med.dose,
                 triggerTime,
-                freq
+                freq,
+                "self"
               );
               notifId = String(med.id);
             } else {
@@ -238,7 +239,8 @@ export async function syncAndScheduleAllFamilyMedicines(members: any[]): Promise
                 alarmTitle,
                 med.dose,
                 triggerTime,
-                freq
+                freq,
+                memberId
               );
               log(`🔔 Scheduled native alarm for ${profileName}'s medicine: ${med.name}`);
             } catch (err) {

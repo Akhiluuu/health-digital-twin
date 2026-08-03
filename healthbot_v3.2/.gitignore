@@ -1,0 +1,67 @@
+# ========================
+# MacOS junk (you have these)
+# ========================
+.DS_Store
+__MACOSX/
+
+# ========================
+# Python cache
+# ========================
+__pycache__/
+*.py[cod]
+
+# ========================
+# Logs (you have health_ai/logs/)
+# ========================
+*.log
+logs/
+health_ai/logs/
+
+# ========================
+# Virtual environments
+# ========================
+venv/
+env/
+.venv/
+
+# ========================
+# Environment variables
+# ========================
+.env
+.env.*
+
+# ========================
+# Model files (VERY IMPORTANT)
+# Your project has a model/ folder
+# ========================
+*.pt
+*.pth
+*.bin
+*.h5
+*.onnx
+health_ai/model/*.pt
+health_ai/model/*.bin
+
+# ========================
+# Embedding / vector data (if generated)
+# ========================
+*.npy
+*.npz
+*.pkl
+
+# ========================
+# Build / temp files
+# ========================
+*.tmp
+*.bak
+
+# ========================
+# IDE
+# ========================
+.vscode/
+.idea/
+
+# ========================
+# Misc
+# ========================
+*.swp

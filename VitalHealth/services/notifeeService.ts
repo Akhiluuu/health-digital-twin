@@ -428,7 +428,7 @@ export async function handleMedicineTaken(
 
         // Trigger care circle alert
         const memberName = await getProfileName(profileId);
-        await showCareMemberTakenNotification(memberName, medicineName || "Medication", dose || "");
+        await showCareMemberTakenNotification(memberName, medicineName || "Medication", dose || "", profileId);
 
         if (frequency?.toLowerCase() === "once") {
           await firebaseDeleteMedicine(medIdNum, profileId);
@@ -1481,12 +1481,20 @@ export const cancelDPSSNotifications = async (userId: string): Promise<void> => 
 export const showCareMemberTakenNotification = async (
   memberName: string,
   medicineName: string,
-  dose: string
+  dose: string,
+  profileId?: string
 ): Promise<void> => {
   try {
+    const formattedTitle = `[${memberName}] 👥 Care Circle Alert`;
     await notifee.displayNotification({
-      title: "👥 Care Circle Alert",
+      title: formattedTitle,
       body: `${memberName} has logged their medication: ${medicineName} (${dose}) as taken.`,
+      data: {
+        type: "care_circle_alert",
+        profileId: profileId || "self",
+        profileName: memberName,
+        deepLink: "/MedicationVault",
+      },
       android: {
         channelId: CHANNEL_ID,
         pressAction: { id: "default" },

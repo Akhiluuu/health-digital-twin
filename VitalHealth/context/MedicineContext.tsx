@@ -143,25 +143,29 @@ async function fetchMemberMedicinesFromFirebase(memberUid: string): Promise<Medi
     // using the firebaseSync helper that accepts a uid override.
     const results = await fetchMedicinesFromFirebase(memberUid);
     if (!results || results.length === 0) return [];
-    return results.map((m: any) => ({
-      id:             m.id             ?? 0,
-      name:           m.name           ?? "",
-      dose:           m.dose           ?? "",
-      type:           m.type           ?? "",
-      time:           m.time           ?? "",
-      timestamp:      m.timestamp      ?? 0,
-      meal:           m.meal           ?? "",
-      frequency:      m.frequency      ?? "daily",
-      startDate:      m.startDate      ?? "",
-      endDate:        m.endDate        ?? "",
-      reminder:       m.reminder       ?? 0,
-      notificationId: m.notificationId ?? null,
-      taken:          m.taken          ?? 0,
-      takenDate:      m.takenDate      ?? null,
-      reviewInterval: m.reviewInterval ?? "90 days",
-      nextReviewDate: m.nextReviewDate ?? null,
-      reviewStatus:   m.reviewStatus   ?? "Started",
-    }));
+    const today = getLocalDateString();
+    return results.map((m: any) => {
+      const mDate = m.takenDate && m.takenDate.includes("T") ? m.takenDate.split("T")[0] : m.takenDate;
+      return {
+        id:             m.id             ?? 0,
+        name:           m.name           ?? "",
+        dose:           m.dose           ?? "",
+        type:           m.type           ?? "",
+        time:           m.time           ?? "",
+        timestamp:      m.timestamp      ?? 0,
+        meal:           m.meal           ?? "",
+        frequency:      m.frequency      ?? "daily",
+        startDate:      m.startDate      ?? "",
+        endDate:        m.endDate        ?? "",
+        reminder:       m.reminder       ?? 0,
+        notificationId: m.notificationId ?? null,
+        taken:          mDate === today ? (m.taken ?? 0) : 0,
+        takenDate:      m.takenDate      ?? null,
+        reviewInterval: m.reviewInterval ?? "90 days",
+        nextReviewDate: m.nextReviewDate ?? null,
+        reviewStatus:   m.reviewStatus   ?? "Started",
+      };
+    });
   } catch (e) {
     log("❌ fetchMemberMedicinesFromFirebase error:", e);
     return [];
@@ -458,7 +462,8 @@ export const MedicineProvider = ({
                 alarmTitle,
                 dose,
                 triggerTime,
-                freq
+                freq,
+                activeMemberId
               );
               notifId = String(medId);
 
@@ -537,7 +542,7 @@ export const MedicineProvider = ({
             : "You";
 
           if (Platform.OS === "android") {
-            scheduleMedicineAlarm(lastMedicine.id, `${name} (${activeProfileName})`, dose, normalisedTimestamp, frequency);
+            scheduleMedicineAlarm(lastMedicine.id, `${name} (${activeProfileName})`, dose, normalisedTimestamp, frequency, "self");
             notifId = String(lastMedicine.id);
             updateMedicineNotificationId(lastMedicine.id, notifId);
           } else {
@@ -644,7 +649,7 @@ export const MedicineProvider = ({
             if (status === "taken") {
               const memberName = activeProfile?.firstName || "Family Member";
               const { showCareMemberTakenNotification } = require("../services/notifeeService");
-              await showCareMemberTakenNotification(memberName, medicine.name, medicine.dose);
+              await showCareMemberTakenNotification(memberName, medicine.name, medicine.dose, activeMemberId);
             }
           }
         }

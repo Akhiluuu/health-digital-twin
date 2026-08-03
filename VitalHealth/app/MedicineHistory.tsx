@@ -20,6 +20,7 @@ import { useTheme } from "../context/ThemeContext";
 import { colors } from "../theme/colors";
 import Header from "./components/Header";
 import { fetchMedicineHistoryFromFirebase } from "../services/firebaseSync";
+import { useFamily } from "../context/FamilyContext";
 
 ///////////////////////////////////////////////////////////
 
@@ -43,6 +44,7 @@ export default function MedicineHistory() {
   const router = useRouter();
   const { theme } = useTheme();
   const c = colors[theme];
+  const { isSwitched, activeMemberId } = useFamily();
 
   const [history, setHistory] = useState<MedicineHistoryEntry[]>([]);
   const [selectedEntry, setSelectedEntry] =
@@ -53,15 +55,12 @@ export default function MedicineHistory() {
   // LOAD HISTORY
   /////////////////////////////////////////////////////////
 
-  useFocusEffect(
-    useCallback(() => {
-      loadHistory();
-    }, [])
-  );
-
-  const loadHistory = async () => {
+  const loadHistory = useCallback(async () => {
     try {
-      const saved = await AsyncStorage.getItem(HISTORY_STORAGE_KEY);
+      const historyKey = isSwitched && activeMemberId && activeMemberId !== "self"
+        ? `${HISTORY_STORAGE_KEY}_${activeMemberId}`
+        : HISTORY_STORAGE_KEY;
+      const saved = await AsyncStorage.getItem(historyKey);
       let local: MedicineHistoryEntry[] = [];
       if (saved) {
         try {
@@ -81,7 +80,8 @@ export default function MedicineHistory() {
 
       // In the background, fetch from Firebase and merge
       try {
-        const firebaseHistory = await fetchMedicineHistoryFromFirebase();
+        const targetUid = isSwitched && activeMemberId && activeMemberId !== "self" ? activeMemberId : undefined;
+        const firebaseHistory = await fetchMedicineHistoryFromFirebase(targetUid);
         if (firebaseHistory && firebaseHistory.length > 0) {
           const normalizedFirebase: MedicineHistoryEntry[] = firebaseHistory
             .filter((h: any) => h && h.medicineName && h.medicineName.trim() !== "")
@@ -111,7 +111,7 @@ export default function MedicineHistory() {
           );
 
           if (merged.length !== local.length) {
-            await AsyncStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(merged));
+            await AsyncStorage.setItem(historyKey, JSON.stringify(merged));
             setHistory(merged);
           }
         }
@@ -122,15 +122,24 @@ export default function MedicineHistory() {
       console.error("❌ Error loading history:", error);
       setHistory([]);
     }
-  };
+  }, [isSwitched, activeMemberId]);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadHistory();
+    }, [loadHistory])
+  );
 
   /////////////////////////////////////////////////////////
   // DELETE SINGLE ENTRY
   /////////////////////////////////////////////////////////
 
   const handleDeleteEntry = async (id: string) => {
+    const historyKey = isSwitched && activeMemberId && activeMemberId !== "self"
+      ? `${HISTORY_STORAGE_KEY}_${activeMemberId}`
+      : HISTORY_STORAGE_KEY;
     const updated = history.filter((entry) => entry.id !== id);
-    await AsyncStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(updated));
+    await AsyncStorage.setItem(historyKey, JSON.stringify(updated));
     setHistory(updated);
     setModalVisible(false);
   };
@@ -146,7 +155,10 @@ export default function MedicineHistory() {
         text: "Clear",
         style: "destructive",
         onPress: async () => {
-          await AsyncStorage.removeItem(HISTORY_STORAGE_KEY);
+          const historyKey = isSwitched && activeMemberId && activeMemberId !== "self"
+            ? `${HISTORY_STORAGE_KEY}_${activeMemberId}`
+            : HISTORY_STORAGE_KEY;
+          await AsyncStorage.removeItem(historyKey);
           setHistory([]);
         },
       },

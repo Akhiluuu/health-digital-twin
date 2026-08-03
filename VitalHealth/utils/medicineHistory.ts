@@ -11,12 +11,11 @@ export const addToMedicineHistory = async (
 ): Promise<MedicineHistoryEntry> => {
   try {
     const isMember = medicine.targetUid && medicine.targetUid !== "self";
+    const historyKey = isMember ? `${HISTORY_STORAGE_KEY}_${medicine.targetUid}` : HISTORY_STORAGE_KEY;
     let history: MedicineHistoryEntry[] = [];
 
-    if (!isMember) {
-      const existing = await AsyncStorage.getItem(HISTORY_STORAGE_KEY);
-      if (existing) { try { const p = JSON.parse(existing); if (Array.isArray(p)) history = p; } catch {} }
-    }
+    const existing = await AsyncStorage.getItem(historyKey);
+    if (existing) { try { const p = JSON.parse(existing); if (Array.isArray(p)) history = p; } catch {} }
 
     const now = new Date();
 
@@ -32,16 +31,14 @@ export const addToMedicineHistory = async (
       reason:       medicine.reason,
     };
 
-    if (!isMember) {
-      // Add newest at top
-      history.unshift(newEntry);
+    // Add newest at top
+    history.unshift(newEntry);
 
-      // Keep only last 200 records
-      if (history.length > 200) history = history.slice(0, 200);
+    // Keep only last 200 records
+    if (history.length > 200) history = history.slice(0, 200);
 
-      // 1️⃣ Save locally
-      await AsyncStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(history));
-    }
+    // 1️⃣ Save locally
+    await AsyncStorage.setItem(historyKey, JSON.stringify(history));
 
     // 2️⃣ ✅ Sync to Firebase in background
     syncAddMedicineHistory({

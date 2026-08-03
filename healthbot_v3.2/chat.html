@@ -1,0 +1,1017 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dr. Aria — Advanced Personal Medical Assistant</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700;800&family=Source+Sans+3:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&display=swap');
+
+        :root {
+            --sidebar-bg: #171717;
+            --chat-bg: #212121;
+            --user-msg-bg: #2f2f2f;
+            --bot-msg-bg: transparent;
+            --input-bg: #2f2f2f;
+            --border-color: #2f2f2f;
+            --text-main: #ececf1;
+            --text-muted: #b4b4b4;
+            --accent-color: #10a37f;
+            /* ChatGPT Teal-Green */
+            --accent-hover: #1a7f64;
+            --danger-color: #ef4444;
+            --font-sans: 'Source Sans 3', sans-serif;
+            --font-header: 'Sora', sans-serif;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: var(--font-sans);
+            background-color: var(--chat-bg);
+            color: var(--text-main);
+            height: 100vh;
+            display: flex;
+            overflow: hidden;
+        }
+
+        /* --- Sidebar Layout --- */
+        aside {
+            width: 280px;
+            background-color: var(--sidebar-bg);
+            display: flex;
+            flex-direction: column;
+            padding: 1rem;
+            gap: 1rem;
+            border-right: 1px solid var(--border-color);
+            z-index: 10;
+            flex-shrink: 0;
+        }
+
+        .sidebar-header {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            padding: 0.5rem 0.25rem;
+        }
+
+        .sidebar-logo {
+            background-color: var(--accent-color);
+            width: 36px;
+            height: 36px;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.25rem;
+            color: #fff;
+        }
+
+        .sidebar-header h2 {
+            font-family: var(--font-header);
+            font-size: 1.15rem;
+            font-weight: 700;
+            color: #fff;
+        }
+
+        /* --- Drag & Drop Zone --- */
+        .drop-zone {
+            border: 2px dashed #444;
+            border-radius: 12px;
+            padding: 1.25rem 1rem;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+            background: rgba(255, 255, 255, 0.02);
+        }
+
+        .drop-zone:hover,
+        .drop-zone.dragover {
+            border-color: var(--accent-color);
+            background: rgba(16, 163, 127, 0.05);
+        }
+
+        .drop-zone-icon {
+            font-size: 1.5rem;
+            color: var(--accent-color);
+        }
+
+        .drop-text {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            line-height: 1.4;
+        }
+
+        .browse-link {
+            color: var(--accent-color);
+            font-weight: 600;
+            text-decoration: underline;
+        }
+
+        /* --- File Details Bar --- */
+        .file-status-card {
+            background: var(--user-msg-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 0.85rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.6rem;
+        }
+
+        .file-status-card.hidden {
+            display: none;
+        }
+
+        .file-meta {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-size: 0.85rem;
+            font-weight: 500;
+            color: var(--text-main);
+            word-break: break-all;
+        }
+
+        .file-actions {
+            display: flex;
+            gap: 0.4rem;
+        }
+
+        /* --- Settings Card --- */
+        .settings-card {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 0.85rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+            margin-top: auto;
+        }
+
+        .settings-title {
+            font-size: 0.72rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: var(--text-muted);
+        }
+
+        .settings-input {
+            background: rgba(0, 0, 0, 0.2);
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            color: var(--text-main);
+            padding: 0.45rem 0.55rem;
+            font-size: 0.82rem;
+            outline: none;
+            width: 100%;
+            transition: border-color 0.15s ease;
+        }
+
+        .settings-input:focus {
+            border-color: var(--accent-color);
+        }
+
+        /* --- Sidebar Buttons --- */
+        .btn {
+            padding: 0.65rem 0.85rem;
+            border: none;
+            border-radius: 8px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.4rem;
+            transition: all 0.15s ease;
+            color: #fff;
+            font-family: var(--font-sans);
+            width: 100%;
+        }
+
+        .btn:active {
+            transform: scale(0.98);
+        }
+
+        .btn-primary {
+            background: var(--accent-color);
+        }
+
+        .btn-primary:hover:not(:disabled) {
+            background: var(--accent-hover);
+        }
+
+        .btn-secondary {
+            background: rgba(255, 255, 255, 0.08);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            color: var(--text-main);
+        }
+
+        .btn-secondary:hover:not(:disabled) {
+            background: rgba(255, 255, 255, 0.15);
+        }
+
+        .btn-danger {
+            background: var(--danger-color);
+        }
+
+        .btn-danger:hover:not(:disabled) {
+            background: #dc2626;
+        }
+
+        .btn:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+        }
+
+        .sidebar-footer {
+            margin-top: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            border-top: 1px solid var(--border-color);
+            padding-top: 0.85rem;
+        }
+
+        .status-indicator {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-weight: 500;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            background-color: var(--accent-color);
+            border-radius: 50%;
+        }
+
+        /* --- Main Chat Viewport --- */
+        main {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            background-color: var(--chat-bg);
+            position: relative;
+        }
+
+        /* --- Chat Header --- */
+        .chat-header {
+            height: 52px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-bottom: 1px solid var(--border-color);
+            background: var(--chat-bg);
+            font-family: var(--font-header);
+            font-weight: 600;
+            font-size: 0.95rem;
+            letter-spacing: -0.01em;
+            color: var(--text-muted);
+        }
+
+        /* --- Messages Area --- */
+        #messages {
+            flex: 1;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+        }
+
+        #messages::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        #messages::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 4px;
+        }
+
+        /* Message Rows matching ChatGPT styles */
+        .message-row {
+            width: 100%;
+            display: flex;
+            justify-content: center;
+            padding: 1.5rem 1rem;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .message-row.user-row {
+            background-color: var(--chat-bg);
+        }
+
+        .message-row.bot-row {
+            background-color: rgba(255, 255, 255, 0.02);
+        }
+
+        .message-container {
+            width: 100%;
+            max-width: 720px;
+            display: flex;
+            gap: 1.25rem;
+            align-items: flex-start;
+        }
+
+        .avatar {
+            width: 32px;
+            height: 32px;
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.1rem;
+            flex-shrink: 0;
+        }
+
+        .avatar.user-avatar {
+            background-color: #5436da;
+            color: #fff;
+        }
+
+        .avatar.bot-avatar {
+            background-color: var(--accent-color);
+            color: #fff;
+        }
+
+        .message-content {
+            flex: 1;
+            line-height: 1.6;
+            font-size: 0.95rem;
+            color: var(--text-main);
+            word-wrap: break-word;
+            padding-top: 0.15rem;
+        }
+
+        /* Markdown styling inside messages */
+        .message-content strong {
+            color: #fff;
+        }
+
+        .message-content ul,
+        .message-content ol {
+            margin-left: 1.5rem;
+            margin-top: 0.4rem;
+            margin-bottom: 0.4rem;
+        }
+
+        .message-content li {
+            margin-bottom: 0.3rem;
+        }
+
+        .message-content hr {
+            border: none;
+            border-top: 1px solid var(--border-color);
+            margin: 1rem 0;
+        }
+
+        .message-content h1,
+        .message-content h2,
+        .message-content h3 {
+            margin-top: 1rem;
+            margin-bottom: 0.4rem;
+            font-family: var(--font-header);
+            font-weight: 600;
+            color: #fff;
+        }
+
+        .message-content h1 {
+            font-size: 1.3rem;
+        }
+
+        .message-content h2 {
+            font-size: 1.15rem;
+        }
+
+        .message-content h3 {
+            font-size: 1.05rem;
+        }
+
+        /* Thinking Animation style */
+        .thinking-content {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-style: italic;
+            color: var(--text-muted);
+        }
+
+        .pulse {
+            width: 8px;
+            height: 8px;
+            background-color: var(--accent-color);
+            border-radius: 50%;
+            animation: pulseAnimation 1.2s infinite ease-in-out;
+            display: inline-block;
+        }
+
+        @keyframes pulseAnimation {
+
+            0%,
+            100% {
+                transform: scale(0.6);
+                opacity: 0.4;
+            }
+
+            50% {
+                transform: scale(1.2);
+                opacity: 1;
+            }
+        }
+
+        /* --- Chat Input Container --- */
+        .input-wrapper {
+            width: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 1rem 1rem 1.5rem 1rem;
+            background-image: linear-gradient(180deg, rgba(33, 33, 33, 0), var(--chat-bg) 50%);
+        }
+
+        .input-box {
+            width: 100%;
+            max-width: 720px;
+            background-color: var(--input-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 24px;
+            padding: 0.5rem 0.5rem 0.5rem 1.15rem;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        }
+
+        .input-box:focus-within {
+            border-color: #555;
+        }
+
+        #user-input {
+            flex: 1;
+            background: transparent;
+            border: none;
+            outline: none;
+            color: var(--text-main);
+            font-size: 0.95rem;
+            font-family: var(--font-sans);
+            padding: 0.4rem 0;
+        }
+
+        #user-input::placeholder {
+            color: var(--text-muted);
+        }
+
+        /* Send Button */
+        .send-action-btn {
+            background-color: var(--accent-color);
+            border: none;
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            color: #fff;
+            transition: background-color 0.15s ease;
+            flex-shrink: 0;
+        }
+
+        .send-action-btn:hover:not(:disabled) {
+            background-color: var(--accent-hover);
+        }
+
+        .send-action-btn:disabled {
+            background-color: rgba(255, 255, 255, 0.04);
+            color: #555;
+            cursor: not-allowed;
+        }
+
+        .send-action-btn svg {
+            width: 16px;
+            height: 16px;
+            fill: currentColor;
+        }
+
+        /* Stop Button style */
+        .stop-action-btn {
+            background-color: var(--danger-color);
+            border: none;
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            color: #fff;
+            flex-shrink: 0;
+        }
+
+        .stop-action-btn svg {
+            width: 20px;
+            height: 20px;
+            fill: currentColor;
+        }
+
+        /* Input Footer Note */
+        .footer-note {
+            font-size: 0.72rem;
+            color: var(--text-muted);
+            text-align: center;
+            margin-top: 0.5rem;
+        }
+
+        /* Responsive adjustments */
+        @media (max-width: 768px) {
+            aside {
+                display: none;
+                /* In production, you would add a hamburger menu. Keeps it simple here. */
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+    <!-- Left Sidebar Area -->
+    <aside>
+        <div class="sidebar-header">
+            <div class="sidebar-logo">Dr</div>
+            <h2>Dr. Aria</h2>
+        </div>
+
+        <!-- Drag & Drop Zone -->
+        <div id="drop-zone" class="drop-zone">
+            <div class="drop-zone-icon">↑</div>
+            <p class="drop-text">Drag & drop lab report / prescription here or <span class="browse-link">browse
+                    files</span></p>
+            <input type="file" id="doc-upload" style="display:none;" accept=".pdf,.png,.jpg,.jpeg,.tif,.tiff,.bmp,.gif">
+        </div>
+
+        <!-- Upload Progress/Action Card -->
+        <div id="file-info-bar" class="file-status-card hidden">
+            <div class="file-meta">
+                <span>Doc:</span>
+                <span id="file-details-text">No file selected</span>
+            </div>
+            <div class="file-actions">
+                <button id="cancel-file-btn" class="btn btn-secondary">Cancel</button>
+                <button id="upload-btn" class="btn btn-primary" disabled>Upload & Embed</button>
+            </div>
+        </div>
+
+        <!-- Sidebar Tools -->
+        <button id="summarize-btn" class="btn btn-secondary" disabled title="Summarize document">Summarize
+            Document</button>
+        <button id="clear-chat-btn" class="btn btn-secondary" title="Clear chat history">Clear Chat</button>
+
+        <!-- Developer Settings Panel -->
+        <div class="settings-card">
+            <div class="settings-title">Developer Settings</div>
+            <input type="password" id="api-key-input" class="settings-input" placeholder="X-API-Key (Optional)..."
+                title="Set the API Key sent in headers (X-API-Key)" />
+        </div>
+
+        <div class="sidebar-footer">
+            <div class="status-indicator">
+                <div class="status-dot"></div>
+                <span>Health AI Server Online</span>
+            </div>
+            <span>Dr. Aria v3.2 (Local)</span>
+        </div>
+    </aside>
+
+    <!-- Right Main Chat Area -->
+    <main>
+        <div class="chat-header">
+            <span>Dr. Aria — AI Health Assistant</span>
+        </div>
+
+        <!-- Chat Messages Viewport -->
+        <div id="messages"></div>
+
+        <!-- Chat Input Area -->
+        <div class="input-wrapper">
+            <div class="input-box">
+                <input type="text" id="user-input"
+                    placeholder="Ask Dr. Aria about your medical documents or symptoms..." autocomplete="off" />
+
+                <button id="send-btn" class="send-action-btn" aria-label="Send message">
+                    <svg viewBox="0 0 24 24">
+                        <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />
+                    </svg>
+                </button>
+                <button id="stop-btn" class="stop-action-btn" style="display: none;" aria-label="Stop generation">
+                    <svg viewBox="0 0 24 24">
+                        <path d="M6 19h12V5H6v14z" />
+                    </svg>
+                </button>
+            </div>
+            <p class="footer-note">Dr. Aria is an AI health assistant. Review medical files locally. Always consult a
+                healthcare professional for clinical advice.</p>
+        </div>
+    </main>
+
+    <script>
+        console.log('[chat.html] Initializing...');
+
+        const API_BASE = window.location.origin.includes('http') ? window.location.origin : 'http://localhost:8000';
+        const UPLOAD_URL = `${API_BASE}/upload-and-embed`;
+        const GENERATE_URL = `${API_BASE}/generate`;
+
+        const messagesDiv = document.getElementById('messages');
+        const userInput = document.getElementById('user-input');
+        const sendBtn = document.getElementById('send-btn');
+        const clearChatBtn = document.getElementById('clear-chat-btn');
+        const fileInput = document.getElementById('doc-upload');
+        const dropZone = document.getElementById('drop-zone');
+        const fileInfoBar = document.getElementById('file-info-bar');
+        const fileDetailsText = document.getElementById('file-details-text');
+        const uploadBtn = document.getElementById('upload-btn');
+        const cancelFileBtn = document.getElementById('cancel-file-btn');
+        const summarizeBtn = document.getElementById('summarize-btn');
+        const stopBtn = document.getElementById('stop-btn');
+
+        const apiKeyInput = document.getElementById('api-key-input');
+
+        if (localStorage.getItem('health_ai_api_key')) {
+            apiKeyInput.value = localStorage.getItem('health_ai_api_key');
+        }
+
+        apiKeyInput.addEventListener('input', () => {
+            localStorage.setItem('health_ai_api_key', apiKeyInput.value.trim());
+        });
+
+        let storedChunks = [];
+        let currentFile = null;
+        let thinkingElem = null;
+        let currentAbortController = null;
+
+        function parseMarkdown(text) {
+            if (!text) return '';
+            let html = text
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;")
+                .replace(/"/g, "&quot;")
+                .replace(/'/g, "&#039;");
+
+            html = html.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+            html = html.replace(/\*(.*?)\*/g, '<em>$1</em>');
+
+            const lines = html.split('\n');
+            let inList = false;
+            const processedLines = [];
+
+            for (let line of lines) {
+                const trimmed = line.trim();
+                if (trimmed.startsWith('- ') || trimmed.startsWith('* ') || trimmed.startsWith('• ')) {
+                    if (!inList) {
+                        processedLines.push('<ul>');
+                        inList = true;
+                    }
+                    const content = trimmed.substring(2).trim();
+                    processedLines.push(`<li>${content}</li>`);
+                } else {
+                    if (inList) {
+                        processedLines.push('</ul>');
+                        inList = false;
+                    }
+                    if (trimmed === '---') {
+                        processedLines.push('<hr>');
+                    } else if (trimmed.startsWith('### ')) {
+                        processedLines.push(`<h3>${trimmed.substring(4).trim()}</h3>`);
+                    } else if (trimmed.startsWith('## ')) {
+                        processedLines.push(`<h2>${trimmed.substring(3).trim()}</h2>`);
+                    } else if (trimmed.startsWith('# ')) {
+                        processedLines.push(`<h1>${trimmed.substring(2).trim()}</h1>`);
+                    } else {
+                        processedLines.push(line);
+                    }
+                }
+            }
+            if (inList) {
+                processedLines.push('</ul>');
+            }
+
+            let result = processedLines.join('\n');
+            result = result.replace(/\n/g, '<br>');
+            result = result.replace(/<\/ul><br>/g, '</ul>');
+            result = result.replace(/<ul><br>/g, '<ul>');
+            result = result.replace(/<\/li><br>/g, '</li>');
+            result = result.replace(/<li><br>/g, '<li>');
+            result = result.replace(/<hr><br>/g, '<hr>');
+            result = result.replace(/<\/h3><br>/g, '</h3>');
+            result = result.replace(/<\/h2><br>/g, '</h2>');
+            result = result.replace(/<\/h1><br>/g, '</h1>');
+
+            return result;
+        }
+
+        // ----- UI Helpers -----
+        function addMessage(text, fromUser = false, isThinking = false) {
+            const row = document.createElement('div');
+            row.className = `message-row ${fromUser ? 'user-row' : 'bot-row'}`;
+
+            const container = document.createElement('div');
+            container.className = 'message-container';
+
+            const avatar = document.createElement('div');
+            avatar.className = `avatar ${fromUser ? 'user-avatar' : 'bot-avatar'}`;
+            avatar.textContent = fromUser ? 'U' : 'Dr';
+
+            const content = document.createElement('div');
+            content.className = 'message-content';
+
+            if (isThinking) {
+                content.className += ' thinking-content';
+                content.innerHTML = `<span class="pulse"></span> ${text}`;
+                thinkingElem = row;
+            } else {
+                content.innerHTML = parseMarkdown(text);
+            }
+
+            container.appendChild(avatar);
+            container.appendChild(content);
+            row.appendChild(container);
+
+            messagesDiv.appendChild(row);
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        }
+
+        function removeThinking() {
+            if (thinkingElem && thinkingElem.parentNode) {
+                thinkingElem.remove();
+                thinkingElem = null;
+            }
+        }
+
+        function setFile(file) {
+            currentFile = file;
+            if (file) {
+                fileDetailsText.textContent = `${file.name} (${(file.size / 1024).toFixed(1)} KB)`;
+                uploadBtn.disabled = false;
+                fileInfoBar.classList.remove('hidden');
+                dropZone.style.display = 'none';
+            } else {
+                fileDetailsText.textContent = 'No file selected';
+                uploadBtn.disabled = true;
+                fileInfoBar.classList.add('hidden');
+                dropZone.style.display = 'flex';
+            }
+        }
+
+        // ----- Drag & Drop Logic -----
+        ['dragenter', 'dragover'].forEach(eventName => {
+            dropZone.addEventListener(eventName, (e) => {
+                e.preventDefault();
+                dropZone.classList.add('dragover');
+            }, false);
+        });
+
+        ['dragleave', 'drop'].forEach(eventName => {
+            dropZone.addEventListener(eventName, (e) => {
+                e.preventDefault();
+                dropZone.classList.remove('dragover');
+            }, false);
+        });
+
+        dropZone.addEventListener('drop', (e) => {
+            const dt = e.dataTransfer;
+            const file = dt.files[0] || null;
+            setFile(file);
+        });
+
+        dropZone.addEventListener('click', () => fileInput.click());
+        fileInput.addEventListener('change', (e) => {
+            const file = e.target.files[0] || null;
+            setFile(file);
+            fileInput.value = '';
+        });
+
+        cancelFileBtn.addEventListener('click', () => setFile(null));
+
+        // ----- Upload Document -----
+        function uploadFile() {
+            if (!currentFile) return;
+            uploadBtn.disabled = true;
+            cancelFileBtn.disabled = true;
+
+            addMessage(`[Uploading] Uploading and processing "${currentFile.name}"...`, false);
+
+            const formData = new FormData();
+            formData.append('file', currentFile);
+
+            const headers = {};
+            const key = apiKeyInput.value.trim();
+            if (key) {
+                headers['X-API-Key'] = key;
+            }
+
+            fetch(UPLOAD_URL, {
+                method: 'POST',
+                headers: headers,
+                body: formData
+            })
+                .then(resp => {
+                    if (!resp.ok) {
+                        return resp.json().then(err => {
+                            throw new Error(err.detail || err.message || `Upload failed with status ${resp.status}`);
+                        });
+                    }
+                    return resp.json();
+                })
+                .then(data => {
+                    storedChunks = data.chunks.map(c => c.text);
+                    addMessage(`[Success] Successfully processed "${currentFile.name}"! Loaded ${storedChunks.length} text blocks. You can now ask questions about this document.`, false);
+                    summarizeBtn.disabled = false;
+                    setFile(null);
+                })
+                .catch(err => {
+                    console.error('[chat.html] Upload error:', err);
+                    addMessage(`[Error] Processing failed: ${err.message}`, false);
+                })
+                .finally(() => {
+                    uploadBtn.disabled = false;
+                    cancelFileBtn.disabled = false;
+                });
+        }
+
+        uploadBtn.addEventListener('click', uploadFile);
+
+        // ----- Summarize Document -----
+        function summarizeDocument() {
+            if (storedChunks.length === 0) return;
+            addMessage('[Reviewing] Reviewing document chunks to generate summary...', false, true);
+            userInput.disabled = true;
+            sendBtn.disabled = true;
+            summarizeBtn.disabled = true;
+
+            sendBtn.style.display = 'none';
+            stopBtn.style.display = 'inline-flex';
+            currentAbortController = new AbortController();
+
+            const payload = {
+                query: 'Please provide a comprehensive summary of the uploaded medical document, highlighting key values, parameters, diagnoses, or notes.',
+                chunks: storedChunks,
+                history: [],
+                patient_context: null
+            };
+
+            const headers = {
+                'Accept': 'application/json',
+                'Content-Type': 'application/json'
+            };
+            const key = apiKeyInput.value.trim();
+            if (key) {
+                headers['X-API-Key'] = key;
+            }
+
+            fetch(GENERATE_URL, {
+                method: 'POST',
+                headers: headers,
+                body: JSON.stringify(payload),
+                signal: currentAbortController.signal
+            })
+                .then(resp => {
+                    if (!resp.ok) {
+                        return resp.json().then(err => { throw new Error(err.detail || err.message || 'Server error'); });
+                    }
+                    return resp.json();
+                })
+                .then(data => {
+                    removeThinking();
+                    let response = (data.response || '').replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
+                    addMessage(response);
+                })
+                .catch(err => {
+                    removeThinking();
+                    if (err.name === 'AbortError') {
+                        addMessage('⚠️ Response generation stopped by user.', false);
+                    } else {
+                        console.error('[chat.html] Summarization error:', err);
+                        addMessage(`❌ Summarization failed: ${err.message}`);
+                    }
+                })
+                .finally(() => {
+                    userInput.disabled = false;
+                    sendBtn.disabled = false;
+                    summarizeBtn.disabled = false;
+                    sendBtn.style.display = 'inline-flex';
+                    stopBtn.style.display = 'none';
+                    currentAbortController = null;
+                    userInput.focus();
+                });
+        }
+
+        summarizeBtn.addEventListener('click', summarizeDocument);
+
+        // ----- Ask Question -----
+        function askQuestion(question) {
+            addMessage(question, true);
+            addMessage('Thinking...', false, true);
+            userInput.disabled = true;
+            sendBtn.disabled = true;
+
+            sendBtn.style.display = 'none';
+            stopBtn.style.display = 'inline-flex';
+            currentAbortController = new AbortController();
+
+            const payload = {
+                query: question,
+                chunks: storedChunks,
+                history: [],
+                patient_context: null
+            };
+
+            const headers = {
+                'Accept': 'application/json',
+                'Content-Type': 'application/json'
+            };
+            const key = apiKeyInput.value.trim();
+            if (key) {
+                headers['X-API-Key'] = key;
+            }
+
+            fetch(GENERATE_URL, {
+                method: 'POST',
+                headers: headers,
+                body: JSON.stringify(payload),
+                signal: currentAbortController.signal
+            })
+                .then(resp => {
+                    if (!resp.ok) {
+                        return resp.json().then(err => { throw new Error(err.detail || err.message || 'Server error'); });
+                    }
+                    return resp.json();
+                })
+                .then(data => {
+                    removeThinking();
+                    let response = (data.response || '').replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
+                    addMessage(response);
+                })
+                .catch(err => {
+                    removeThinking();
+                    if (err.name === 'AbortError') {
+                        addMessage('[Notice] Response generation stopped by user.', false);
+                    } else {
+                        console.error('[chat.html] Generation error:', err);
+                        addMessage(`[Error] Failed to get answer: ${err.message}`);
+                    }
+                })
+                .finally(() => {
+                    userInput.disabled = false;
+                    sendBtn.disabled = false;
+                    sendBtn.style.display = 'inline-flex';
+                    stopBtn.style.display = 'none';
+                    currentAbortController = null;
+                    userInput.focus();
+                });
+        }
+
+        function handleUserInput() {
+            const question = userInput.value.trim();
+            if (!question) return;
+            askQuestion(question);
+            userInput.value = '';
+        }
+
+        sendBtn.addEventListener('click', handleUserInput);
+        userInput.addEventListener('keypress', e => { if (e.key === 'Enter') handleUserInput(); });
+
+        stopBtn.addEventListener('click', () => {
+            if (currentAbortController) {
+                currentAbortController.abort();
+            }
+        });
+
+        clearChatBtn.addEventListener('click', () => {
+            messagesDiv.innerHTML = '';
+            userInput.value = '';
+            userInput.focus();
+        });
+
+        // Welcome Dr. Aria greeting on startup
+        addMessage("Dr. Aria Health AI online. Upload your health report or prescription, and I will help you review it.", false);
+        userInput.focus();
+    </script>
+
+</body>
+
+</html>

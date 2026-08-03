@@ -6,10 +6,14 @@ import { error } from "../utils/logger";
 
 const { HydrationAlarmModule } = NativeModules;
 
-export function scheduleHydrationAlarm(intervalMinutes: number): void {
+export function scheduleHydrationAlarm(
+  intervalMinutes: number,
+  profileId: string = "self",
+  profileName: string = "You"
+): void {
   if (Platform.OS !== 'android' || !HydrationAlarmModule) return;
   try {
-    HydrationAlarmModule.scheduleAlarm(intervalMinutes);
+    HydrationAlarmModule.scheduleAlarm(intervalMinutes, profileId, profileName);
   } catch (err: unknown) {
     error('❌ Failed to schedule native hydration alarm:', err);
   }
