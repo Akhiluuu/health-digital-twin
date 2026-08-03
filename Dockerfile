@@ -11,6 +11,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Set up working directory
 WORKDIR /app
+ENV PYTHONPATH=/app
 
 # Copy requirements and install python packages
 COPY requirements.txt .
