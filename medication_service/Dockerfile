@@ -8,7 +8,7 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Python dependencies
-COPY requirements.txt medication_service/requirements.txt
+COPY medication_service/requirements.txt medication_service/requirements.txt
 RUN pip install --no-cache-dir -r medication_service/requirements.txt
 
 # Copy full project
