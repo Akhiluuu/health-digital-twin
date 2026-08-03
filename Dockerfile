@@ -24,4 +24,4 @@ COPY . .
 EXPOSE 8000 8080
 
 # Run default command (FastAPI server)
-CMD ["uvicorn", "biogears_service.api.server:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "healthbot_v4.apps.api.server:app", "--host", "0.0.0.0", "--port", "8000"]

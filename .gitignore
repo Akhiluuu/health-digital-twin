@@ -80,3 +80,7 @@ venv/
 # Secrets & Firebase credentials
 firebase_admin.json
 firebase-adminsdk*.json
+
+# Models directory GGUF model binary files
+models/*.gguf
+models/
