@@ -1,0 +1,30 @@
+# Exclude large binary model files from Docker build context (mounted via volume instead)
+models/
+models/*.gguf
+healthbot/model/
+healthbot/model/*.gguf
+*.gguf
+
+# Exclude virtual environments
+venv/
+.venv/
+healthbot_venv/
+biogears_runtime/
+
+# Exclude clinical data histories
+clinical_data/
+clinical_data/history/
+clinical_data/states/
+
+# Exclude git and IDE caches
+.git/
+.github/
+.vscode/
+.idea/
+.pytest_cache/
+__pycache__/
+*.pyc
+*.pyo
+
+# Exclude mobile app frontend directory (built separately via Expo)
+VitalHealth/
