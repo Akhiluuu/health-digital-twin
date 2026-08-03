@@ -29,8 +29,15 @@ async def lifespan(app: FastAPI):
         import psycopg2
         database_url = os.environ.get("DATABASE_URL")
         if database_url:
-            conn = psycopg2.connect(database_url)
-            run_migrations(conn)
+            for attempt in range(5):
+                try:
+                    conn = psycopg2.connect(database_url)
+                    run_migrations(conn)
+                    conn.close()
+                    break
+                except Exception as ex:
+                    logger.warning(f"Database connection attempt {attempt+1}/5 pending: {ex}")
+                    time.sleep(2)
     except Exception as e:
         logger.warning(f"Migration on startup failed (may already be applied): {e}")
     try:
