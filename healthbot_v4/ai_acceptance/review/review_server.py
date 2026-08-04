@@ -20,7 +20,8 @@ app = FastAPI(
 )
 
 workflow = HumanReviewWorkflow()
-REPORTS_PATH = "/home/akhilreddy/health-digital-twin/healthbot_v4/ai_acceptance/reports"
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+REPORTS_PATH = os.path.abspath(os.path.join(BASE_DIR, "..", "reports"))
 
 class RatingSubmission(BaseModel):
     review_id: str

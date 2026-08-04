@@ -10,7 +10,8 @@ from typing import List, Dict, Any
 from healthbot_v4.ai_acceptance.evaluator import EvaluationScore
 from healthbot_v4.ai_acceptance.acceptance_score import ReleaseGateResult
 
-REPORTS_DIR = "/home/akhilreddy/health-digital-twin/healthbot_v4/ai_acceptance/reports"
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+REPORTS_DIR = os.path.join(BASE_DIR, "reports")
 
 class ReportGenerator:
     """Generates comprehensive AI Acceptance Reports in Markdown, HTML, and JSON formats."""

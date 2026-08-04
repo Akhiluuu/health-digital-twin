@@ -9,7 +9,9 @@ import argparse
 import asyncio
 import time
 
-sys.path.insert(0, '/home/akhilreddy/health-digital-twin/healthbot_v4')
+BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+if BASE_DIR not in sys.path:
+    sys.path.insert(0, BASE_DIR)
 
 from healthbot_v4.ai_acceptance.personas.persona_factory import PersonaFactory
 from healthbot_v4.ai_acceptance.scenarios.scenario_generator import ScenarioGenerator

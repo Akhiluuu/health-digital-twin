@@ -8,8 +8,9 @@ import os
 import time
 from typing import List, Dict, Any
 
-REVIEW_QUEUE_PATH = "/home/akhilreddy/health-digital-twin/healthbot_v4/ai_acceptance/review/review_queue.json"
-REVIEW_FEEDBACK_PATH = "/home/akhilreddy/health-digital-twin/healthbot_v4/ai_acceptance/review/reviewer_feedback.json"
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+REVIEW_QUEUE_PATH = os.path.join(BASE_DIR, "review_queue.json")
+REVIEW_FEEDBACK_PATH = os.path.join(BASE_DIR, "reviewer_feedback.json")
 
 class HumanReviewWorkflow:
     """Manages clinical expert review workflow and review item generation."""

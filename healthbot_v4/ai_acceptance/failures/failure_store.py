@@ -8,8 +8,9 @@ import os
 import time
 from typing import List, Dict, Any
 
-FAILURE_STORE_PATH = "/home/akhilreddy/health-digital-twin/healthbot_v4/ai_acceptance/failures/failure_log.json"
-REGRESSION_DATASET_PATH = "/home/akhilreddy/health-digital-twin/healthbot_v4/ai_acceptance/failures/regression_cases.json"
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+FAILURE_STORE_PATH = os.path.join(BASE_DIR, "failure_log.json")
+REGRESSION_DATASET_PATH = os.path.join(BASE_DIR, "regression_cases.json")
 
 class FailureStore:
     """Manages failure detection logging and permanent regression suite persistence."""

@@ -7,6 +7,8 @@ import os
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
+BASE_PROJECT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
@@ -21,11 +23,11 @@ class Settings(BaseSettings):
     QDRANT_URL: str = "http://localhost:6333"
 
     # AI Models
-    QWEN_MODEL_PATH: str = "/home/akhilreddy/health-digital-twin/models/qwen2.5-14b-instruct-q5_k_m-00001-of-00003.gguf"
+    QWEN_MODEL_PATH: str = os.path.join(BASE_PROJECT_DIR, "models", "qwen2.5-14b-instruct-q5_k_m-00001-of-00003.gguf")
     EMBEDDING_MODEL_NAME: str = "BAAI/bge-small-en-v1.5"
 
     # BioGears C++ Engine
-    BIOGEARS_RUNTIME_PATH: str = "/home/akhilreddy/health-digital-twin/biogears_runtime"
+    BIOGEARS_RUNTIME_PATH: str = os.path.join(BASE_PROJECT_DIR, "biogears_runtime")
     BIOGEARS_API_URL: str = "http://localhost:8000"
 
 
