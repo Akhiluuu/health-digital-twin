@@ -9,8 +9,19 @@
 //  - Health ID synced from Firebase (reads inviteCode stored in Firestore)
 
 import { Ionicons } from "@expo/vector-icons";
-import AsyncStorage from "@react-native-async-storage/async-storage";
-import Clipboard from "@react-native-clipboard/clipboard";
+let Clipboard: { setString: (text: string) => void } = {
+  setString: (text: string) => {
+    try {
+      const ExpoClipboard = require("expo-clipboard");
+      ExpoClipboard.setStringAsync(text);
+    } catch {
+      try {
+        const NativeClipboard = require("@react-native-clipboard/clipboard").default;
+        NativeClipboard.setString(text);
+      } catch {}
+    }
+  },
+};
 import { BlurView } from "expo-blur";
 import * as ImagePicker from "expo-image-picker";
 import * as FileSystem from "expo-file-system";

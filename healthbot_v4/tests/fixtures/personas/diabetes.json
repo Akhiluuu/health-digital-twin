@@ -1,0 +1,61 @@
+{
+  "patient_id": "persona_diabetes",
+  "profile": {
+    "patient_id": "persona_diabetes",
+    "first_name": "John",
+    "last_name": "Doe",
+    "age": 52,
+    "biological_sex": "male",
+    "blood_type": "O+",
+    "height_cm": 178.0,
+    "weight_kg": 92.0,
+    "allergies": [],
+    "chronic_conditions": ["Type 2 Diabetes"]
+  },
+  "conditions": [
+    {
+      "condition_name": "Type 2 Diabetes",
+      "icd10_code": "E11.9",
+      "status": "active"
+    }
+  ],
+  "medications": [
+    {
+      "name": "Metformin",
+      "rxnorm_code": "860975",
+      "dose_quantity": 500.0,
+      "dosage_form": "mg",
+      "frequency": "twice daily",
+      "is_active": true
+    }
+  ],
+  "labs": [
+    {
+      "canonical_name": "HbA1c",
+      "loinc_code": "4548-4",
+      "value": 8.4,
+      "unit": "%",
+      "classification": "high"
+    },
+    {
+      "canonical_name": "HbA1c",
+      "loinc_code": "4548-4",
+      "value": 9.1,
+      "unit": "%",
+      "classification": "high"
+    }
+  ],
+  "vitals": [
+    {
+      "vital_type": "blood_pressure",
+      "value_primary": 138.0,
+      "value_secondary": 88.0,
+      "unit": "mmHg"
+    }
+  ],
+  "expected_health_score_min": 60,
+  "expected_health_score_max": 90,
+  "expected_risk_count_min": 1,
+  "expected_milestone_types": ["first_diagnosis", "medication_started", "hba1c_improved", "adherence_streak"],
+  "expected_goals_containing": ["reduce_hba1c", "medication_adherence", "reduce_bp"]
+}

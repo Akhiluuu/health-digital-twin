@@ -38,7 +38,7 @@ class HealthBrainDecisionEngine(HealthBrainSubsystem):
         query_lower = query.lower()
 
         # Emergency Guardrail Triage
-        emergency_keywords = ["chest pain", "cannot breathe", "arm numbness", "severe bleeding", "unconscious"]
+        emergency_keywords = ["emergency", "chest pain", "cannot breathe", "arm numbness", "severe bleeding", "vaginal bleeding", "bleeding", "unconscious", "stroke", "slurred speech", "facial drooping", "blue lips", "suicidal", "overdose", "thunderclap", "anaphylaxis", "crushing pain", "shortness of breath"]
         if any(kw in query_lower for kw in emergency_keywords):
             logger.warning(f"EMERGENCY TRIGGERED for patient {state.patient_id}: {query}")
             return DecisionResult(

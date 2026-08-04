@@ -21,7 +21,7 @@ class Settings(BaseSettings):
     QDRANT_URL: str = "http://localhost:6333"
 
     # AI Models
-    QWEN_MODEL_PATH: str = "/home/akhilreddy/health-digital-twin/models/qwen2.5-14b-instruct-q5_k_m.gguf"
+    QWEN_MODEL_PATH: str = "/home/akhilreddy/health-digital-twin/models/qwen2.5-14b-instruct-q5_k_m-00001-of-00003.gguf"
     EMBEDDING_MODEL_NAME: str = "BAAI/bge-small-en-v1.5"
 
     # BioGears C++ Engine

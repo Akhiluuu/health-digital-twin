@@ -122,8 +122,11 @@ const vi = StyleSheet.create({
 export default function Medical() {
   const router = useRouter();
   const { theme } = useTheme();
-  const { signupName, signupEmail, firstName, lastName, phone, dateOfBirth, gender } =
-    useLocalSearchParams<{ signupName: string; signupEmail: string; firstName: string; lastName: string; phone: string; dateOfBirth: string; gender: string }>();
+  const params = useLocalSearchParams<{
+    signupName?: string; signupEmail?: string; firstName?: string; lastName?: string; phone?: string; dateOfBirth?: string; gender?: string;
+    height?: string; weight?: string; bloodGroup?: string; allergies?: string;
+    restingHR?: string; systolicBP?: string; diastolicBP?: string; bodyFatPct?: string;
+  }>();
 
   const c = globalColors[theme];
   const colors = {
@@ -137,15 +140,15 @@ export default function Medical() {
   };
   const accent = c.accent;
 
-  const [height,      setHeight]      = useState("");
-  const [weight,      setWeight]      = useState("");
-  const [bloodGroup,  setBloodGroup]  = useState("");
-  const [allergies,   setAllergies]   = useState("");
+  const [height,      setHeight]      = useState(params.height || "");
+  const [weight,      setWeight]      = useState(params.weight || "");
+  const [bloodGroup,  setBloodGroup]  = useState(params.bloodGroup || "");
+  const [allergies,   setAllergies]   = useState(params.allergies || "");
   // Clinical vitals for BioGears
-  const [restingHR,   setRestingHR]   = useState("72");
-  const [systolicBP,  setSystolicBP]  = useState("120");
-  const [diastolicBP, setDiastolicBP] = useState("80");
-  const [bodyFatPct,  setBodyFatPct]  = useState("20");
+  const [restingHR,   setRestingHR]   = useState(params.restingHR || "72");
+  const [systolicBP,  setSystolicBP]  = useState(params.systolicBP || "120");
+  const [diastolicBP, setDiastolicBP] = useState(params.diastolicBP || "80");
+  const [bodyFatPct,  setBodyFatPct]  = useState(params.bodyFatPct || "20");
 
   const [showBloodPicker, setShowBloodPicker] = useState(false);
   const [allergiesFocused, setAllergiesFocused] = useState(false);
@@ -205,7 +208,8 @@ export default function Medical() {
       router.push({
         pathname: "/onboarding/habits",
         params: {
-          signupName, signupEmail, firstName, lastName, phone, dateOfBirth, gender,
+          signupName: params.signupName, signupEmail: params.signupEmail, firstName: params.firstName,
+          lastName: params.lastName, phone: params.phone, dateOfBirth: params.dateOfBirth, gender: params.gender,
           height: String(Math.round(h)), weight: String(Math.round(w)), bloodGroup, allergies,
           restingHR: String(hr), systolicBP: String(sp), diastolicBP: String(dp), bodyFatPct: String(bf),
         },

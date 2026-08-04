@@ -1,0 +1,41 @@
+name: VitalHealth AI Production Release Gate
+
+on:
+  push:
+    branches: [ main, production, release/* ]
+  pull_request:
+    branches: [ main, production ]
+
+jobs:
+  ai-acceptance-gate:
+    name: Clinical AI Acceptance & Release Gate Check
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code Repository
+        uses: actions/checkout@v3
+
+      - name: Set up Python Environment
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install System & Python Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pydantic asyncio typing-extensions pytest jinja2
+
+      - name: Execute Production Release Gate Test Suite
+        run: |
+          chmod +x ./scripts/run_production_gate.sh
+          ./scripts/run_production_gate.sh
+
+      - name: Upload AI Acceptance Reports Artifacts
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: ai-acceptance-reports
+          path: |
+            healthbot_v4/ai_acceptance/reports/
+            healthbot_v4/ai_acceptance/failures/

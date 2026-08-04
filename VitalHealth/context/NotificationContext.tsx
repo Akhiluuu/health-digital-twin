@@ -1,7 +1,15 @@
 // context/NotificationContext.tsx
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from "react";
-import * as Haptics from "expo-haptics";
-import notifee, { AndroidImportance } from "@notifee/react-native";
+import { NativeModules } from "react-native";
+let notifee: any = { displayNotification: async () => {}, createChannel: async () => {} };
+let AndroidImportance: any = { HIGH: 4 };
+if (Boolean(NativeModules?.NotifeeApiModule)) {
+  try {
+    const NotifeeModule = require("@notifee/react-native");
+    if (NotifeeModule.default) notifee = NotifeeModule.default;
+    if (NotifeeModule.AndroidImportance) AndroidImportance = NotifeeModule.AndroidImportance;
+  } catch (e) {}
+}
 import { doc, onSnapshot, collection } from "firebase/firestore";
 import { db, auth } from "../services/firebase";
 import { getUserId } from "../services/firebaseSync";
@@ -25,6 +33,7 @@ import { useProfile } from "./ProfileContext";
 import { log, error } from "../utils/logger";
 import { notificationEventBus } from "../services/notifeeService";
 import { getLocalDateString } from "../utils/twinUtils";
+import * as Haptics from "expo-haptics";
 
 interface NotificationContextType {
   notifications: NotificationItem[];

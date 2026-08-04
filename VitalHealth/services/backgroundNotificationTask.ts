@@ -1,4 +1,13 @@
-import notifee, { TriggerType } from '@notifee/react-native';
+import { NativeModules } from 'react-native';
+let notifee: any = { onBackgroundEvent: () => {}, cancelNotification: async () => {}, createTriggerNotification: async () => "mock_id" };
+let TriggerType: any = { TIMESTAMP: 0 };
+if (Boolean(NativeModules?.NotifeeApiModule)) {
+  try {
+    const NotifeeModule = require('@notifee/react-native');
+    if (NotifeeModule.default) notifee = NotifeeModule.default;
+    if (NotifeeModule.TriggerType) TriggerType = NotifeeModule.TriggerType;
+  } catch (e) {}
+}
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import { log } from "../utils/logger";

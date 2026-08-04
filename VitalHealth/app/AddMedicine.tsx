@@ -313,13 +313,15 @@ export default function AddMedicine() {
 
         <View style={{ alignItems: 'center', marginTop: 15, marginBottom: 15 }}>
           <TimePicker
-            value={`${time.getHours()}:${time.getMinutes()}`}
+            value={`${String(time.getHours()).padStart(2, '0')}:${String(time.getMinutes()).padStart(2, '0')}`}
             onChange={(t) => {
-              const [h, m] = String(t || "").split(':');
-              const d = new Date(time);
-              d.setHours(parseInt(h, 10));
-              d.setMinutes(parseInt(m, 10));
-              setTime(d);
+              if (!t) return;
+              const parts = String(t).split(':').map((x) => parseInt(x, 10));
+              if (parts.length >= 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
+                const newD = new Date(time.getTime());
+                newD.setHours(parts[0], parts[1], 0, 0);
+                setTime(newD);
+              }
             }}
             accent={c.accent}
           />

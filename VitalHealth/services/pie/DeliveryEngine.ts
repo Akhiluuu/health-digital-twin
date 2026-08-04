@@ -9,17 +9,21 @@ import { log, error as logError } from '../../utils/logger';
 import type { PIECandidate } from './types';
 
 // Safe require for Notifee module
+import { NativeModules } from 'react-native';
+
 let notifee: any = null;
 let AndroidImportance: any = { HIGH: 4, DEFAULT: 3, LOW: 2 };
 let AndroidVisibility: any = { PRIVATE: 0, PUBLIC: 1 };
 
-try {
-  const notifeeModule = require('@notifee/react-native');
-  notifee = notifeeModule.default;
-  AndroidImportance = notifeeModule.AndroidImportance;
-  AndroidVisibility = notifeeModule.AndroidVisibility;
-} catch (err) {
-  log('⚠️ DeliveryEngine: Notifee not available in this environment');
+if (Boolean(NativeModules?.NotifeeApiModule)) {
+  try {
+    const notifeeModule = require('@notifee/react-native');
+    notifee = notifeeModule.default;
+    AndroidImportance = notifeeModule.AndroidImportance;
+    AndroidVisibility = notifeeModule.AndroidVisibility;
+  } catch (err) {
+    log('⚠️ DeliveryEngine: Notifee not available in this environment');
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

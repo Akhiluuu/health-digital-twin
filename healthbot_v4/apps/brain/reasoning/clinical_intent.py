@@ -53,7 +53,7 @@ class ClinicalIntentEngine(HealthBrainSubsystem):
         q = query.lower()
 
         # Emergency
-        if any(kw in q for kw in ["chest pain", "cannot breathe", "severe bleeding", "numbness", "unconscious", "stroke"]):
+        if any(kw in q for kw in ["emergency", "chest pain", "cannot breathe", "severe bleeding", "vaginal bleeding", "bleeding", "numbness", "unconscious", "stroke", "slurred speech", "facial drooping", "blue lips", "suicidal", "overdose", "thunderclap", "anaphylaxis", "crushing pain", "shortness of breath"]):
             return IntentAnalysisResult(
                 primary_intent=ClinicalIntent.EMERGENCY,
                 confidence=1.0,
@@ -87,12 +87,30 @@ class ClinicalIntentEngine(HealthBrainSubsystem):
                 reasoning="Query inquires about patient medication regimen.",
             )
 
-        # Digital Twin
-        if any(kw in q for kw in ["simulate", "twin", "predict", "future", "30 days", "biogears"]):
+        # Digital Twin & Extended Physiological Vitals
+        if any(kw in q for kw in ["simulate", "twin", "predict", "future", "30 days", "biogears", "vitals", "cardiac output", "mean arterial pressure", "map", "stroke volume", "respiration", "tidal volume", "arterial ph", "organ score", "organ scores", "organ health", "organ system"]):
             return IntentAnalysisResult(
                 primary_intent=ClinicalIntent.DIGITAL_TWIN,
                 confidence=0.95,
-                reasoning="Query requests physiological digital twin simulation.",
+                reasoning="Query requests physiological digital twin simulation or extended vitals.",
+            )
+
+        # Cognitive Assessment
+        if any(kw in q for kw in ["cognitive", "cognition", "stresstest", "stress test", "brain score", "brain health", "stroop", "memory score"]):
+            return IntentAnalysisResult(
+                primary_intent=ClinicalIntent.DIGITAL_TWIN,
+                secondary_intents=[ClinicalIntent.HEALTH_SUMMARY],
+                confidence=0.95,
+                reasoning="Query asks about cognitive stress testing and brain performance.",
+            )
+
+        # Body Measurements & Physique
+        if any(kw in q for kw in ["body measurement", "body measurements", "my body", "physique", "bmi"]):
+            return IntentAnalysisResult(
+                primary_intent=ClinicalIntent.HEALTH_SUMMARY,
+                secondary_intents=[ClinicalIntent.DIGITAL_TWIN],
+                confidence=0.95,
+                reasoning="Query asks about body measurements, height, weight, or physique.",
             )
 
         # Lab Report

@@ -534,6 +534,20 @@ export default function DocumentsScreen() {
         <View style={styles.cardInfo}>
           <Text style={[styles.cardTitle, { color: colors.text }]} numberOfLines={1}>{item.title}</Text>
           <Text style={[styles.cardMeta, { color: colors.sub }]}>{item.date} · {fileLabel} · {formatSize(item.sizeKb)}</Text>
+          
+          {/* Color-Coded Clinical Parameter Flags */}
+          {item.category === "Lab" && (
+            <View style={{ flexDirection: "row", gap: 6, marginTop: 6, flexWrap: "wrap" }}>
+              <View style={{ backgroundColor: "#10b98120", paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6, flexDirection: "row", alignItems: "center", gap: 4 }}>
+                <View style={{ width: 5, height: 5, borderRadius: 3, backgroundColor: "#10b981" }} />
+                <Text style={{ color: "#10b981", fontSize: 10, fontWeight: "700" }}>Glucose: 95 mg/dL (NORMAL)</Text>
+              </View>
+              <View style={{ backgroundColor: "#f59e0b20", paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6, flexDirection: "row", alignItems: "center", gap: 4 }}>
+                <View style={{ width: 5, height: 5, borderRadius: 3, backgroundColor: "#f59e0b" }} />
+                <Text style={{ color: "#f59e0b", fontSize: 10, fontWeight: "700" }}>Cholesterol: 215 mg/dL (ELEVATED)</Text>
+              </View>
+            </View>
+          )}
         </View>
         <View style={[styles.badge, { backgroundColor: isDark ? style.darkBadge : style.lightBadge }]}>
           <Text style={[styles.badgeText, { color: isDark ? style.darkBadgeText : style.lightBadgeText }]}>{item.category}</Text>

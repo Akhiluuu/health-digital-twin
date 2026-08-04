@@ -122,7 +122,7 @@ export default function SettingsScreen() {
             </Text>
 
             <Text style={[styles.modalSubtitle, { color: colors.accent }]}>
-              Under Construction
+              Feature Preview
             </Text>
 
             <Text style={[styles.modalDescription, { color: colors.sub }]}>

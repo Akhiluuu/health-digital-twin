@@ -66,7 +66,7 @@ export default function SessionDetailScreen() {
     );
   }
 
-  const v = session.vitals_snapshot;
+  const v = BiogearsAPI.sanitizeBiogearsVitals(session.vitals_snapshot);
 
   return (
     <View style={[sd.root, { backgroundColor: c.bg }]}>

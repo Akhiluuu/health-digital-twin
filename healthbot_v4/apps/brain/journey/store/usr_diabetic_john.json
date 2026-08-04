@@ -1,0 +1,93 @@
+{
+  "patient_id": "usr_diabetic_john",
+  "goals": [
+    {
+      "goal_id": "goal_increase_steps_usr_diab",
+      "patient_id": "usr_diabetic_john",
+      "title": "Increase Daily Steps",
+      "description": "Reach 8,000+ steps per day consistently",
+      "category": "lifestyle",
+      "metric_name": "Daily Steps",
+      "target_value": 8000.0,
+      "current_value": 4000.0,
+      "unit": "steps",
+      "progress_pct": 0.0,
+      "trend": "unknown",
+      "status": "active",
+      "confidence": 0.8,
+      "recommendations": [
+        "Take 10-minute walks after each meal",
+        "Use stairs instead of elevator",
+        "Track progress with step counter"
+      ],
+      "expected_completion_date": null,
+      "created_at": "2026-08-04T04:17:28.250330",
+      "updated_at": "2026-08-04T04:17:28.250330"
+    },
+    {
+      "goal_id": "goal_hydration_usr_diab",
+      "patient_id": "usr_diabetic_john",
+      "title": "Daily Hydration Goal",
+      "description": "Drink 2,000 ml of water per day",
+      "category": "lifestyle",
+      "metric_name": "Daily Water Intake",
+      "target_value": 2000.0,
+      "current_value": 1200.0,
+      "unit": "ml",
+      "progress_pct": 0.0,
+      "trend": "unknown",
+      "status": "active",
+      "confidence": 0.8,
+      "recommendations": [
+        "Carry a 500 ml water bottle",
+        "Set hourly hydration reminders",
+        "Drink a glass of water before each meal"
+      ],
+      "expected_completion_date": null,
+      "created_at": "2026-08-04T04:17:28.250384",
+      "updated_at": "2026-08-04T04:17:28.250384"
+    },
+    {
+      "goal_id": "f8e073a3-7ea2-42d5-bf03-999e004a0808",
+      "patient_id": "usr_diabetic_john",
+      "title": "Drink 2L Water",
+      "description": "Daily hydration goal",
+      "category": "lifestyle",
+      "metric_name": "Water Intake",
+      "target_value": 2000.0,
+      "current_value": 1000.0,
+      "unit": "ml",
+      "progress_pct": 0.0,
+      "trend": "unknown",
+      "status": "active",
+      "confidence": 0.8,
+      "recommendations": [
+        "Carry water bottle"
+      ],
+      "expected_completion_date": null,
+      "created_at": "2026-08-04T04:17:28.279796",
+      "updated_at": "2026-08-04T04:17:28.279797"
+    }
+  ],
+  "milestones": [
+    {
+      "milestone_id": "d9f29212-3067-46ce-ba68-ea68c629d7ba",
+      "patient_id": "usr_diabetic_john",
+      "milestone_type": "risk_reduction",
+      "title": "All Clinical Risks Resolved",
+      "description": "No active risk flags detected \u2014 excellent health management.",
+      "impact_score": 5.0,
+      "achieved_at": "2026-08-04T04:17:28.250438",
+      "payload": {}
+    }
+  ],
+  "insights": [],
+  "health_score_history": [
+    {
+      "score": 100.0,
+      "timestamp": "2026-08-04T04:17:28.250566"
+    }
+  ],
+  "created_at": "2026-08-04T04:17:28.250303",
+  "updated_at": "2026-08-04T04:17:28.280001"
+}

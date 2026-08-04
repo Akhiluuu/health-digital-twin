@@ -22,9 +22,9 @@ export function getAppEnvironment(): AppEnvironment {
 
 // Default fallbacks per environment
 const DEFAULTS = {
-  development: "http://10.172.0.79:8000",
-  testing: "http://151.185.45.137",
-  production: "https://REQUIRED_PRODUCTION_HTTPS_DOMAIN", // Obvious placeholder for future launch
+  development: "http://151.185.45.137:8000",
+  testing: "http://151.185.45.137:8000",
+  production: "http://151.185.45.137:8000",
 };
 
 export const BASE_URL_KEY = "@biogears_base_url";
@@ -91,5 +91,5 @@ export async function getCentralMedApiUrl(): Promise<string> {
 /** Get the AI/Personal Health Assistant API base URL */
 export async function getCentralAiBaseUrl(): Promise<string> {
   const base = await getCentralBiogearsBaseUrl();
-  return `${base}/ai`;
+  return base.replace(/\/ai\/?$/, "");
 }

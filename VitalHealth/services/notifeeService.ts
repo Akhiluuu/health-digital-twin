@@ -1,12 +1,54 @@
-// services/notifeeService.ts
+import { NativeModules } from "react-native";
 
-import notifee, {
+let notifee: any;
+let AndroidImportance: any = { HIGH: 4, DEFAULT: 3, LOW: 2, MIN: 1, NONE: 0 };
+let AlarmType: any = { SET_EXACT_AND_ALLOW_WHILE_IDLE: 0 };
+let EventType: any = { DISMISSED: 0, PRESS: 1, ACTION_PRESS: 2, DELIVERED: 3 };
+let TriggerType: any = { TIMESTAMP: 0, INTERVAL: 1 };
+let RepeatFrequency: any = { DAILY: 0, HOURLY: 1, WEEKLY: 2 };
+
+const hasNotifeeNative = Boolean(NativeModules?.NotifeeApiModule);
+
+if (hasNotifeeNative) {
+  try {
+    const NotifeeModule = require("@notifee/react-native");
+    notifee = NotifeeModule.default;
+    if (NotifeeModule.AndroidImportance) AndroidImportance = NotifeeModule.AndroidImportance;
+    if (NotifeeModule.AlarmType) AlarmType = NotifeeModule.AlarmType;
+    if (NotifeeModule.EventType) EventType = NotifeeModule.EventType;
+    if (NotifeeModule.TriggerType) TriggerType = NotifeeModule.TriggerType;
+    if (NotifeeModule.RepeatFrequency) RepeatFrequency = NotifeeModule.RepeatFrequency;
+  } catch (e) {
+    console.log("ℹ️ Notifee native module optional fallback active.");
+  }
+}
+
+if (!notifee) {
+  console.log("ℹ️ Notifee native module optional fallback active.");
+  notifee = {
+    requestPermission: async () => ({ authorizationStatus: 1 }),
+    createChannel: async () => {},
+    getPowerManagerInfo: async () => ({ activity: false }),
+    openPowerManagerSettings: async () => {},
+    createTriggerNotification: async () => "mock_id",
+    displayNotification: async () => "mock_id",
+    cancelNotification: async () => {},
+    cancelDisplayedNotification: async () => {},
+    getTriggerNotifications: async () => [],
+    getDisplayedNotifications: async () => [],
+    onForegroundEvent: () => () => {},
+    onBackgroundEvent: () => {},
+    getInitialNotification: async () => null,
+  };
+}
+
+export {
   AndroidImportance,
   AlarmType,
   EventType,
   TriggerType,
   RepeatFrequency,
-} from "@notifee/react-native";
+};
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { EventEmitter } from "eventemitter3";
 import { router } from "expo-router";
@@ -866,7 +908,7 @@ export const scheduleInactivityReminder = async () => {
   }
 };
 
-async function saveDeliveredNotificationToDB(notification: any) {
+export async function saveDeliveredNotificationToDB(notification: any) {
   if (!notification || !notification.id) return;
   try {
     const data = notification.data || {};

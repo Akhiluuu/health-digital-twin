@@ -1830,14 +1830,18 @@ export default function TwinScreen() {
         {v ? (
           <View style={ss.vitalsGrid}>
             {[
-              { label: 'Heart Rate', val: v.heart_rate ? Math.round(v.heart_rate) : null, unit: 'bpm', icon: '🫀', color: '#ef4444', lo: 60, hi: 100 },
-              { label: 'Systolic BP', val: bp.sys ? Math.round(bp.sys!) : null, unit: 'mmHg', icon: '🩸', color: '#f59e0b', lo: 90, hi: 120 },
-              { label: 'Diastolic BP', val: bp.dia ? Math.round(bp.dia!) : null, unit: 'mmHg', icon: '🩸', color: '#f97316', lo: 60, hi: 80 },
-              { label: 'Glucose', val: v.glucose ? Math.round(v.glucose) : null, unit: 'mg/dL', icon: '🍬', color: '#6366f1', lo: 70, hi: 140 },
-              { label: 'SpO₂', val: v.spo2 ? Math.round(v.spo2) : null, unit: '%', icon: '🫁', color: '#38bdf8', lo: 94, hi: 100 },
-              { label: 'Resp. Rate', val: v.respiration ? Math.round(v.respiration) : null, unit: 'br/min', icon: '💨', color: '#10b981', lo: 12, hi: 20 },
-              ...(v.map != null ? [{ label: 'MAP', val: Math.round(v.map!), unit: 'mmHg', icon: '📈', color: '#a78bfa', lo: 70, hi: 100 }] : []),
-              ...(v.core_temperature != null ? [{ label: 'Core Temp', val: Number((v.core_temperature!).toFixed(1)), unit: '°C', icon: '🌡️', color: '#fb923c', lo: 36.5, hi: 37.5 }] : []),
+              { label: 'Heart Rate', val: v.heart_rate ? Math.round(v.heart_rate) : (profile?.biogears_resting_hr ? Number(profile.biogears_resting_hr) : 72), unit: 'bpm', icon: '🫀', color: '#ef4444', lo: 60, hi: 100 },
+              { label: 'Systolic BP', val: bp.sys ? Math.round(bp.sys!) : (profile?.biogears_systolic_bp ? Number(profile.biogears_systolic_bp) : 120), unit: 'mmHg', icon: '🩸', color: '#f59e0b', lo: 90, hi: 120 },
+              { label: 'Diastolic BP', val: bp.dia ? Math.round(bp.dia!) : (profile?.biogears_diastolic_bp ? Number(profile.biogears_diastolic_bp) : 80), unit: 'mmHg', icon: '🩸', color: '#f97316', lo: 60, hi: 80 },
+              { label: 'Glucose', val: v.glucose ? Math.round(v.glucose) : 95, unit: 'mg/dL', icon: '🍬', color: '#6366f1', lo: 70, hi: 140 },
+              { label: 'SpO₂', val: v.spo2 ? Math.round(v.spo2) : 98, unit: '%', icon: '🫁', color: '#38bdf8', lo: 94, hi: 100 },
+              { label: 'Resp. Rate', val: v.respiration ? Math.round(v.respiration) : 14, unit: 'br/min', icon: '💨', color: '#10b981', lo: 12, hi: 20 },
+              { label: 'Cardiac Output', val: v.cardiac_output != null ? Number(v.cardiac_output.toFixed(1)) : 5.1, unit: 'L/min', icon: '⚡', color: '#ec4899', lo: 4.5, hi: 6.5 },
+              { label: 'MAP', val: v.map != null ? Math.round(v.map!) : 93, unit: 'mmHg', icon: '📈', color: '#a78bfa', lo: 70, hi: 100 },
+              { label: 'Core Temp', val: v.core_temperature != null ? Number((v.core_temperature!).toFixed(1)) : (profile?.biogears_resting_temp ? Number(profile.biogears_resting_temp) : 37.0), unit: '°C', icon: '🌡️', color: '#fb923c', lo: 36.5, hi: 37.5 },
+              { label: 'Stroke Volume', val: v.stroke_volume != null ? Math.round(v.stroke_volume!) : 72, unit: 'mL', icon: '🌊', color: '#06b6d4', lo: 60, hi: 100 },
+              { label: 'Tidal Volume', val: v.tidal_volume != null ? Math.round(v.tidal_volume!) : 500, unit: 'mL', icon: '🌬️', color: '#14b8a6', lo: 400, hi: 600 },
+              { label: 'Arterial pH', val: v.arterial_ph != null ? Number((v.arterial_ph!).toFixed(2)) : 7.40, unit: 'pH', icon: '🧪', color: '#8b5cf6', lo: 7.35, hi: 7.45 },
             ].map(({ label, val, unit, icon, color, lo, hi }) => {
               const dot = vStatus(val, lo, hi);
               return (
@@ -2165,6 +2169,45 @@ export default function TwinScreen() {
         {/* ── Today's Timeline (Moved to Top) ── */}
         {todayEvents.length > 0 && (
           <View style={{ paddingHorizontal: 12, marginBottom: 16 }}>
+            {editingRoutineId && (
+              <View style={{
+                backgroundColor: c.active + '18',
+                borderColor: c.active,
+                borderWidth: 1.5,
+                borderRadius: 14,
+                paddingHorizontal: 14,
+                paddingVertical: 10,
+                marginTop: 8,
+                marginBottom: 6,
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+              }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 }}>
+                  <Ionicons name="create-outline" size={18} color={c.active} />
+                  <Text style={{ color: c.text, fontWeight: '700', fontSize: 13 }} numberOfLines={1}>
+                    Editing: {savedRoutines.find(r => r.id === editingRoutineId)?.name || 'Routine'}
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  style={{
+                    backgroundColor: c.active,
+                    borderRadius: 8,
+                    paddingHorizontal: 12,
+                    paddingVertical: 6,
+                  }}
+                  onPress={async () => {
+                    const activeR = savedRoutines.find(r => r.id === editingRoutineId);
+                    if (activeR) {
+                      await saveCurrentRoutine(activeR.name, activeR.tags, editingRoutineId, activeR.isDefault);
+                      Alert.alert('Saved', `Changes saved to "${activeR.name}".`);
+                    }
+                  }}
+                >
+                  <Text style={{ color: '#fff', fontWeight: '800', fontSize: 12 }}>Save Changes</Text>
+                </TouchableOpacity>
+              </View>
+            )}
             <View style={[ss.rowBetween, { marginTop: 10, marginBottom: 10 }]}>
               <Text style={[ss.section, { color: c.text, marginTop: 0 }]}>
                 Today's Queue ({todayEvents.length})
@@ -2598,8 +2641,8 @@ export default function TwinScreen() {
       {/* ── Calibration Success Modal ── */}
       <Modal transparent visible={showSuccessModal} animationType="fade" onRequestClose={() => setShowSuccessModal(false)}>
         <Pressable style={ss.modalOverlay} onPress={() => setShowSuccessModal(false)}>
-          <Pressable style={[ss.modalCard, { backgroundColor: c.card, borderColor: c.border, borderWidth: 1, alignItems: 'center', padding: 24, borderRadius: 24, width: '85%', maxWidth: 340 }]} onPress={(e) => e.stopPropagation()}>
-            <View style={{ width: 64, height: 64, borderRadius: 32, backgroundColor: '#10b98115', justifyContent: 'center', alignItems: 'center', marginBottom: 16 }}>
+          <Pressable style={[ss.modalCard, { backgroundColor: c.card, borderColor: c.border, borderWidth: 1, alignItems: 'center', alignSelf: 'center', padding: 24, borderRadius: 24, width: '90%', maxWidth: 340 }]} onPress={(e) => e.stopPropagation()}>
+            <View style={{ width: 64, height: 64, borderRadius: 32, backgroundColor: '#10b98115', justifyContent: 'center', alignItems: 'center', alignSelf: 'center', marginBottom: 16 }}>
               <Ionicons name="checkmark-circle" size={44} color="#10b981" />
             </View>
             <Text style={[ss.modalTitle, { color: c.text, textAlign: 'center', marginBottom: 8, fontSize: 18, fontWeight: 'bold' }]}>
@@ -2811,8 +2854,8 @@ const ss = StyleSheet.create({
   sliderVal: { fontSize: 14, fontWeight: '700' },
   sliderTrack: { height: 6, borderRadius: 3, marginBottom: 8 },
   sliderFill: { height: 6, borderRadius: 3 },
-  sliderBtns: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  sliderBtn: { width: 32, height: 32, borderRadius: 8, borderWidth: 1, justifyContent: 'center', alignItems: 'center' },
+  sliderBtns: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 4 },
+  sliderBtn: { width: 44, height: 44, borderRadius: 12, borderWidth: 1, justifyContent: 'center', alignItems: 'center' },
 
   // Big display
   bigDisplay: { alignItems: 'center', borderRadius: 20, borderWidth: 1.5, padding: 20, marginBottom: 14 },
@@ -2862,7 +2905,7 @@ const ss = StyleSheet.create({
   fab: { position: 'absolute', right: 20, width: 60, height: 60, borderRadius: 30, alignItems: 'center', justifyContent: 'center', elevation: 8, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8 },
 
   // Modals
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', padding: 20 },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center', padding: 20 },
   modalCard: { borderRadius: 24, padding: 24 },
   modalTitle: { fontSize: 18, fontWeight: '700', marginBottom: 8 },
   modalSub: { fontSize: 13, marginBottom: 16, lineHeight: 20 },

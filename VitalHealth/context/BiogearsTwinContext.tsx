@@ -978,7 +978,7 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
       session_id: sessionId,
       name: (isCurrentActive ? simulationName : '') || `Simulation ${new Date().toLocaleDateString('en-IN')}`,
       timestamp: new Date().toISOString(),
-      vitals_snapshot: result.vitals,
+      vitals_snapshot: BiogearsAPI.sanitizeBiogearsVitals(result.vitals),
       has_anomaly: result.has_anomaly,
       events: jobEvents,
       event_count: jobEventsCount,
@@ -1273,7 +1273,7 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
           session_id: rec.session_id,
           name,
           timestamp: rec.run_at,
-          vitals_snapshot: {
+          vitals_snapshot: BiogearsAPI.sanitizeBiogearsVitals({
             heart_rate: rec.heart_rate ?? undefined,
             blood_pressure: rec.blood_pressure ?? undefined,
             glucose: rec.glucose ?? undefined,
@@ -1285,7 +1285,7 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
             stroke_volume: rec.stroke_volume ?? undefined,
             tidal_volume: rec.tidal_volume ?? undefined,
             exercise_level: rec.exercise_level ?? undefined,
-          },
+          }),
           has_anomaly: rec.has_anomaly === 1,
           event_count: rec.event_count ?? 0,
           ai_insights,
@@ -1326,7 +1326,7 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
               timestamp: h.started_at,
               is_automatic: h.sim_type === 'AUTOMATIC',
               sim_type: h.sim_type,
-              vitals_snapshot: h.post_vitals ? {
+              vitals_snapshot: BiogearsAPI.sanitizeBiogearsVitals(h.post_vitals ? {
                 heart_rate: h.post_vitals.heart_rate ?? undefined,
                 blood_pressure: h.post_vitals.blood_pressure ?? undefined,
                 glucose: h.post_vitals.glucose ?? undefined,
@@ -1338,7 +1338,7 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
                 stroke_volume: h.post_vitals.stroke_volume ?? undefined,
                 tidal_volume: h.post_vitals.tidal_volume ?? undefined,
                 exercise_level: h.post_vitals.exercise_level ?? undefined,
-              } : existing?.vitals_snapshot,
+              } : existing?.vitals_snapshot),
               has_anomaly: h.has_anomaly === 1,
               event_count: h.input_events ? h.input_events.length : (existing?.event_count ?? 0),
               ai_insights: h.anomaly_labels || existing?.ai_insights || [],
@@ -1805,7 +1805,7 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
     await BiogearsAPI.saveRoutine(twinUserId, routine, firestoreOwnerUid);
     // If we just set a new default, clear isDefault on all others in storage
     if (routine.isDefault) {
-      await BiogearsAPI.setDefaultRoutine(twinUserId, routine.id, firestoreOwnerUid);
+      await BiogearsAPI.setDefaultRoutine(twinUserId, routine.id, firestoreOwnerUid, true);
       BiogearsAPI.updateProfileMetadata(twinUserId, { default_routine: routine.events }).catch((err) => {
         warn("[BiogearsTwinContext] Failed to sync default routine to backend:", err);
       });

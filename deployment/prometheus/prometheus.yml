@@ -1,0 +1,35 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: 'vitalhealth_health_brain'
+    metrics_path: '/metrics'
+    static_configs:
+      - targets: ['web:8000']
+        labels:
+          service: 'health_brain_core'
+          environment: 'production'
+
+  - job_name: 'vitalhealth_medication_vault'
+    metrics_path: '/metrics'
+    static_configs:
+      - targets: ['medication_api:8001']
+        labels:
+          service: 'medication_vault'
+          environment: 'production'
+
+  - job_name: 'vitalhealth_nginx'
+    static_configs:
+      - targets: ['nginx:80']
+        labels:
+          service: 'nginx_proxy'
+
+  - job_name: 'vitalhealth_postgres'
+    static_configs:
+      - targets: ['db:5432']
+
+  - job_name: 'vitalhealth_qdrant'
+    metrics_path: '/metrics'
+    static_configs:
+      - targets: ['qdrant:6333']

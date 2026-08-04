@@ -14,20 +14,24 @@ type NotificationType = "medicine" | "hydration" | "symptom";
 // SAFE NOTIFEE IMPORT (won't crash in Expo Go)
 ////////////////////////////////////////////////////////////
 
+import { NativeModules } from "react-native";
+
 let notifee: any = null;
 let AndroidImportance: any = { HIGH: 4 };
 let TriggerType: any = { TIMESTAMP: 0 };
 let EventType: any = { ACTION_PRESS: 2 };
 
-try {
-  const notifeeModule = require("@notifee/react-native");
-  notifee = notifeeModule.default;
-  AndroidImportance = notifeeModule.AndroidImportance;
-  TriggerType = notifeeModule.TriggerType;
-  EventType = notifeeModule.EventType;
-  log("✅ Notifee loaded successfully");
-} catch (error) {
-  warn("⚠️ Notifee not available — notifications disabled (Expo Go)");
+if (Boolean(NativeModules?.NotifeeApiModule)) {
+  try {
+    const notifeeModule = require("@notifee/react-native");
+    notifee = notifeeModule.default;
+    AndroidImportance = notifeeModule.AndroidImportance;
+    TriggerType = notifeeModule.TriggerType;
+    EventType = notifeeModule.EventType;
+    log("✅ Notifee loaded successfully");
+  } catch (error) {
+    warn("⚠️ Notifee not available — notifications disabled (Expo Go)");
+  }
 }
 
 const isNotifeeAvailable = () => {

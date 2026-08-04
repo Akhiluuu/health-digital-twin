@@ -27,7 +27,19 @@ import {
   Alert,
   Share,
 } from "react-native";
-import Clipboard from "@react-native-clipboard/clipboard";
+let Clipboard: { setString: (text: string) => void } = {
+  setString: (text: string) => {
+    try {
+      const ExpoClipboard = require("expo-clipboard");
+      ExpoClipboard.setStringAsync(text);
+    } catch {
+      try {
+        const NativeClipboard = require("@react-native-clipboard/clipboard").default;
+        NativeClipboard.setString(text);
+      } catch {}
+    }
+  },
+};
 import { router, Stack, useLocalSearchParams } from "expo-router";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";

@@ -49,7 +49,7 @@ export const addNotificationDB = async (
 ): Promise<void> => {
   try {
     await db.runAsync(
-      `INSERT INTO notifications (
+      `INSERT OR REPLACE INTO notifications (
         id, title, message, profileId, profileName, relationship,
         profilePhoto, category, priority, timestamp, deepLink, actionButtons,
         readStatus, archived

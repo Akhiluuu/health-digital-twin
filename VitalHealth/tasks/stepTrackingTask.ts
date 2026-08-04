@@ -108,6 +108,8 @@ async function sendSedentaryNotif(): Promise<void> {
   if (_notifSent) return;
   _notifSent = true;
   try {
+    const { NativeModules } = require("react-native");
+    if (!Boolean(NativeModules?.NotifeeApiModule)) return;
     const notifee = (await import("@notifee/react-native")).default;
     const { getProfileName } = require("../services/notifeeService");
     const profileId = await AsyncStorage.getItem("vitalhealth_active_member_id") || "self";

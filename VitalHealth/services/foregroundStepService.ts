@@ -6,8 +6,18 @@
 // On iOS:      not used (Pedometer + HealthKit poll in StepContext)
 // ─────────────────────────────────────────────────────────────────────────────
 
-import notifee, { AndroidImportance, EventType } from '@notifee/react-native';
-import { Platform } from 'react-native';
+import { Platform, NativeModules } from 'react-native';
+let notifee: any = { onForegroundEvent: () => {}, onBackgroundEvent: () => {}, registerForegroundService: () => {}, createChannel: async () => {}, displayNotification: async () => {}, cancelNotification: async () => {} };
+let AndroidImportance: any = { LOW: 2 };
+let EventType: any = { ACTION_PRESS: 2 };
+if (Boolean(NativeModules?.NotifeeApiModule)) {
+  try {
+    const NotifeeModule = require('@notifee/react-native');
+    if (NotifeeModule.default) notifee = NotifeeModule.default;
+    if (NotifeeModule.AndroidImportance) AndroidImportance = NotifeeModule.AndroidImportance;
+    if (NotifeeModule.EventType) EventType = NotifeeModule.EventType;
+  } catch (e) {}
+}
 
 export const CHANNEL_ID = 'step_foreground';
 export const NOTIF_ID   = 'step_foreground_notif';

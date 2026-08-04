@@ -197,9 +197,14 @@ export async function syncAndScheduleAllFamilyMedicines(members: any[]): Promise
       scheduleMedicineOnce,
       cancelMedicineNotification,
     } = await import("./notifeeService");
-    const notifee = (await import("@notifee/react-native")).default;
-
-    const triggers = await notifee.getTriggerNotifications();
+    let triggers: any[] = [];
+    const { NativeModules } = require("react-native");
+    if (Boolean(NativeModules?.NotifeeApiModule)) {
+      try {
+        const notifee = (await import("@notifee/react-native")).default;
+        triggers = await notifee.getTriggerNotifications();
+      } catch (e) {}
+    }
     const scheduledIds = new Set(triggers.map((t: any) => t.notification.id));
 
     const { getTwinId } = await import("../utils/twinUtils");

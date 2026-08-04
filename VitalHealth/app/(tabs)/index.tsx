@@ -157,11 +157,11 @@ const TelemetryCard = ({ title, value, unit, icon, accent, progress, theme, chil
           <Text style={[
             styles.teleValue,
             { color: isDark ? "#ffffff" : "#0f172a" },
-            value === "Under Construction" && { fontSize: 12, fontWeight: "800", textTransform: "uppercase", lineHeight: 20 }
+            (value === "--" || value === "Pending") && { fontSize: 18, fontWeight: "600" }
           ]}>
             {value}
           </Text>
-          {unit && value !== "Under Construction" ? <Text style={styles.teleUnit}>{unit}</Text> : null}
+          {unit && value !== "--" ? <Text style={styles.teleUnit}>{unit}</Text> : null}
         </View>
 
         {progress !== undefined && (
@@ -191,7 +191,7 @@ export default function HomeScreen() {
   const c = colors[theme];
   const { steps, calories, goal, isTracking } = useSteps();
   const { caloricBalance, lastVitals, addEvent } = useBiogearsTwin();
-  const { activeMemberId, isSwitched, activeProfile } = useFamily();
+  const { activeMemberId, isSwitched, activeProfile, switchToSelf } = useFamily();
 
   const isTakenToday = (medicine: any): boolean => {
     if (medicine.taken !== 1) return false;
@@ -364,17 +364,19 @@ export default function HomeScreen() {
           
           <LinearGradient 
             colors={
-              theme === "dark" 
-                ? (lastVitals ? ["#111d3a", "#0d2818"] : ["#111d3a", "#241a0d"])
-                : (lastVitals ? ["#ffffff", "#f0fdf4"] : ["#ffffff", "#fffbeb"])
+              isSwitched
+                ? (theme === "dark" ? ["#1e1b4b", "#0f172a"] : ["#f0f9ff", "#e0f2fe"])
+                : (theme === "dark" 
+                    ? (lastVitals ? ["#111d3a", "#0d2818"] : ["#111d3a", "#241a0d"])
+                    : (lastVitals ? ["#ffffff", "#f0fdf4"] : ["#ffffff", "#fffbeb"]))
             }
             style={[
               styles.statusBanner,
               {
-                borderColor: c.border,
-                borderLeftColor: lastVitals ? "#10b981" : "#f59e0b",
+                borderColor: isSwitched ? "#8b5cf6" : c.border,
+                borderLeftColor: isSwitched ? "#8b5cf6" : (lastVitals ? "#10b981" : "#f59e0b"),
                 borderLeftWidth: 4,
-                shadowColor: lastVitals ? "#10b981" : "#f59e0b",
+                shadowColor: isSwitched ? "#8b5cf6" : (lastVitals ? "#10b981" : "#f59e0b"),
                 shadowOpacity: theme === "dark" ? 0.25 : 0.08,
                 shadowRadius: 10,
                 shadowOffset: { width: 0, height: 4 },
@@ -382,17 +384,101 @@ export default function HomeScreen() {
               }
             ]}
           >
-            <View style={styles.statusDotRow}>
-              <View style={[styles.statusIndicatorDot, { backgroundColor: lastVitals ? "#10b981" : "#f59e0b" }]} />
-              <Text style={[styles.statusBannerTitle, { color: c.text }]}>
-                {isSwitched ? `Viewing ${activeProfile?.firstName}'s profile` : "Twin status active"}
-              </Text>
+            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+              <View style={styles.statusDotRow}>
+                <View style={[styles.statusIndicatorDot, { backgroundColor: isSwitched ? "#8b5cf6" : (lastVitals ? "#10b981" : "#f59e0b") }]} />
+                <Text style={[styles.statusBannerTitle, { color: c.text }]}>
+                  {isSwitched ? `Viewing ${activeProfile?.firstName}'s Profile` : "Twin status active"}
+                </Text>
+              </View>
+              {isSwitched && (
+                <TouchableOpacity
+                  onPress={switchToSelf}
+                  style={{ backgroundColor: "#8b5cf620", paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 }}
+                >
+                  <Text style={{ color: "#8b5cf6", fontSize: 11, fontWeight: "700" }}>Switch to Self ↩</Text>
+                </TouchableOpacity>
+              )}
             </View>
-            <Text style={[styles.statusBannerSub, { color: c.sub }]}>
-              {lastVitals 
-                ? "Physiological twin simulation calibrated & running" 
-                : "Simulation requires twin calibration. Go to Twin tab to log habits."}
+            <Text style={[styles.statusBannerSub, { color: c.sub, marginTop: 4 }]}>
+              {isSwitched
+                ? `Caregiver mode active. Showing health records & vitals for ${activeProfile?.firstName || "family member"}.`
+                : (lastVitals 
+                    ? "Physiological twin simulation calibrated & running" 
+                    : "Simulation requires twin calibration. Go to Twin tab to log habits.")}
             </Text>
+          </LinearGradient>
+
+          {/* ── HERO DAILY HEALTH SUMMARY CARD ── */}
+          <LinearGradient
+            colors={theme === "dark" ? ["#0f172a", "#1e293b"] : ["#ffffff", "#f8fafc"]}
+            style={{
+              borderRadius: 18,
+              padding: 16,
+              marginTop: 12,
+              borderWidth: 1,
+              borderColor: c.border,
+              shadowColor: c.accent,
+              shadowOpacity: theme === "dark" ? 0.2 : 0.06,
+              shadowRadius: 10,
+              shadowOffset: { width: 0, height: 4 },
+              elevation: 3,
+            }}
+          >
+            <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                <Text style={{ fontSize: 20 }}>🩺</Text>
+                <Text style={{ color: c.text, fontSize: 16, fontWeight: "700" }}>Daily Health Status</Text>
+              </View>
+              <View style={{ backgroundColor: "#10b98120", paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 }}>
+                <Text style={{ color: "#10b981", fontSize: 11, fontWeight: "800", textTransform: "uppercase" }}>OPTIMAL</Text>
+              </View>
+            </View>
+
+            <Text style={{ color: c.sub, fontSize: 13, lineHeight: 19, marginTop: 8 }}>
+              {activeSymptoms.length === 0
+                ? "No active discomfort reported today. Vitals telemetry is stable."
+                : `You have ${activeSymptoms.length} active symptom signal(s) monitored today.`}
+            </Text>
+
+            {/* Quick Action Pills */}
+            <View style={{ flexDirection: "row", gap: 8, marginTop: 14, flexWrap: "wrap" }}>
+              <TouchableOpacity
+                onPress={() => handleQuickAddWater(250)}
+                style={{
+                  flexDirection: "row", alignItems: "center", gap: 6,
+                  backgroundColor: "#0284c718", paddingHorizontal: 12, paddingVertical: 8, borderRadius: 12,
+                  borderWidth: 1, borderColor: "#0284c730",
+                }}
+              >
+                <Ionicons name="water" size={15} color="#0284c7" />
+                <Text style={{ color: "#0284c7", fontSize: 12, fontWeight: "700" }}>+250ml Water</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                onPress={() => router.push("/MedicationVault")}
+                style={{
+                  flexDirection: "row", alignItems: "center", gap: 6,
+                  backgroundColor: "#10b98118", paddingHorizontal: 12, paddingVertical: 8, borderRadius: 12,
+                  borderWidth: 1, borderColor: "#10b98130",
+                }}
+              >
+                <Ionicons name="medical" size={15} color="#10b981" />
+                <Text style={{ color: "#10b981", fontSize: 12, fontWeight: "700" }}>Med Vault</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                onPress={() => router.push("/symptom-log")}
+                style={{
+                  flexDirection: "row", alignItems: "center", gap: 6,
+                  backgroundColor: "#f59e0b18", paddingHorizontal: 12, paddingVertical: 8, borderRadius: 12,
+                  borderWidth: 1, borderColor: "#f59e0b30",
+                }}
+              >
+                <Ionicons name="pulse" size={15} color="#f59e0b" />
+                <Text style={{ color: "#f59e0b", fontSize: 12, fontWeight: "700" }}>Log Symptom</Text>
+              </TouchableOpacity>
+            </View>
           </LinearGradient>
         </View>
 

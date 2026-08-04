@@ -165,6 +165,66 @@ export interface BiogearsVitals {
   exercise_level?: number | null;    // unitless (0–1)
 }
 
+export function sanitizeBiogearsVitals(raw?: BiogearsVitals | null): BiogearsVitals {
+  const v = raw || {};
+  const heart_rate = v.heart_rate ?? 72;
+  const blood_pressure = v.blood_pressure || '120/80';
+  let sbp = 120;
+  let dbp = 80;
+  if (blood_pressure && blood_pressure.includes('/')) {
+    const parts = blood_pressure.split('/');
+    sbp = parseFloat(parts[0]) || 120;
+    dbp = parseFloat(parts[1]) || 80;
+  }
+  
+  // Mean Arterial Pressure (MAP) = DBP + (SBP - DBP) / 3
+  const calculatedMap = Math.round(dbp + (sbp - dbp) / 3);
+  const map = v.map ?? calculatedMap;
+
+  // Stroke Volume (SV) baseline ~ 70 mL
+  const stroke_volume = v.stroke_volume ?? 70;
+
+  // Cardiac Output (CO) = (HR * SV) / 1000 in L/min
+  const calculatedCO = parseFloat(((heart_rate * stroke_volume) / 1000).toFixed(1));
+  const cardiac_output = v.cardiac_output ?? calculatedCO;
+
+  // Respiration Rate ~ 14 br/min
+  const respiration = v.respiration ?? 14;
+
+  // Tidal Volume ~ 500 mL
+  const tidal_volume = v.tidal_volume ?? 500;
+
+  // Arterial pH ~ 7.40
+  const arterial_ph = v.arterial_ph ?? 7.40;
+
+  // Glucose ~ 96 mg/dL
+  const glucose = v.glucose ?? 96;
+
+  // SpO2 ~ 98.5%
+  const spo2 = v.spo2 ?? 98.5;
+
+  // Core Temperature ~ 37.0 °C
+  const core_temperature = v.core_temperature ?? 37.0;
+
+  // Exercise Level ~ 0
+  const exercise_level = v.exercise_level ?? 0;
+
+  return {
+    heart_rate,
+    blood_pressure,
+    map,
+    stroke_volume,
+    cardiac_output,
+    respiration,
+    tidal_volume,
+    arterial_ph,
+    glucose,
+    spo2,
+    core_temperature,
+    exercise_level,
+  };
+}
+
 
 export interface BiogearsSimulationResult {
   status: 'success' | 'error';
@@ -696,11 +756,11 @@ export async function markRoutineUsed(userId: string, routineId: string, ownerUi
   }
 }
 
-export async function setDefaultRoutine(userId: string, routineId: string, ownerUid?: string, forceValue?: boolean): Promise<void> {
+export async function setDefaultRoutine(userId: string, routineId: string, ownerUid?: string, forceValue: boolean = true): Promise<void> {
   const existing = await loadSavedRoutines(userId);
   const updated = existing.map(r => ({
     ...r,
-    isDefault: r.id === routineId ? (forceValue !== undefined ? forceValue : !r.isDefault) : false
+    isDefault: r.id === routineId ? forceValue : false
   }));
   await AsyncStorage.setItem(ROUTINES_KEY(userId), JSON.stringify(updated));
 

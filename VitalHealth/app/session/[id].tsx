@@ -15,6 +15,8 @@ import { colors } from '../../theme/colors';
 import Header from '../components/Header';
 import { BlurView } from 'expo-blur';
 
+import { sanitizeBiogearsVitals } from '../../services/biogears';
+
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 /**
@@ -42,7 +44,7 @@ export default function SessionDetailScreen() {
     );
   }
 
-  const vitals = session.vitals_snapshot || {};
+  const vitals = sanitizeBiogearsVitals(session.vitals_snapshot);
 
   const categories = [
     {

@@ -1,0 +1,38 @@
+{
+  "patient_id": "persona_healthy_adult",
+  "profile": {
+    "patient_id": "persona_healthy_adult",
+    "first_name": "Sarah",
+    "last_name": "Chen",
+    "age": 32,
+    "biological_sex": "female",
+    "blood_type": "A+",
+    "height_cm": 165.0,
+    "weight_kg": 62.0,
+    "allergies": [],
+    "chronic_conditions": []
+  },
+  "conditions": [],
+  "medications": [],
+  "labs": [
+    {
+      "canonical_name": "HbA1c",
+      "loinc_code": "4548-4",
+      "value": 5.2,
+      "unit": "%",
+      "classification": "normal"
+    }
+  ],
+  "vitals": [
+    {
+      "vital_type": "blood_pressure",
+      "value_primary": 118.0,
+      "value_secondary": 75.0,
+      "unit": "mmHg"
+    }
+  ],
+  "expected_health_score_min": 90,
+  "expected_risk_count": 0,
+  "expected_milestone_types": ["onboarding_complete"],
+  "expected_goals_containing": ["increase_steps", "hydration"]
+}

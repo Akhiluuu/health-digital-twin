@@ -3,9 +3,17 @@
 //   Android → Native Kotlin service (hardware step counter → sensor fusion)
 //             receives real-time updates via NativeEventEmitter broadcast
 //   iOS     → expo-sensors Pedometer + 15s HealthKit poll
-//   Both    → AsyncStorage + Firestore cloud sync
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import notifee, { AndroidImportance } from '@notifee/react-native';
+import { NativeModules } from 'react-native';
+let notifee: any = { createChannel: async () => {}, displayNotification: async () => {}, requestPermission: async () => ({ authorizationStatus: 1 }) };
+let AndroidImportance: any = { HIGH: 4 };
+if (Boolean(NativeModules?.NotifeeApiModule)) {
+  try {
+    const NotifeeModule = require('@notifee/react-native');
+    if (NotifeeModule.default) notifee = NotifeeModule.default;
+    if (NotifeeModule.AndroidImportance) AndroidImportance = NotifeeModule.AndroidImportance;
+  } catch (e) {}
+}
 import { Accelerometer, Pedometer } from 'expo-sensors';
 import React, {
   createContext, useCallback, useContext, useEffect,

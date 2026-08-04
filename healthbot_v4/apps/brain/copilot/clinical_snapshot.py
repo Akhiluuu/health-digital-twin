@@ -42,7 +42,7 @@ class ClinicalSnapshotEngine(HealthBrainSubsystem):
         profile_str = f"{p.first_name} {p.last_name}, Age {p.age}, {p.biological_sex.value.title()} ({p.height_cm}cm, {p.weight_kg}kg)"
 
         conditions = [c.condition_name for c in state.current_conditions] if state.current_conditions else ["No documented chronic conditions"]
-        meds = [f"{m.name} {m.dose_quantity}{m.dosage_form} {m.frequency}" for m in state.active_medications] if state.active_medications else ["No active medications"]
+        meds = [f"{m.name} {m.dosage_form} [{m.frequency}]" if m.dosage_form else f"{m.name} [{m.frequency}]" for m in state.active_medications] if state.active_medications else ["No active medications"]
 
         labs_str = ", ".join([f"{l.canonical_name}: {l.value}{l.unit} ({l.classification})" for l in state.recent_labs[:3]]) if state.recent_labs else "No recent labs"
 

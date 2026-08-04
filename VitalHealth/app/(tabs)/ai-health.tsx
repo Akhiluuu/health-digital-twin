@@ -31,6 +31,12 @@ import { colors } from "../../theme/colors";
 import Header from "../components/Header";
 import { useMedicine } from "../../context/MedicineContext";
 import { useSymptoms } from "../../context/SymptomContext";
+import { useFamily } from "../../context/FamilyContext";
+import { useProfile } from "../../context/ProfileContext";
+import { useCognitive } from "../../context/CognitiveContext";
+import { useBiogearsTwin } from "../../context/BiogearsTwinContext";
+import { useSteps } from "../../context/StepContext";
+import { useHydration } from "../../context/HydrationContext";
 
 // Import our on-device services
 import {
@@ -123,18 +129,20 @@ type ChatSession = {
 
 // ─── Chat History Helpers ─────────────────────────────────────────────────────
 
-const loadChatHistory = async (): Promise<ChatSession[]> => {
+const loadChatHistory = async (userId: string = "self"): Promise<ChatSession[]> => {
   try {
-    const raw = await AsyncStorage.getItem(KEY_CHAT_HISTORY);
+    const key = `${KEY_CHAT_HISTORY}_${userId}`;
+    const raw = await AsyncStorage.getItem(key);
     if (!raw) return [];
     try { const p = JSON.parse(raw); return Array.isArray(p) ? p : []; } catch { return []; }
   } catch { return []; }
 };
 
-const saveChatHistory = async (sessions: ChatSession[]) => {
+const saveChatHistory = async (userId: string = "self", sessions: ChatSession[]) => {
   try {
+    const key = `${KEY_CHAT_HISTORY}_${userId}`;
     const trimmed = [...sessions].sort((a, b) => b.updatedAt - a.updatedAt).slice(0, MAX_SAVED_SESSIONS);
-    await AsyncStorage.setItem(KEY_CHAT_HISTORY, JSON.stringify(trimmed));
+    await AsyncStorage.setItem(key, JSON.stringify(trimmed));
   } catch {}
 };
 
@@ -485,6 +493,13 @@ export default function AIHealthScreen() {
   const c           = colors[theme];
   const { medicines }                      = useMedicine();
   const { activeSymptoms, historySymptoms } = useSymptoms();
+  const { activeProfile, activeMemberId, isSwitched } = useFamily();
+  const { profile, ageYears }               = useProfile();
+  const { sessions: cogSessions, cognitiveAge, currentStreak: cogStreak, getDomainTrends } = useCognitive();
+  const { lastVitals, organScores }         = useBiogearsTwin();
+  const { steps, calories, distanceKm }    = useSteps();
+  const { water: waterIntake }              = useHydration();
+  const currentUserId = activeMemberId || activeProfile?.uid || "self";
   const insets = useSafeAreaInsets();
   const headerH = 60 + insets.top;
 
@@ -592,8 +607,8 @@ export default function AIHealthScreen() {
   const handleVoice = async () => {
     if (!Voice) {
       Alert.alert(
-        "Voice Not Available",
-        "Install @react-native-voice/voice and rebuild the app."
+        "Voice Input Unavailable",
+        "Voice-to-text input requires a native mobile device build with microphone permissions. Please type your health question below."
       );
       return;
     }
@@ -630,52 +645,74 @@ export default function AIHealthScreen() {
   // ── Fetch greeting ──────────────────────────────────────────────────────────
 
   const fetchGreeting = async () => {
+    const profileName = activeProfile?.firstName || "";
+    const greetingName = profileName ? ` ${profileName}` : "";
     try {
       const baseUrl = await getAiBaseUrl();
-      const res  = await fetch(`${baseUrl}/greeting`);
+      const res  = await fetch(`${baseUrl}/greeting?user_id=${currentUserId}`);
       if (!res.ok) throw new Error();
       const data = await res.json();
-      const text = data.message || "Good to see you. I'm your **personal health assistant**.\n\nAsk me about your symptoms, medications, or lab results — I'll give you a clear, honest answer. What's on your mind?";
+      const text = data.message || `Good to see you${greetingName}. I'm your **personal health assistant**.\n\nAsk me about your symptoms, medications, or lab results — I'll give you a clear, honest answer. What's on your mind?`;
       setMessages([{ id: "welcome", text, sender: "ai", timestamp: new Date() }]);
     } catch {
-      setMessages([{ id: "welcome", text: "Good to see you. I'm your **personal health assistant**.\n\nAsk me about your symptoms, medications, or lab results — I'll give you a clear, honest answer. What's on your mind?", sender: "ai", timestamp: new Date() }]);
+      setMessages([{ id: "welcome", text: `Good to see you${greetingName}. I'm your **personal health assistant**.\n\nAsk me about your symptoms, medications, or lab results — I'll give you a clear, honest answer. What's on your mind?`, sender: "ai", timestamp: new Date() }]);
     }
   };
 
-  // ── Mount: load documents & history ──────────────────────────────────────────
+  // ── Mount: load documents ──────────────────────────────────────────────────
   useEffect(() => {
     (async () => {
       try {
-        const d       = await loadDocuments();
-        const ch      = await loadChunks();
-        const history = await loadChatHistory();
-        setDocs(d); setAllChunks(ch); setChatSessions(history);
+        const d  = await loadDocuments();
+        const ch = await loadChunks();
+        setDocs(d); setAllChunks(ch);
         setModelLoading(true);
         generateEmbedding("warmup").finally(() => setModelLoading(false));
       } catch (e) { console.error(e); }
     })();
   }, []);
 
+  // ── Sync Chat History & Session on Profile Switch ──────────────────────────
+  useEffect(() => {
+    (async () => {
+      try {
+        const history = await loadChatHistory(currentUserId);
+        setChatSessions(history);
+        if (history.length > 0) {
+          const latest = history[0];
+          setCurrentSessionId(latest.id);
+          setMessages(deserializeMessages(latest.messages));
+          const uAndA = latest.messages.filter((m) => m.sender !== "system");
+          historyRef.current = uAndA.map((m) => m.text).slice(-10);
+        } else {
+          setCurrentSessionId(genId());
+          historyRef.current = [];
+          await fetchGreeting();
+        }
+      } catch (e) {
+        console.error(e);
+      }
+    })();
+  }, [currentUserId]);
+
   // ── Focus: auto-connect to production server ─────────────────────────────────
   useFocusEffect(
     React.useCallback(() => {
       (async () => {
         try {
-          // Ping the production server silently
           const baseUrl = await getAiBaseUrl();
           const r = await fetch(`${baseUrl}/health`);
           setConnected(r.ok);
           if (r.ok && messages.length <= 1) await fetchGreeting();
         } catch {
           setConnected(false);
-          // Still show greeting — server may be temporarily unreachable
           if (messages.length <= 1) await fetchGreeting();
         }
       })();
-    }, [messages.length])
+    }, [messages.length, currentUserId])
   );
 
-  // ── Persist current conversation ────────────────────────────────────────────
+  // ── Persist current conversation per profile ──────────────────────────────
 
   useEffect(() => {
     if (!messages.some((m) => m.sender === "user")) return;
@@ -689,10 +726,10 @@ export default function AIHealthScreen() {
     };
     setChatSessions((prev) => {
       const updated = [session, ...prev.filter((s) => s.id !== currentSessionId)];
-      saveChatHistory(updated);
+      saveChatHistory(currentUserId, updated);
       return updated;
     });
-  }, [messages]);
+  }, [messages, currentUserId, currentSessionId]);
 
   // ── Auto-send symptom ───────────────────────────────────────────────────────
 
@@ -724,7 +761,7 @@ export default function AIHealthScreen() {
 
   const handleDeleteSession = async (id: string) => {
     const updated = chatSessions.filter((s) => s.id !== id);
-    setChatSessions(updated); await saveChatHistory(updated);
+    setChatSessions(updated); await saveChatHistory(currentUserId, updated);
     if (id === currentSessionId) handleNewChat();
   };
 
@@ -739,6 +776,57 @@ export default function AIHealthScreen() {
     const baseUrl = await getAiBaseUrl();
     const history = [...historyRef.current];
 
+    const profileName = activeProfile ? `${activeProfile.firstName || ''} ${activeProfile.lastName || ''}`.trim() : (profile ? `${profile.firstName || ''} ${profile.lastName || ''}`.trim() : 'Patient');
+    const pAge = activeProfile?.dateOfBirth ? Math.floor((Date.now() - new Date(activeProfile.dateOfBirth).getTime()) / 31557600000) : (ageYears || profile?.ageYears || 30);
+    const pGender = activeProfile?.gender || profile?.gender || 'not specified';
+    const pHeight = activeProfile?.height || profile?.height || '170 cm';
+    const pWeight = activeProfile?.weight || profile?.weight || '70 kg';
+    const pBloodType = activeProfile?.bloodType || profile?.bloodType || 'O+';
+    const pBmi = profile?.bmi || (pWeight && pHeight ? (parseFloat(String(pWeight)) / Math.pow(parseFloat(String(pHeight))/100, 2)).toFixed(1) : '22.5');
+
+    const patientCtx = {
+      patient_name: profileName,
+      isSwitched: isSwitched,
+      age: pAge,
+      gender: pGender,
+      body_measurements: {
+        height: pHeight,
+        weight: pWeight,
+        bmi: pBmi,
+        blood_type: pBloodType,
+        resting_hr: activeProfile?.biogears_resting_hr || lastVitals?.heart_rate || 72,
+        blood_pressure: lastVitals ? `${lastVitals.systolic_bp || 120}/${lastVitals.diastolic_bp || 80} mmHg` : '120/80 mmHg',
+      },
+      cognitive_assessment: {
+        cognitive_age: cognitiveAge || pAge,
+        overall_score: cogSessions?.[0]?.overallScore ?? (cogSessions?.length > 0 ? 82 : 80),
+        domain_scores: cogSessions?.[0]?.domainScores || { attention: 80, memory: 85, processingSpeed: 78, executiveFunction: 84 },
+        test_results: cogSessions?.[0]?.testResults || [],
+        streak_days: cogStreak || 0,
+        domain_trends: getDomainTrends ? getDomainTrends() : null,
+      },
+      simulation_vitals: lastVitals || null,
+      organ_scores: organScores || null,
+      fitness_activity: {
+        steps: steps || 0,
+        calories: calories || 0,
+        distance_km: distanceKm || 0,
+      },
+      hydration: {
+        water_intake_ml: waterIntake || 0,
+        daily_goal_ml: 2500,
+      },
+      medicines: medicines || [],
+      activeSymptoms: activeSymptoms || [],
+      historySymptoms: historySymptoms || [],
+      biogearsProfile: {
+        resting_hr: activeProfile?.biogears_resting_hr,
+        systolic_bp: activeProfile?.biogears_systolic_bp,
+        diastolic_bp: activeProfile?.biogears_diastolic_bp,
+        fitness_level: activeProfile?.biogears_fitness_level,
+      }
+    };
+
     try {
       let topChunks: string[] = [];
       if (allChunks.length > 0) {
@@ -746,16 +834,43 @@ export default function AIHealthScreen() {
         topChunks  = retrieveTopKChunks(qEmb, allChunks, TOP_K).map((r) => r.chunk.text);
       }
       const apiKey = await getApiKey();
-      const genRes = await fetch(`${baseUrl}/generate`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(apiKey ? { "X-API-Key": apiKey } : {}),
-        },
-        body: JSON.stringify({ query, chunks: topChunks, history, patient_context: { medicines: medicines || [], activeSymptoms: activeSymptoms || [], historySymptoms: historySymptoms || [] } }),
-      });
-      if (!genRes.ok) { const err = await genRes.json().catch(() => ({})); throw new Error(err.detail || `Generate failed: ${genRes.status}`); }
-      const aiReply: string = (await genRes.json()).response || "No response from server.";
+      
+      let aiReply = "";
+      try {
+        const brainRes = await fetch(`${baseUrl}/api/v5/brain/query`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...(apiKey ? { "X-API-Key": apiKey } : {}),
+          },
+          body: JSON.stringify({
+            patient_id: currentUserId,
+            session_id: currentSessionId,
+            query,
+            active_symptoms: activeSymptoms || [],
+            patient_context: patientCtx,
+          }),
+        });
+        if (brainRes.ok) {
+          const brainData = await brainRes.json();
+          aiReply = brainData.response_text || brainData.response || brainData.reply || "";
+        }
+      } catch (err) {}
+
+      if (!aiReply) {
+        const genRes = await fetch(`${baseUrl}/generate`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...(apiKey ? { "X-API-Key": apiKey } : {}),
+          },
+          body: JSON.stringify({ patient_id: currentUserId, query, chunks: topChunks, history, patient_context: patientCtx }),
+        });
+        if (!genRes.ok) { const err = await genRes.json().catch(() => ({})); throw new Error(err.detail || `Generate failed: ${genRes.status}`); }
+        const resData = await genRes.json();
+        aiReply = resData.response_text || resData.response || resData.reply || "No response from server.";
+      }
+
       setMessages((prev) => [...prev, { id: genId(), text: aiReply, sender: "ai", timestamp: new Date() }]);
       historyRef.current = [...history, query, aiReply].slice(-10);
       setConnected(true);
@@ -886,6 +1001,52 @@ export default function AIHealthScreen() {
           { backgroundColor: isUser ? getUserBubbleColor() : getAiBubbleColor(), borderColor: isUser ? getUserBubbleBorder() : getAiBubbleBorder() }
         ]}>
           <RichText text={item.text} style={[styles.messageText, { color: isUser ? userTextColor : c.text }]} />
+
+          {/* Interactive AI Action Chips */}
+          {!isUser && (
+            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 8 }}>
+              {item.text.toLowerCase().includes("water") || item.text.toLowerCase().includes("hydrat") ? (
+                <TouchableOpacity
+                  onPress={() => router.push("/hydration")}
+                  style={{ backgroundColor: "#0284c718", paddingHorizontal: 10, paddingVertical: 4, borderRadius: 10, borderWidth: 1, borderColor: "#0284c730", flexDirection: "row", alignItems: "center", gap: 4 }}
+                >
+                  <Ionicons name="water-outline" size={12} color="#0284c7" />
+                  <Text style={{ color: "#0284c7", fontSize: 11, fontWeight: "700" }}>Log Hydration</Text>
+                </TouchableOpacity>
+              ) : null}
+
+              {item.text.toLowerCase().includes("medicat") || item.text.toLowerCase().includes("dose") || item.text.toLowerCase().includes("pill") ? (
+                <TouchableOpacity
+                  onPress={() => router.push("/MedicationVault")}
+                  style={{ backgroundColor: "#10b98118", paddingHorizontal: 10, paddingVertical: 4, borderRadius: 10, borderWidth: 1, borderColor: "#10b98130", flexDirection: "row", alignItems: "center", gap: 4 }}
+                >
+                  <Ionicons name="medical-outline" size={12} color="#10b981" />
+                  <Text style={{ color: "#10b981", fontSize: 11, fontWeight: "700" }}>Med Vault</Text>
+                </TouchableOpacity>
+              ) : null}
+
+              {item.text.toLowerCase().includes("symptom") || item.text.toLowerCase().includes("pain") || item.text.toLowerCase().includes("fever") ? (
+                <TouchableOpacity
+                  onPress={() => router.push("/symptom-log")}
+                  style={{ backgroundColor: "#f59e0b18", paddingHorizontal: 10, paddingVertical: 4, borderRadius: 10, borderWidth: 1, borderColor: "#f59e0b30", flexDirection: "row", alignItems: "center", gap: 4 }}
+                >
+                  <Ionicons name="bandage-outline" size={12} color="#f59e0b" />
+                  <Text style={{ color: "#f59e0b", fontSize: 11, fontWeight: "700" }}>Log Symptom</Text>
+                </TouchableOpacity>
+              ) : null}
+
+              {item.text.toLowerCase().includes("lab") || item.text.toLowerCase().includes("report") || item.text.toLowerCase().includes("blood") ? (
+                <TouchableOpacity
+                  onPress={() => router.push("/(tabs)/documents")}
+                  style={{ backgroundColor: "#8b5cf618", paddingHorizontal: 10, paddingVertical: 4, borderRadius: 10, borderWidth: 1, borderColor: "#8b5cf630", flexDirection: "row", alignItems: "center", gap: 4 }}
+                >
+                  <Ionicons name="document-text-outline" size={12} color="#8b5cf6" />
+                  <Text style={{ color: "#8b5cf6", fontSize: 11, fontWeight: "700" }}>Documents</Text>
+                </TouchableOpacity>
+              ) : null}
+            </View>
+          )}
+
           <Text style={[styles.messageTime, { color: isUser ? userTimeColor : c.sub }]}>{fmtTime(item.timestamp.getTime())}</Text>
         </View>
       </View>

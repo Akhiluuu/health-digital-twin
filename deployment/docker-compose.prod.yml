@@ -1,0 +1,203 @@
+version: '3.8'
+
+services:
+  # ── 1. Production Nginx Reverse Proxy & SSL Load Balancer ──────────────────
+  nginx:
+    image: nginx:alpine
+    container_name: vitalhealth_nginx_prod
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+    depends_on:
+      web:
+        condition: service_healthy
+      medication_api:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
+  # ── 2. PostgreSQL 15 Production Relational Database ─────────────────────────
+  db:
+    image: postgres:15-alpine
+    container_name: vitalhealth_postgres_prod
+    restart: always
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-prod_secure_password_99}
+      POSTGRES_DB: twins_db
+    volumes:
+      - postgres_prod_data:/var/lib/postgresql/data
+      - ./config/postgresql.conf:/etc/postgresql/postgresql.conf:ro
+    command: >
+      postgres -c config_file=/etc/postgresql/postgresql.conf
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2G
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── 3. Redis 7 In-Memory Cache & Task Broker ──────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: vitalhealth_redis_prod
+    restart: always
+    command: redis-server --appendonly yes --save 60 1 --loglevel notice --maxmemory 512mb --maxmemory-policy volatile-lru
+    volumes:
+      - redis_prod_data:/data
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli ping | grep PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # ── 4. Qdrant RAG Vector Search Database Engine ─────────────────────────────
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: vitalhealth_qdrant_prod
+    restart: always
+    ports:
+      - "6333:6333"
+    volumes:
+      - qdrant_prod_data:/qdrant/storage
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2G
+    healthcheck:
+      test: ["CMD-SHELL", "timeout 2 bash -c '</dev/tcp/localhost/6333' || exit 0"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # ── 5. Health Brain Core FastAPI Gateway & Reasoning Engine ────────────────
+  web:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    container_name: vitalhealth_brain_prod
+    restart: always
+    command: uvicorn healthbot_v4.apps.api.server:app --host 0.0.0.0 --port 8000 --workers 4
+    environment:
+      - PYTHONPATH=/app
+      - ENVIRONMENT=production
+      - REDIS_URL=redis://redis:6379/0
+      - DATABASE_URL=postgresql://postgres:${POSTGRES_PASSWORD:-prod_secure_password_99}@db:5432/twins_db
+      - QDRANT_URL=http://qdrant:6333
+      - QWEN_MODEL_PATH=/app/models/qwen2.5-14b-instruct-q5_k_m.gguf
+    volumes:
+      - ../models:/app/models:ro
+      - document_uploads:/app/health_docs
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: '4.0'
+          memory: 8G
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"]
+      interval: 20s
+      timeout: 10s
+      retries: 3
+
+  # ── 6. Celery Worker (Async OCR Engine & BioGears Twin Simulator) ──────────
+  celery_worker:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    container_name: vitalhealth_worker_prod
+    restart: always
+    command: celery -A biogears_service.api.tasks.celery_app worker --loglevel=info --concurrency=4
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - DATABASE_URL=postgresql://postgres:${POSTGRES_PASSWORD:-prod_secure_password_99}@db:5432/twins_db
+    depends_on:
+      redis:
+        condition: service_healthy
+      db:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 4G
+
+  # ── 7. Medication Vault Microservice API ───────────────────────────────────
+  medication_api:
+    build:
+      context: ..
+      dockerfile: medication_service/Dockerfile
+    container_name: vitalhealth_medication_prod
+    restart: always
+    command: uvicorn medication_service.api.app:app --host 0.0.0.0 --port 8001 --workers 2
+    environment:
+      - DATABASE_URL=postgresql://postgres:${POSTGRES_PASSWORD:-prod_secure_password_99}@db:5432/twins_db
+      - REDIS_URL=redis://redis:6379/1
+      - SERVER_BASE_URL=http://web:8000
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8001/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
+  # ── 8. Prometheus Telemetry Engine ──────────────────────────────────────────
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: vitalhealth_prometheus_prod
+    restart: always
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_prod_data:/prometheus
+    ports:
+      - "9090:9090"
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+
+volumes:
+  postgres_prod_data:
+  redis_prod_data:
+  qdrant_prod_data:
+  document_uploads:
+  prometheus_prod_data:

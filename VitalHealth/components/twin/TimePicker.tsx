@@ -102,6 +102,20 @@ function DrumColumn({
     [onMomentumEnd]
   );
 
+  const handleScroll = useCallback(
+    (e: any) => {
+      const offset = e.nativeEvent.contentOffset.y;
+      const rawIdx = Math.round(offset / ITEM_H);
+      const selectedIdx = rawIdx + MID_OFFSET;
+      const value = ((selectedIdx % count) + count) % count;
+      if (!isNaN(value) && value !== current) {
+        setCurrent(value);
+        onChange(value);
+      }
+    },
+    [count, current, onChange]
+  );
+
   return (
     <View style={[drumStyles.column, { height: DRUM_H }]}>
       {/* Highlight bar behind the selected row */}
@@ -126,6 +140,7 @@ function DrumColumn({
         snapToInterval={ITEM_H}
         decelerationRate="fast"
         onLayout={onLayout}
+        onScroll={handleScroll}
         onMomentumScrollEnd={onMomentumEnd}
         onScrollEndDrag={onScrollEndDrag}
         scrollEventThrottle={16}
@@ -134,7 +149,15 @@ function DrumColumn({
           const val = index % count;
           const selected = val === current;
           return (
-            <View style={[drumStyles.item, { height: ITEM_H }]}>
+            <TouchableOpacity
+              activeOpacity={0.7}
+              style={[drumStyles.item, { height: ITEM_H }]}
+              onPress={() => {
+                setCurrent(val);
+                onChange(val);
+                scrollTo(val, true);
+              }}
+            >
               <Text
                 style={[
                   drumStyles.itemTxt,
@@ -144,7 +167,7 @@ function DrumColumn({
               >
                 {item}
               </Text>
-            </View>
+            </TouchableOpacity>
           );
         }}
       />

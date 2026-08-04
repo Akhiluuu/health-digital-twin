@@ -10,10 +10,18 @@ import "../tasks/stepTrackingTask";
 
 import { Stack, router } from "expo-router";
 import React, { useEffect, useRef, useState } from "react";
-import { ActivityIndicator, View, LogBox } from "react-native";
+import { ActivityIndicator, View, LogBox, NativeModules } from "react-native";
 import * as Linking from "expo-linking";
 import * as SplashScreen from "expo-splash-screen";
-import notifee, { EventType } from "@notifee/react-native";
+let notifee: any = { onForegroundEvent: () => () => {}, getInitialNotification: async () => null };
+let EventType: any = { DELIVERED: 3, PRESS: 1 };
+if (Boolean(NativeModules?.NotifeeApiModule)) {
+  try {
+    const NotifeeModule = require("@notifee/react-native");
+    if (NotifeeModule.default) notifee = NotifeeModule.default;
+    if (NotifeeModule.EventType) EventType = NotifeeModule.EventType;
+  } catch (e) {}
+}
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { ErrorBoundary } from "../components/ErrorBoundary";
 import { LoadingOverlay } from "../components/LoadingOverlay";
@@ -464,11 +472,7 @@ export default function RootLayout() {
                           <Stack.Screen name="symptom-history"  options={{ animation: 'slide_from_right', gestureEnabled: true, fullScreenGestureEnabled: true }} />
 
                           {/* Brain Lab */}
-                          <Stack.Screen name="brain/brain-lab"     options={{ animation: 'slide_from_right', gestureEnabled: true, fullScreenGestureEnabled: true }} />
-                          <Stack.Screen name="brain/PatternTest"   options={{ animation: 'slide_from_right', gestureEnabled: true, fullScreenGestureEnabled: true }} />
-                          <Stack.Screen name="brain/StroopTest"    options={{ animation: 'slide_from_right', gestureEnabled: true, fullScreenGestureEnabled: true }} />
-                          <Stack.Screen name="brain/MemoryTest"    options={{ animation: 'slide_from_right', gestureEnabled: true, fullScreenGestureEnabled: true }} />
-                          <Stack.Screen name="brain/ReactionTest"  options={{ animation: 'slide_from_right', gestureEnabled: true, fullScreenGestureEnabled: true }} />
+                          <Stack.Screen name="brain" options={{ animation: 'slide_from_right', gestureEnabled: true, fullScreenGestureEnabled: true }} />
                         </Stack>
                       </CognitiveProvider>
                       <LoadingOverlay />

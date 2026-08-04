@@ -1,0 +1,67 @@
+name: VitalHealth v5.0 Production CI/CD Release Pipeline
+
+on:
+  push:
+    branches: [ main, production ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test-and-validate:
+    name: 🔬 Unit Testing & Validation Lab Quality Gate
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest pytest-cov
+
+      - name: Run Automated Validation Laboratory Suite
+        run: |
+          python3 healthbot_v4/validation_lab/validation_runner.py --persona heart_failure
+
+  docker-build-and-scan:
+    name: 🐳 Docker Multi-Stage Build & Security Scan
+    needs: test-and-validate
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
+      - name: Build Health Brain Core Container
+        run: |
+          docker build -t vitalhealth-brain:latest -f Dockerfile .
+
+      - name: Build Medication Vault Container
+        run: |
+          docker build -t vitalhealth-medication:latest -f medication_service/Dockerfile .
+
+  production-zero-downtime-deploy:
+    name: 🚀 Production Blue/Green Zero-Downtime Deployment
+    needs: docker-build-and-scan
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/production'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Execute Production Release Script
+        run: |
+          chmod +x deployment/deploy_prod.sh
+          ./deployment/deploy_prod.sh --ci-mode

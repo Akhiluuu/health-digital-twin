@@ -25,6 +25,8 @@ export function ThemeProvider({ children }: any) {
 
 export function useTheme() {
   const ctx = useContext(ThemeContext);
-  if (!ctx) throw new Error("useTheme must be inside ThemeProvider");
+  if (!ctx) {
+    return { theme: "light" as Theme, toggleTheme: () => {}, setTheme: () => {} };
+  }
   return ctx;
 }

@@ -334,42 +334,27 @@ export interface AssistantChatPayload {
 }
 
 export const chatWithAssistant = async (payload: AssistantChatPayload): Promise<{ data: AIChat }> => {
-  // Route directly to the healthbot /generate endpoint which has full
-  // LLM + patient-context-routing capabilities.
   const base = await getMedApiUrl();
-
-  // Extract the VM base from the medication URL (strip /medication suffix)
-  // e.g. http://151.185.45.137/medication → http://151.185.45.137
   let botBase = base.replace(/\/medication\/?$/, '');
-
-  // Smart environment routing: Nginx maps /ai/ to port 8001 (healthbot).
-  // In development environments with direct ports, rewrite :8002/:8000 to :8001.
-  let aiUrl = `${botBase}/ai/generate`;
-  if (botBase.includes(':8002')) {
-    aiUrl = botBase.replace(':8002', ':8001') + '/generate';
-  } else if (botBase.includes(':8000')) {
-    aiUrl = botBase.replace(':8000', ':8001') + '/generate';
+  if (!botBase.includes(':8000') && !botBase.includes(':8001') && !botBase.includes(':8002')) {
+    botBase = `${botBase}:8000`;
   }
-
+  const queryUrl = `${botBase}/api/v5/brain/query`;
   const headers = await getAuthHeaders();
 
-  const body: Record<string, any> = {
-    query: payload.message,
-    history: payload.history || [],
-  };
-  if (payload.patient_context) {
-    body.patient_context = payload.patient_context;
-  }
-
   try {
-    const res = await fetch(aiUrl, {
+    const res = await fetch(queryUrl, {
       method: 'POST',
       headers: { ...headers, 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
+      body: JSON.stringify({
+        patient_id: 'self',
+        session_id: 'sess_med',
+        query: payload.message,
+      }),
     });
-    if (!res.ok) throw new Error(`Assistant /generate HTTP ${res.status}`);
+    if (!res.ok) throw new Error(`Assistant /api/v5/brain/query HTTP ${res.status}`);
     const json = await res.json();
-    const reply: string = json.response || json.reply || json.answer || 'Personal health assistant is unable to respond at this time.';
+    const reply: string = json.response_text || json.response || json.reply || json.answer || 'Personal health assistant is unable to respond at this time.';
     return {
       data: {
         reply,
@@ -380,7 +365,6 @@ export const chatWithAssistant = async (payload: AssistantChatPayload): Promise<
       },
     };
   } catch (err) {
-    // Fallback to medication-vault /ai/chat if healthbot is unreachable
     return medFetch('/ai/chat', { method: 'POST', body: JSON.stringify({
       message: payload.message,
       context_medicine_ids: (payload.patient_context?.medicines || [])

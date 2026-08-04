@@ -145,3 +145,7 @@ export const GAME_LABELS: Record<string, string> = {
   trail:     "Line Orientation Test",
   switching: "Abstract Matching",
 };
+
+export default function BrainEngineRoute() {
+  return null;
+}
