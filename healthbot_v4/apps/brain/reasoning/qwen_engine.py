@@ -489,26 +489,28 @@ class QwenInferenceEngine(HealthBrainSubsystem):
             response_lines.append("3. **Diet Consultation:** Work with a renal dietitian.")
 
         elif any(kw in query_lower for kw in ["symptom", "symptoms", "feeling", "sick", "pain", "unwell", "nausea", "fatigue", "cough"]):
-            response_lines.append("### 🩺 Symptom Review & Health Status")
-            symptom_matches = []
-            for block in [context.clinical_snapshot_block, context.active_risks_block, context.master_summary_block]:
-                for line in block.split("\n"):
-                    if any(w in line.lower() for w in ["headache", "active logged symptoms", "symptom:"]) and "none currently logged" not in line.lower():
-                        symptom_matches.append(line.strip())
+            response_lines.append("### 🩺 Clinical Symptom Review & Guidance")
             
-            if symptom_matches:
-                response_lines.append("**Active Logged Symptoms:**")
-                for match in symptom_matches[:3]:
-                    response_lines.append(f"- {match}")
-                response_lines.append("\n### 🎯 Management Steps")
-                response_lines.append("1. **Hydrate:** Drink 2 to 3 glasses of water immediately.")
-                response_lines.append("2. **Rest:** Rest in a quiet, dim room away from bright screens.")
-                response_lines.append("3. **Monitor Vitals:** Check blood pressure, as BP shifts can trigger symptoms.")
+            clean_symptoms = []
+            if "HEADACHE" in context.active_risks_block.upper() or "HEADACHE" in context.master_summary_block.upper():
+                clean_symptoms.append("Headache (Severe)")
+            if "NAUSEA" in context.active_risks_block.upper() or "NAUSEA" in context.master_summary_block.upper():
+                clean_symptoms.append("Nausea")
+            if "FATIGUE" in context.active_risks_block.upper() or "FATIGUE" in context.master_summary_block.upper():
+                clean_symptoms.append("Fatigue")
+            if "DIZZINESS" in context.active_risks_block.upper() or "DIZZINESS" in context.master_summary_block.upper():
+                clean_symptoms.append("Dizziness")
+
+            if clean_symptoms:
+                response_lines.append(f"**Active Logged Symptoms:** {', '.join(clean_symptoms)}\n")
             else:
                 response_lines.append("No acute symptoms are currently logged in your health profile. Your BioGears digital twin shows stable physiological function.\n")
-                response_lines.append("### 🎯 Recommended Steps")
-                response_lines.append("1. Use the **Log Symptom** button in the mobile app whenever you experience discomfort.")
-                response_lines.append("2. If experiencing acute chest pain or severe shortness of breath, seek emergency medical care immediately.")
+                
+            response_lines.append("### 🎯 Recommended Action Steps")
+            response_lines.append("1. **Hydrate:** Drink 2 to 3 glasses of fresh water immediately.")
+            response_lines.append("2. **Rest:** Rest in a quiet, dark environment away from bright screens.")
+            response_lines.append("3. **Monitor Vitals:** Check your blood pressure, as BP fluctuations often trigger severe headaches.")
+            response_lines.append("\n> ⚠️ **RED FLAGS:** Seek emergency medical care immediately if the headache is sudden ('thunderclap'), or accompanied by high fever, stiff neck, confusion, or numbness.")
 
         elif any(kw in query_lower for kw in ["glucose", "sugar", "diabetic", "hba1c"]):
             response_lines.append("### 📉 Blood Glucose & Glycemic Profile")

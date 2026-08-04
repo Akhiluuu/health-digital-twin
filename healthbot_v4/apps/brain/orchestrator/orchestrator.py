@@ -245,7 +245,7 @@ class AIOrchestrator(HealthBrainSubsystem):
         # Parse timeline events
         timeline_events = self.timeline_engine.get_timeline(patient_id, limit=30)
         for evt in timeline_events:
-            if evt.event_type == TimelineEventType.symptom_logged or "HEADACHE" in evt.title.upper() or "symptom" in evt.title.lower():
+            if (evt.event_type == TimelineEventType.symptom_logged or "HEADACHE" in evt.title.upper() or "symptom" in evt.title.lower()) and "User Query" not in evt.title and "User Query" not in evt.description:
                 symptoms_logged.append(f"{evt.title} ({evt.description})")
         
         # Check fallback journey store for persistent symptoms
