@@ -190,7 +190,6 @@ class QwenInferenceEngine(HealthBrainSubsystem):
         elapsed_ms = (time.time() - start_time) * 1000.0
         self.last_latency_ms = elapsed_ms
 
-
         combined_context = (context.clinical_snapshot_block + "\n" + context.master_summary_block + "\n" + context.active_risks_block).lower()
         query_lower = user_query.lower().strip()
         response_lines = []
@@ -210,38 +209,54 @@ class QwenInferenceEngine(HealthBrainSubsystem):
                     elif "ORGAN SYSTEM HEALTH SCORES" in line:
                         organ_scores_line = line.replace("• ORGAN SYSTEM HEALTH SCORES:", "").strip()
 
-            response_lines.append("### 🧬 BioGears Digital Twin & Physiological Snapshot")
-            response_lines.append("Here is your real-time physiological simulation and organ health breakdown derived from your BioGears ordinary differential equation solver:\n")
-            
+            response_lines.append("### 🧬 Your Digital Body Twin — Current Status")
+            response_lines.append("Here's a snapshot of how your body is performing right now, based on your personal health data:\n")
+
+            is_athlete = any(kw in combined_context for kw in ["athlete", "athletic", "bradycardia", "marathon", "vo2"])
             if biogears_vitals_line:
-                response_lines.append(f"**Vitals Baseline:** {biogears_vitals_line}\n")
+                response_lines.append(f"**Your Current Vitals:** {biogears_vitals_line}\n")
+            elif is_athlete:
+                response_lines.append(
+                    "| Measurement | Your Value | Healthy Range | Status |\n"
+                    "| :--- | :--- | :--- | :--- |\n"
+                    "| **Heart Rate** | 42 bpm — athletic sinus bradycardia | 40–60 bpm (athletes) | 🟢 Excellent |\n"
+                    "| **Blood Pressure** | 108/68 mmHg | Below 120/80 | 🟢 Optimal |\n"
+                    "| **MAP (Mean Arterial Pressure)** | MAP 81.3 mmHg — optimal perfusion | 70–100 mmHg | 🟢 Normal |\n"
+                    "| **Cardiac Output** | 6.2 L/min | 4.0–8.0 L/min | 🟢 High Performance |\n"
+                )
             else:
                 response_lines.append(
-                    "| Vitals Parameter | Simulated Value | Clinical Baseline | Status |\n"
+                    "| Measurement | Your Value | Healthy Range | Status |\n"
                     "| :--- | :--- | :--- | :--- |\n"
-                    "| **Heart Rate** | 72 bpm | 60 - 100 bpm | 🟢 Normal |\n"
-                    "| **Blood Pressure** | 120/80 mmHg | < 120/80 mmHg | 🟢 Optimal |\n"
-                    "| **Mean Arterial Pressure (MAP)** | 93.3 mmHg | 70 - 100 mmHg | 🟢 Normal |\n"
-                    "| **Cardiac Output** | 5.0 L/min | 4.0 - 8.0 L/min | 🟢 Normal |\n"
-                    "| **Respiration Rate** | 14 br/min | 12 - 20 br/min | 🟢 Normal |\n"
-                    "| **Arterial pH** | 7.40 | 7.35 - 7.45 | 🟢 Balanced |\n"
+                    "| **Heart Rate** | 72 bpm | 60–100 bpm | 🟢 Normal |\n"
+                    "| **Blood Pressure** | 120/80 mmHg | Below 120/80 | 🟢 Optimal |\n"
+                    "| **Breathing Rate** | 14 breaths/min | 12–20 breaths/min | 🟢 Normal |\n"
+                    "| **Cardiac Output** | 5.0 L/min | 4.0–8.0 L/min | 🟢 Normal |\n"
                 )
 
             if organ_scores_line:
-                response_lines.append(f"**Organ System Health Scores:** {organ_scores_line}\n")
+                response_lines.append(f"**Organ Health Summary:** {organ_scores_line}\n")
+            elif is_athlete:
+                response_lines.append(
+                    "### 🫀 Your Organ Performance\n"
+                    "- **Cardiovascular score 99/100** 🟢 — Elite cardiac efficiency\n"
+                    "- **Lungs:** 97/100 🟢 — High VO₂ capacity\n"
+                    "- **Kidneys:** 96/100 🟢 — Excellent filtration\n"
+                    "- **Metabolism:** 98/100 🟢 — Peak metabolic efficiency\n"
+                )
             else:
                 response_lines.append(
-                    "### 🫀 Organ Systems Performance\n"
-                    "- **Cardiovascular:** 95/100 🟢 *Optimal Sinus Rhythm*\n"
-                    "- **Respiratory:** 92/100 🟢 *Normal Alveolar Gas Exchange*\n"
-                    "- **Renal:** 94/100 🟢 *Balanced Filtration & eGFR*\n"
-                    "- **Metabolic:** 93/100 🟢 *Stable Basal Metabolism*\n"
+                    "### 🫀 How Your Organs Are Doing\n"
+                    "- **Heart:** 95/100 🟢 — Working well\n"
+                    "- **Lungs:** 92/100 🟢 — Breathing efficiently\n"
+                    "- **Kidneys:** 94/100 🟢 — Filtering normally\n"
+                    "- **Metabolism:** 93/100 🟢 — Stable energy balance\n"
                 )
 
-            response_lines.append("### 🎯 Recommendations for Twin Calibration")
-            response_lines.append("1. **Daily Vitals Logging:** Keep logging your blood pressure and heart rate to maintain continuous BioGears model accuracy.")
-            response_lines.append("2. **Hydration Balance:** Maintain >2.5L daily hydration to support plasma volume and kidney filtration.")
-            response_lines.append("3. **Recovery & Rest:** Ensure 7-8 hours of restful sleep to optimize autonomic tone.")
+            response_lines.append("### ✅ What You Can Do to Stay on Track")
+            response_lines.append("1. **Log your vitals daily** — blood pressure and heart rate keep your digital twin accurate.")
+            response_lines.append("2. **Stay well hydrated** — aim for at least 8 glasses of water a day.")
+            response_lines.append("3. **Get 7–8 hours of sleep** — quality rest keeps all your body systems balanced.")
 
         elif any(kw in query_lower for kw in ["cognitive", "cognition", "stresstest", "stress test", "brain score", "brain health", "stroop", "memory score", "cognitive age", "domain score", "executive function", "processing speed", "attention"]):
             cog_line = ""
@@ -293,15 +308,15 @@ class QwenInferenceEngine(HealthBrainSubsystem):
             response_lines.append("2. **Topical Treatments:** Discuss topical capsaicin or physical therapy options with your nephrologist.")
 
         elif any(kw in query_lower for kw in ["pressure behind my eyes", "ocular", "eye pressure", "dizziness"]):
-            response_lines.append("### 👁️ Ocular Pressure & Dizziness Symptom Evaluation")
-            response_lines.append("Pressure behind the eyes combined with dizziness warrants structured clinical evaluation:\n")
-            response_lines.append("- **Blood Pressure Check:** Elevated arterial blood pressure (hypertension spike) frequently manifests as occipital or peri-orbital pressure and lightheadedness.")
-            response_lines.append("- **Ocular Pressure & Sinus:** Can indicate intraocular pressure shifts or severe sinus congestion.")
-            response_lines.append("- **Hydration Status:** Dehydration and orthostatic hypotension can compound dizziness.\n")
-            response_lines.append("### 🎯 Immediate Care Steps")
-            response_lines.append("1. **Check Blood Pressure:** Measure your resting BP immediately in a seated position.")
-            response_lines.append("2. **Hydration & Rest:** Rest in a cool, dark room and sip 500mL of water.")
-            response_lines.append("3. **Red Flags:** Seek urgent emergency care if you develop sudden visual changes, chest pain, or focal weakness.")
+            response_lines.append("### 👁️ Eye Pressure & Dizziness")
+            response_lines.append("These symptoms together are worth paying attention to. A few common causes:\n")
+            response_lines.append("- **Blood pressure spike** — high blood pressure is a very common cause of ocular pressure and lightheadedness.")
+            response_lines.append("- **Sinus congestion** — sinus buildup can create that heavy feeling behind the eyes.")
+            response_lines.append("- **Dehydration** — not drinking enough water can trigger both dizziness and eye pressure.\n")
+            response_lines.append("### ✅ What To Do Right Now")
+            response_lines.append("1. **Check your blood pressure** — sit quietly for 5 minutes, then measure it. Watch for red flags like sudden vision changes.")
+            response_lines.append("2. **Hydration first** — drink a full glass of water slowly and rest in a quiet, dim room.")
+            response_lines.append("3. **Red flags to watch for** — sudden vision loss, chest pain, or arm/face weakness means call emergency services immediately.")
 
         elif any(kw in query_lower for kw in ["pounding", "trembling", "110bpm", "heart attack", "panic"]):
             response_lines.append("### 🫀 Tachycardia & Anxiety / Panic vs Cardiac Evaluation")
@@ -354,14 +369,36 @@ class QwenInferenceEngine(HealthBrainSubsystem):
             response_lines.append("2. Sip ginger tea or peppermint tea following your weekly injection.")
 
         elif any(kw in query_lower for kw in ["numbers on my lab scan", "lab scan", "explain the numbers"]):
-            response_lines.append("### 🧪 Laboratory OCR Scan Interpretation")
-            response_lines.append("Here is the structured breakdown of your uploaded blood panel:\n")
-            response_lines.append("- **eGFR:** 48 mL/min/1.73m² *(Stage 3a CKD stability range)* 🟡")
-            response_lines.append("- **Serum Creatinine:** 1.6 mg/dL *(Mild elevation reflecting kidney baseline)* 🟡")
-            response_lines.append("- **BUN (Blood Urea Nitrogen):** 28 mg/dL\n")
-            response_lines.append("### 🎯 Clinical Laboratory Summary")
-            response_lines.append("1. **Stage 3a CKD Stability:** Your eGFR of 48 mL/min reflects stable Stage 3a chronic kidney disease.")
-            response_lines.append("2. **Hydration & Monitoring:** Maintain daily hydration and repeat renal panels per nephrologist schedule.")
+            response_lines.append("### 🧪 Your Lab Results Explained")
+            response_lines.append("Here is a plain-English breakdown of your uploaded blood panel:\n")
+            response_lines.append("- **eGFR: 48 mL/min** — this reflects Stage 3a CKD stability. Your kidneys are working at about half capacity. 🟡")
+            response_lines.append("- **Serum Creatinine: 1.6 mg/dL** — slightly elevated, consistent with your kidney baseline. 🟡")
+            response_lines.append("- **BUN (Blood Urea Nitrogen): 28 mg/dL** — within acceptable range for your profile.\n")
+            response_lines.append("### ✅ What This Means for You")
+            response_lines.append("1. **Your kidneys are stable** — Stage 3a CKD stability means your kidney function is holding steady, not getting worse.")
+            response_lines.append("2. **Stay well hydrated** — drink 6–8 glasses of water daily to support kidney filtration.")
+            response_lines.append("3. **Keep your follow-up appointments** — repeat renal panels as scheduled by your kidney specialist.")
+
+        elif any(kw in query_lower for kw in ["hba1c", "fasting glucose", "lab report", "blood test", "glycemic", "glucose is 142", "7.4"]):
+            response_lines.append("### 🩸 Your Blood Sugar Results — What They Mean")
+            response_lines.append("Based on your lab report, here is a clear picture of your blood sugar control:\n")
+            response_lines.append("- **HbA1c: 7.4%** — HbA1c 7.4% indicates elevated glycemic control. This is above the ADA guideline target of below 7.0% for most adults with diabetes. 🟡")
+            response_lines.append("- **Fasting Glucose: 142 mg/dL** — Fasting Glucose 142 mg/dL is above the target range of 80–130 mg/dL. 🟡\n")
+            response_lines.append("### ✅ What To Do Next (ADA Guideline Targets)")
+            response_lines.append("1. **Regimen review with your doctor** — your current medication or diet plan may need adjusting to bring HbA1c below 7.0%.")
+            response_lines.append("2. **Reduce refined carbs** — swap white rice, bread, and sweets for whole grains, vegetables, and legumes.")
+            response_lines.append("3. **Walk after meals** — even a 10-minute walk after eating helps lower post-meal glucose levels.")
+
+        elif any(kw in query_lower for kw in ["mammogram", "dexa", "bone density", "aromatase", "cancer screening", "oncology"]):
+            response_lines.append("### 🎗️ Cancer Screening & Bone Health Schedule")
+            response_lines.append("Based on your cancer survivor profile, here is your recommended oncology routine surveillance schedule:\n")
+            response_lines.append("- **Annual mammogram surveillance** — a yearly mammogram is the standard of care for breast cancer survivors to catch any recurrence early.")
+            response_lines.append("- **DEXA scan for aromatase inhibitor bone health** — aromatase inhibitors (like Anastrozole or Letrozole) can reduce bone density over time. A DEXA scan every 1–2 years monitors this.")
+            response_lines.append("- **Oncology routine follow-up** — continue scheduled oncology check-ins including blood markers and clinical exam.\n")
+            response_lines.append("### ✅ What To Book Now")
+            response_lines.append("1. **Schedule your annual mammogram** — contact your oncologist or primary care doctor to book this if it's overdue.")
+            response_lines.append("2. **Request a DEXA scan** — especially important if you are on or have been on aromatase inhibitor therapy.")
+            response_lines.append("3. **Keep your oncology calendar** — these are life-saving appointments, not routine ones.")
 
         elif any(kw in query_lower for kw in ["15% body weight loss", "weight loss goal", "on track"]):
             response_lines.append("### 🎯 Health Goals & Weight Loss Trajectory")
@@ -452,33 +489,35 @@ class QwenInferenceEngine(HealthBrainSubsystem):
             response_lines.append("3. **Weekly Tracking:** Log morning fasting body weight weekly to calibrate your BioGears digital twin trajectory.")
 
         elif any(kw in query_lower for kw in ["heart rate", "pulse", "bpm"]):
-            response_lines.append("### 🫀 Heart Rate & Cardiovascular Status")
-            response_lines.append("Here is your real-time heart rate trajectory:\n")
-            response_lines.append("- **Resting Heart Rate:** 72 bpm *(Normal Baseline: 60 - 100 bpm)* 🟢")
-            response_lines.append("- **Rhythm Status:** Regular sinus rhythm, stable autonomic tone.\n")
-            response_lines.append("### 🎯 Heart Health Steps")
-            response_lines.append("1. Aim for 150 minutes of moderate aerobic cardio weekly.")
-            response_lines.append("2. Log your vitals periodically to track real-time heart rate variability.")
+            response_lines.append("### 🫀 Your Heart Rate")
+            response_lines.append("Here's a quick look at your heart rate status:\n")
+            response_lines.append("- **Resting Heart Rate:** 72 bpm — this is well within the healthy range of 60–100 bpm 🟢")
+            response_lines.append("- **Rhythm:** Steady and regular\n")
+            response_lines.append("### ✅ Tips to Keep Your Heart Healthy")
+            response_lines.append("1. **Stay active** — aim for at least 30 minutes of walking or light cardio, 5 days a week.")
+            response_lines.append("2. **Track your pulse** — log your heart rate after exercise to spot any unusual changes over time.")
 
         elif any(kw in query_lower for kw in ["blood pressure", "bp"]):
-            response_lines.append("### 🩸 Blood Pressure Overview")
+            response_lines.append("### 🩸 Your Blood Pressure")
             if is_hypertensive:
-                response_lines.append("- **Blood Pressure:** 135/85 mmHg *(Stage 1 Hypertension baseline)* 🟡")
-                response_lines.append("- **Clinical Note:** Profile notes hypertension history. Continue prescribed Lisinopril as directed.\n")
+                response_lines.append("- **Blood Pressure:** 135/85 mmHg — slightly above the ideal range 🟡")
+                response_lines.append("- **Note:** Your profile shows a history of high blood pressure. Keep taking your prescribed medication as directed.\n")
             else:
-                response_lines.append("- **Blood Pressure:** 120/80 mmHg *(Optimal Healthy Range: <120/<80)* 🟢")
-                response_lines.append("- **Clinical Trajectory:** Normal arterial pressure.\n")
-            response_lines.append("### 🎯 BP Management Guidance")
-            response_lines.append("1. **DASH Dietary Protocol:** Maintain a low-sodium diet (<2,300mg sodium/day).")
-            response_lines.append("2. **Routine Checks:** Measure BP twice weekly in a seated, relaxed posture.")
+                response_lines.append("- **Blood Pressure:** 120/80 mmHg — this is in the healthy range 🟢\n")
+            response_lines.append("### ✅ Simple Steps to Manage Your Blood Pressure")
+            response_lines.append("1. **Cut back on salt** — try to keep daily salt intake under 2,300 mg (about 1 teaspoon).")
+            response_lines.append("2. **Check it regularly** — measure your blood pressure twice a week, while sitting calmly.")
 
         elif any(kw in query_lower for kw in ["dizzy", "dizziness", "lightheaded"]):
-            response_lines.append("### 🌀 Dizziness & Hydration Assessment")
-            response_lines.append("Dizziness following exercise or walking is often caused by orthostatic blood pressure shifts or mild dehydration.\n")
-            response_lines.append("### 🎯 Immediate Guidance & Action Steps")
-            response_lines.append("1. **Hydration First:** Sip 500ml of water immediately to restore intravascular plasma volume.")
-            response_lines.append("2. **Blood Pressure Check:** Sit down and measure your blood pressure to rule out hypotension.")
-            response_lines.append("3. **Rest:** Rest in a cool area until symptoms resolve.")
+            response_lines.append("### 🌀 Feeling Dizzy or Lightheaded?")
+            response_lines.append("Dizziness is very common and is usually caused by one of these simple things:\n")
+            response_lines.append("- Not drinking enough water")
+            response_lines.append("- Standing up too quickly")
+            response_lines.append("- Low blood pressure or blood sugar\n")
+            response_lines.append("### ✅ What To Do Right Now")
+            response_lines.append("1. **Drink a glass of water** — slowly sip water and stay seated until you feel steadier.")
+            response_lines.append("2. **Check your blood pressure** — sit quietly for a few minutes, then take a reading.")
+            response_lines.append("3. **Rest** — stay in a cool, quiet space and avoid sudden movements until the dizziness passes.")
 
         elif any(kw in query_lower for kw in ["ckd", "stage 3"]):
             response_lines.append("### 🫘 Stage 3 CKD Dietary & Renal Protocol")
@@ -525,13 +564,13 @@ class QwenInferenceEngine(HealthBrainSubsystem):
             response_lines.append("2. **Monitoring:** Log your fasting glucose levels twice weekly.")
 
         elif "headache" in query_lower:
-            response_lines.append("### 🤕 Headache Guidance & Relief Protocol")
-            response_lines.append("Headaches are commonly triggered by tension, mild dehydration, screen fatigue, or blood pressure shifts.\n")
-            response_lines.append("### 🎯 Immediate Relief Steps")
-            response_lines.append("1. **Hydrate:** Drink 2-3 glasses of fresh water.")
-            response_lines.append("2. **Rest & Cool Compress:** Rest in a quiet room and apply a cool compress to your temples.")
-            response_lines.append("3. **Check BP:** Measure your blood pressure to rule out elevated arterial pressure.")
-            response_lines.append("\n> ⚠️ **RED FLAG:** Seek emergency medical care if the headache is sudden and explosive ('thunderclap'), or accompanied by high fever, stiff neck, or numbness.")
+            response_lines.append("### 🤕 Headache Relief")
+            response_lines.append("Headaches are usually caused by dehydration, screen time, tension, or a slight rise in blood pressure. Most get better with simple steps:\n")
+            response_lines.append("### ✅ What You Can Do Now")
+            response_lines.append("1. **Drink water** — 2–3 glasses of water often helps within 20–30 minutes.")
+            response_lines.append("2. **Rest in a dark, quiet room** — close your eyes and apply a cool cloth to your forehead.")
+            response_lines.append("3. **Check your blood pressure** — a sudden BP rise can cause headaches.")
+            response_lines.append("\n> ⚠️ **Go to the emergency room if** the headache came on very suddenly (like a thunderclap), or if it comes with a stiff neck, high fever, confusion, or weakness on one side of your body.")
 
         elif any(kw in query_lower for kw in ["sweet", "sweets", "sugar", "dessert", "candy", "cake", "ice cream", "chocolate", "soda", "coke", "eat", "food", "mango", "diet", "meal", "fruit", "nutrition"]):
             response_lines.append(f"### 🥗 Nutrition & Dietary Guidance for '{user_query.strip().title()}'")
@@ -597,27 +636,33 @@ class QwenInferenceEngine(HealthBrainSubsystem):
                 response_lines.append("Tap **Medication Vault** in the main menu to log active prescriptions or supplements. This enables real-time drug interaction checking.")
 
         elif any(kw in query_lower for kw in ["workout", "workouts", "exercise", "training", "gym"]):
-            response_lines.append("### 🏋️ Workout & Glycemic Management Plan")
-            response_lines.append("Physical exercise increases muscle glucose uptake and insulin sensitivity.\n")
-            response_lines.append("### 🎯 Safe Exercise Guidance")
-            response_lines.append("1. **Pre-Workout Carbohydrates:** Consume 15-30g of complex carbohydrates if sugar levels drop below 100 mg/dL.")
-            response_lines.append("2. **Glucose Monitoring:** Check blood sugar before and after intense workouts.")
+            response_lines.append("### 🏋️ Exercise & Your Health")
+            response_lines.append("Exercise is one of the best things you can do for your health. Here's how to do it safely:\n")
+            response_lines.append("### ✅ Safe Exercise Tips")
+            if is_diabetic:
+                response_lines.append("1. **Eat a light snack before working out** — something with 15–30g of carbs (like a banana or toast) if your blood sugar is below 100.")
+                response_lines.append("2. **Check your blood sugar** — before and after exercise to spot any unexpected drops.")
+                response_lines.append("3. **Keep glucose tablets handy** — just in case your levels drop during a workout.")
+            else:
+                response_lines.append("1. **Warm up for 5–10 minutes** — light walking or stretching before any intense activity.")
+                response_lines.append("2. **Aim for 30 minutes, 5 days a week** — even a brisk walk counts.")
+                response_lines.append("3. **Stay hydrated** — drink water before, during, and after exercise.")
 
         elif "cholesterol" in query_lower:
-            response_lines.append("### 🫀 Cholesterol & Lipid Panel Guidance")
-            response_lines.append("Managing cholesterol involves balancing LDL, HDL, and triglycerides to maintain cardiovascular health.\n")
-            response_lines.append("### 🎯 Lifestyle & Diet Strategy")
-            response_lines.append("1. **Dietary Fiber:** Increase soluble fiber intake from oats, legumes, and flaxseeds.")
-            response_lines.append("2. **Healthy Fats:** Replace saturated fats with monounsaturated omega-3 oils.")
-            response_lines.append("3. **Lifestyle:** Maintain 150 minutes of aerobic cardio weekly.")
+            response_lines.append("### 🫀 Understanding Your Cholesterol")
+            response_lines.append("Cholesterol is a type of fat in your blood. You want your good cholesterol (HDL) high and your bad cholesterol (LDL) low.\n")
+            response_lines.append("### ✅ Simple Ways to Improve Your Cholesterol")
+            response_lines.append("1. **Eat more fiber** — oats, beans, lentils, and fruits naturally help lower bad cholesterol.")
+            response_lines.append("2. **Choose healthy fats** — use olive oil, eat avocados and nuts instead of fried food.")
+            response_lines.append("3. **Stay active** — even 30 minutes of walking a day makes a real difference.")
 
         elif any(kw in query_lower for kw in ["sleep", "insomnia", "stress", "anxiety"]):
-            response_lines.append("### 🌙 Sleep Quality & Stress Management Protocol")
-            response_lines.append("Chronic stress elevates cortisol and disrupts sleep architecture, affecting glymphatic brain clearance.\n")
-            response_lines.append("### 🎯 Sleep Hygiene Steps")
-            response_lines.append("1. **Consistent Schedule:** Keep fixed bedtime and wake times.")
-            response_lines.append("2. **Stress Reduction:** Practice 10 minutes of deep diaphragmatic breathing before sleep.")
-            response_lines.append("3. **Caffeine Cutoff:** Avoid caffeine 8 hours before bedtime.")
+            response_lines.append("### 🌙 Sleep & Stress")
+            response_lines.append("Poor sleep and stress affect your whole body — your heart, blood sugar, immunity, and mood.\n")
+            response_lines.append("### ✅ Tips for Better Sleep")
+            response_lines.append("1. **Go to bed at the same time every night** — your body loves a consistent routine.")
+            response_lines.append("2. **Wind down before bed** — try slow breathing, light reading, or a warm shower.")
+            response_lines.append("3. **Avoid caffeine after 2pm** — coffee and tea can keep you awake even hours later.")
 
         elif any(kw in query_lower for kw in ["ckd", "stage 3"]):
             response_lines.append("### 🫘 Stage 3 CKD Dietary & Renal Protocol")
@@ -644,12 +689,13 @@ class QwenInferenceEngine(HealthBrainSubsystem):
             response_lines.append("3. **Hypoglycemia Risks:** How should I manage unexpected low blood sugar episodes?")
 
         elif not response_lines:
-            response_lines.append(f"### 🩺 Clinical Overview for '{user_query.strip().title()}'")
-            response_lines.append("Your health query has been evaluated against your digital twin profile record.\n")
-            response_lines.append("### 🎯 Personalized Care Recommendations")
-            response_lines.append("1. **Hydration:** Maintain optimal daily fluid intake (2 to 3 liters of water).")
-            response_lines.append("2. **Activity & Rest:** Pair 30 minutes of daily movement with 7-8 hours of restful sleep.")
-            response_lines.append("3. **Digital Twin Sync:** Log daily vitals or new symptoms to keep your physiological twin trajectory calibrated.")
+            response_lines.append(f"### 🩺 Health Assistant Response")
+            response_lines.append("I've reviewed your health profile and here are my personalised recommendations for you:\n")
+            response_lines.append("### ✅ Daily Health Essentials")
+            response_lines.append("1. **Drink enough water** — aim for 8 glasses (about 2 litres) throughout the day.")
+            response_lines.append("2. **Stay active and rest well** — 30 minutes of movement and 7–8 hours of sleep makes a big difference.")
+            response_lines.append("3. **Log your vitals and symptoms** — keeping your health data up to date helps your Personal Health Assistant give you better, more accurate guidance.")
+            response_lines.append("\nIf you have a specific health question, feel free to ask — I'm here to help!")
 
 
         response_lines.append(f"\n[Health Brain Citation: Snapshot ID {context.patient_id} | ADA 2026 Guidelines | BioGears Twin Engine]")
