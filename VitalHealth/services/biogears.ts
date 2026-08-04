@@ -14,21 +14,20 @@ import {
   HEARTRATE_URL_KEY,
 } from "../constants/Config";
 
-/** Strip redundant/wrong ports from a BioGears URL.
- *  :8000 was incorrectly stored by early versions — nginx exposes port 80. */
+/** Ensure BioGears URL correctly targets port 8000 on the production/staging server */
 function sanitizeBiogearsUrl(raw: string): string {
+  if (!raw) return 'http://151.185.45.137:8000';
+  let cleaned = raw.trim().replace(/\/+$/, '');
   try {
-    const u = new URL(raw);
-    // Remove port 8000 (FastAPI internal, not public) or default HTTP/HTTPS ports
-    if (
-      u.port === '8000' ||
-      (u.protocol === 'http:' && u.port === '80') ||
-      (u.protocol === 'https:' && u.port === '443')
-    ) {
-      return `${u.protocol}//${u.hostname}${u.pathname !== '/' ? u.pathname : ''}`;
+    const u = new URL(cleaned);
+    // If pointing to VM without explicit port or port 80, route to port 8000 where FastAPI is running
+    if ((!u.port || u.port === '80') && u.hostname === '151.185.45.137') {
+      return `http://151.185.45.137:8000${u.pathname !== '/' ? u.pathname : ''}`;
     }
-  } catch { /* not a full URL — return as-is */ }
-  return raw;
+    return `${u.protocol}//${u.host}${u.pathname !== '/' ? u.pathname : ''}`;
+  } catch {
+    return cleaned;
+  }
 }
 
 export async function getBiogearsBaseUrl(): Promise<string> {
@@ -38,7 +37,7 @@ export async function getBiogearsBaseUrl(): Promise<string> {
     const raw = stored || centralUrl;
     const url = sanitizeBiogearsUrl(raw);
 
-    // Auto-heal: if we fixed a bad stored URL, persist the clean version
+    // Auto-heal: if stored URL was pointing to bad port 80, fix to port 8000
     if (stored && url !== stored) {
       log(`[BioGears] Auto-fixed stored URL: ${stored} → ${url}`);
       await AsyncStorage.setItem(BASE_URL_KEY, url);
@@ -48,7 +47,7 @@ export async function getBiogearsBaseUrl(): Promise<string> {
     return url;
   } catch {
     log(`[BioGears] Using Default Base URL (Fallback): ${centralUrl}`);
-    return centralUrl;
+    return sanitizeBiogearsUrl(centralUrl);
   }
 }
 
