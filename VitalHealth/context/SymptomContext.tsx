@@ -30,6 +30,7 @@ import {
   cancelSymptomNotification,
   scheduleSymptomHourly,
 } from "../services/notifeeService";
+import { triggerEmergencyTriageAlert } from "../services/notificationService";
 
 import { useFamily } from "./FamilyContext";
 
@@ -324,7 +325,11 @@ export function SymptomsProvider({ children }: { children: React.ReactNode }) {
       const userUid = isSwitched && activeMemberId ? activeMemberId : "self";
 
       try {
-        await scheduleSymptomHourly(name.trim(), userUid, activeProfileName);
+        if (severity === "emergency") {
+          await triggerEmergencyTriageAlert(userUid, activeProfileName, name.trim());
+        } else {
+          await scheduleSymptomHourly(name.trim(), userUid, activeProfileName);
+        }
       } catch (err) {
         log("❌ Symptom notification scheduling failed:", err);
       }

@@ -33,6 +33,7 @@ import { useProfile } from "./ProfileContext";
 import { log, error } from "../utils/logger";
 import { notificationEventBus } from "../services/notifeeService";
 import { getLocalDateString } from "../utils/twinUtils";
+import { router } from "expo-router";
 import * as Haptics from "expo-haptics";
 
 interface NotificationContextType {
@@ -61,6 +62,7 @@ const CHANNEL_ID = "health_critical";
 
 export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { profile: selfProfile } = useProfile();
+  const { switchToMember, switchToSelf, activeMemberId } = useFamily();
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const notificationsRef = useRef<NotificationItem[]>([]);
   useEffect(() => {
@@ -516,6 +518,53 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
     
     loadNotifications();
   }, [loadNotifications]);
+
+  // Handle Notification Tap -> Auto Profile Switch & Deep Link Navigation
+  useEffect(() => {
+    if (!notifee || !notifee.onForegroundEvent) return;
+
+    const handleNotificationTap = async (data: any) => {
+      if (!data) return;
+      const targetProfileId = data.profileId;
+      const targetDeepLink = data.deepLinkUrl || data.deepLink;
+
+      log("🔔 Notification Tapped Payload:", { targetProfileId, targetDeepLink });
+
+      if (targetProfileId) {
+        if (targetProfileId === "self") {
+          await switchToSelf();
+        } else if (targetProfileId !== activeMemberId) {
+          await switchToMember(targetProfileId);
+        }
+      }
+
+      if (targetDeepLink && targetDeepLink.length > 0) {
+        try {
+          router.push(targetDeepLink as any);
+        } catch (e) {
+          log("⚠️ Deep link navigation fallback error:", e);
+        }
+      }
+    };
+
+    const unsubscribe = notifee.onForegroundEvent(async ({ type, detail }: any) => {
+      if (type === 1 /* EventType.PRESS */) {
+        if (detail.notification?.data) {
+          await handleNotificationTap(detail.notification.data);
+        }
+      }
+    });
+
+    notifee.getInitialNotification?.().then(async (initialNotif: any) => {
+      if (initialNotif?.notification?.data) {
+        await handleNotificationTap(initialNotif.notification.data);
+      }
+    }).catch(() => {});
+
+    return () => {
+      if (typeof unsubscribe === "function") unsubscribe();
+    };
+  }, [activeMemberId, switchToMember, switchToSelf]);
 
   // Listen to incoming delivered notifications to reload local DB state in real-time
   useEffect(() => {

@@ -95,7 +95,14 @@ export const ACTION_WATER_DRINK = "HYDRATION_100"; // backwards compat
 
 export const ACTION_SYMPTOM_DONE = "SYMPTOM_DONE";
 
-const CHANNEL_ID = "health";
+export const CHANNEL_ID         = "health"; // Legacy fallback
+export const CHANNEL_EMERGENCY  = "vitalhealth_emergency";
+export const CHANNEL_MEDICATION = "vitalhealth_medication";
+export const CHANNEL_VITALS     = "vitalhealth_vitals";
+export const CHANNEL_LABS       = "vitalhealth_labs";
+export const CHANNEL_JOURNEY    = "vitalhealth_journey";
+export const CHANNEL_WELLNESS   = "vitalhealth_wellness";
+export const CHANNEL_CARE       = "vitalhealth_care";
 
 ///////////////////////////////////////////////////////////
 // SETUP
@@ -109,6 +116,57 @@ export async function setupNotifee() {
     return;
   }
 
+  // Register all 7 specialized Notification Channels
+  await notifee.createChannel({
+    id: CHANNEL_EMERGENCY,
+    name: "🚨 Emergency & Safety Alerts",
+    importance: AndroidImportance.HIGH,
+    vibration: true,
+    sound: "default",
+  });
+
+  await notifee.createChannel({
+    id: CHANNEL_MEDICATION,
+    name: "💊 Medication & Refill Reminders",
+    importance: AndroidImportance.HIGH,
+    vibration: true,
+    sound: "default",
+  });
+
+  await notifee.createChannel({
+    id: CHANNEL_VITALS,
+    name: "🫀 Digital Twin & Vitals Anomalies",
+    importance: AndroidImportance.HIGH,
+    vibration: true,
+  });
+
+  await notifee.createChannel({
+    id: CHANNEL_LABS,
+    name: "🧪 Lab OCR & Diagnostic Reports",
+    importance: AndroidImportance.DEFAULT,
+    vibration: true,
+  });
+
+  await notifee.createChannel({
+    id: CHANNEL_JOURNEY,
+    name: "🎯 Health Journey & Milestones",
+    importance: AndroidImportance.DEFAULT,
+  });
+
+  await notifee.createChannel({
+    id: CHANNEL_CARE,
+    name: "👥 Care Circle & Family Alerts",
+    importance: AndroidImportance.HIGH,
+    vibration: true,
+  });
+
+  await notifee.createChannel({
+    id: CHANNEL_WELLNESS,
+    name: "💧 Daily Wellness & Hydration",
+    importance: AndroidImportance.DEFAULT,
+  });
+
+  // Legacy channel backward compat
   await notifee.createChannel({
     id: CHANNEL_ID,
     name: "Health Notifications",
@@ -134,12 +192,12 @@ export async function setupNotifee() {
   // Schedule daily digital twin sync check-in reminder
   await scheduleDailyLogReminder();
 
-  log("✅ Notifee initialized");
+  log("✅ Notifee initialized with 7 high-priority channels");
 }
 
-export async function getProfileName(profileId?: string, profileName?: string): Promise<string> {
+export async function getProfileInfo(profileId?: string, profileName?: string): Promise<{ name: string; role?: string }> {
   if (profileName && profileName.trim().length > 0) {
-    return profileName.trim();
+    return { name: profileName.trim() };
   }
   try {
     const pId = profileId || "self";
@@ -147,9 +205,9 @@ export async function getProfileName(profileId?: string, profileName?: string): 
       const { getAnyLocalProfile } = require("../database/userProfileDB");
       const profile = await getAnyLocalProfile();
       if (profile && profile.firstName) {
-        return profile.firstName.trim();
+        return { name: profile.firstName.trim(), role: "Self" };
       }
-      return "Me";
+      return { name: "Me", role: "Self" };
     } else {
       const stored = await AsyncStorage.getItem("vitalhealth_family_members");
       if (stored) {
@@ -163,26 +221,31 @@ export async function getProfileName(profileId?: string, profileName?: string): 
               String(m.userId).trim() === nid
           );
           if (member && member.firstName) {
-            return member.firstName.trim();
+            return { name: member.firstName.trim(), role: member.relationship || member.role || "Family" };
           }
         }
       }
-      // If not in family members, check if it matches the local profile uid
       const { getAnyLocalProfile } = require("../database/userProfileDB");
       const profile = await getAnyLocalProfile();
       if (profile && profile.uid === pId && profile.firstName) {
-        return profile.firstName.trim();
+        return { name: profile.firstName.trim(), role: "Self" };
       }
-      return "Family Member";
+      return { name: "Family Member", role: "Family" };
     }
   } catch (err) {
-    return "Me";
+    return { name: "Me", role: "Self" };
   }
 }
 
+export async function getProfileName(profileId?: string, profileName?: string): Promise<string> {
+  const info = await getProfileInfo(profileId, profileName);
+  return info.name;
+}
+
 export async function getFormattedTitle(baseTitle: string, profileId?: string, profileName?: string): Promise<string> {
-  const name = await getProfileName(profileId, profileName);
-  return `[${name}] ${baseTitle}`;
+  const info = await getProfileInfo(profileId, profileName);
+  const tag = info.role && info.role !== "Self" ? `${info.name} • ${info.role}` : info.name;
+  return `[${tag}] ${baseTitle}`;
 }
 
 ///////////////////////////////////////////////////////////
