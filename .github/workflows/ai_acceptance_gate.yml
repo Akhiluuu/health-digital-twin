@@ -24,7 +24,11 @@ jobs:
       - name: Install System & Python Dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install pydantic asyncio typing-extensions pytest jinja2
+          # Install all project dependencies from requirements.txt, excluding
+          # llama-cpp-python (large binary that requires C++ compilation — not
+          # needed for the rule-based acceptance gate) and heavy DB drivers.
+          grep -v -E "^llama-cpp-python|^psycopg2-binary|^asyncpg|^firebase-admin|^celery|^redis" requirements.txt > /tmp/ci_requirements.txt
+          pip install -r /tmp/ci_requirements.txt
 
       - name: Execute Production Release Gate Test Suite
         run: |
