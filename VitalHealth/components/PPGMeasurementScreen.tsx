@@ -9,9 +9,6 @@ import {
   Platform,
   ActivityIndicator,
   Easing,
-  TextInput,
-  ScrollView,
-  Alert,
 } from "react-native";
 import Svg, { Circle, Path, Defs, LinearGradient, Stop } from "react-native-svg";
 import * as Haptics from "expo-haptics";
@@ -22,9 +19,11 @@ import { colors } from "../theme/colors";
 import {
   startHeartRateMeasurement,
   stopHeartRateMeasurement,
+  onHeartRateFrame,
   onHeartRateUpdate,
   onHeartRateDone,
   onHeartRateError,
+  type HeartRateFrameEvent,
 } from "../services/heartRateNative";
 
 const { width } = Dimensions.get("window");
@@ -60,10 +59,12 @@ export default function PPGMeasurementScreen({
   const [status, setStatus] = useState<OperationalStatus>("CALIBRATING");
   const [pulseWave, setPulseWave] = useState(0);
   const [progressSecs, setProgressSecs] = useState(0);
+  const [fingerDetected, setFingerDetected] = useState(false);
   const [waveHistory, setWaveHistory] = useState<number[]>(Array(60).fill(0));
 
   // Animations
   const pulseScale = useRef(new Animated.Value(1)).current;
+  const glowOpacity = useRef(new Animated.Value(0.4)).current;
   const skeletonPulse = useRef(new Animated.Value(0.4)).current;
   const resultsFadeAnim = useRef(new Animated.Value(0)).current;
 
@@ -76,8 +77,8 @@ export default function PPGMeasurementScreen({
     if (status === "CALIBRATING") {
       const anim = Animated.loop(
         Animated.sequence([
-          Animated.timing(skeletonPulse, { toValue: 1.0, duration: 900, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
-          Animated.timing(skeletonPulse, { toValue: 0.4, duration: 900, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+          Animated.timing(skeletonPulse, { toValue: 1.0, duration: 800, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+          Animated.timing(skeletonPulse, { toValue: 0.4, duration: 800, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
         ])
       );
       anim.start();
@@ -86,6 +87,18 @@ export default function PPGMeasurementScreen({
       skeletonPulse.setValue(1.0);
     }
   }, [status]);
+
+  // Glow ring pulse animation
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(glowOpacity, { toValue: 0.8, duration: 600, useNativeDriver: true }),
+        Animated.timing(glowOpacity, { toValue: 0.2, duration: 600, useNativeDriver: true }),
+      ])
+    );
+    loop.start();
+    return () => loop.stop();
+  }, []);
 
   const handleComplete = useCallback(
     (finalBpm: number, finalSpo2: number, finalConf: number, finalSnr: number) => {
@@ -112,13 +125,28 @@ export default function PPGMeasurementScreen({
     isCompletedRef.current = false;
 
     // Delay start slightly so the CameraPreview native view has time to mount
-    // and register itself with CameraPreviewShared before the native module tries
-    // to bind the camera to the lifecycle.
     const startTimer = setTimeout(() => {
       startHeartRateMeasurement(uid);
     }, 600);
 
-    // Live update events
+    // 1. High-frequency 30 FPS Frame Listener for real-time waveform & finger contact
+    const unsubFrame = onHeartRateFrame((event: HeartRateFrameEvent) => {
+      if (isCompletedRef.current) return;
+      setFingerDetected(event.fingerDetected);
+
+      const val =
+        event.pulseWave !== undefined && Math.abs(event.pulseWave) > 1e-6
+          ? event.pulseWave
+          : (event.ppgValue - 128) / 128;
+
+      setWaveHistory((prev) => {
+        const next = [...prev.slice(1)];
+        next.push(val);
+        return next;
+      });
+    });
+
+    // 2. Periodic Live update events (Biometrics & Status)
     const unsubUpdate = onHeartRateUpdate((event) => {
       if (isCompletedRef.current) return;
 
@@ -160,15 +188,9 @@ export default function PPGMeasurementScreen({
         }
         prevStatusRef.current = nextStatus;
       }
-
-      setWaveHistory((prev) => {
-        const next = [...prev.slice(1)];
-        next.push(nextPulse);
-        return next;
-      });
     });
 
-    // Done event — native module finished the 30-second window
+    // 3. Done event — native module finished 30-second window
     const unsubDone = onHeartRateDone((event) => {
       handleComplete(
         event.bpm ?? 0,
@@ -178,10 +200,9 @@ export default function PPGMeasurementScreen({
       );
     });
 
-    // Error event
-    const unsubError = onHeartRateError((event) => {
+    // 4. Error event
+    const unsubError = onHeartRateError(() => {
       if (!isCompletedRef.current) {
-        // Treat error as completion with whatever values we have
         const fv = finalValuesRef.current;
         handleComplete(fv.bpm, fv.spo2, fv.confidence, fv.snr);
       }
@@ -189,6 +210,7 @@ export default function PPGMeasurementScreen({
 
     return () => {
       clearTimeout(startTimer);
+      unsubFrame();
       unsubUpdate();
       unsubDone();
       unsubError();
@@ -196,11 +218,11 @@ export default function PPGMeasurementScreen({
     };
   }, [uid]);
 
-  // Pulse ring spring animation
+  // Pulse ring spring animation driven by real-time pulse wave spikes
   useEffect(() => {
-    if (status === "MEASURING") {
+    if (fingerDetected && status !== "COMPLETED") {
       Animated.spring(pulseScale, {
-        toValue: 1.0 + Math.max(-0.1, Math.min(0.18, pulseWave * 0.5)),
+        toValue: 1.0 + Math.max(-0.08, Math.min(0.2, pulseWave * 0.5)),
         useNativeDriver: true,
         friction: 3.5,
         tension: 50,
@@ -208,7 +230,7 @@ export default function PPGMeasurementScreen({
     } else {
       Animated.spring(pulseScale, { toValue: 1.0, useNativeDriver: true, friction: 6, tension: 30 }).start();
     }
-  }, [pulseWave, status]);
+  }, [pulseWave, fingerDetected, status]);
 
   const handleRestart = () => {
     isCompletedRef.current = false;
@@ -219,6 +241,7 @@ export default function PPGMeasurementScreen({
     setConfidence(0);
     setSnr(-10);
     setWaveHistory(Array(60).fill(0));
+    setFingerDetected(false);
     setStatus("CALIBRATING");
     prevStatusRef.current = "CALIBRATING";
     resultsFadeAnim.setValue(0);
@@ -226,22 +249,94 @@ export default function PPGMeasurementScreen({
     setTimeout(() => startHeartRateMeasurement(uid), 600);
   };
 
-  const headerConfig = {
-    CALIBRATING: { title: "Calibrating", sub: "Place your finger firmly over the camera and flash.", color: c.text },
-    MEASURING: { title: "Keep Steady", sub: "Measuring your cardiac pulse...", color: c.text },
-    TOO_MUCH_PRESSURE: { title: "Pressing Too Hard", sub: "Lighten your touch — blood is being restricted.", color: "#ef4444" },
-    SIGNAL_LOW_QUALITY: { title: "No Finger Detected", sub: "Cover the camera lens and flash completely.", color: "#f59e0b" },
-    MOTION_ARTIFACT_DETECTED: { title: "Movement Detected", sub: "Hold completely still for accurate readings.", color: "#f59e0b" },
-    COMPLETED: { title: "Scan Complete", sub: "Biometrics successfully collected.", color: "#10b981" },
+  // Guidance Details Header
+  const getHeaderInfo = () => {
+    if (!fingerDetected && status !== "COMPLETED") {
+      return {
+        title: "Place Index Finger",
+        sub: "Cover both the camera lens and flashlight LED completely.",
+        color: "#f59e0b",
+        badgeText: "NO FINGER CONTACT DETECTED",
+        badgeColor: "#ef4444",
+        badgeBg: "rgba(239, 68, 68, 0.15)",
+        icon: "finger-print-outline" as const,
+      };
+    }
+    if (status === "TOO_MUCH_PRESSURE") {
+      return {
+        title: "Pressing Too Hard",
+        sub: "Lighten your touch — pressing hard restricts blood flow in capillaries.",
+        color: "#ef4444",
+        badgeText: "RESTRICTED BLOOD FLOW",
+        badgeColor: "#ef4444",
+        badgeBg: "rgba(239, 68, 68, 0.15)",
+        icon: "hand-left-outline" as const,
+      };
+    }
+    if (status === "MOTION_ARTIFACT_DETECTED") {
+      return {
+        title: "Movement Detected",
+        sub: "Hold completely still. Rest your elbow on a flat surface.",
+        color: "#f59e0b",
+        badgeText: "HOLD STILL · MOTION DETECTED",
+        badgeColor: "#f59e0b",
+        badgeBg: "rgba(245, 158, 11, 0.15)",
+        icon: "walk-outline" as const,
+      };
+    }
+    if (status === "SIGNAL_LOW_QUALITY") {
+      return {
+        title: "Adjust Contact",
+        sub: "Cover the full camera lens and flash LED completely.",
+        color: "#f59e0b",
+        badgeText: "SIGNAL QUALITY WEAK",
+        badgeColor: "#f59e0b",
+        badgeBg: "rgba(245, 158, 11, 0.15)",
+        icon: "warning-outline" as const,
+      };
+    }
+    if (status === "CALIBRATING") {
+      return {
+        title: "Finger Contact Locked",
+        sub: "Calibrating transillumination & locking pulse wave...",
+        color: c.text,
+        badgeText: "FINGER LOCKED · CALIBRATING",
+        badgeColor: "#3b82f6",
+        badgeBg: "rgba(59, 130, 246, 0.15)",
+        icon: "pulse-outline" as const,
+      };
+    }
+    if (status === "MEASURING") {
+      return {
+        title: "Keep Steady",
+        sub: "Recording real-time cardiac pulse waveform...",
+        color: c.text,
+        badgeText: "FINGER LOCKED · SCANNING",
+        badgeColor: "#10b981",
+        badgeBg: "rgba(16, 185, 129, 0.15)",
+        icon: "heart-outline" as const,
+      };
+    }
+    return {
+      title: "Scan Complete",
+      sub: "Biometrics successfully collected.",
+      color: "#10b981",
+      badgeText: "COMPLETED",
+      badgeColor: "#10b981",
+      badgeBg: "rgba(16, 185, 129, 0.15)",
+      icon: "checkmark-circle-outline" as const,
+    };
   };
-  const hdr = headerConfig[status];
 
-  const ringColor =
-    status === "TOO_MUCH_PRESSURE" ? "#ef4444"
+  const hdr = getHeaderInfo();
+
+  const ringBorderColor =
+    !fingerDetected ? "#ef4444"
+    : status === "TOO_MUCH_PRESSURE" ? "#ef4444"
     : status === "SIGNAL_LOW_QUALITY" ? "#f59e0b"
     : status === "MOTION_ARTIFACT_DETECTED" ? "#f59e0b"
     : status === "MEASURING" ? "#10b981"
-    : c.border || "rgba(255,255,255,0.2)";
+    : "#3b82f6";
 
   const getWaveformPath = (): string => {
     const H = 64;
@@ -253,75 +348,89 @@ export default function PPGMeasurementScreen({
       .map((val, idx) => {
         const x = (idx / 59) * W;
         const norm = range > 1e-5 ? (val - minVal) / range : 0.5;
-        const y = H - (norm * (H - 12) + 6);
+        const y = H - (norm * (H - 16) + 8);
         return `${idx === 0 ? "M" : "L"} ${x.toFixed(1)} ${y.toFixed(1)}`;
       })
       .join(" ");
   };
 
+  // Leading edge dot on live SVG waveform
+  const lastWaveVal = waveHistory[waveHistory.length - 1] ?? 0;
+  const minW = Math.min(...waveHistory);
+  const maxW = Math.max(...waveHistory);
+  const rangeW = maxW - minW;
+  const normLast = rangeW > 1e-5 ? (lastWaveVal - minW) / rangeW : 0.5;
+  const dotX = width - 96;
+  const dotY = 64 - (normLast * (64 - 16) + 8);
+
   const secondsRemaining = Math.max(0, TOTAL_SECS - Math.floor(progressSecs));
   const progressRatio = Math.min(1, progressSecs / TOTAL_SECS);
   const circumference = 2 * Math.PI * 95;
 
-  const isActive = status !== "CALIBRATING" && status !== "SIGNAL_LOW_QUALITY" && status !== "COMPLETED";
-  const showDashes = status === "CALIBRATING" || status === "SIGNAL_LOW_QUALITY";
+  const isActive = fingerDetected && status !== "COMPLETED";
 
   return (
     <View style={[styles.container, { backgroundColor: c.bg }]}>
 
-      {/* Header */}
+      {/* Header Guidance */}
       <View style={styles.topZone}>
-        <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", width: "100%", paddingHorizontal: 4 }}>
-          <View style={{ width: 32 }} />
-          <Text style={[styles.title, { color: hdr.color, flex: 1, textAlign: "center" }]}>{hdr.title}</Text>
-          <View style={{ width: 32 }} />
-        </View>
+        <Text style={[styles.title, { color: hdr.color }]}>{hdr.title}</Text>
         <Text style={[styles.subtext, { color: c.sub || "rgba(255,255,255,0.6)" }]}>{hdr.sub}</Text>
+        
+        {/* Dynamic Contact & Status Banner */}
+        <View style={[styles.statusBadgeBanner, { backgroundColor: hdr.badgeBg }]}>
+          <Ionicons name={hdr.icon} size={14} color={hdr.badgeColor} />
+          <Text style={[styles.statusBadgeText, { color: hdr.badgeColor }]}>{hdr.badgeText}</Text>
+        </View>
       </View>
 
-      {/* Center ring zone */}
+      {/* Center Zone (Pulse Rings & Live Camera) */}
       <View style={styles.centerZone}>
         {status !== "COMPLETED" && (
           <View style={styles.ringsWrapper}>
-            {/* Progress ring */}
+            {/* Progress Outer Ring */}
             <Svg width={220} height={220} style={StyleSheet.absoluteFillObject}>
               <Circle cx={110} cy={110} r={95} stroke={c.border || "rgba(255,255,255,0.12)"} strokeWidth={4} fill="transparent" />
               <Circle
                 cx={110} cy={110} r={95}
-                stroke={isActive ? "#10b981" : c.primary || "#6366f1"}
-                strokeWidth={4}
+                stroke={fingerDetected ? (status === "MEASURING" ? "#10b981" : "#3b82f6") : "#ef4444"}
+                strokeWidth={5}
                 fill="transparent"
                 strokeDasharray={circumference}
-                strokeDashoffset={circumference * (1 - (isActive ? progressRatio : 0))}
+                strokeDashoffset={circumference * (1 - (fingerDetected ? progressRatio : 0))}
                 strokeLinecap="round"
                 transform="rotate(-90 110 110)"
               />
             </Svg>
 
-            {/* Pulse ring with live camera */}
-            <Animated.View style={[styles.pulseRing, { transform: [{ scale: pulseScale }], borderColor: ringColor }]}>
+            {/* Glowing Pulse Ring with live camera preview */}
+            <Animated.View style={[styles.pulseRing, { transform: [{ scale: pulseScale }], borderColor: ringBorderColor }]}>
               <CameraPreview style={StyleSheet.absoluteFillObject} />
 
-              {/* Dark overlay for readability */}
-              <View style={[StyleSheet.absoluteFillObject, { backgroundColor: "rgba(0,0,0,0.35)" }]} />
+              {/* Translucent overlay backdrop */}
+              <View style={[StyleSheet.absoluteFillObject, { backgroundColor: "rgba(0,0,0,0.4)" }]} />
 
-              {status === "SIGNAL_LOW_QUALITY" ? (
+              {!fingerDetected ? (
+                /* Contact Warning State */
                 <View style={styles.centeredState}>
-                  <Ionicons name="finger-print-outline" size={48} color="#ffffff" style={{ opacity: 0.9 }} />
-                  <Text style={styles.stateLabel}>Place Finger</Text>
+                  <Ionicons name="finger-print" size={50} color="#f87171" style={{ marginBottom: 6 }} />
+                  <Text style={styles.stateLabelWarning}>Place Finger</Text>
+                  <Text style={styles.stateSubWarning}>Cover camera & torch</Text>
                 </View>
-              ) : status === "CALIBRATING" ? (
+              ) : status === "CALIBRATING" || bpm === 0 ? (
+                /* Calibrating / Signal Locking State */
                 <View style={styles.centeredState}>
-                  <ActivityIndicator size="large" color="#ffffff" />
-                  <Text style={styles.stateLabel}>Calibrating...</Text>
+                  <ActivityIndicator size="large" color="#3b82f6" style={{ marginBottom: 8 }} />
+                  <Text style={styles.stateLabel}>Locking Signal...</Text>
+                  <Text style={styles.stateSub}>Hold steady</Text>
                 </View>
               ) : (
-                /* Live heart rate metric */
+                /* Live Heart Rate Metric Display */
                 <View style={styles.metricsInner}>
                   <View style={styles.metricCol}>
-                    <Ionicons name="heart" size={24} color="#ef476f" style={{ marginBottom: 4 }} />
-                    <Animated.Text style={[styles.metricBig, { opacity: skeletonPulse, fontSize: 36 }]}>
-                      {bpm > 0 ? Math.round(bpm) : "--"}
+                    <Ionicons name="heart" size={26} color="#ef476f" style={{ marginBottom: 2 }} />
+                    <Animated.Text style={[styles.metricBig, { opacity: skeletonPulse }]}>
+                      {Math.round(bpm)}
                     </Animated.Text>
                     <Text style={styles.metricUnit}>BPM</Text>
                   </View>
@@ -331,7 +440,7 @@ export default function PPGMeasurementScreen({
           </View>
         )}
 
-        {/* Completed results card */}
+        {/* Completed Results Display */}
         {status === "COMPLETED" && (
           <Animated.View style={[styles.completedCard, { opacity: resultsFadeAnim, backgroundColor: c.card, borderColor: c.border }]}>
             <View style={styles.completedHeader}>
@@ -355,8 +464,12 @@ export default function PPGMeasurementScreen({
 
             <View style={styles.metaGrid}>
               <View style={styles.metaRow}>
-                <Text style={[styles.metaKey, { color: c.sub }]}>Confidence</Text>
+                <Text style={[styles.metaKey, { color: c.sub }]}>Signal Confidence</Text>
                 <Text style={[styles.metaVal, { color: confidence >= 60 ? "#10b981" : "#f59e0b" }]}>{Math.round(confidence)}%</Text>
+              </View>
+              <View style={styles.metaRow}>
+                <Text style={[styles.metaKey, { color: c.sub }]}>SNR (Signal-to-Noise)</Text>
+                <Text style={[styles.metaVal, { color: snr >= 2.5 ? "#10b981" : "#f59e0b" }]}>{snr.toFixed(1)} dB</Text>
               </View>
             </View>
 
@@ -369,72 +482,68 @@ export default function PPGMeasurementScreen({
             </TouchableOpacity>
           </Animated.View>
         )}
-
-        {/* Status banners */}
-        {status === "MOTION_ARTIFACT_DETECTED" && (
-          <View style={styles.statusBanner}>
-            <Ionicons name="walk" size={14} color="#f59e0b" />
-            <Text style={[styles.statusBannerText, { color: "#f59e0b" }]}>Motion detected — hold still</Text>
-          </View>
-        )}
-        {status === "TOO_MUCH_PRESSURE" && (
-          <View style={styles.statusBanner}>
-            <Ionicons name="hand-left-outline" size={14} color="#ef4444" />
-            <Text style={[styles.statusBannerText, { color: "#ef4444" }]}>Lighten finger pressure</Text>
-          </View>
-        )}
       </View>
 
-      {/* Bottom zone */}
+      {/* Bottom Zone: Live 30 FPS PPG Signal Graph & Telemetry */}
       {status !== "COMPLETED" && (
         <View style={styles.bottomZone}>
-          {/* Timer row */}
+          {/* Timer and Telemetry Row */}
           <View style={styles.timerRow}>
-            <Text style={[styles.timerText, { color: c.text }]}>
-              {isActive ? `${secondsRemaining}s remaining` : "Waiting for contact..."}
-            </Text>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+              <View style={[styles.liveIndicatorDot, { backgroundColor: fingerDetected ? "#10b981" : "#ef4444" }]} />
+              <Text style={[styles.timerText, { color: c.text }]}>
+                {fingerDetected ? `${secondsRemaining}s remaining` : "Waiting for contact..."}
+              </Text>
+            </View>
             <Text style={[styles.confText, { color: c.sub }]}>
-              {status === "CALIBRATING" ? "Locking signal..." : `Confidence: ${Math.round(confidence)}%`}
+              {fingerDetected ? `Confidence: ${Math.round(confidence)}%` : "Lens uncovered"}
             </Text>
           </View>
 
-          {/* Live waveform */}
+          {/* Live 30 FPS PPG Waveform Card */}
           <View style={[styles.waveCard, { backgroundColor: c.card, borderColor: c.border }]}>
             <View style={styles.waveHeader}>
-              <View style={[styles.waveDot, { backgroundColor: status === "MEASURING" ? "#10b981" : "#6b7280" }]} />
-              <Text style={[styles.waveLabel, { color: c.sub }]}>LIVE PPG SIGNAL</Text>
+              <View style={[styles.waveDot, { backgroundColor: fingerDetected ? "#10b981" : "#ef4444" }]} />
+              <Text style={[styles.waveLabel, { color: c.sub }]}>LIVE 30 FPS PPG SIGNAL WAVEFORM</Text>
+              <View style={{ flex: 1 }} />
+              <Text style={{ fontSize: 10, color: c.sub, fontWeight: "bold" }}>
+                {fingerDetected ? "30 Hz" : "SEARCHING"}
+              </Text>
             </View>
+
             <Svg width="100%" height={64}>
               <Defs>
                 <LinearGradient id="wg" x1="0" y1="0" x2="0" y2="1">
-                  <Stop offset="0%" stopColor={c.primary || "#6366f1"} stopOpacity="0.4" />
-                  <Stop offset="100%" stopColor={c.primary || "#6366f1"} stopOpacity="0.0" />
+                  <Stop offset="0%" stopColor={fingerDetected ? (c.primary || "#6366f1") : "#ef4444"} stopOpacity="0.35" />
+                  <Stop offset="100%" stopColor={fingerDetected ? (c.primary || "#6366f1") : "#ef4444"} stopOpacity="0.0" />
                 </LinearGradient>
               </Defs>
-              <Path d={getWaveformPath()} fill="none" stroke={c.primary || "#6366f1"} strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" />
-              <Path d={`${getWaveformPath()} L ${width - 96} 64 L 0 64 Z`} fill="url(#wg)" />
+              <Path
+                d={getWaveformPath()}
+                fill="none"
+                stroke={fingerDetected ? (c.primary || "#6366f1") : "#ef4444"}
+                strokeWidth={2.5}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+              <Path
+                d={`${getWaveformPath()} L ${width - 96} 64 L 0 64 Z`}
+                fill="url(#wg)"
+              />
+              {/* Real-time Leading Edge Dot */}
+              {fingerDetected && (
+                <Circle cx={dotX} cy={dotY} r={4} fill={c.primary || "#6366f1"} />
+              )}
             </Svg>
           </View>
 
-          {/* Tip card */}
-          <View style={[styles.tipCard, { backgroundColor: c.card, borderColor: c.border }]}>
-            <Ionicons name="bulb-outline" size={16} color={c.primary || "#6366f1"} />
-            <Text style={[styles.tipText, { color: c.sub }]}>
-              {status === "TOO_MUCH_PRESSURE"
-                ? "Rest your finger gently — pressing hard blocks capillary blood flow."
-                : status === "MOTION_ARTIFACT_DETECTED"
-                ? "Keep completely still. Rest your elbow on a flat surface."
-                : "Cover both the camera lens and flash LED with the pad of your finger."}
-            </Text>
-          </View>
-
-          {/* Action row */}
+          {/* Action Row */}
           <View style={styles.actionRow}>
             <TouchableOpacity style={[styles.cancelBtn, { borderColor: c.border }]} onPress={onCancel}>
-              <Text style={[styles.cancelBtnText, { color: c.text }]}>Cancel</Text>
+              <Text style={[styles.cancelBtnText, { color: c.text }]}>Cancel Scan</Text>
             </TouchableOpacity>
-            {(status === "TOO_MUCH_PRESSURE" || status === "SIGNAL_LOW_QUALITY") && (
-              <TouchableOpacity style={[styles.restartBtn, { backgroundColor: "#ef4444" }]} onPress={handleRestart}>
+            {(!fingerDetected || status === "TOO_MUCH_PRESSURE" || status === "SIGNAL_LOW_QUALITY") && (
+              <TouchableOpacity style={[styles.restartBtn, { backgroundColor: c.primary || "#6366f1" }]} onPress={handleRestart}>
                 <Ionicons name="refresh" size={16} color="#fff" style={{ marginRight: 6 }} />
                 <Text style={styles.restartBtnText}>Restart</Text>
               </TouchableOpacity>
@@ -449,54 +558,55 @@ export default function PPGMeasurementScreen({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    paddingHorizontal: 28,
+    paddingHorizontal: 24,
     justifyContent: "space-between",
-    paddingTop: Platform.OS === "ios" ? 50 : 28,
-    paddingBottom: Platform.OS === "ios" ? 36 : 24,
+    paddingTop: Platform.OS === "ios" ? 44 : 20,
+    paddingBottom: Platform.OS === "ios" ? 30 : 20,
   },
-  topZone: { alignItems: "center", marginTop: 8 },
-  title: { fontSize: 26, fontWeight: "bold", textAlign: "center", marginBottom: 6, letterSpacing: -0.4 },
-  subtext: { fontSize: 13, textAlign: "center", lineHeight: 20, paddingHorizontal: 16 },
+  topZone: { alignItems: "center", marginTop: 4 },
+  title: { fontSize: 24, fontWeight: "bold", textAlign: "center", marginBottom: 4, letterSpacing: -0.3 },
+  subtext: { fontSize: 13, textAlign: "center", lineHeight: 18, paddingHorizontal: 12, marginBottom: 10 },
+  statusBadgeBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingVertical: 5,
+    paddingHorizontal: 12,
+    borderRadius: 16,
+  },
+  statusBadgeText: { fontSize: 11, fontWeight: "bold", letterSpacing: 0.5 },
   centerZone: { alignItems: "center", justifyContent: "center", flex: 1 },
   ringsWrapper: { width: 220, height: 220, alignItems: "center", justifyContent: "center" },
   pulseRing: {
-    width: 172, height: 172, borderRadius: 86, borderWidth: 3,
+    width: 172, height: 172, borderRadius: 86, borderWidth: 3.5,
     alignItems: "center", justifyContent: "center", overflow: "hidden",
     shadowColor: "#000", shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.22, shadowRadius: 10, elevation: 6,
   },
   centeredState: { alignItems: "center", justifyContent: "center" },
-  stateLabel: { color: "#ffffff", fontSize: 13, fontWeight: "600", marginTop: 8 },
-  metricsInner: { flexDirection: "row", alignItems: "center", justifyContent: "center", paddingHorizontal: 8 },
-  metricCol: { alignItems: "center", flex: 1 },
-  metricBig: { color: "#ffffff", fontSize: 30, fontWeight: "bold", marginTop: 2, marginBottom: 1 },
-  metricUnit: { color: "rgba(255,255,255,0.65)", fontSize: 10, fontWeight: "bold" },
-  metricDivider: { width: 1, height: 48, backgroundColor: "rgba(255,255,255,0.2)", marginHorizontal: 4 },
-  statusBanner: {
-    flexDirection: "row", alignItems: "center", gap: 6,
-    paddingVertical: 7, paddingHorizontal: 14, borderRadius: 20, marginTop: 16,
-    backgroundColor: "rgba(255,255,255,0.06)",
-  },
-  statusBannerText: { fontSize: 12, fontWeight: "600" },
+  stateLabel: { color: "#ffffff", fontSize: 13, fontWeight: "bold", marginTop: 4 },
+  stateSub: { color: "rgba(255,255,255,0.7)", fontSize: 11, marginTop: 2 },
+  stateLabelWarning: { color: "#f87171", fontSize: 13, fontWeight: "bold" },
+  stateSubWarning: { color: "rgba(255,255,255,0.8)", fontSize: 10, marginTop: 2 },
+  metricsInner: { alignItems: "center", justifyContent: "center" },
+  metricCol: { alignItems: "center" },
+  metricBig: { color: "#ffffff", fontSize: 44, fontWeight: "bold", letterSpacing: -1 },
+  metricUnit: { color: "rgba(255,255,255,0.7)", fontSize: 11, fontWeight: "bold", marginTop: -4 },
   bottomZone: { width: "100%" },
-  timerRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 12, paddingHorizontal: 2 },
+  timerRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 8, paddingHorizontal: 2 },
+  liveIndicatorDot: { width: 8, height: 8, borderRadius: 4 },
   timerText: { fontSize: 13, fontWeight: "bold" },
   confText: { fontSize: 12 },
   waveCard: {
-    borderRadius: 18, borderWidth: 1, paddingHorizontal: 16, paddingTop: 10, paddingBottom: 10,
+    borderRadius: 18, borderWidth: 1, paddingHorizontal: 16, paddingTop: 10, paddingBottom: 8,
     marginBottom: 14, overflow: "hidden",
   },
   waveHeader: { flexDirection: "row", alignItems: "center", marginBottom: 6, gap: 6 },
   waveDot: { width: 7, height: 7, borderRadius: 4 },
-  waveLabel: { fontSize: 10, fontWeight: "bold", letterSpacing: 1 },
-  tipCard: {
-    flexDirection: "row", alignItems: "flex-start", gap: 10,
-    padding: 14, borderRadius: 16, borderWidth: 1, marginBottom: 16,
-  },
-  tipText: { flex: 1, fontSize: 12, lineHeight: 18 },
+  waveLabel: { fontSize: 10, fontWeight: "bold", letterSpacing: 0.8 },
   actionRow: { flexDirection: "row", gap: 12 },
-  cancelBtn: { flex: 1, height: 52, borderRadius: 16, borderWidth: 1, alignItems: "center", justifyContent: "center" },
+  cancelBtn: { flex: 1, height: 50, borderRadius: 16, borderWidth: 1, alignItems: "center", justifyContent: "center" },
   cancelBtnText: { fontSize: 15, fontWeight: "bold" },
-  restartBtn: { flex: 1, height: 52, borderRadius: 16, flexDirection: "row", alignItems: "center", justifyContent: "center" },
+  restartBtn: { flex: 1, height: 50, borderRadius: 16, flexDirection: "row", alignItems: "center", justifyContent: "center" },
   restartBtnText: { color: "#ffffff", fontSize: 15, fontWeight: "bold" },
   completedCard: { width: "100%", borderRadius: 24, borderWidth: 1, padding: 24, elevation: 4 },
   completedHeader: { alignItems: "center", marginBottom: 16 },
@@ -508,11 +618,10 @@ const styles = StyleSheet.create({
   resultBig: { fontSize: 38, fontWeight: "bold" },
   resultUnit: { fontSize: 14, fontWeight: "600", marginTop: -2 },
   resultDesc: { fontSize: 11, marginTop: 2 },
-  vertDivider: { width: 1, height: 72, marginHorizontal: 8 },
   metaGrid: { gap: 10, marginBottom: 20 },
   metaRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
   metaKey: { fontSize: 13 },
   metaVal: { fontSize: 13, fontWeight: "600" },
-  saveBtn: { height: 52, borderRadius: 16, flexDirection: "row", alignItems: "center", justifyContent: "center" },
+  saveBtn: { height: 50, borderRadius: 16, flexDirection: "row", alignItems: "center", justifyContent: "center" },
   saveBtnText: { color: "#ffffff", fontSize: 15, fontWeight: "bold" },
 });

@@ -7,6 +7,7 @@ import {
   Animated,
   Dimensions,
   Platform,
+  ActivityIndicator,
 } from "react-native";
 import Svg, { Circle, Path, Defs, LinearGradient, Stop } from "react-native-svg";
 import * as Haptics from "expo-haptics";
@@ -17,9 +18,11 @@ import { colors } from "../theme/colors";
 import {
   startHeartRateMeasurement,
   stopHeartRateMeasurement,
+  onHeartRateFrame,
   onHeartRateUpdate,
   onHeartRateDone,
   onHeartRateError,
+  type HeartRateFrameEvent,
 } from "../services/heartRateNative";
 
 const { width } = Dimensions.get("window");
@@ -73,6 +76,7 @@ export default function HeartRateScanner({
   const [status, setStatus] = useState<string>("CALIBRATING");
   const [pulseWave, setPulseWave] = useState<number>(0);
   const [snr, setSnr] = useState<number>(-10.0);
+  const [fingerDetected, setFingerDetected] = useState<boolean>(false);
 
   // Progress driven by native events (0–1)
   const [progressRatio, setProgressRatio] = useState<number>(0);
@@ -87,10 +91,27 @@ export default function HeartRateScanner({
   const prevStatusRef = useRef<string>("CALIBRATING");
   const isCompletedRef = useRef(false);
 
-  // 1. Live Native Event Subscription
+  // 1. Live Native Event Subscriptions
   useEffect(() => {
     isCompletedRef.current = false;
     startHeartRateMeasurement(uid);
+
+    // 30 FPS Frame Listener for real-time waveform & contact state
+    const unsubFrame = onHeartRateFrame((event: HeartRateFrameEvent) => {
+      if (isCompletedRef.current) return;
+      setFingerDetected(event.fingerDetected);
+
+      const val =
+        event.pulseWave !== undefined && Math.abs(event.pulseWave) > 1e-6
+          ? event.pulseWave
+          : (event.ppgValue - 128) / 128;
+
+      setWaveHistory((prev) => {
+        const next = [...prev.slice(1)];
+        next.push(val);
+        return next;
+      });
+    });
 
     const unsubUpdate = onHeartRateUpdate((event) => {
       if (isCompletedRef.current) return;
@@ -119,12 +140,6 @@ export default function HeartRateScanner({
         }
         prevStatusRef.current = nextStatus;
       }
-
-      setWaveHistory((prev) => {
-        const next = [...prev.slice(1)];
-        next.push(nextPulseWave);
-        return next;
-      });
     });
 
     // Native HeartRateDone drives completion — no JS timer needed
@@ -138,11 +153,11 @@ export default function HeartRateScanner({
     const unsubError = onHeartRateError(() => {
       if (isCompletedRef.current) return;
       isCompletedRef.current = true;
-      // Surface the best values collected so far
       if (onFinish) onFinish(bpm, spo2, confidence, status, snr);
     });
 
     return () => {
+      unsubFrame();
       unsubUpdate();
       unsubDone();
       unsubError();
@@ -150,49 +165,95 @@ export default function HeartRateScanner({
     };
   }, [uid]);
 
-  // 2. High-Performance Animations: Pulse Ring scale logic
+  // Pulse animation driven by real-time pulseWave spikes
   useEffect(() => {
-    Animated.spring(pulseScale, {
-      toValue: 1.0 + Math.max(-0.15, Math.min(0.25, pulseWave * 0.6)),
-      useNativeDriver: true,
-      friction: 4,
-      tension: 45,
-    }).start();
-  }, [pulseWave]);
+    if (fingerDetected && status === "MEASURING") {
+      Animated.spring(pulseScale, {
+        toValue: 1.0 + Math.max(-0.08, Math.min(0.2, pulseWave * 0.5)),
+        useNativeDriver: true,
+        friction: 3.5,
+        tension: 50,
+      }).start();
+    } else {
+      Animated.spring(pulseScale, {
+        toValue: 1.0,
+        useNativeDriver: true,
+        friction: 6,
+        tension: 30,
+      }).start();
+    }
+  }, [pulseWave, fingerDetected, status]);
 
-  // 4. Dynamic UX Text & State Logic
-  const getHeaderDetails = () => {
-    if (status === "TOO_MUCH_PRESSURE") {
+  // Status message text builder
+  const getStatusText = (): { title: string; desc: string; color: string; badge: string } => {
+    if (!fingerDetected) {
       return {
-        title: "Pressing Too Hard",
-        subtext: "Lighten your touch. Rest your finger gently over the camera lens.",
+        title: "Place Index Finger",
+        desc: "Cover the camera lens and flash LED completely with your finger.",
         color: themeColors.error,
+        badge: "NO FINGER DETECTED",
       };
     }
-    if (status === "MEASURING") {
-      return {
-        title: "Keep steady",
-        subtext: "Scanning your cardiac pulse wave...",
-        color: themeColors.text,
-      };
+    switch (status) {
+      case "TOO_MUCH_PRESSURE":
+        return {
+          title: "Too Much Pressure",
+          desc: "Press lighter on the lens. Hard pressure restricts blood flow.",
+          color: themeColors.error,
+          badge: "HIGH PRESSURE",
+        };
+      case "MOTION_ARTIFACT_DETECTED":
+        return {
+          title: "Motion Detected",
+          desc: "Hold steady. Rest your elbow on a desk or leg to avoid movement.",
+          color: "#f59e0b",
+          badge: "HOLD STILL",
+        };
+      case "SIGNAL_LOW_QUALITY":
+        return {
+          title: "Low Signal Quality",
+          desc: "Adjust position to completely cover the camera lens and flash.",
+          color: "#f59e0b",
+          badge: "WEAK SIGNAL",
+        };
+      case "MEASURING":
+        return {
+          title: "Measuring Pulse",
+          desc: "Keep still and relax. Scanning cardiac capillary pulse...",
+          color: themeColors.success,
+          badge: "SCANNING ACTIVE",
+        };
+      case "CALIBRATING":
+      default:
+        return {
+          title: "Finger Locked · Calibrating",
+          desc: "Finger contact confirmed. Locking onto cardiac signal...",
+          color: themeColors.primary,
+          badge: "CALIBRATING",
+        };
     }
-    return {
-      title: "Calibrating...",
-      subtext: "Analyzing skin tone and contact patch...",
-      color: themeColors.text,
-    };
   };
 
-  const header = getHeaderDetails();
+  const statusInfo = getStatusText();
 
-  // 5. Smooth Line Waveform Path Generation
+  // Dynamic status ring color
+  const getRingColor = (): string => {
+    if (!fingerDetected) return themeColors.error;
+    if (status === "TOO_MUCH_PRESSURE") return themeColors.error;
+    if (status === "SIGNAL_LOW_QUALITY" || status === "MOTION_ARTIFACT_DETECTED") return "#f59e0b";
+    if (status === "MEASURING") return themeColors.success;
+    return themeColors.primary;
+  };
+
+  const ringColor = getRingColor();
+
+  // Svg Waveform path construction
   const getWaveformPath = (): string => {
-    const H = 80;
-    const W = width - 48;
+    const H = 60;
+    const W = width - 96;
     const minVal = Math.min(...waveHistory);
     const maxVal = Math.max(...waveHistory);
     const range = maxVal - minVal;
-
     return waveHistory
       .map((val, idx) => {
         const x = (idx / 59) * W;
@@ -203,158 +264,128 @@ export default function HeartRateScanner({
       .join(" ");
   };
 
-  const secondsRemaining = Math.max(0, Math.round(30 * (1 - progressRatio)));
+  const radius = 95;
+  const circumference = 2 * Math.PI * radius;
+  const strokeDashoffset = circumference * (1 - (fingerDetected ? progressRatio : 0));
 
   return (
     <View style={[styles.container, { backgroundColor: themeColors.background }]}>
-      {/* ZONE 1: Top (Guidance Header) */}
-      <View style={styles.topZone}>
-        <Text style={[styles.title, { color: header.color }]}>
-          {header.title}
+      {/* Top Header / Instructions */}
+      <View style={styles.header}>
+        <Text style={[styles.titleText, { color: statusInfo.color }]}>
+          {statusInfo.title}
         </Text>
-        <Text style={[styles.subtext, { color: themeColors.text, opacity: 0.7 }]}>
-          {header.subtext}
+        <Text style={[styles.descText, { color: themeColors.text, opacity: 0.7 }]}>
+          {statusInfo.desc}
         </Text>
+
+        <View style={[styles.badgeContainer, { backgroundColor: statusInfo.color + "20" }]}>
+          <View style={[styles.badgeDot, { backgroundColor: statusInfo.color }]} />
+          <Text style={[styles.badgeText, { color: statusInfo.color }]}>
+            {statusInfo.badge}
+          </Text>
+        </View>
       </View>
 
-      {/* ZONE 2: Center (Animate Pulse Ring & Core BPM/SpO2 Values with Progress Ring) */}
-      <View style={styles.centerZone}>
-        <View style={styles.ringsWrapper}>
-          {/* Progress Ring wrapping the centerpiece */}
-          <Svg width={220} height={220} style={StyleSheet.absoluteFillObject}>
-            <Circle
-              cx={110}
-              cy={110}
-              r={95}
-              stroke={themeColors.surface}
-              strokeWidth={5}
-              fill="transparent"
-              opacity={0.2}
-            />
-            <Circle
-              cx={110}
-              cy={110}
-              r={95}
-              stroke={themeColors.primary}
-              strokeWidth={5}
-              fill="transparent"
-              strokeDasharray={2 * Math.PI * 95}
-              strokeDashoffset={2 * Math.PI * 95 * (1 - progressRatio)}
-              strokeLinecap="round"
-              transform="rotate(-90 110 110)"
-            />
-          </Svg>
+      {/* Main Center Rings & Preview */}
+      <View style={styles.centerContainer}>
+        {/* Progress SVG Outer Circle */}
+        <Svg width={220} height={220} style={StyleSheet.absoluteFillObject}>
+          <Circle
+            cx={110}
+            cy={110}
+            r={radius}
+            stroke={themeColors.surface}
+            strokeWidth={4}
+            fill="transparent"
+          />
+          <Circle
+            cx={110}
+            cy={110}
+            r={radius}
+            stroke={ringColor}
+            strokeWidth={4}
+            fill="transparent"
+            strokeDasharray={circumference}
+            strokeDashoffset={strokeDashoffset}
+            strokeLinecap="round"
+            transform="rotate(-90 110 110)"
+          />
+        </Svg>
 
-          {/* Scale Animated Pulse Ring */}
-          <Animated.View
-            style={[
-              styles.pulseRing,
-              {
-                transform: [{ scale: pulseScale }],
-                backgroundColor: themeColors.surface,
-                borderColor: status === "TOO_MUCH_PRESSURE" ? themeColors.error : themeColors.primary,
-              },
-            ]}
-          >
-            <CameraPreview style={StyleSheet.absoluteFillObject} />
-            <View style={styles.cameraOverlay} />
+        {/* Pulse animated ring containing native camera preview */}
+        <Animated.View
+          style={[
+            styles.pulseRing,
+            {
+              transform: [{ scale: pulseScale }],
+              borderColor: ringColor,
+            },
+          ]}
+        >
+          <CameraPreview style={StyleSheet.absoluteFillObject} />
 
-            <View style={styles.bpmDisplayContainer}>
-              <View style={styles.metricsCenterRow}>
-                {/* Heart Rate Column */}
-                <View style={styles.metricCenterItem}>
-                  <Ionicons
-                    name="heart"
-                    size={24}
-                    color={status === "TOO_MUCH_PRESSURE" ? themeColors.error : themeColors.primary}
-                    style={styles.heartIcon}
-                  />
-                  <Text style={[styles.bpmText, { color: "#ffffff" }]}>
-                      {bpm > 0 ? Math.round(bpm) : "--"}
-                    </Text>
-                  <Text style={[styles.bpmLabel, { color: "rgba(255,255,255,0.7)" }]}>
-                    BPM
-                  </Text>
-                </View>
+          {/* Readability backdrop */}
+          <View style={[StyleSheet.absoluteFillObject, { backgroundColor: "rgba(0,0,0,0.4)" }]} />
 
-                {/* Vertical Divider */}
-                <View style={styles.dividerVertical} />
-
-                {/* SpO2 Column */}
-                <View style={styles.metricCenterItem}>
-                  <Ionicons
-                    name="water"
-                    size={24}
-                    color="#06b6d4"
-                    style={styles.heartIcon}
-                  />
-                  <Text style={[styles.bpmText, { color: "#ffffff" }]}>
-                      {spo2 > 0 ? Math.round(spo2) : "--"}
-                    </Text>
-                  <Text style={[styles.bpmLabel, { color: "rgba(255,255,255,0.7)" }]}>
-                    % SpO₂
-                  </Text>
-                </View>
-              </View>
+          {!fingerDetected ? (
+            <View style={styles.centeredState}>
+              <Ionicons name="finger-print" size={48} color="#f87171" />
+              <Text style={styles.stateLabelWarning}>Place Finger</Text>
             </View>
-          </Animated.View>
-        </View>
+          ) : status === "CALIBRATING" || bpm === 0 ? (
+            <View style={styles.centeredState}>
+              <ActivityIndicator size="large" color={themeColors.primary} />
+              <Text style={styles.stateLabel}>Calibrating...</Text>
+            </View>
+          ) : (
+            <View style={styles.metricsInner}>
+              <Ionicons name="heart" size={24} color="#ef476f" style={{ marginBottom: 2 }} />
+              <Text style={styles.bpmNumber}>{Math.round(bpm)}</Text>
+              <Text style={styles.bpmLabel}>BPM</Text>
+            </View>
+          )}
+        </Animated.View>
+      </View>
 
-        {/* Quality indicator / Status message in Center */}
-        {status === "MOTION_ARTIFACT_DETECTED" && (
-          <View style={[styles.statusBanner, { backgroundColor: themeColors.error + "20" }]}>
-            <Ionicons name="walk" size={16} color={themeColors.error} />
-            <Text style={[styles.statusBannerText, { color: themeColors.error }]}>
-              Hold still · Motion detected
+      {/* Bottom Waveform & Action Button */}
+      <View style={styles.bottomContainer}>
+        {/* Live 30 FPS Waveform SVG */}
+        <View style={[styles.waveformCard, { backgroundColor: themeColors.surface, borderColor: themeColors.surface }]}>
+          <View style={styles.waveformHeader}>
+            <Ionicons name="pulse" size={14} color={ringColor} />
+            <Text style={[styles.waveformTitle, { color: themeColors.text, opacity: 0.6 }]}>
+              LIVE 30 FPS PPG WAVEFORM
             </Text>
           </View>
-        )}
-      </View>
-
-      {/* ZONE 3: Bottom (Real-time wave graph and progress indicator) */}
-      <View style={styles.bottomZone}>
-        <View style={styles.countdownContainer}>
-          <Text style={[styles.countdownLabel, { color: themeColors.text }]}>
-            {secondsRemaining}s remaining
-          </Text>
-          <Text style={[styles.confidenceLabel, { color: themeColors.text, opacity: 0.6 }]}>
-            Confidence: {status === "CALIBRATING" ? "Scanning" : `${confidence}%`}
-          </Text>
-        </View>
-
-        {/* Live Waveform Graph */}
-        <View style={[styles.waveformCard, { backgroundColor: themeColors.surface, borderColor: themeColors.primary + "30" }]}>
-          <Svg width="100%" height={80}>
+          <Svg width="100%" height={60}>
             <Defs>
-              <LinearGradient id="waveGrad" x1="0" y1="0" x2="0" y2="1">
-                <Stop offset="0%" stopColor={themeColors.primary} stopOpacity="0.3" />
-                <Stop offset="100%" stopColor={themeColors.primary} stopOpacity="0.0" />
+              <LinearGradient id="scanWaveGrad" x1="0" y1="0" x2="0" y2="1">
+                <Stop offset="0%" stopColor={ringColor} stopOpacity="0.35" />
+                <Stop offset="100%" stopColor={ringColor} stopOpacity="0.0" />
               </LinearGradient>
             </Defs>
             <Path
               d={getWaveformPath()}
               fill="none"
-              stroke={themeColors.primary}
-              strokeWidth={3}
+              stroke={ringColor}
+              strokeWidth={2.5}
               strokeLinecap="round"
               strokeLinejoin="round"
             />
-            {/* Filled area underneath path */}
             <Path
-              d={`${getWaveformPath()} L ${width - 48} 80 L 0 80 Z`}
-              fill="url(#waveGrad)"
+              d={`${getWaveformPath()} L ${width - 96} 60 L 0 60 Z`}
+              fill="url(#scanWaveGrad)"
             />
           </Svg>
         </View>
 
-        {/* Action Controls */}
         <TouchableOpacity
-          style={[styles.cancelButton, { borderColor: themeColors.primary + "50" }]}
+          style={[styles.cancelButton, { borderColor: themeColors.text + "30" }]}
           onPress={onCancel}
+          activeOpacity={0.7}
         >
-          <Text style={[styles.cancelButtonText, { color: themeColors.text }]}>
-            Cancel Scan
-          </Text>
+          <Text style={[styles.cancelText, { color: themeColors.text }]}>Cancel Scan</Text>
         </TouchableOpacity>
       </View>
     </View>
@@ -366,35 +397,47 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingHorizontal: 24,
     justifyContent: "space-between",
-    paddingTop: Platform.OS === "ios" ? 40 : 20,
-    paddingBottom: Platform.OS === "ios" ? 30 : 20,
+    paddingTop: Platform.OS === "ios" ? 50 : 24,
+    paddingBottom: Platform.OS === "ios" ? 34 : 24,
   },
-  topZone: {
+  header: {
     alignItems: "center",
-    marginTop: 20,
   },
-  title: {
-    fontSize: 26,
+  titleText: {
+    fontSize: 22,
     fontWeight: "bold",
     textAlign: "center",
-    marginBottom: 8,
+    marginBottom: 6,
   },
-  subtext: {
-    fontSize: 14,
+  descText: {
+    fontSize: 13,
     textAlign: "center",
-    lineHeight: 20,
-    paddingHorizontal: 20,
+    lineHeight: 18,
+    paddingHorizontal: 16,
+    marginBottom: 10,
   },
-  centerZone: {
+  badgeContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 12,
+    gap: 6,
+  },
+  badgeDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
+  badgeText: {
+    fontSize: 10,
+    fontWeight: "bold",
+    letterSpacing: 0.5,
+  },
+  centerContainer: {
     alignItems: "center",
     justifyContent: "center",
     flex: 1,
-  },
-  ringsWrapper: {
-    width: 220,
-    height: 220,
-    alignItems: "center",
-    justifyContent: "center",
   },
   pulseRing: {
     width: 170,
@@ -402,103 +445,72 @@ const styles = StyleSheet.create({
     borderRadius: 85,
     borderWidth: 3,
     alignItems: "center",
-    justifyContent: "center",
+    justify: "center",
     overflow: "hidden",
-    elevation: 4,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 6,
   },
-  cameraOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(0, 0, 0, 0.45)",
-  },
-  bpmDisplayContainer: {
+  centeredState: {
     alignItems: "center",
-    justifyContent: "center",
-    width: "100%",
+    justify: "center",
   },
-  metricsCenterRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    width: "100%",
-    paddingHorizontal: 8,
+  stateLabel: {
+    color: "#ffffff",
+    fontSize: 12,
+    fontWeight: "600",
+    marginTop: 6,
   },
-  metricCenterItem: {
-    alignItems: "center",
-    flex: 1,
-  },
-  dividerVertical: {
-    width: 1,
-    height: 50,
-    backgroundColor: "rgba(255, 255, 255, 0.25)",
-    marginHorizontal: 2,
-  },
-  heartIcon: {
-    marginBottom: 4,
-  },
-  bpmText: {
-    fontSize: 32,
+  stateLabelWarning: {
+    color: "#f87171",
+    fontSize: 13,
     fontWeight: "bold",
+    marginTop: 4,
+  },
+  metricsInner: {
+    alignItems: "center",
+  },
+  bpmNumber: {
+    color: "#ffffff",
+    fontSize: 42,
+    fontWeight: "bold",
+    letterSpacing: -1,
   },
   bpmLabel: {
+    color: "rgba(255, 255, 255, 0.7)",
+    fontSize: 11,
+    fontWeight: "600",
+    marginTop: -2,
+  },
+  bottomContainer: {
+    width: "100%",
+  },
+  waveformCard: {
+    borderRadius: 16,
+    borderWidth: 1,
+    paddingHorizontal: 16,
+    paddingTop: 10,
+    paddingBottom: 6,
+    marginBottom: 16,
+    overflow: "hidden",
+  },
+  waveformHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginBottom: 6,
+  },
+  waveformTitle: {
     fontSize: 10,
     fontWeight: "bold",
     letterSpacing: 0.5,
   },
-  statusBanner: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    borderRadius: 20,
-    marginTop: 24,
-    gap: 6,
-  },
-  statusBannerText: {
-    fontSize: 12,
-    fontWeight: "600",
-  },
-  bottomZone: {
-    width: "100%",
-    marginBottom: 10,
-  },
-  countdownContainer: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 12,
-    paddingHorizontal: 4,
-  },
-  countdownLabel: {
-    fontSize: 14,
-    fontWeight: "bold",
-  },
-  confidenceLabel: {
-    fontSize: 12,
-    fontWeight: "500",
-  },
-  waveformCard: {
-    borderRadius: 20,
-    borderWidth: 1,
-    padding: 12,
-    height: 104,
-    justifyContent: "center",
-    overflow: "hidden",
-    marginBottom: 20,
-  },
   cancelButton: {
-    height: 56,
-    borderRadius: 18,
+    height: 48,
+    borderRadius: 14,
     borderWidth: 1,
     alignItems: "center",
-    justifyContent: "center",
-    width: "100%",
+    justify: "center",
   },
-  cancelButtonText: {
-    fontSize: 16,
-    fontWeight: "bold",
+  cancelText: {
+    fontSize: 15,
+    fontWeight: "600",
   },
 });

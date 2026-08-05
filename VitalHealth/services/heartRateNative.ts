@@ -14,6 +14,7 @@ if (Platform.OS === 'android' && HeartRateModule) {
 export interface HeartRateFrameEvent {
   fingerDetected: boolean;
   ppgValue: number;       // green channel value for waveform
+  pulseWave?: number;     // latest bandpass-filtered pulse wave sample
   avgRed: number;
   avgGreen: number;
   avgBlue: number;
