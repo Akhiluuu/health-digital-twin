@@ -1,6 +1,6 @@
 <h1 align="center">
   <br>
-  🫀 VitalHealth — AI-Powered Physiological Digital Twin & Medication Vault
+  🫀 VitalHealth : AI-Powered Physiological Digital Twin & Medication Vault
   <br>
 </h1>
 
