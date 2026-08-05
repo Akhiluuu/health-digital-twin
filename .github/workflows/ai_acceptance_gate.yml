@@ -2,9 +2,9 @@ name: VitalHealth AI Production Release Gate
 
 on:
   push:
-    branches: [ main, production, release/* ]
+    branches: [ develop, release/* ]
   pull_request:
-    branches: [ main, production ]
+    branches: [ main, develop ]
 
 jobs:
   ai-acceptance-gate:
