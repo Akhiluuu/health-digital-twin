@@ -614,15 +614,17 @@ class QwenInferenceEngine(HealthBrainSubsystem):
         elif any(kw in query_lower for kw in ["medication", "medications", "medicine", "medicines", "taking", "prescription", "vault", "pills", "drug", "drugs", "regimen"]):
             response_lines.append("### 💊 Active Medication Vault Overview & Guidance")
             active_meds = []
-            for line in context.clinical_snapshot_block.split("\n"):
-                if "Active Regimen:" in line and "No active medications" not in line:
-                    m_txt = line.replace("Active Regimen:", "").strip()
-                    if m_txt:
-                        active_meds.append(m_txt)
-                elif "Active Medications:" in line and "No active medications" not in line:
-                    m_txt = line.replace("Active Medications:", "").strip()
-                    if m_txt:
-                        active_meds.append(m_txt)
+            combined_lines = (context.clinical_snapshot_block + "\n" + context.master_summary_block).split("\n")
+            for line in combined_lines:
+                clean_line = line.strip()
+                line_lower = clean_line.lower()
+                if any(hdr in line_lower for hdr in ["active regimen:", "active medications:", "active medication:", "prescriptions:", "logged prescriptions:"]):
+                    if "no active medications" not in line_lower and "none" not in line_lower and "none currently" not in line_lower:
+                        parts = clean_line.split(":", 1)
+                        if len(parts) > 1 and parts[1].strip():
+                            extracted = parts[1].strip()
+                            if extracted and extracted not in active_meds:
+                                active_meds.append(extracted)
 
             if active_meds:
                 response_lines.append(f"**Logged Prescriptions:** {', '.join(active_meds)}\n")
