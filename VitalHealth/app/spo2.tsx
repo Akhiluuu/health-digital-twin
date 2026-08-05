@@ -28,6 +28,7 @@ import CameraPreview from "../components/CameraPreview";
 import { useTheme } from "../context/ThemeContext";
 import { useFamily } from "../context/FamilyContext";
 import { colors } from "../theme/colors";
+import { addVitalsRecord } from "../database/vitalsDB";
 import { useNotifications } from "../context/NotificationContext";
 
 // 🔹 Firebase Imports
@@ -452,6 +453,17 @@ export default function Spo2Screen() {
           { merge: true }
         );
       }
+
+      // Save to SQLite vitals log database
+      const now = new Date();
+      const dateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+      const timeStr = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+      await addVitalsRecord({
+        date: dateStr,
+        time: timeStr,
+        spo2: value,
+        notes: "SpO₂ Measurement",
+      }).catch(err => console.log("Failed to insert spo2 record into vitalsDB:", err));
 
       setScreenState("dashboard");
 

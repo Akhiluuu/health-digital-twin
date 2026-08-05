@@ -316,9 +316,11 @@ export default function TwinScreen() {
   const [showSuccessModal, setShowSuccessModal] = useState(false);
 
   useEffect(() => {
-    if (calibrationJustSucceeded && isFocused) {
-      setShowSuccessModal(true);
+    if (calibrationJustSucceeded) {
       dismissCalibrationSuccess();
+      if (isFocused) {
+        setShowSuccessModal(true);
+      }
     }
   }, [calibrationJustSucceeded, isFocused]);
 

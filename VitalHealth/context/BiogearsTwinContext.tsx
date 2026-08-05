@@ -144,7 +144,7 @@ export interface BiogearsTwinContextValue {
   setSimulationName: (name: string) => void;
 
   // Actions
-  registerTwin: (payload: BiogearsRegistrationPayload) => Promise<void>;
+  registerTwin: (payload: BiogearsRegistrationPayload, isSilent?: boolean) => Promise<void>;
   runSimulation: () => Promise<void>;
   runMultiDayCatchup: (days: number) => Promise<void>;
   recheckTwinStatus: () => Promise<void>;
@@ -529,6 +529,7 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
 
   // Clear state instantly on user change to prevent old profile routines/vitals from showing
   useEffect(() => {
+    setCalibrationJustSucceeded(false);
     if (!twinUserId || twinUserId === 'temp_user') {
       setIsTwinLoading(false);
       setTwinStatus('unregistered');
@@ -2021,20 +2022,24 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
 
   // ── Register Twin ─────────────────────────────────────────────────────────
 
-  const registerTwin = useCallback(async (payload: BiogearsRegistrationPayload) => {
+  const autoCalibratedProfilesRef = useRef<Set<string>>(new Set());
+
+  const registerTwin = useCallback(async (payload: BiogearsRegistrationPayload, isSilent: boolean = false) => {
     if (isRegisteringRef.current) {
       log('[BioGearsContext] Registration already in progress. Ignoring duplicate call.');
       return;
     }
     isRegisteringRef.current = true;
-    log(`[BioGearsContext] Registering Twin: ${payload.user_id}...`);
+    log(`[BioGearsContext] Registering Twin: ${payload.user_id} (isSilent=${isSilent})...`);
     setTwinStatus('registering');
     setTwinStatusError(null);
     try {
       await BiogearsAPI.registerTwin(payload);
       log(`[BioGearsContext] Registration SUCCESS for ${payload.user_id}`);
       setTwinStatus('ready');
-      setCalibrationJustSucceeded(true);
+      if (!isSilent) {
+        setCalibrationJustSucceeded(true);
+      }
       await scheduleInactivityReminder().catch(() => {});
     } catch (err: any) {
       log(`[BioGearsContext] Registration FAILED:`, err);
@@ -2061,7 +2066,7 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
       setTwinStatusError(null);
 
       // Background auto-calibration if clinical profile parameters mismatch
-      if (profile) {
+      if (profile && !autoCalibratedProfilesRef.current.has(twinUserId)) {
         const age = Math.round(parseAge(profile.dateOfBirth));
         const weight = parseKg(profile.weight);
         const height = parseCm(profile.height);
@@ -2086,16 +2091,14 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
         const hasT2D = remoteProfile.conditions?.includes("Type 2 Diabetes") || false;
 
         const matches = 
-          // FIX: Use tolerance-based comparison for age (±1 year) to handle DOB parsing
-          // edge cases (e.g., birthday today, UTC vs local midnight, parseAge floating point).
           Math.abs((remoteProfile.age ?? 0) - age) <= 1 &&
-          Math.abs((remoteProfile.weight_kg ?? 0) - weight) < 0.1 &&
-          Math.abs((remoteProfile.height_cm ?? 0) - height) < 0.1 &&
+          Math.abs((remoteProfile.weight_kg ?? 0) - weight) < 1.0 &&
+          Math.abs((remoteProfile.height_cm ?? 0) - height) < 1.0 &&
           remoteProfile.sex === sex &&
-          Math.abs((remoteProfile.body_fat ?? 0.2) - body_fat) < 0.01 &&
-          Math.abs((remoteProfile.resting_hr ?? 72.0) - resting_hr) < 0.1 &&
-          Math.abs((remoteProfile.systolic_bp ?? 114.0) - systolic_bp) < 0.1 &&
-          Math.abs((remoteProfile.diastolic_bp ?? 73.5) - diastolic_bp) < 0.1 &&
+          Math.abs((remoteProfile.body_fat ?? 0.2) - body_fat) < 0.05 &&
+          Math.abs((remoteProfile.resting_hr ?? 72.0) - resting_hr) < 10.0 &&
+          Math.abs((remoteProfile.systolic_bp ?? 114.0) - systolic_bp) < 15.0 &&
+          Math.abs((remoteProfile.diastolic_bp ?? 73.5) - diastolic_bp) < 15.0 &&
           hasSmoker === is_smoker &&
           hasAnemia === has_anemia &&
           hasT1D === has_type1_diabetes &&
@@ -2107,7 +2110,8 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
             return;
           }
           isRecalibratingRef.current = true;
-          log('[BiogearsTwin] Demographics mismatch detected. Auto-recalibrating remote digital twin...');
+          autoCalibratedProfilesRef.current.add(twinUserId);
+          log('[BiogearsTwin] Demographics mismatch detected. Auto-recalibrating remote digital twin silently...');
           const payload: BiogearsRegistrationPayload = {
             user_id: twinUserId,
             profile_name: profile?.firstName ? `${profile.firstName} ${profile.lastName || ""}`.trim() : undefined,
@@ -2130,12 +2134,12 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
             current_medications: medications,
           };
           
-          registerTwin(payload)
+          registerTwin(payload, true)
             .then(() => {
-              log('[BiogearsTwin] Background auto-calibration completed successfully.');
+              log('[BiogearsTwin] Background silent auto-calibration completed successfully.');
             })
             .catch(err => {
-              error('[BiogearsTwin] Background auto-calibration failed:', err);
+              error('[BiogearsTwin] Background silent auto-calibration failed:', err);
             })
             .finally(() => {
               isRecalibratingRef.current = false;

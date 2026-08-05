@@ -34,6 +34,8 @@ import { doc, onSnapshot } from "firebase/firestore";
 import { db } from "../../services/firebase";
 import { getUserId } from "../../services/firebaseSync";
 import { subscribeToMemberHealth } from "../../services/familySync";
+import { getAllVitalsRecords } from "../../database/vitalsDB";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const { width } = Dimensions.get("window");
 const CARD_SIZE = width / 2 - 22;
@@ -234,6 +236,36 @@ export default function HomeScreen() {
     let active = true;
     let unsubscribe: (() => void) | undefined;
 
+    const loadLocalVitalsFallback = async (uid: string) => {
+      try {
+        const storedSpo2 = await AsyncStorage.getItem(`latest_spo2_${uid}`);
+        if (active && storedSpo2) {
+          const parsed = JSON.parse(storedSpo2);
+          if (parsed?.value) setSpo2((prev) => (prev > 0 ? prev : Number(parsed.value)));
+        }
+
+        const storedHr = await AsyncStorage.getItem(`latest_heartRate_${uid}`);
+        if (active && storedHr) {
+          const parsed = JSON.parse(storedHr);
+          if (parsed?.value) setMeasuredHeartRate((prev) => (prev !== null ? prev : Number(parsed.value)));
+        }
+
+        const records = await getAllVitalsRecords();
+        if (active && records && records.length > 0) {
+          const latestHrRec = records.find((r) => r.heartRate !== null && r.heartRate !== undefined);
+          if (latestHrRec?.heartRate) {
+            setMeasuredHeartRate((prev) => (prev !== null ? prev : Number(latestHrRec.heartRate)));
+          }
+          const latestSpo2Rec = records.find((r) => r.spo2 !== null && r.spo2 !== undefined);
+          if (latestSpo2Rec?.spo2) {
+            setSpo2((prev) => (prev > 0 ? prev : Number(latestSpo2Rec.spo2)));
+          }
+        }
+      } catch (e) {
+        console.log("Local vitals fallback load error:", e);
+      }
+    };
+
     const subscribeToVitals = async () => {
       try {
         let uid: string | null = null;
@@ -248,11 +280,14 @@ export default function HomeScreen() {
         setSpo2(0);
         setMeasuredHeartRate(null);
 
+        // Load local SQLite / AsyncStorage fallbacks right away
+        await loadLocalVitalsFallback(uid);
+
         if (isSwitched && activeMemberId && activeMemberId !== "self") {
           const unsub = subscribeToMemberHealth(uid, (data) => {
             if (active && data) {
-              if (data.spo2 !== undefined) setSpo2(data.spo2 || 0);
-              if (data.heartRate !== undefined) setMeasuredHeartRate(data.heartRate || null);
+              if (data.spo2 !== undefined && data.spo2 > 0) setSpo2(data.spo2);
+              if (data.heartRate !== undefined && data.heartRate > 0) setMeasuredHeartRate(Math.round(data.heartRate));
             }
           });
           unsubscribe = unsub;
@@ -263,8 +298,11 @@ export default function HomeScreen() {
             (snapshot: any) => {
               if (active && snapshot.exists()) {
                 const data = snapshot.data();
-                setSpo2(data.spo2 !== undefined ? data.spo2 : 0);
-                setMeasuredHeartRate(data.heartRate !== undefined ? Math.round(data.heartRate) : null);
+                const fetchedSpo2 = data.spo2 ?? data.healthData?.spo2;
+                const fetchedHr = data.heartRate ?? data.healthData?.heartRate;
+
+                if (fetchedSpo2 !== undefined && fetchedSpo2 > 0) setSpo2(fetchedSpo2);
+                if (fetchedHr !== undefined && fetchedHr > 0) setMeasuredHeartRate(Math.round(fetchedHr));
               }
             },
             (err: any) => {
@@ -504,7 +542,7 @@ export default function HomeScreen() {
           />
           <TelemetryCard
             title="HEART RATE"
-            value={measuredHeartRate !== null ? measuredHeartRate.toString() : (lastVitals?.heart_rate ? Math.round(lastVitals.heart_rate).toString() : "--")}
+            value={measuredHeartRate !== null && measuredHeartRate > 0 ? measuredHeartRate.toString() : (lastVitals?.heart_rate && lastVitals.heart_rate > 0 ? Math.round(lastVitals.heart_rate).toString() : "--")}
             unit="BPM"
             icon={<PulsingHeart color="#ef4444" />}
             accent="#ef4444"
@@ -515,7 +553,7 @@ export default function HomeScreen() {
           </TelemetryCard>
           <TelemetryCard
             title="OXYGEN SAT."
-            value={spo2 || "--"}
+            value={spo2 > 0 ? spo2.toString() : (lastVitals?.spo2 && lastVitals.spo2 > 0 ? Math.round(lastVitals.spo2).toString() : "--")}
             unit="%"
             icon={<Ionicons name="water-sharp" size={20} color="#06b6d4" />}
             accent="#06b6d4"

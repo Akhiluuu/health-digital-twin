@@ -29,6 +29,10 @@ import {
   VitalsRecord,
 } from "../database/vitalsDB";
 import { log, error } from "../utils/logger";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { doc, setDoc } from "firebase/firestore";
+import { db } from "../services/firebase";
+import { getUserId } from "../services/firebaseSync";
 
 export default function LogVitalsScreen() {
   const router = useRouter();
@@ -258,6 +262,29 @@ export default function LogVitalsScreen() {
         medicationTaken,
         notes: notes.trim() || null,
       };
+
+      // Sync vitals to Firebase and AsyncStorage for Live Telemetry Grid
+      if (recordData.heartRate || recordData.spo2) {
+        try {
+          const uid = await getUserId();
+          if (uid) {
+            const updates: any = { updatedAt: new Date().toISOString() };
+            if (recordData.heartRate) {
+              updates.heartRate = recordData.heartRate;
+              updates.heartRateTimestamp = new Date().toISOString();
+              await AsyncStorage.setItem(`latest_heartRate_${uid}`, JSON.stringify({ value: recordData.heartRate, timestamp: new Date().toISOString() }));
+            }
+            if (recordData.spo2) {
+              updates.spo2 = recordData.spo2;
+              updates.spo2Timestamp = new Date().toISOString();
+              await AsyncStorage.setItem(`latest_spo2_${uid}`, JSON.stringify({ value: recordData.spo2, timestamp: new Date().toISOString() }));
+            }
+            await setDoc(doc(db, "users", uid), updates, { merge: true });
+          }
+        } catch (e) {
+          log("⚠️ Failed to sync logged vitals to Firebase/AsyncStorage:", e);
+        }
+      }
 
       if (recordId) {
         // Edit Mode

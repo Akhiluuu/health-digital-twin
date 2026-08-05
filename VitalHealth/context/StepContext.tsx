@@ -31,6 +31,7 @@ import {
   startNativeTracking,
   stopNativeTracking,
   resetNativeSteps,
+  updateNativeSteps,
   getTodayStepsNative,
   getWeeklyStepsNative,
   getMonthlyStepsNative,
@@ -251,11 +252,13 @@ export const StepProvider: React.FC<{
       if (!isTrackingRef.current) return;
       try {
         const { steps: nativeSteps, source } = await getTodayStepsNative();
-        if (nativeSteps > 0 && nativeSteps !== stepsRef.current) {
+        if (nativeSteps > 0 && nativeSteps > stepsRef.current) {
           stepsRef.current = nativeSteps;
           dirtyRef.current = true;
           setSteps(nativeSteps);
           setDataSource(source);
+        } else if (stepsRef.current > nativeSteps && nativeSteps > 0) {
+          updateNativeSteps(stepsRef.current);
         }
       } catch { /* ignore */ }
     }, 3000);
@@ -407,7 +410,7 @@ export const StepProvider: React.FC<{
     nativeUnsubRef.current?.();
     nativeUnsubRef.current = subscribeToStepUpdates((event) => {
       // Native service sends absolute daily step count
-      if (event.steps !== stepsRef.current) {
+      if (event.steps > stepsRef.current) {
         stepsRef.current = event.steps;
         dirtyRef.current = true;
         setSteps(event.steps);
@@ -559,11 +562,13 @@ export const StepProvider: React.FC<{
     if (Platform.OS !== 'android') return;
     if (isSwitched) return;
     const { steps: nativeSteps, source } = await getTodayStepsNative();
-    if (nativeSteps !== stepsRef.current) {
+    if (nativeSteps > stepsRef.current) {
       stepsRef.current = nativeSteps;
       dirtyRef.current = true;
       setSteps(nativeSteps);
       setDataSource(source);
+    } else if (stepsRef.current > nativeSteps) {
+      updateNativeSteps(stepsRef.current);
     }
   }, [isSwitched]);
 
@@ -846,6 +851,9 @@ export const StepProvider: React.FC<{
           startClock(Date.now() - sessionStart);
           if (Platform.OS === 'android') {
             const profileName = activeProfile ? `${activeProfile.firstName} ${activeProfile.lastName || ""}`.trim() : "";
+            if (savedSteps > 0) {
+              await updateNativeSteps(savedSteps).catch(() => {});
+            }
             await startNativeTracking(userUid, profileName).catch((err) => {
               warn("⚠️ [StepContext] startNativeTracking failed:", err);
             });

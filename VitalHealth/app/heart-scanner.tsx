@@ -35,6 +35,8 @@ import { useFamily } from "../context/FamilyContext";
 import { db } from "../services/firebase";
 import { getUserId } from "../services/firebaseSync";
 import { doc, setDoc, collection, addDoc, serverTimestamp, query, orderBy, limit, onSnapshot } from "firebase/firestore";
+import { addVitalsRecord } from "../database/vitalsDB";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 // Import native bridge
 import {
@@ -235,7 +237,7 @@ export default function HeartScannerScreen() {
           timestamp: serverTimestamp(),
         });
 
-        // Update active profile summary
+        // Save daily summary
         await setDoc(
           doc(db, "users", uid),
           {
@@ -245,7 +247,24 @@ export default function HeartScannerScreen() {
           },
           { merge: true }
         );
+
+        await AsyncStorage.setItem(
+          `latest_heartRate_${uid}`,
+          JSON.stringify({ value: Math.round(finalResult.bpm), timestamp: new Date().toISOString() })
+        );
       }
+
+      // Save to local SQLite vitalsDB as well
+      const now = new Date();
+      const dateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+      const timeStr = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+      await addVitalsRecord({
+        date: dateStr,
+        time: timeStr,
+        heartRate: Math.round(finalResult.bpm),
+        notes: "Camera PPG Heart Rate Scan",
+      }).catch(err => console.log("Failed to insert heartRate record into vitalsDB:", err));
+
       Vibration.vibrate(50);
       router.back();
     } catch (e) {
