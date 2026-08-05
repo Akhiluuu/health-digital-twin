@@ -268,11 +268,11 @@ class AIOrchestrator(HealthBrainSubsystem):
             cog_a = patient_context.get("cognitive_assessment") or {}
             fit_a = patient_context.get("fitness_activity") or {}
             hyd_a = patient_context.get("hydration") or {}
-            sim_v = patient_context.get("sim_vitals") or {}
-            organ_s = patient_context.get("organ_scores") or {}
+            sim_v = patient_context.get("sim_vitals") or patient_context.get("simulation_vitals") or {}
+            organ_s = patient_context.get("organ_scores") or patient_context.get("organScores") or {}
 
             extra_lines = []
-            if body_m:
+            if body_m and isinstance(body_m, dict):
                 h = body_m.get("height", "170 cm")
                 w = body_m.get("weight", "70 kg")
                 bmi = body_m.get("bmi", "22.5")
@@ -281,26 +281,38 @@ class AIOrchestrator(HealthBrainSubsystem):
                 bp = body_m.get("blood_pressure", "120/80 mmHg")
                 extra_lines.append(f"• BODY MEASUREMENTS & PHYSIQUE: Height {h}, Weight {w}, BMI {bmi} kg/m², Blood Type {bt}, Resting HR {rhr} bpm, BP {bp}")
 
-            if sim_v:
-                hr_v = sim_v.get("heart_rate", 72)
-                bp_v = sim_v.get("blood_pressure", "120/80")
-                map_v = sim_v.get("map", 93.3)
-                co_v = sim_v.get("cardiac_output", 5.0)
-                sv_v = sim_v.get("stroke_volume", 70.0)
-                rr_v = sim_v.get("respiration", 14.0)
-                tv_v = sim_v.get("tidal_volume", 500.0)
-                ph_v = sim_v.get("arterial_ph", 7.40)
-                gluc_v = sim_v.get("glucose", 96.0)
-                spo2_v = sim_v.get("spo2", 98.5)
-                temp_v = sim_v.get("core_temperature", 37.0)
+            if sim_v and isinstance(sim_v, dict):
+                hr_v = sim_v.get("heart_rate") or sim_v.get("heartRate") or sim_v.get("hr") or (body_m.get("resting_hr") if isinstance(body_m, dict) else 72) or 72
+                sys_bp = sim_v.get("systolic_bp") or sim_v.get("systolicBp")
+                dia_bp = sim_v.get("diastolic_bp") or sim_v.get("diastolicBp")
+                if sys_bp and dia_bp:
+                    bp_v = f"{sys_bp}/{dia_bp} mmHg"
+                else:
+                    bp_v = sim_v.get("blood_pressure") or sim_v.get("bloodPressure") or (body_m.get("blood_pressure") if isinstance(body_m, dict) else "120/80 mmHg") or "120/80 mmHg"
+                
+                map_v = sim_v.get("map") or sim_v.get("mean_arterial_pressure") or 93.3
+                co_v = sim_v.get("cardiac_output") or sim_v.get("cardiacOutput") or 5.0
+                sv_v = sim_v.get("stroke_volume") or sim_v.get("strokeVolume") or 70.0
+                rr_v = sim_v.get("respiration") or sim_v.get("respiration_rate") or sim_v.get("respirationRate") or 14.0
+                tv_v = sim_v.get("tidal_volume") or sim_v.get("tidalVolume") or 500.0
+                ph_v = sim_v.get("arterial_ph") or sim_v.get("arterialPh") or 7.40
+                gluc_v = sim_v.get("glucose") or 96.0
+                spo2_v = sim_v.get("spo2") or sim_v.get("spO2") or 98.5
+                temp_v = sim_v.get("core_temperature") or sim_v.get("coreTemperature") or 37.0
                 extra_lines.append(f"• BIOGEARS DIGITAL TWIN VITALS: HR: {hr_v} bpm | BP: {bp_v} | MAP: {map_v} mmHg | Cardiac Output: {co_v} L/min | Stroke Volume: {sv_v} mL | Respiration: {rr_v} br/min | Tidal Volume: {tv_v} mL | Arterial pH: {ph_v} | Glucose: {gluc_v} mg/dL | SpO2: {spo2_v}% | Core Temp: {temp_v} °C")
 
-            if organ_s:
-                org_str = ", ".join([f"{k.capitalize()}: {v}/100" for k, v in organ_s.items() if isinstance(v, (int, float))])
-                if org_str:
-                    extra_lines.append(f"• ORGAN SYSTEM HEALTH SCORES: {org_str}")
+            if organ_s and isinstance(organ_s, dict):
+                scores_dict = organ_s.get("scores") if isinstance(organ_s.get("scores"), dict) else organ_s
+                org_pairs = []
+                for k, v in scores_dict.items():
+                    if isinstance(v, (int, float)) and k not in ["overall_score", "timestamp"]:
+                        org_pairs.append(f"{k.capitalize()}: {v:.0f}/100")
+                if organ_s.get("overall_score") and isinstance(organ_s.get("overall_score"), (int, float)):
+                    org_pairs.insert(0, f"Overall: {organ_s['overall_score']:.0f}/100")
+                if org_pairs:
+                    extra_lines.append(f"• ORGAN SYSTEM HEALTH SCORES: {', '.join(org_pairs)}")
 
-            if cog_a:
+            if cog_a and isinstance(cog_a, dict):
                 cog_age = cog_a.get("cognitive_age", state.profile.age)
                 score = cog_a.get("overall_score", "85")
                 domains = cog_a.get("domain_scores") or {}
@@ -312,10 +324,10 @@ class AIOrchestrator(HealthBrainSubsystem):
                 extra_lines.append(f"• COGNITIVE STRESS TEST & BRAIN HEALTH: Cognitive Age {cog_age} yrs (Chronological: {state.profile.age}) | Overall Score: {score}/100 | Domain Breakdown: {dom_str}{tests_summary} | Testing Streak: {streak} days")
 
             if fit_a or hyd_a:
-                steps_cnt = fit_a.get("steps", 0)
-                cals = fit_a.get("calories", 0)
-                dist = fit_a.get("distance_km", 0)
-                water_ml = hyd_a.get("water_intake_ml", 0)
+                steps_cnt = fit_a.get("steps", 0) if isinstance(fit_a, dict) else 0
+                cals = fit_a.get("calories", 0) if isinstance(fit_a, dict) else 0
+                dist = fit_a.get("distance_km", 0) if isinstance(fit_a, dict) else 0
+                water_ml = hyd_a.get("water_intake_ml", 0) if isinstance(hyd_a, dict) else 0
                 extra_lines.append(f"• LIFESTYLE & FITNESS: Daily Steps: {steps_cnt} | Calories Burned: {cals} kcal | Distance: {dist} km | Hydration: {water_ml} mL / 2,500 mL goal")
 
             if extra_lines:
