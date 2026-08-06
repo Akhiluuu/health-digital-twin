@@ -38,7 +38,7 @@ class ReasoningResult(TypedDict):
 # Ollama configuration (local, on-premise)
 # ---------------------------------------------------------------------------
 _OLLAMA_ENDPOINT = os.getenv("OLLAMA_ENDPOINT", "http://127.0.0.1:11434/api/chat")
-_OLLAMA_MODEL    = os.getenv("OLLAMA_MODEL", "qwen2.5:14b")
+_OLLAMA_MODEL    = os.getenv("OLLAMA_MODEL", "qwen2.5:7b")
 _OLLAMA_TIMEOUT  = int(os.getenv("OLLAMA_TIMEOUT_SECONDS", "25"))
 _MAX_TOKENS      = int(os.getenv("LLM_MAX_TOKENS", "1024"))
 
@@ -357,13 +357,20 @@ You are the patient's trusted health companion. Answer clearly, safely, and with
                     models = [m.get("name") for m in data.get("models", []) if m.get("name")]
                     if not models:
                         return None
+                    # 1. Check exact match
                     for m in models:
-                        if _OLLAMA_MODEL in m or m in _OLLAMA_MODEL:
+                        if m == _OLLAMA_MODEL or m.split(":")[0] == _OLLAMA_MODEL:
                             return m
-                    logger.info(f"🤖 Auto-selected available Ollama model: '{models[0]}' (requested '{_OLLAMA_MODEL}')")
+                    # 2. Check model family match (e.g., 'qwen2.5')
+                    family = _OLLAMA_MODEL.split(":")[0]
+                    for m in models:
+                        if family in m:
+                            logger.info(f"🤖 Matched Ollama model family: '{m}' for requested '{_OLLAMA_MODEL}'")
+                            return m
+                    logger.info(f"🤖 Auto-selected available Ollama model: '{models[0]}'")
                     return models[0]
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"Ollama tags lookup failed: {e}")
         return None
 
     def _call_ollama(self, messages: List[Dict[str, str]], temperature: float = 0.60, top_p: float = 0.92, max_tokens: int = 700) -> Optional[str]:
