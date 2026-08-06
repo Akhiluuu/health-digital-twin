@@ -184,33 +184,34 @@ def run_biogears(scenario_path: str, user_id: str = "unknown") -> EngineResult:
         # ── Stream stdout lines in real-time ─────────────────────────────────
         output_lines = []
         try:
-            for line in proc.stdout:
-                # BioGears uses \r to overwrite the progress bar in the same
-                # terminal line. Split on \r and take the last segment so we
-                # always get the final content of each overwritten line.
-                line = line.rstrip()
-                if '\r' in line:
-                    line = line.split('\r')[-1].rstrip()
+            if proc.stdout:
+                for line in proc.stdout:
+                    # BioGears uses \r to overwrite the progress bar in the same
+                    # terminal line. Split on \r and take the last segment so we
+                    # always get the final content of each overwritten line.
+                    line = line.rstrip()
+                    if '\r' in line:
+                        line = line.split('\r')[-1].rstrip()
 
-                # Strip ANSI escape sequences (progress bar colour/erase codes)
-                line = _strip_ansi(line)
+                    # Strip ANSI escape sequences (progress bar colour/erase codes)
+                    line = _strip_ansi(line)
 
-                if not line:
-                    continue
+                    if not line:
+                        continue
 
-                # Filter out pure progress-bar noise ("N process; Progress M/M; Elapsed Time ...")
-                if _PROGRESS_RE.match(line.strip()):
-                    continue
+                    # Filter out pure progress-bar noise ("N process; Progress M/M; Elapsed Time ...")
+                    if _PROGRESS_RE.match(line.strip()):
+                        continue
 
-                output_lines.append(line)
+                    output_lines.append(line)
 
-                # Important lines → INFO, rest → DEBUG
-                stripped = line.strip()
-                if any(stripped.startswith(p) or p.lower() in stripped.lower()
-                       for p in _IMPORTANT_PREFIXES):
-                    logger.info(f"⚙️   [{user_id}] {stripped}")
-                else:
-                    logger.debug(f"     {stripped}")
+                    # Important lines → INFO, rest → DEBUG
+                    stripped = line.strip()
+                    if any(stripped.startswith(p) or p.lower() in stripped.lower()
+                           for p in _IMPORTANT_PREFIXES):
+                        logger.info(f"⚙️   [{user_id}] {stripped}")
+                    else:
+                        logger.debug(f"     {stripped}")
 
         except Exception as read_err:
             logger.warning(f"⚠️  Stream read error: {read_err}")
@@ -281,7 +282,7 @@ def _prune_old_logs(user_id: str) -> None:
         logger.warning(f"Failed to prune old logs: {e}")
 
 
-def _write_log(path: Path, lines: list, user_id: str = None):
+def _write_log(path: Path, lines: list, user_id: str | None = None):
     try:
         Path(path).write_text("\n".join(lines), encoding="utf-8")
         if user_id:
@@ -351,15 +352,18 @@ class CrossProcessUserLock:
             self.file_handle = None
             self._thread_lock.release()
             return False
-        except ImportError:
+        except (ImportError, AttributeError):
             # fcntl not available (Windows): try msvcrt
             try:
                 import msvcrt
-                self.file_handle.seek(0)
-                mode = msvcrt.LK_LOCK if blocking else msvcrt.LK_NBLCK
-                msvcrt.locking(self.file_handle.fileno(), mode, 1)
+                if hasattr(msvcrt, "locking"):
+                    self.file_handle.seek(0)
+                    lk_lock = getattr(msvcrt, "LK_LOCK", 1)
+                    lk_nblck = getattr(msvcrt, "LK_NBLCK", 2)
+                    mode = lk_lock if blocking else lk_nblck
+                    msvcrt.locking(self.file_handle.fileno(), mode, 1)
                 return True
-            except (ImportError, OSError):
+            except (ImportError, OSError, AttributeError):
                 # Fall through: treat as acquired (single-process environment)
                 return True
         except Exception as e:
@@ -378,12 +382,14 @@ class CrossProcessUserLock:
                 try:
                     import fcntl
                     fcntl.flock(self.file_handle, fcntl.LOCK_UN)
-                except ImportError:
+                except (ImportError, AttributeError):
                     try:
                         import msvcrt
-                        self.file_handle.seek(0)
-                        msvcrt.locking(self.file_handle.fileno(), msvcrt.LK_UNLCK, 1)
-                    except Exception:
+                        if hasattr(msvcrt, "locking"):
+                            self.file_handle.seek(0)
+                            mode = getattr(msvcrt, "LK_UNLCK", 0)
+                            msvcrt.locking(self.file_handle.fileno(), mode, 1)
+                    except (ImportError, OSError, AttributeError):
                         pass
                 try:
                     self.file_handle.close()

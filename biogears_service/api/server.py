@@ -35,6 +35,16 @@ from biogears_service.api import dpss_scheduler as _dpss_sched
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("DigitalTwin")
 
+def _to_dict(obj: Any) -> Dict[str, Any]:
+    """Safely converts a Pydantic model or dict to a dictionary, avoiding Pydantic v2 deprecation warnings."""
+    if isinstance(obj, dict):
+        return obj
+    if hasattr(obj, "model_dump"):
+        return obj.model_dump()
+    if hasattr(obj, "dict"):
+        return obj.dict()
+    return dict(obj)
+
 def run_path_checker():
     paths = {
         "Base Directory": BASE_DIR,
@@ -204,12 +214,14 @@ class CrossProcessFileLock:
                 import fcntl
                 flags = fcntl.LOCK_EX
                 fcntl.flock(self.file_handle, flags)
-            except ImportError:
+            except (ImportError, AttributeError):
                 try:
                     import msvcrt
-                    self.file_handle.seek(0)
-                    msvcrt.locking(self.file_handle.fileno(), msvcrt.LK_LOCK, 1)
-                except (ImportError, OSError):
+                    if hasattr(msvcrt, "locking"):
+                        self.file_handle.seek(0)
+                        mode = getattr(msvcrt, "LK_LOCK", 1)
+                        msvcrt.locking(self.file_handle.fileno(), mode, 1)
+                except (ImportError, OSError, AttributeError):
                     pass
         except Exception:
             pass
@@ -220,12 +232,14 @@ class CrossProcessFileLock:
             try:
                 import fcntl
                 fcntl.flock(self.file_handle, fcntl.LOCK_UN)
-            except ImportError:
+            except (ImportError, AttributeError):
                 try:
                     import msvcrt
-                    self.file_handle.seek(0)
-                    msvcrt.locking(self.file_handle.fileno(), msvcrt.LK_UNLCK, 1)
-                except Exception:
+                    if hasattr(msvcrt, "locking"):
+                        self.file_handle.seek(0)
+                        mode = getattr(msvcrt, "LK_UNLCK", 0)
+                        msvcrt.locking(self.file_handle.fileno(), mode, 1)
+                except (ImportError, OSError, AttributeError):
                     pass
             try:
                 self.file_handle.close()
@@ -533,7 +547,7 @@ def _check_state_file_validity(state_file: Path, user_id: str) -> None:
                         import gzip
                         with gzip.open(latest_valid, "rb") as f_in:
                             with open(state_file, "wb") as f_out:
-                                shutil.copyfileobj(f_in, f_out)
+                                shutil.copyfileobj(f_in, f_out)  # type: ignore[arg-type]
                     else:
                         shutil.copy2(str(latest_valid), str(state_file))
                     logger.info(f"♻️ [{user_id}] Auto-healed state file from backup: {latest_valid.name}")
@@ -580,7 +594,7 @@ def _run_batch_sync_blocking(user_id: str, events: list) -> dict:
             state_hash = hasher.hexdigest()
             
         # Calculate events hash
-        event_dicts = [e if isinstance(e, dict) else e.dict() for e in events]
+        event_dicts = [_to_dict(e) for e in events]
         cleaned_events = []
         for e in event_dicts:
             cleaned_events.append({
@@ -648,7 +662,7 @@ def _run_batch_sync_blocking_impl(user_id: str, events: list) -> dict:
     state_file = USER_STATES_DIR / f"{user_id}.xml"
     _check_state_file_validity(state_file, user_id)
 
-    event_dicts = [e if isinstance(e, dict) else e.dict() for e in events]
+    event_dicts = [_to_dict(e) for e in events]
 
     now_ts = time.time()
     for e in event_dicts:
@@ -1101,7 +1115,7 @@ def get_all_profiles(
         if not USER_STATES_DIR.exists():
             return {"profiles": []}
 
-        stored = db.list_profiles()
+        stored = db.list_profiles() or {}
 
         # Find all files matching *.xml or *.xml.gz
         state_files = list(USER_STATES_DIR.glob("*.xml")) + list(USER_STATES_DIR.glob("*.xml.gz"))
@@ -1117,11 +1131,13 @@ def get_all_profiles(
             uids.add(uid)
 
         for uid in uids:
-            meta = stored.get(uid, {})
-            conditions = meta.get("conditions", [])
+            meta = stored.get(uid)
+            if not isinstance(meta, dict):
+                meta = {}
+            conditions = meta.get("conditions") or []
 
             # --- Apply filters ---
-            if sex and meta.get("sex", "").lower() != sex.lower():
+            if sex and (meta.get("sex") or "").lower() != sex.lower():
                 continue
             if min_age is not None and (meta.get("age") or 0) < min_age:
                 continue
@@ -1271,7 +1287,7 @@ def _register_impl(data: RegistrationRequest):
         )
 
     # ── 1. Validate registration fields before touching the engine ────────────
-    reg_errors = sim_validator.validate_registration(data.dict())
+    reg_errors = sim_validator.validate_registration(_to_dict(data))
     if reg_errors:
         logger.warning(f"❌ Registration validation failed for {data.user_id}: {reg_errors}")
         raise HTTPException(status_code=422, detail={"validation_errors": reg_errors})
@@ -1342,7 +1358,7 @@ def _register_impl(data: RegistrationRequest):
     try:
         path = scenario_builder.build_registration_scenario(
             data.user_id, data.age, data.weight, data.height,
-            data.sex, data.body_fat, data.dict()
+            data.sex, data.body_fat, _to_dict(data)
         )
 
         if _run_biogears_via_celery(path, user_id=data.user_id):
@@ -2023,7 +2039,7 @@ def _predict_whatif_impl(data: WhatIfRequest):
     state_file = USER_STATES_DIR / f"{data.user_id}.xml"
     _check_state_file_validity(state_file, data.user_id)
 
-    event_dict = data.event.dict()
+    event_dict = _to_dict(data.event)
     errors = sim_validator.validate_events([event_dict])
     if errors:
         raise HTTPException(status_code=422, detail={"validation_errors": errors})
@@ -2295,7 +2311,7 @@ def get_caloric_balance(user_id: str, events: List[HealthEvent]):
     if not profile:
         raise HTTPException(status_code=404, detail=f"Twin '{user_id}' not found.")
     # db.get_profile() returns the metadata dict directly
-    event_dicts = [e.dict() for e in events]
+    event_dicts = [_to_dict(e) for e in events]
     return analytics.compute_bmr_and_balance(profile, event_dicts)
 
 

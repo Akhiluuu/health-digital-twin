@@ -115,7 +115,7 @@ def _water_xml(ml: float) -> str:
     )
 
 
-def validate_and_convert_substance_unit(substance_name: str, val: float, passed_unit: str = None) -> float:
+def validate_and_convert_substance_unit(substance_name: str, val: float, passed_unit: str | None = None) -> float:
     """
     Validates that the passed dosing unit is compatible with the substance registry,
     and performs safe scaling/conversions to prevent dosing scale/conversion errors.
@@ -168,7 +168,7 @@ def validate_and_convert_substance_unit(substance_name: str, val: float, passed_
     return val
 
 
-def _substance_xml(name: str, val: float, is_stacked: bool = False, unit: str = None) -> str:
+def _substance_xml(name: str, val: float, is_stacked: bool = False, unit: str | None = None) -> str:
     """
     Routes a substance to the correct BioGears administration action.
 

@@ -8,6 +8,7 @@ import json
 import sqlite3
 import contextvars
 import threading
+from contextlib import closing
 from typing import Optional, Dict, Any
 from pathlib import Path
 from biogears_service.simulation.config import BASE_DIR
@@ -34,7 +35,7 @@ def get_connection():
     use_postgres = False
     if DATABASE_URL or (POSTGRES_HOST and POSTGRES_DB):
         try:
-            import psycopg2
+            import psycopg2  # type: ignore[import-untyped]
             use_postgres = True
         except ImportError:
             import logging
@@ -44,7 +45,7 @@ def get_connection():
             )
 
     if use_postgres:
-        import psycopg2
+        import psycopg2  # type: ignore[import-untyped]
         if DATABASE_URL:
             conn = psycopg2.connect(DATABASE_URL)
         else:
@@ -58,7 +59,7 @@ def get_connection():
         if not _db_initialized:
             with _db_init_lock:
                 if not _db_initialized:
-                    with conn.cursor() as cur:
+                    with closing(conn.cursor()) as cur:
                         # Core profiles table
                         cur.execute("""
                             CREATE TABLE IF NOT EXISTS profiles (
@@ -117,11 +118,11 @@ def get_connection():
         return conn, False
 
 
-def write_audit_log(conn, is_pg: bool, user_id: str, action: str, performed_by: str, details: str = None) -> None:
+def write_audit_log(conn, is_pg: bool, user_id: str, action: str, performed_by: str, details: str | None = None) -> None:
     """Inserts a record into the audit logs table."""
     try:
         if is_pg:
-            with conn.cursor() as cur:
+            with closing(conn.cursor()) as cur:
                 cur.execute("""
                     INSERT INTO audit_logs (user_id, action, performed_by, details)
                     VALUES (%s, %s, %s, %s);
@@ -181,7 +182,7 @@ def upsert_profile(user_id: str, metadata: Dict[str, Any]) -> None:
         actor = current_actor.get()
         if is_pg:
             with conn:
-                with conn.cursor() as cur:
+                with closing(conn.cursor()) as cur:
                     cur.execute("""
                         INSERT INTO profiles (user_id, metadata)
                         VALUES (%s, %s)
@@ -210,7 +211,7 @@ def get_profile(user_id: str) -> Optional[Dict[str, Any]]:
         actor = current_actor.get()
         if is_pg:
             with conn:
-                with conn.cursor() as cur:
+                with closing(conn.cursor()) as cur:
                     cur.execute("SELECT metadata FROM profiles WHERE user_id = %s;", (user_id,))
                     row = cur.fetchone()
                     write_audit_log(conn, is_pg, user_id, "VIEW", actor, "Profile details viewed")
@@ -240,7 +241,7 @@ def delete_profile(user_id: str) -> bool:
         actor = current_actor.get()
         if is_pg:
             with conn:
-                with conn.cursor() as cur:
+                with closing(conn.cursor()) as cur:
                     cur.execute("DELETE FROM profiles WHERE user_id = %s RETURNING user_id;", (user_id,))
                     row = cur.fetchone()
                     existed = row is not None
@@ -268,7 +269,7 @@ def list_profiles() -> Dict[str, Any]:
         actor = current_actor.get()
         if is_pg:
             with conn:
-                with conn.cursor() as cur:
+                with closing(conn.cursor()) as cur:
                     cur.execute("SELECT user_id, metadata FROM profiles;")
                     rows = cur.fetchall()
                     write_audit_log(conn, is_pg, "all", "LIST", actor, "All profiles listed")

@@ -121,8 +121,9 @@ def _engine_thread(job_id: str, scenario_path: str, user_id: str,
 
         output_lines = []
         try:
-            for line in proc.stdout:
-                output_lines.append(line.rstrip())
+            if proc.stdout:
+                for line in proc.stdout:
+                    output_lines.append(line.rstrip())
         finally:
             timer.cancel()
 
@@ -333,7 +334,7 @@ def start_stream(user_id: str, events: list) -> Dict[str, Any]:
     now_ts = time.time()
     event_dicts = []
     for e in events:
-        d = e if isinstance(e, dict) else e.dict()
+        d = e if isinstance(e, dict) else (e.model_dump() if hasattr(e, "model_dump") else e.dict())
         # Prefer explicit timestamp; fall back to time_offset (seconds from now)
         if not d.get("timestamp"):
             d["timestamp"] = now_ts + (d.get("time_offset") or 0)

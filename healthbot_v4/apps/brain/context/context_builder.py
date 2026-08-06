@@ -82,12 +82,16 @@ class ContextBudgeter(HealthBrainSubsystem):
         total_text = snapshot_block + plan_block + long_block + summary_block + risks_block + rag_context + sim_context
         token_est = len(total_text) // 4
 
+        # Sanitize summary and snapshot blocks for HIPAA-compliant logging
+        from healthbot_v4.apps.brain.security.phi_sanitizer import phi_sanitizer
+        sanitized_summary = phi_sanitizer.sanitize_text(summary_block, patient_name=patient_state.profile.first_name)
+
         logger.info(f"Assembled dynamic context for {patient_state.patient_id}: ~{token_est} tokens budgeted")
 
         return BudgetedContext(
             patient_id=patient_state.patient_id,
             clinical_snapshot_block=snapshot_block,
-            master_summary_block=summary_block,
+            master_summary_block=sanitized_summary,
             active_risks_block=risks_block,
             retrieval_plan_block=plan_block,
             rag_retrieval_block=rag_context if rag_context else "CLINICAL REFERENCE: None",
@@ -95,3 +99,18 @@ class ContextBudgeter(HealthBrainSubsystem):
             longitudinal_block=long_block,
             total_token_estimate=token_est,
         )
+
+    def build_budgeted_context(self, patient_state: PatientState, query: str = "") -> BudgetedContext:
+        """Helper building a complete BudgetedContext given a patient state and query."""
+        from healthbot_v4.apps.brain.copilot.clinical_snapshot import ClinicalSnapshotEngine
+        from healthbot_v4.apps.brain.reasoning.retrieval_planner import ContextRetrievalPlanner
+        from healthbot_v4.apps.brain.reasoning.clinical_intent import ClinicalIntentEngine
+
+        snapshot = ClinicalSnapshotEngine().generate_snapshot(patient_state)
+        intent = ClinicalIntentEngine().classify_intent(query if query else "general health query")
+        plan = ContextRetrievalPlanner().create_retrieval_plan(intent, patient_state)
+        return self.assemble_context(patient_state, snapshot, plan)
+
+
+# Backward compatibility alias
+ContextBuilder = ContextBudgeter

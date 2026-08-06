@@ -1007,7 +1007,7 @@ export default function AIHealthScreen() {
             <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 8 }}>
               {item.text.toLowerCase().includes("water") || item.text.toLowerCase().includes("hydrat") ? (
                 <TouchableOpacity
-                  onPress={() => router.push("/hydration")}
+                  onPress={() => router.push({ pathname: "/(tabs)/history", params: { tab: "hydration" } } as any)}
                   style={{ backgroundColor: "#0284c718", paddingHorizontal: 10, paddingVertical: 4, borderRadius: 10, borderWidth: 1, borderColor: "#0284c730", flexDirection: "row", alignItems: "center", gap: 4 }}
                 >
                   <Ionicons name="water-outline" size={12} color="#0284c7" />

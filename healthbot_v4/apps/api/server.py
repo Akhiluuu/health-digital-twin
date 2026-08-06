@@ -8,6 +8,7 @@ from contextlib import asynccontextmanager
 from typing import Dict, Any, List, Optional
 from pydantic import BaseModel
 from fastapi import FastAPI, HTTPException, status, Depends
+from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 from healthbot_v4.shared.config.settings import settings
@@ -185,6 +186,29 @@ async def process_explainable_query(req: QueryRequest):
             "sources_cited": res.metadata.get("sources_cited"),
         },
     }
+
+
+@app.post("/api/v5/brain/query/stream", tags=["AI Reasoning Engine"])
+@app.post("/api/v1/brain/reasoning/stream", tags=["AI Reasoning Engine"])
+async def stream_query_reasoning(req: QueryRequest):
+    """Server-Sent Events (SSE) endpoint for token-by-token real-time LLM streaming."""
+    from healthbot_v4.apps.brain.reasoning.qwen_engine import QwenInferenceEngine
+    from healthbot_v4.apps.brain.context.context_builder import ContextBuilder
+    
+    state = state_mgr.get_or_create_state(req.patient_id)
+    ctx_builder = ContextBuilder()
+    context = ctx_builder.build_budgeted_context(state, req.query)
+    
+    engine = QwenInferenceEngine()
+    if not engine.model_loaded:
+        await engine.initialize()
+
+    async def event_generator():
+        async for token in engine.generate_reasoning_stream(context, req.query):
+            yield f"data: {token}\n\n"
+        yield "data: [DONE]\n\n"
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 
 @app.post("/api/v5/twin/simulate", response_model=SimulationResult, tags=["BioGears Digital Twin"])
