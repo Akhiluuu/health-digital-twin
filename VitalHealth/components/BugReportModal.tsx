@@ -100,32 +100,6 @@ export default function BugReportModal({
     }
   };
 
-  const handleTakePhoto = async () => {
-    try {
-      const permission = await ImagePicker.requestCameraPermissionsAsync();
-      if (!permission.granted) {
-        Alert.alert("Permission Needed", "Camera access is required to take a picture.");
-        return;
-      }
-
-      const result = await ImagePicker.launchCameraAsync({
-        allowsEditing: true,
-        quality: 0.7,
-        base64: true,
-      });
-
-      if (!result.canceled && result.assets && result.assets.length > 0) {
-        const asset = result.assets[0];
-        setScreenshotUri(asset.uri);
-        if (asset.base64) {
-          setScreenshotBase64(`data:image/jpeg;base64,${asset.base64}`);
-        }
-      }
-    } catch (err: any) {
-      Alert.alert("Error", "Unable to take photo.");
-    }
-  };
-
   const handleRemoveScreenshot = () => {
     setScreenshotUri(null);
     setScreenshotBase64(null);
@@ -296,29 +270,18 @@ export default function BugReportModal({
                   activeOpacity={0.8}
                 >
                   <Ionicons name="trash-outline" size={16} color="#ffffff" />
-                  <Text style={styles.removeBtnText}>Remove Photo</Text>
+                  <Text style={styles.removeBtnText}>Remove Screenshot</Text>
                 </TouchableOpacity>
               </View>
             ) : (
-              <View style={styles.photoActionRow}>
-                <TouchableOpacity
-                  style={[styles.photoBtn, { backgroundColor: c.bg, borderColor: c.border }]}
-                  onPress={handlePickImage}
-                  activeOpacity={0.7}
-                >
-                  <Ionicons name="images-outline" size={18} color={c.accent} />
-                  <Text style={[styles.photoBtnText, { color: c.text }]}>Choose Photo</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={[styles.photoBtn, { backgroundColor: c.bg, borderColor: c.border }]}
-                  onPress={handleTakePhoto}
-                  activeOpacity={0.7}
-                >
-                  <Ionicons name="camera-outline" size={18} color={c.accent} />
-                  <Text style={[styles.photoBtnText, { color: c.text }]}>Take Photo</Text>
-                </TouchableOpacity>
-              </View>
+              <TouchableOpacity
+                style={[styles.singlePhotoBtn, { backgroundColor: c.bg, borderColor: c.border }]}
+                onPress={handlePickImage}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="images-outline" size={18} color={c.accent} />
+                <Text style={[styles.photoBtnText, { color: c.text }]}>Choose Screenshot</Text>
+              </TouchableOpacity>
             )}
 
             {/* ── SUBMIT BUTTON ── */}
@@ -419,6 +382,16 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     gap: 8,
     paddingVertical: 12,
+    borderRadius: 14,
+    borderWidth: 1,
+  },
+  singlePhotoBtn: {
+    width: "100%",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    paddingVertical: 14,
     borderRadius: 14,
     borderWidth: 1,
   },

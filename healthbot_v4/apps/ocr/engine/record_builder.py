@@ -8,7 +8,7 @@ Supports multi-page processing, Celery task queue integration, and asynchronous 
 import re
 import uuid
 from typing import List, Optional, Dict, Any
-from datetime import datetime, date
+from datetime import datetime, timezone, date
 from pydantic import BaseModel, Field
 
 from healthbot_v4.shared.logger.logger import logger
@@ -19,7 +19,7 @@ class StructuredMedicalRecord(BaseModel):
     record_id: str
     patient_id: str
     document_name: str
-    processed_at: datetime = Field(default_factory=datetime.utcnow)
+    processed_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     doctor_name: Optional[str] = None
     extracted_labs: List[NormalizedLab] = Field(default_factory=list)
     extracted_medications: List[NormalizedMedication] = Field(default_factory=list)
@@ -43,7 +43,7 @@ class SmartOCRPipeline:
             "document_name": document_name,
             "status": "PROCESSING",
             "progress_pct": 10.0,
-            "submitted_at": datetime.utcnow().isoformat(),
+            "submitted_at": datetime.now(timezone.utc).isoformat(),
             "result": None,
         }
         logger.info(f"Submitted async OCR job {job_id} for patient {patient_id}")
@@ -127,7 +127,7 @@ class SmartOCRPipeline:
         logger.info(f"SmartOCR Extracted {len(extracted_labs)} labs, {len(extracted_meds)} meds from {document_name} across {page_count} pages")
 
         return StructuredMedicalRecord(
-            record_id=f"rec_{int(datetime.utcnow().timestamp())}",
+            record_id=f"rec_{int(datetime.now(timezone.utc).timestamp())}",
             patient_id=patient_id,
             document_name=document_name,
             doctor_name=doctor_name,

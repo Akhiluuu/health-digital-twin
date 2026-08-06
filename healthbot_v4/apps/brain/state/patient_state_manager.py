@@ -4,7 +4,7 @@ Patient State Management Subsystem for VitalHealth v5.0.
 """
 
 from typing import Dict, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 from healthbot_v4.apps.brain.core import HealthBrainSubsystem
 from healthbot_v4.shared.logger.logger import logger
 from healthbot_v4.shared.models.base import (
@@ -45,19 +45,19 @@ class PatientStateManager(HealthBrainSubsystem):
     def add_lab(self, patient_id: str, lab: NormalizedLab) -> PatientState:
         state = self.get_or_create_state(patient_id)
         state.recent_labs.insert(0, lab)
-        state.last_updated = datetime.utcnow()
+        state.last_updated = datetime.now(timezone.utc)
         return state
 
     def add_medication(self, patient_id: str, med: NormalizedMedication) -> PatientState:
         state = self.get_or_create_state(patient_id)
         state.active_medications.insert(0, med)
-        state.last_updated = datetime.utcnow()
+        state.last_updated = datetime.now(timezone.utc)
         return state
 
     def add_vital(self, patient_id: str, vital: NormalizedVital) -> PatientState:
         state = self.get_or_create_state(patient_id)
         state.recent_vitals.insert(0, vital)
-        state.last_updated = datetime.utcnow()
+        state.last_updated = datetime.now(timezone.utc)
         return state
 
     def update_risks(self, patient_id: str, risks: list[RiskFlag]) -> PatientState:
@@ -67,5 +67,5 @@ class PatientStateManager(HealthBrainSubsystem):
             state.current_health_score = 85.0
         else:
             state.current_health_score = 100.0
-        state.last_updated = datetime.utcnow()
+        state.last_updated = datetime.now(timezone.utc)
         return state
