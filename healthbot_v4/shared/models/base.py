@@ -5,9 +5,13 @@ Extended with Health Journey Engine domain models.
 """
 
 from enum import Enum
-from datetime import datetime, date
+from datetime import datetime, date, timezone
 from typing import List, Dict, Any, Optional
 from pydantic import BaseModel, Field
+
+
+def utc_now() -> datetime:
+    return datetime.now(timezone.utc)
 
 
 class BiologicalSex(str, Enum):
@@ -83,7 +87,7 @@ class NormalizedLab(BaseModel):
     unit: str
     reference_range: str = "Normal"
     classification: str = "normal"
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=utc_now)
 
 
 class NormalizedVital(BaseModel):
@@ -91,7 +95,7 @@ class NormalizedVital(BaseModel):
     value_primary: float
     value_secondary: Optional[float] = None
     unit: str = "mmHg"
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=utc_now)
 
 
 class NormalizedCondition(BaseModel):
@@ -108,7 +112,7 @@ class RiskFlag(BaseModel):
     title: str
     description: str
     recommended_action: str
-    triggered_at: datetime = Field(default_factory=datetime.utcnow)
+    triggered_at: datetime = Field(default_factory=utc_now)
 
 
 class PatientState(BaseModel):
@@ -121,14 +125,14 @@ class PatientState(BaseModel):
     active_risks: List[RiskFlag] = Field(default_factory=list)
     current_health_score: float = 100.0
     overall_confidence: float = 0.85
-    last_updated: datetime = Field(default_factory=datetime.utcnow)
+    last_updated: datetime = Field(default_factory=utc_now)
 
 
 class TimelineEvent(BaseModel):
     event_id: str
     patient_id: str
     event_type: TimelineEventType
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=utc_now)
     title: str
     description: str
     payload: Dict[str, Any] = Field(default_factory=dict)
@@ -191,8 +195,8 @@ class HealthGoal(BaseModel):
     confidence: float = 0.8  # 0.0-1.0
     recommendations: List[str] = Field(default_factory=list)
     expected_completion_date: Optional[date] = None
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
 
 
 class HealthMilestone(BaseModel):
@@ -202,7 +206,7 @@ class HealthMilestone(BaseModel):
     title: str
     description: str
     impact_score: float = 1.0  # clinical significance 0.0-5.0
-    achieved_at: datetime = Field(default_factory=datetime.utcnow)
+    achieved_at: datetime = Field(default_factory=utc_now)
     payload: Dict[str, Any] = Field(default_factory=dict)
 
 
@@ -218,7 +222,7 @@ class JourneyInsight(BaseModel):
     new_value: Optional[float] = None
     unit: Optional[str] = None
     actionable_recommendation: str = ""
-    detected_at: datetime = Field(default_factory=datetime.utcnow)
+    detected_at: datetime = Field(default_factory=utc_now)
 
 
 class MetricProgress(BaseModel):
@@ -243,7 +247,7 @@ class JourneyProgressReport(BaseModel):
     overall_goal_completion_pct: float = 0.0
     active_goals_count: int = 0
     completed_goals_count: int = 0
-    computed_at: datetime = Field(default_factory=datetime.utcnow)
+    computed_at: datetime = Field(default_factory=utc_now)
 
 
 class DailyBriefingV2(BaseModel):
@@ -263,7 +267,7 @@ class DailyBriefingV2(BaseModel):
     twin_prediction: str = ""
     motivational_message: str = ""
     whats_new: str = ""
-    generated_at: datetime = Field(default_factory=datetime.utcnow)
+    generated_at: datetime = Field(default_factory=utc_now)
 
 
 class JourneySnapshot(BaseModel):
@@ -282,5 +286,5 @@ class JourneySnapshot(BaseModel):
     latest_milestone: Optional[str] = None
     medication_adherence_pct: float
     recent_insights: List[JourneyInsight] = Field(default_factory=list)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=utc_now)
 
