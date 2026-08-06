@@ -468,8 +468,12 @@ class AIOrchestrator(HealthBrainSubsystem):
         cleaned_symptoms = [s for s in symptoms_logged if _is_valid_symptom(s)]
         if cleaned_symptoms:
             snapshot.active_risks_summary = f"Active Logged Symptoms: {'; '.join(set(cleaned_symptoms))}"
-        elif not state.active_risks:
-            snapshot.active_risks_summary = "No active symptoms or clinical risks logged"
+        else:
+            valid_risks = [r for r in state.active_risks if _is_valid_symptom(r.title)]
+            if valid_risks:
+                snapshot.active_risks_summary = "; ".join([f"[{r.level.value.upper()}] {r.title}" for r in valid_risks])
+            else:
+                snapshot.active_risks_summary = "No active symptoms or clinical risks logged"
 
         # Inject multi-domain context (body measurements, cognitive assessment, fitness, hydration) into snapshot
         if patient_context and isinstance(patient_context, dict):

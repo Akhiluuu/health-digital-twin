@@ -163,16 +163,24 @@ export default function SymptomChat() {
       const finalMessage: Message = {
         id: (Date.now() + 2).toString(),
         text:
-          "Thank you. Based on your responses, we recommend consulting a healthcare professional. Your symptom will now be logged.",
+          "Thank you! Connecting to VitalHealth AI Assistant for your comprehensive clinical assessment...",
         sender: "bot",
       };
 
       setDiagnosisComplete(true);
 
-      setTimeout(() => {
+      setTimeout(async () => {
         setMessages((prev) => [...prev, finalMessage]);
-        saveSymptom(); // ✅ Log symptom
-      }, 600);
+        await saveSymptom();
+        const symptomQuery = `I reported symptom "${query}". Answers: ${answers.join(" | ")}. Please analyze with my patient profile and give me a full medical assessment.`;
+        router.push({
+          pathname: "/(tabs)/ai-health",
+          params: {
+            symptom: symptomQuery,
+            source: "symptom-chat",
+          },
+        });
+      }, 800);
     }
   };
 

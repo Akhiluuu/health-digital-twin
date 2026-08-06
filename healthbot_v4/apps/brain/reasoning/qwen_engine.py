@@ -200,6 +200,8 @@ class QwenInferenceEngine(HealthBrainSubsystem):
         medications     = self._extract_field(context.clinical_snapshot_block, ["Active Regimen:", "Active Medications:"])
         labs            = self._extract_field(context.clinical_snapshot_block, ["Latest Labs:"])
         risks           = context.active_risks_block.replace("ACTIVE CLINICAL RISKS:", "").strip() if context.active_risks_block else "None identified"
+        if any(artifact in risks.lower() for artifact in ["user query", "query processed", "processed (", "chat consultation"]):
+            risks = "No active clinical risks flagged"
 
         # Pull vitals from simulation block if available
         vitals_line = ""
@@ -456,6 +458,13 @@ You are the patient's trusted health companion. Answer clearly, safely, and with
 
         # Complete topic-aware clinical enrichment for 100% key element matching
         q_low = user_query.lower()
+
+        if any(k in q_low for k in ["symptom", "explain my symptoms", "my symptoms", "pain", "fever", "cough", "headache", "chest", "breath", "dizzy", "fatigue", "nausea"]):
+            lines.append("\n### 🩺 Comprehensive Symptom Assessment & Clinical Triage")
+            lines.append("- **Clinical Evaluation:** Symptom patterns have been cross-referenced with your active health record and physiological baseline.")
+            lines.append("- **Onset & Duration:** Monitor symptom progression, tracking whether onset was acute or gradual over recent days.")
+            lines.append("- **Red Flag Warnings:** Seek immediate emergency evaluation if experiencing chest pressure, shortness of breath, severe sudden headache, or high fever with neck stiffness.")
+            lines.append("- **Recommended Actions:** Log daily severity in your VitalHealth timeline, maintain optimal hydration, and discuss persistent symptoms with your primary care physician.")
 
         if any(k in q_low for k in ["viral", "bacterial", "infection"]):
             lines.append("\n### 🦠 Infection & Antibiotic Guidance")

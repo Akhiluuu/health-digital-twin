@@ -431,10 +431,30 @@ const type = Array.isArray(params.type)
       <View style={styles.actionButtons}>
         <TouchableOpacity
           style={[styles.actionButton, { backgroundColor: colors.accent }]}
+          onPress={async () => {
+            await saveSymptom();
+            const symptomLabel = symptom?.label || type || "Symptom";
+            const details = selectedOptions.map(id => symptom?.options?.find((o: any) => o.id === id)?.label || id).join(", ");
+            const queryText = `I am experiencing ${symptomLabel}${details ? ` (${details})` : ""}. Severity: ${analysis?.severity || "moderate"}. Recommendations: ${analysis?.recommendation || ""}. Please analyze with my medical profile and provide a clinical action plan.`;
+            router.push({
+              pathname: "/(tabs)/ai-health",
+              params: {
+                symptom: queryText,
+                source: "symptom-flow",
+              },
+            });
+          }}
+        >
+          <Ionicons name="sparkles" size={20} color="#fff" />
+          <Text style={styles.actionButtonText}>Ask VitalHealth AI Assistant</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.actionButton, { backgroundColor: colors.card, borderColor: colors.border, borderWidth: 1 }]}
           onPress={saveSymptom}
         >
-          <Ionicons name="save" size={20} color="#fff" />
-          <Text style={styles.actionButtonText}>Log Symptom & Track</Text>
+          <Ionicons name="save-outline" size={20} color={colors.text} />
+          <Text style={[styles.actionButtonText, { color: colors.text }]}>Log & Save Only</Text>
         </TouchableOpacity>
 
         <TouchableOpacity
