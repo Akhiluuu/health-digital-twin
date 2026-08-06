@@ -445,12 +445,12 @@ const styles = StyleSheet.create({
     borderRadius: 85,
     borderWidth: 3,
     alignItems: "center",
-    justify: "center",
+    justifyContent: "center",
     overflow: "hidden",
   },
   centeredState: {
     alignItems: "center",
-    justify: "center",
+    justifyContent: "center",
   },
   stateLabel: {
     color: "#ffffff",
@@ -507,7 +507,7 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     borderWidth: 1,
     alignItems: "center",
-    justify: "center",
+    justifyContent: "center",
   },
   cancelText: {
     fontSize: 15,

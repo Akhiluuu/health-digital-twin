@@ -192,7 +192,10 @@ export async function setupNotifee() {
   // Schedule daily digital twin sync check-in reminder
   await scheduleDailyLogReminder();
 
-  log("✅ Notifee initialized with 7 high-priority channels");
+  // Initialize and synchronize routine/meal reminders (breakfast, lunch, dinner, exercise, hydration, symptoms)
+  await initOrSyncRoutineReminders();
+
+  log("✅ Notifee initialized with 7 high-priority channels and routine triggers");
 }
 
 export async function getProfileInfo(profileId?: string, profileName?: string): Promise<{ name: string; role?: string }> {
@@ -813,7 +816,7 @@ export const scheduleRoutineReminder = async (
           profileName: resolvedName,
         },
         android: {
-          channelId: CHANNEL_ID,
+          channelId: CHANNEL_WELLNESS,
           pressAction: { id: "default" },
         },
       },
@@ -840,6 +843,100 @@ export const cancelRoutineReminder = async (id: string) => {
     log("🔕 Cancelled routine reminder:", id);
   } catch (error) {
     log("❌ Cancel routine reminder error:", error);
+  }
+};
+
+export const initOrSyncRoutineReminders = async () => {
+  if (!notifee) return;
+  try {
+    const routineEnabledRaw = await AsyncStorage.getItem("@routine_reminder_enabled");
+    const routineEnabled = routineEnabledRaw === null ? true : routineEnabledRaw === "true";
+
+    const tabs: Array<"nutrition" | "exercise" | "sleep" | "hydration" | "symptoms"> = [
+      "nutrition",
+      "exercise",
+      "sleep",
+      "hydration",
+      "symptoms",
+    ];
+
+    for (const tab of tabs) {
+      const listKey = `@log_reminders_list_v2_${tab}`;
+      const raw = await AsyncStorage.getItem(listKey);
+      let list: any[] = [];
+      if (raw) {
+        try {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed)) list = parsed;
+        } catch {}
+      }
+
+      if (list.length === 0) {
+        let habits: any = null;
+        try {
+          const userStr = await AsyncStorage.getItem("vitalhealth_active_member_id");
+          if (userStr) {
+            const habitsRaw = await AsyncStorage.getItem(`@onboarding_habits_${userStr}`);
+            if (habitsRaw) habits = JSON.parse(habitsRaw);
+          }
+        } catch {}
+
+        const wakeUp = habits?.wakeUp || "07:00";
+        const breakfast = habits?.breakfast || "08:00";
+        const lunch = habits?.lunch || "13:00";
+        const dinner = habits?.dinner || "20:00";
+        const sleep = habits?.sleep || "23:00";
+
+        if (tab === "nutrition") {
+          list = [
+            { id: `nut_bf_${Date.now()}_1`, label: "🍳 Breakfast", time: breakfast, enabled: true },
+            { id: `nut_lh_${Date.now()}_2`, label: "🥗 Lunch", time: lunch, enabled: true },
+            { id: `nut_dn_${Date.now()}_3`, label: "🍲 Dinner", time: dinner, enabled: true },
+          ];
+        } else if (tab === "sleep") {
+          list = [
+            { id: `sl_wu_${Date.now()}_1`, label: "🌅 Wake Up", time: wakeUp, enabled: true },
+            { id: `sl_bt_${Date.now()}_2`, label: "😴 Bedtime", time: sleep, enabled: true },
+          ];
+        } else if (tab === "exercise") {
+          list = [
+            { id: `ex_wo_${Date.now()}_1`, label: "🏃 Workout", time: "17:00", enabled: true },
+          ];
+        } else if (tab === "hydration") {
+          list = [
+            { id: `hyd_w_${Date.now()}_1`, label: "💧 Drink Water", time: "10:00", enabled: true },
+            { id: `hyd_w_${Date.now()}_2`, label: "💧 Drink Water", time: "14:00", enabled: true },
+            { id: `hyd_w_${Date.now()}_3`, label: "💧 Drink Water", time: "18:00", enabled: true },
+          ];
+        } else if (tab === "symptoms") {
+          list = [
+            { id: `sym_am_${Date.now()}_1`, label: "🩺 Symptom Check", time: "10:00", enabled: true },
+            { id: `sym_pm_${Date.now()}_2`, label: "🩺 Symptom Check", time: "19:00", enabled: true },
+          ];
+        }
+        await AsyncStorage.setItem(listKey, JSON.stringify(list));
+      }
+
+      for (const item of list) {
+        const notifId = `notif_routine_${tab}_${item.id}`;
+        await cancelRoutineReminder(notifId);
+
+        if (routineEnabled && item.enabled) {
+          const timeStr = String(item.time || "08:00");
+          const [hStr, mStr] = timeStr.split(":");
+          const h = parseInt(hStr, 10);
+          const m = parseInt(mStr, 10);
+          const cleanLabel = item.label.replace(/[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|[\u2011-\u26FF]|\uD83E[\uDC00-\uDFFF]/g, "").trim();
+          const tabEmoji = tab === "nutrition" ? "🍽️" : tab === "exercise" ? "💪" : tab === "sleep" ? "😴" : tab === "hydration" ? "💧" : "🩺";
+          const title = `${tabEmoji} Habit Reminder`;
+          const body = `It's time for your routine: ${cleanLabel || item.label}`;
+          await scheduleRoutineReminder(notifId, title, body, isNaN(h) ? 8 : h, isNaN(m) ? 0 : m, tab);
+        }
+      }
+    }
+    log("✅ Routine reminders synchronized and scheduled.");
+  } catch (err) {
+    log("❌ initOrSyncRoutineReminders error:", err);
   }
 };
 
@@ -987,6 +1084,12 @@ export async function saveDeliveredNotificationToDB(notification: any) {
     else if (data.type === "hydration") category = "vitals";
     else if (data.type === "symptom") category = "alerts";
     else if (data.type === "dpss_sync" || data.type === "dpss_auto_complete") category = "ai";
+    else if (data.type === "routine_reminder") {
+      if (data.tab === "nutrition") category = "medication";
+      else if (data.tab === "exercise" || data.tab === "sleep" || data.tab === "hydration") category = "vitals";
+      else if (data.tab === "symptoms") category = "alerts";
+      else category = "system";
+    }
 
     let priority: any = "medium";
     if (category === "alerts") priority = "high";
@@ -999,6 +1102,7 @@ export async function saveDeliveredNotificationToDB(notification: any) {
     else if (data.type === "hydration") deepLink = "/(tabs)/history?tab=hydration";
     else if (data.type === "symptom") deepLink = "/symptom-log";
     else if (data.type === "twin_reminder" || data.type === "dpss_sync") deepLink = "/(tabs)/twin";
+    else if (data.type === "routine_reminder" && data.tab) deepLink = `/(tabs)/history?tab=${data.tab}`;
 
     let title = notification.title || "Health Notification";
     if (profileName && !title.startsWith("[")) {
@@ -1032,7 +1136,7 @@ export async function saveDeliveredNotificationToDB(notification: any) {
 ///////////////////////////////////////////////////////////
 
 export function registerNotifeeForegroundHandler() {
-  return notifee.onForegroundEvent(async ({ type, detail }) => {
+  return notifee.onForegroundEvent(async ({ type, detail }: any) => {
     const notifId   = detail.notification?.id ?? "";
     const data      = detail.notification?.data ?? {};
 
@@ -1231,7 +1335,7 @@ export function registerNotifeeForegroundHandler() {
 // UNIFIED BACKGROUND EVENT HANDLER
 // ─────────────────────────────────────────────────────────────────────────────
 if (Platform.OS === "android") {
-  notifee.onBackgroundEvent(async ({ type, detail }) => {
+  notifee.onBackgroundEvent(async ({ type, detail }: any) => {
     if (type === EventType.DELIVERED) {
       await saveDeliveredNotificationToDB(detail.notification);
       return;

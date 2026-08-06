@@ -1,0 +1,9 @@
+{
+  "venvPath": "/home/akhilreddy/health-digital-twin",
+  "venv": "healthbot_venv",
+  "pythonVersion": "3.11",
+  "extraPaths": [
+    "/home/akhilreddy/health-digital-twin",
+    "/home/akhilreddy/health-digital-twin/healthbot_venv/lib/python3.11/site-packages"
+  ]
+}

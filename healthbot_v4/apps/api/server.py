@@ -345,18 +345,24 @@ async def get_weekly_summary(user_id: str):
 
 
 @app.post("/analytics/caloric-balance/{user_id}", tags=["BioGears Compatibility"])
-async def get_caloric_balance(user_id: str, events: List[Dict[str, Any]] = None):
+async def get_caloric_balance(user_id: str, events: Optional[List[Dict[str, Any]]] = None):
+    import datetime
     state = state_mgr.get_or_create_state(user_id)
     p = state.profile
     weight = getattr(p, "weight_kg", None) or 70.0
     height = getattr(p, "height_cm", None) or 170.0
     age = getattr(p, "age", None) or 30
     bmr = round(10 * weight + 6.25 * height - 5 * age + 5)
+    now = datetime.datetime.now()
+    hours_elapsed = max(0.1, min(24.0, now.hour + now.minute / 60.0 + now.second / 3600.0))
+    burn_so_far = round(bmr * (hours_elapsed / 24.0))
+    total_burn = round(bmr * 1.3)
     return {
         "bmr_kcal_day": bmr,
-        "estimated_burn_kcal": round(bmr * 1.3),
+        "estimated_burn_kcal": total_burn,
+        "burn_so_far_kcal": burn_so_far,
         "meal_intake_kcal": 0,
-        "caloric_balance": -round(bmr * 1.3),
+        "caloric_balance": -burn_so_far,
         "balance_status": "Deficit",
         "note": "Log meals via the app to get accurate caloric balance calculations."
     }

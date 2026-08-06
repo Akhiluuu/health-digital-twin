@@ -777,12 +777,12 @@ export default function AIHealthScreen() {
     const history = [...historyRef.current];
 
     const profileName = activeProfile ? `${activeProfile.firstName || ''} ${activeProfile.lastName || ''}`.trim() : (profile ? `${profile.firstName || ''} ${profile.lastName || ''}`.trim() : 'Patient');
-    const pAge = activeProfile?.dateOfBirth ? Math.floor((Date.now() - new Date(activeProfile.dateOfBirth).getTime()) / 31557600000) : (ageYears || profile?.ageYears || 30);
+    const pAge = activeProfile?.dateOfBirth ? Math.floor((Date.now() - new Date(activeProfile.dateOfBirth).getTime()) / 31557600000) : (ageYears || (profile as any)?.ageYears || 30);
     const pGender = activeProfile?.gender || profile?.gender || 'not specified';
     const pHeight = activeProfile?.height || profile?.height || '170 cm';
     const pWeight = activeProfile?.weight || profile?.weight || '70 kg';
-    const pBloodType = activeProfile?.bloodType || profile?.bloodType || 'O+';
-    const pBmi = profile?.bmi || (pWeight && pHeight ? (parseFloat(String(pWeight)) / Math.pow(parseFloat(String(pHeight))/100, 2)).toFixed(1) : '22.5');
+    const pBloodType = (activeProfile as any)?.bloodType || (profile as any)?.bloodType || activeProfile?.bloodGroup || profile?.bloodGroup || 'O+';
+    const pBmi = (profile as any)?.bmi || (pWeight && pHeight ? (parseFloat(String(pWeight)) / Math.pow(parseFloat(String(pHeight))/100, 2)).toFixed(1) : '22.5');
 
     const patientCtx = {
       patient_name: profileName,
@@ -795,7 +795,7 @@ export default function AIHealthScreen() {
         bmi: pBmi,
         blood_type: pBloodType,
         resting_hr: activeProfile?.biogears_resting_hr || lastVitals?.heart_rate || 72,
-        blood_pressure: lastVitals ? `${lastVitals.systolic_bp || 120}/${lastVitals.diastolic_bp || 80} mmHg` : '120/80 mmHg',
+        blood_pressure: lastVitals ? `${(lastVitals as any).systolic_bp || 120}/${(lastVitals as any).diastolic_bp || 80} mmHg` : '120/80 mmHg',
       },
       cognitive_assessment: {
         cognitive_age: cognitiveAge || pAge,

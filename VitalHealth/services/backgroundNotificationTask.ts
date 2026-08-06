@@ -54,7 +54,7 @@ const addWaterToStorage = async (ml: number): Promise<void> => {
 // Works even when app is killed
 ///////////////////////////////////////////////////////////
 
-notifee.onBackgroundEvent(async ({ type, detail }) => {
+notifee.onBackgroundEvent(async ({ type, detail }: any) => {
   const { notification, pressAction } = detail;
 
   if (!notification || !pressAction) {

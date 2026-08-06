@@ -179,7 +179,7 @@ const NotificationNavigationBridge: React.FC = () => {
 
   useEffect(() => {
     // 1. Foreground listener
-    const unsubscribe = notifee.onForegroundEvent(async ({ type, detail }) => {
+    const unsubscribe = notifee.onForegroundEvent(async ({ type, detail }: any) => {
       const data = detail.notification?.data ?? {};
 
       if (type === EventType.DELIVERED) {
@@ -220,6 +220,11 @@ const NotificationNavigationBridge: React.FC = () => {
             pathname: "/(tabs)/history",
             params: { tab: "hydration" }
           } as any);
+        } else if (data.type === "symptom") {
+          router.push({
+            pathname: "/(tabs)/history",
+            params: { tab: "symptoms" }
+          } as any);
         } else if (data.type === "dpss_sync" || data.type === "dpss_auto_complete") {
           router.push("/(tabs)/twin" as any);
         }
@@ -227,7 +232,7 @@ const NotificationNavigationBridge: React.FC = () => {
     });
 
     // 2. Cold start / Initial notification listener
-    notifee.getInitialNotification().then(async (initialNotification) => {
+    notifee.getInitialNotification().then(async (initialNotification: any) => {
       if (initialNotification) {
         const { notification } = initialNotification;
         const data = notification?.data ?? {};
@@ -269,7 +274,7 @@ const NotificationNavigationBridge: React.FC = () => {
           }
         }, 1000);
       }
-    }).catch((err) => {
+    }).catch((err: any) => {
       console.log("⚠️ Error checking initial notification in bridge:", err);
     });
 

@@ -42,6 +42,7 @@ export async function startSymptomTracking(
         "🩺 Symptom Check",
         `How is your ${symptom.name} now?`,
         "symptom",
+        undefined,
         {
           symptomId: symptom.id,
           symptomName: symptom.name,

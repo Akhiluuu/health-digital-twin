@@ -800,7 +800,7 @@ def compute_cvd_risk(metadata: Dict[str, Any]) -> Dict[str, Any]:
 # ---------------------------------------------------------------------------
 # 9. BMR + CALORIC BALANCE  (energy balance tracker)
 # ---------------------------------------------------------------------------
-def compute_bmr_and_balance(metadata: Dict[str, Any], events: List[Dict[str, Any]] = None) -> Dict[str, Any]:
+def compute_bmr_and_balance(metadata: Dict[str, Any], events: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
     """
     Computes Basal Metabolic Rate (Mifflin-St Jeor equation) and estimates
     caloric balance from logged events.
@@ -832,11 +832,19 @@ def compute_bmr_and_balance(metadata: Dict[str, Any], events: List[Dict[str, Any
                 meal_kcal += float(ev.get("value", 0))
 
     total_burn = round(bmr + exercise_kcal, 0)
-    balance    = round(meal_kcal - total_burn, 0)
+
+    # Time of day scaling for accrued BMR burn so far today:
+    now = datetime.datetime.now()
+    hours_elapsed = max(0.1, min(24.0, now.hour + now.minute / 60.0 + now.second / 3600.0))
+    accrued_bmr = bmr * (hours_elapsed / 24.0)
+    burn_so_far = round(accrued_bmr + exercise_kcal, 0)
+
+    balance = round(meal_kcal - burn_so_far, 0)
 
     return {
         "bmr_kcal_day":       int(bmr),
         "estimated_burn_kcal": int(total_burn),
+        "burn_so_far_kcal":   int(burn_so_far),
         "meal_intake_kcal":   int(meal_kcal),
         "caloric_balance":    int(balance),
         "balance_status":     "Surplus" if balance > 100 else ("Deficit" if balance < -100 else "Balanced"),
@@ -848,7 +856,7 @@ def compute_bmr_and_balance(metadata: Dict[str, Any], events: List[Dict[str, Any
 # 10. SLEEP DEBT ACCUMULATION
 # ---------------------------------------------------------------------------
 def compute_sleep_debt(user_id: str, history_dir: Path,
-                       sessions_data: List[Dict] = None) -> Dict[str, Any]:
+                       sessions_data: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
     """
     Computes running sleep debt from logged sleep events across sessions.
     Target: 8 hours/day. Debt caps at 16 hours (2 days).
@@ -1028,7 +1036,7 @@ def generate_weekly_summary(user_id: str, history_dir: Path) -> Dict[str, Any]:
 # 13. RECOVERY READINESS SCORE
 # ---------------------------------------------------------------------------
 def compute_recovery_readiness(user_id: str, history_dir: Path,
-                                metadata: dict = None) -> dict:
+                                metadata: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """
     Computes a 0–100 Recovery Readiness Score from recent simulation data.
     Factors:

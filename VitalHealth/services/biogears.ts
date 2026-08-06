@@ -583,6 +583,7 @@ export async function getTwinProfile(userId: string): Promise<any> {
 export interface CaloricBalanceResponse {
   bmr_kcal_day: number;
   estimated_burn_kcal: number;
+  burn_so_far_kcal: number;
   meal_intake_kcal: number;
   caloric_balance: number;
   balance_status: string;

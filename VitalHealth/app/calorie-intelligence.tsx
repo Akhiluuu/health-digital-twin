@@ -294,6 +294,14 @@ export default function CalorieIntelligenceScreen() {
   );
   const stepCal = caloricBalance ? Math.max(0, caloricBalance.estimated_burn_kcal - caloricBalance.bmr_kcal_day) : localStepCal;
 
+  const burnSoFar = useMemo(() => {
+    if (caloricBalance?.burn_so_far_kcal && caloricBalance.burn_so_far_kcal > 0) {
+      return caloricBalance.burn_so_far_kcal;
+    }
+    const hoursElapsed = Math.max(0.1, Math.min(24.0, new Date().getHours() + new Date().getMinutes() / 60.0));
+    return Math.round(bmr * (hoursElapsed / 24.0) + localStepCal);
+  }, [caloricBalance, bmr, localStepCal]);
+
   const netCal  = Math.max(0, tdee - stepCal);
   const burnPct = Math.min(1, stepCal / (tdee * 0.3 || 1));
 
@@ -685,6 +693,8 @@ export default function CalorieIntelligenceScreen() {
         {/* BMR / TDEE */}
         <View style={[s.card, { backgroundColor: colors.card }]}>
           <Text style={[s.cardTitle, { color: colors.sub }]}>📊 DAILY ENERGY NEEDS</Text>
+          <StatRow icon="flame" label="Burned So Far Today (Accrued)" value={burnSoFar} unit="kcal" color="#f59e0b" colors={colors} />
+          <View style={[s.divider, { backgroundColor: colors.border }]} />
           <StatRow icon="body" label="Basal Metabolic Rate (BMR)" value={bmr} unit="kcal" color={colors.text} colors={colors} />
           <View style={[s.divider, { backgroundColor: colors.border }]} />
           <StatRow icon="flash" label="Total Daily Energy (TDEE)" value={tdee} unit="kcal" color={colors.text} colors={colors} />

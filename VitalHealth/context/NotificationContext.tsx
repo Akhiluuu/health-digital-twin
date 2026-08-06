@@ -514,7 +514,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
       name: "Critical Health Alerts",
       importance: AndroidImportance.HIGH,
       vibration: true,
-    }).catch(err => console.log("Failed to create critical channel:", err));
+    }).catch((err: any) => console.log("Failed to create critical channel:", err));
     
     loadNotifications();
   }, [loadNotifications]);

@@ -482,4 +482,45 @@ if (notifee) {
   });
 }
 
+export const scheduleNotification = async (
+  title: string,
+  body: string,
+  type: string = "system",
+  timestamp?: number,
+  data?: any
+) => {
+  if (!isNotifeeAvailable()) return;
+  try {
+    const id = `notif_${Date.now()}`;
+    if (timestamp && timestamp > Date.now()) {
+      await notifee.createTriggerNotification(
+        {
+          id,
+          title,
+          body,
+          data: { type, ...(data || {}) },
+          android: { channelId: CHANNEL_WELLNESS, pressAction: { id: "default" } },
+        },
+        {
+          type: TriggerType.TIMESTAMP,
+          timestamp,
+        }
+      );
+    } else {
+      await notifee.displayNotification({
+        id,
+        title,
+        body,
+        data: { type, ...(data || {}) },
+        android: { channelId: CHANNEL_WELLNESS, pressAction: { id: "default" } },
+      });
+    }
+    return id;
+  } catch (err) {
+    warn("❌ Error in scheduleNotification:", err);
+  }
+};
+
+export const showHealthNotification = scheduleNotification;
+
 export default notifee;

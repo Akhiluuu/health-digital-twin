@@ -12,7 +12,7 @@ import Header from "./components/Header";
 import { useTheme } from "../context/ThemeContext";
 import { colors as globalColors } from "../theme/colors";
 import TimePicker from "../components/twin/TimePicker";
-import { scheduleDailyLogReminder } from "../services/notifeeService";
+import { scheduleDailyLogReminder, initOrSyncRoutineReminders } from "../services/notifeeService";
 
 export default function Notifications() {
   const { theme } = useTheme();
@@ -25,6 +25,7 @@ export default function Notifications() {
     alerts: true,
     steps: true,
     hydration: true,
+    routine: true,
     reports: true,
     twinReminder: true,
   });
@@ -37,6 +38,7 @@ export default function Notifications() {
         const alertsRaw = await AsyncStorage.getItem("@alerts_reminder_enabled");
         const stepsRaw = await AsyncStorage.getItem("@steps_reminder_enabled");
         const hydrationRaw = await AsyncStorage.getItem("@hydration_reminder_enabled");
+        const routineRaw = await AsyncStorage.getItem("@routine_reminder_enabled");
         const reportsRaw = await AsyncStorage.getItem("@reports_reminder_enabled");
         const twinRaw = await AsyncStorage.getItem("@twin_reminder_enabled");
         const twinTimeRaw = await AsyncStorage.getItem("@twin_reminder_time");
@@ -46,6 +48,7 @@ export default function Notifications() {
           alerts: alertsRaw === null ? true : alertsRaw === "true",
           steps: stepsRaw === null ? true : stepsRaw === "true",
           hydration: hydrationRaw === null ? true : hydrationRaw === "true",
+          routine: routineRaw === null ? true : routineRaw === "true",
           reports: reportsRaw === null ? true : reportsRaw === "true",
           twinReminder: twinRaw === null ? true : twinRaw === "true",
         });
@@ -74,6 +77,10 @@ export default function Notifications() {
       if (key === "alerts") await AsyncStorage.setItem("@alerts_reminder_enabled", String(nextVal));
       if (key === "steps") await AsyncStorage.setItem("@steps_reminder_enabled", String(nextVal));
       if (key === "hydration") await AsyncStorage.setItem("@hydration_reminder_enabled", String(nextVal));
+      if (key === "routine") {
+        await AsyncStorage.setItem("@routine_reminder_enabled", String(nextVal));
+        await initOrSyncRoutineReminders();
+      }
       if (key === "reports") await AsyncStorage.setItem("@reports_reminder_enabled", String(nextVal));
       if (key === "twinReminder") {
         await AsyncStorage.setItem("@twin_reminder_enabled", String(nextVal));
@@ -139,6 +146,12 @@ export default function Notifications() {
       <Header title="Notifications" showBack={true} showProfile={false} />
 
       <View style={styles.content}>
+        <Row
+          label="Meal & Routine Reminders"
+          value={settings.routine}
+          onToggle={() => toggle("routine")}
+        />
+
         <Row
           label="Medication Reminders"
           value={settings.meds}

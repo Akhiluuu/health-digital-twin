@@ -206,13 +206,62 @@ export const StepProvider: React.FC<{
   const nativeUnsubRef = useRef<(() => void) | null>(null);
 
   // ── Setters ──────────────────────────────────────────────────────────────
+  const checkAndNotifyStepGoal = useCallback(async (currentSteps: number, targetGoal: number) => {
+    try {
+      const todayKey = `@step_goal_notified_${todayStr()}_${userUid}`;
+      const notified = await AsyncStorage.getItem(todayKey);
+      if (!notified && currentSteps >= targetGoal && targetGoal > 0) {
+        await AsyncStorage.setItem(todayKey, "true");
+        const { getProfileName } = require('../services/notifeeService');
+        const name = await getProfileName(userUid);
+
+        const title = `[${name}] Step Goal Reached! 🎉`;
+        const message = `Awesome job! You reached your daily goal of ${targetGoal.toLocaleString()} steps.`;
+        
+        await notifee.createChannel({ id: 'health', name: 'Health Notifications', importance: AndroidImportance.HIGH });
+        await notifee.displayNotification({
+          id: `step_goal_${Date.now()}`,
+          title,
+          body: message,
+          data: {
+            profileId: userUid,
+            type: "step_goal",
+            deepLink: "/activity",
+          },
+          android: { channelId: 'health', pressAction: { id: 'default' } },
+        });
+
+        const { addNotificationDB } = require('../database/notificationDB');
+        await addNotificationDB({
+          id: `notif_step_goal_${Date.now()}`,
+          title,
+          message,
+          profileId: userUid === "self" ? null : userUid,
+          profileName: name,
+          relationship: null,
+          profilePhoto: null,
+          category: "vitals",
+          priority: "high",
+          timestamp: new Date().toISOString(),
+          deepLink: "/activity",
+          actionButtons: null,
+        });
+      }
+    } catch (e) {
+      log("⚠️ Error notifying step goal:", e);
+    }
+  }, [userUid]);
+
   const setStepsAndRef = useCallback((n: number) => {
     const v = Math.max(0, n);
     if (v === stepsRef.current) return;
     stepsRef.current = v;
     dirtyRef.current = true;
     setSteps(v);
-  }, []);
+    if (v >= goalRef.current && goalRef.current > 0) {
+      checkAndNotifyStepGoal(v, goalRef.current);
+    }
+  }, [setSteps, checkAndNotifyStepGoal]);
 
   // ── Cloud sync ────────────────────────────────────────────────────────────
   const doCloudSync = useCallback(async () => {

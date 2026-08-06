@@ -1840,7 +1840,7 @@ export default function TwinScreen() {
               { label: 'Resp. Rate', val: v.respiration ? Math.round(v.respiration) : 14, unit: 'br/min', icon: '💨', color: '#10b981', lo: 12, hi: 20 },
               { label: 'Cardiac Output', val: v.cardiac_output != null ? Number(v.cardiac_output.toFixed(1)) : 5.1, unit: 'L/min', icon: '⚡', color: '#ec4899', lo: 4.5, hi: 6.5 },
               { label: 'MAP', val: v.map != null ? Math.round(v.map!) : 93, unit: 'mmHg', icon: '📈', color: '#a78bfa', lo: 70, hi: 100 },
-              { label: 'Core Temp', val: v.core_temperature != null ? Number((v.core_temperature!).toFixed(1)) : (profile?.biogears_resting_temp ? Number(profile.biogears_resting_temp) : 37.0), unit: '°C', icon: '🌡️', color: '#fb923c', lo: 36.5, hi: 37.5 },
+              { label: 'Core Temp', val: v.core_temperature != null ? Number((v.core_temperature!).toFixed(1)) : ((profile as any)?.biogears_resting_temp ? Number((profile as any).biogears_resting_temp) : 37.0), unit: '°C', icon: '🌡️', color: '#fb923c', lo: 36.5, hi: 37.5 },
               { label: 'Stroke Volume', val: v.stroke_volume != null ? Math.round(v.stroke_volume!) : 72, unit: 'mL', icon: '🌊', color: '#06b6d4', lo: 60, hi: 100 },
               { label: 'Tidal Volume', val: v.tidal_volume != null ? Math.round(v.tidal_volume!) : 500, unit: 'mL', icon: '🌬️', color: '#14b8a6', lo: 400, hi: 600 },
               { label: 'Arterial pH', val: v.arterial_ph != null ? Number((v.arterial_ph!).toFixed(2)) : 7.40, unit: 'pH', icon: '🧪', color: '#8b5cf6', lo: 7.35, hi: 7.45 },

@@ -422,13 +422,21 @@ function computeLocalCaloricBalanceFallback(profile: any, todayEvents: RoutineEv
   if (isNaN(mealKcal) || mealKcal < 0) mealKcal = 0;
 
   const totalBurn = Math.round(bmr + exerciseKcal);
-  const balance = Math.round(mealKcal - totalBurn);
+
+  // Time of day scaling for accrued BMR burn so far today:
+  const now = new Date();
+  const hoursElapsed = Math.max(0.1, Math.min(24.0, now.getHours() + now.getMinutes() / 60.0 + now.getSeconds() / 3600.0));
+  const accruedBmr = bmr * (hoursElapsed / 24.0);
+  const burnSoFar = Math.round(accruedBmr + exerciseKcal);
+
+  const balance = Math.round(mealKcal - burnSoFar);
 
   return {
     bmr_kcal_day: isNaN(bmr) ? 1500 : bmr,
     estimated_burn_kcal: isNaN(totalBurn) ? 2000 : totalBurn,
+    burn_so_far_kcal: isNaN(burnSoFar) ? 500 : burnSoFar,
     meal_intake_kcal: isNaN(mealKcal) ? 0 : Math.round(mealKcal),
-    caloric_balance: isNaN(balance) ? -2000 : balance,
+    caloric_balance: isNaN(balance) ? -500 : balance,
     balance_status: balance > 100 ? "Surplus" : (balance < -100 ? "Deficit" : "Balanced"),
     note: "Local estimated balance. Sync with engine for physiological details.",
   };

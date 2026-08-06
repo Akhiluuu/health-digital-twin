@@ -40,13 +40,13 @@ export function registerStopTrackingCallback(cb: () => void) {
 
 // Notifee foreground event handler for the "Stop" notification button
 if (Platform.OS === 'android') {
-  notifee.onForegroundEvent(({ type, detail }) => {
+  notifee.onForegroundEvent(({ type, detail }: any) => {
     if (type === EventType.ACTION_PRESS && detail.pressAction?.id === 'stop_tracking') {
       stopTrackingCallback?.();
       stopListeners.forEach(fn => fn());
     }
   });
-  notifee.onBackgroundEvent(async ({ type, detail }) => {
+  notifee.onBackgroundEvent(async ({ type, detail }: any) => {
     if (type === EventType.ACTION_PRESS && detail.pressAction?.id === 'stop_tracking') {
       stopTrackingCallback?.();
       stopListeners.forEach(fn => fn());

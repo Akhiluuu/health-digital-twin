@@ -371,6 +371,24 @@ export default function HomeScreen() {
   const stepsGoalProgress = Math.min(1, steps / (goal || 10000));
   const waterGoalProgress = Math.min(1, water / 2000); // 2000ml standard water goal
 
+  // Calculate time-aware accrued calorie burn so far today
+  const getDailyBurnSoFar = (): number => {
+    if (caloricBalance && !isNaN(caloricBalance.burn_so_far_kcal) && caloricBalance.burn_so_far_kcal > 0) {
+      return Math.round(caloricBalance.burn_so_far_kcal);
+    }
+    const now = new Date();
+    const hoursElapsed = Math.max(0.1, Math.min(24.0, now.getHours() + now.getMinutes() / 60.0 + now.getSeconds() / 3600.0));
+    const weightVal = parseFloat(String(activeProfile?.weight || "70").replace(/[^0-9.]/g, "")) || 70;
+    const heightVal = parseFloat(String(activeProfile?.height || "170").replace(/[^0-9.]/g, "")) || 170;
+    const ageVal = activeProfile?.dateOfBirth ? Math.floor((Date.now() - new Date(activeProfile.dateOfBirth).getTime()) / (365.25 * 24 * 3600 * 1000)) : 30;
+    const isMale = (activeProfile?.gender || "male").toLowerCase() === "male";
+    let bmr = 10 * weightVal + 6.25 * heightVal - 5 * ageVal + (isMale ? 5 : -161);
+    if (isNaN(bmr) || bmr <= 0) bmr = 1500;
+    const accruedBmr = bmr * (hoursElapsed / 24.0);
+    const activeStepBurn = !isNaN(calories) ? calories : 0;
+    return Math.round(accruedBmr + activeStepBurn);
+  };
+
   return (
     <LinearGradient
       colors={theme === "dark" ? ["#0b1329", "#080c1a"] : ["#f8fafc", "#f1f5f9", "#e0f2fe"]}
@@ -562,7 +580,7 @@ export default function HomeScreen() {
           />
           <TelemetryCard
             title="DAILY BURN"
-            value={caloricBalance && !isNaN(caloricBalance.estimated_burn_kcal) ? Math.round(caloricBalance.estimated_burn_kcal).toLocaleString("en-IN") : (!isNaN(calories) ? calories.toLocaleString("en-IN") : "0")}
+            value={getDailyBurnSoFar().toLocaleString("en-IN")}
             unit="kcal"
             icon={<Ionicons name="flame" size={20} color="#f59e0b" />}
             accent="#f59e0b"
