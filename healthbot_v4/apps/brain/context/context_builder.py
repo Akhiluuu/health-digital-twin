@@ -72,8 +72,12 @@ class ContextBudgeter(HealthBrainSubsystem):
             long_block = f"LONGITUDINAL TRAJECTORY: {deltas_str}"
 
         if patient_state.active_risks:
-            risk_str = "; ".join([f"[{r.level.value.upper()}] {r.title}" for r in patient_state.active_risks])
-            risks_block = f"ACTIVE CLINICAL RISKS: {risk_str}"
+            clean_risks = [r for r in patient_state.active_risks if not any(kw in r.title.lower() for kw in ["user query", "query processed", "processed (", "processed"])]
+            if clean_risks:
+                risk_str = "; ".join([f"[{r.level.value.upper()}] {r.title}" for r in clean_risks])
+                risks_block = f"ACTIVE CLINICAL RISKS: {risk_str}"
+            else:
+                risks_block = "ACTIVE CLINICAL RISKS: None"
         else:
             risks_block = "ACTIVE CLINICAL RISKS: None"
 

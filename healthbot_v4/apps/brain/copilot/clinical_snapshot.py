@@ -47,8 +47,13 @@ class ClinicalSnapshotEngine(HealthBrainSubsystem):
         labs_str = ", ".join([f"{l.canonical_name}: {l.value}{l.unit} ({l.classification})" for l in state.recent_labs[:3]]) if state.recent_labs else "No recent labs"
 
         if state.active_risks:
-            risks_str = "; ".join([f"[{r.level.value.upper()}] {r.title}" for r in state.active_risks])
-            action_items = [r.recommended_action for r in state.active_risks]
+            clean_risks = [r for r in state.active_risks if not any(kw in r.title.lower() for kw in ["user query", "query processed", "processed (", "processed"])]
+            if clean_risks:
+                risks_str = "; ".join([f"[{r.level.value.upper()}] {r.title}" for r in clean_risks])
+                action_items = [r.recommended_action for r in clean_risks]
+            else:
+                risks_str = "No active clinical risks flagged"
+                action_items = ["Maintain daily vitals logging and routine exercise."]
         else:
             risks_str = "No active clinical risks flagged"
             action_items = ["Maintain daily vitals logging and routine exercise."]
