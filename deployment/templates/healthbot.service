@@ -20,7 +20,7 @@ Environment=PYTHONPATH={{PROJECT_DIR}}
 # Start the healthbot on port 8001 using its dedicated venv
 # Single worker: GGUF LLM cannot be safely shared across processes
 ExecStart={{PROJECT_DIR}}/healthbot_venv/bin/uvicorn \
-    healthbot.api.server:app \
+    healthbot_v4.apps.api.server:app \
     --host 127.0.0.1 \
     --port 8001 \
     --workers 1 \
