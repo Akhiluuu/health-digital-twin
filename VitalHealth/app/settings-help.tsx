@@ -11,6 +11,7 @@ import {
   UIManager,
   Linking,
 } from "react-native";
+import { useRouter } from "expo-router";
 import Header from "./components/Header";
 import { useTheme } from "../context/ThemeContext";
 
@@ -206,6 +207,7 @@ function getColors(theme: string) {
 }
 
 export default function SettingsHelp() {
+  const router = useRouter();
   const { theme } = useTheme();
   const c = getColors(theme);
 
@@ -255,18 +257,28 @@ export default function SettingsHelp() {
         <View style={[styles.contactCard, { backgroundColor: c.card, borderColor: c.border }]}>
           <Text style={{ fontSize: 20, marginBottom: 8 }}>🩺</Text>
           <Text style={[styles.contactTitle, { color: c.text1 }]}>
-            Still need help?
+            Found an issue or need help?
           </Text>
           <Text style={[styles.contactDesc, { color: c.text2 }]}>
-            Our health support team is available 24/7 for urgent questions.
+            Submit a bug report or contact our team directly.
           </Text>
-          <TouchableOpacity
-            style={[styles.contactBtn, { backgroundColor: c.accent }]}
-            activeOpacity={0.85}
-            onPress={() => Linking.openURL("mailto:vitalhealth1215@gmail.com")}
-          >
-            <Text style={styles.contactBtnText}>Contact Support →</Text>
-          </TouchableOpacity>
+          <View style={{ flexDirection: "row", gap: 10, flexWrap: "wrap", justifyContent: "center" }}>
+            <TouchableOpacity
+              style={[styles.contactBtn, { backgroundColor: "#ef4444" }]}
+              activeOpacity={0.85}
+              onPress={() => router.push("/report-bug" as any)}
+            >
+              <Text style={styles.contactBtnText}>🐛 Report Bug (Beta)</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.contactBtn, { backgroundColor: c.accent }]}
+              activeOpacity={0.85}
+              onPress={() => Linking.openURL("mailto:vitalhealth1215@gmail.com")}
+            >
+              <Text style={styles.contactBtnText}>Contact Support →</Text>
+            </TouchableOpacity>
+          </View>
         </View>
 
         <Text style={[styles.version, { color: c.text3 }]}>

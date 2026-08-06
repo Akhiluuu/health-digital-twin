@@ -22,6 +22,7 @@ import {
   StyleSheet,
   ScrollView,
 } from "react-native";
+import BugReportModal from "./BugReportModal";
 
 interface Props {
   children: React.ReactNode;
@@ -34,12 +35,19 @@ interface State {
   error: Error | null;
   errorInfo: string;
   tapCount: number;
+  showBugModal: boolean;
 }
 
 export class ErrorBoundary extends React.Component<Props, State> {
   constructor(props: Props) {
     super(props);
-    this.state = { hasError: false, error: null, errorInfo: "", tapCount: 0 };
+    this.state = {
+      hasError: false,
+      error: null,
+      errorInfo: "",
+      tapCount: 0,
+      showBugModal: false,
+    };
   }
 
   static getDerivedStateFromError(error: Error): Partial<State> {
@@ -55,11 +63,17 @@ export class ErrorBoundary extends React.Component<Props, State> {
   }
 
   handleReset = () => {
-    this.setState({ hasError: false, error: null, errorInfo: "", tapCount: 0 });
+    this.setState({
+      hasError: false,
+      error: null,
+      errorInfo: "",
+      tapCount: 0,
+      showBugModal: false,
+    });
   };
 
   handleTapError = () => {
-    this.setState(prev => ({ tapCount: prev.tapCount + 1 }));
+    this.setState((prev) => ({ tapCount: prev.tapCount + 1 }));
   };
 
   render() {
@@ -69,6 +83,7 @@ export class ErrorBoundary extends React.Component<Props, State> {
       }
 
       const showDetails = __DEV__ || this.state.tapCount >= 3;
+      const fullStack = `${this.state.error?.message ?? "Crash"}\n${this.state.errorInfo}`;
 
       return (
         <View style={styles.container}>
@@ -89,10 +104,26 @@ export class ErrorBoundary extends React.Component<Props, State> {
               </ScrollView>
             )}
 
-            <TouchableOpacity style={styles.btn} onPress={this.handleReset}>
-              <Text style={styles.btnText}>Try Again</Text>
-            </TouchableOpacity>
+            <View style={styles.btnRow}>
+              <TouchableOpacity
+                style={[styles.btn, styles.bugBtn]}
+                onPress={() => this.setState({ showBugModal: true })}
+              >
+                <Text style={styles.btnText}>🐛 Report Crash</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity style={styles.btn} onPress={this.handleReset}>
+                <Text style={styles.btnText}>Try Again</Text>
+              </TouchableOpacity>
+            </View>
           </View>
+
+          <BugReportModal
+            visible={this.state.showBugModal}
+            onClose={() => this.setState({ showBugModal: false })}
+            initialCategory="crash"
+            initialStackTrace={fullStack}
+          />
         </View>
       );
     }
@@ -145,13 +176,25 @@ const styles = StyleSheet.create({
   },
   devTitle: { color: "#f85149", fontSize: 12, fontWeight: "600", marginBottom: 8 },
   devStack: { color: "#8b949e", fontSize: 10, fontFamily: "monospace" },
+  btnRow: {
+    flexDirection: "row",
+    gap: 12,
+    alignItems: "center",
+    justifyContent: "center",
+    width: "100%",
+  },
   btn: {
+    flex: 1,
     backgroundColor: "#238636",
     paddingVertical: 12,
-    paddingHorizontal: 32,
+    paddingHorizontal: 16,
     borderRadius: 10,
+    alignItems: "center",
   },
-  btnText: { color: "#fff", fontWeight: "700", fontSize: 15 },
+  bugBtn: {
+    backgroundColor: "#da3633",
+  },
+  btnText: { color: "#fff", fontWeight: "700", fontSize: 14 },
 });
 
 export default ErrorBoundary;
