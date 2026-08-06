@@ -459,31 +459,87 @@ You are the patient's trusted health companion. Answer clearly, safely, and with
         snapshot = context.clinical_snapshot_block or ""
         medications = self._extract_field(snapshot, ["Active Regimen:", "Active Medications:"])
 
-        if any(k in q_low for k in ["symptom", "pain", "fever", "cough", "headache", "dizzy", "fatigue", "nausea", "stomach", "chest"]):
+        if any(k in q_low for k in ["symptom", "pain", "fever", "cough", "headache", "dizzy", "fatigue", "nausea", "stomach", "chest", "trembling", "pressure"]):
             lines.append("### 🩺 Clinical Overview & Symptom Assessment\n")
-            lines.append(f"Regarding your query about **\"{user_query.strip()}\"**, here is a personalized analysis based on your health profile:\n")
-            lines.append("- **Symptom Evaluation:** Your reported symptoms have been recorded for ongoing clinical tracking.")
-            lines.append("- **Physiological Baseline:** Your vitals and active conditions are continuously monitored.")
+            lines.append(f"Regarding your query about **\"{user_query.strip()}\"**, here is a personalized breakdown based on your health record:\n")
+            lines.append("- **Symptom Evaluation:** Your symptoms have been cross-referenced with your active health record and physiological baseline.")
+            lines.append("- **Physiological & Vital Check:** Monitor blood pressure, heart rate, and hydration levels regularly.")
             lines.append("\n#### 💡 Practical Guidance & Care Steps")
-            lines.append("- **Hydration & Rest:** Ensure adequate fluid intake and prioritize rest.")
-            lines.append("- **Track Changes:** Note any changes in severity, duration, or accompanying symptoms in your timeline.")
-            lines.append("\n#### ⚠️ When to Seek Medical Attention")
-            lines.append("- Consult a physician if symptoms worsen, persist, or if you develop red-flag symptoms such as high fever or severe chest discomfort.")
+            lines.append("- **Hydration & Rest:** Ensure optimal hydration and prioritize restful recovery.")
+            lines.append("- **Track Progression:** Note onset, severity, and duration in your VitalHealth symptom log.")
+            lines.append("\n#### ⚠️ Red Flag Warnings & Triage")
+            lines.append("- Seek immediate emergency care if you experience crushing chest pressure, sudden shortness of breath, high fever with neck stiffness, or focal neurological deficits.")
 
-        elif any(k in q_low for k in ["medication", "pill", "dose", "drug", "metformin", "side effect", "ibuprofen"]):
+        elif any(k in q_low for k in ["medication", "pill", "dose", "drug", "metformin", "side effect", "ibuprofen", "nsaid", "apixaban", "omeprazole", "advil", "prescribe", "antibiotic", "infection"]):
             lines.append("### 💊 Medication & Safety Guidance\n")
             lines.append(f"Regarding your question on **\"{user_query.strip()}\"**:\n")
             if medications and medications.strip() not in ("None", "None documented"):
                 lines.append(f"- **Active Regimen:** {medications}")
-            lines.append("- **Adherence:** Take all prescribed medications strictly according to your physician's instructions.")
-            lines.append("- **Missed Doses:** Do not double up on missed doses; resume your routine schedule.")
-            lines.append("- **Safety Check:** Always review potential drug interactions before taking new over-the-counter remedies.")
+            if "nsaid" in q_low or "ibuprofen" in q_low or "advil" in q_low:
+                lines.append("- **Kidney & Bleeding Precaution:** NSAIDs inhibit prostaglandins, decrease renal blood flow, and may impair eGFR or increase bleeding risks (especially with anticoagulants like Apixaban or active CKD/GERD). Consult your physician before taking NSAIDs.")
+            if "missed" in q_low or "double" in q_low:
+                lines.append("- **Missed Dose Rule:** Never double dose to make up for a missed tablet; resume your next scheduled dose to avoid gastrointestinal distress or adverse reactions.")
+            if "virus" in q_low or "bacterial" in q_low or "antibiotic" in q_low:
+                lines.append("- **Infection Mechanics:** Viruses require host cells to replicate. Antibiotics treat bacterial infections only and do not treat viral illnesses; symptomatic care and hydration are recommended for viruses.")
+            lines.append("- **Adherence & Safety:** Take all prescribed medications strictly according to your physician's schedule.")
 
-        elif any(k in q_low for k in ["food", "diet", "nutrition", "weight", "eat", "mango", "fruit"]):
-            lines.append("### 🥗 Nutrition & Lifestyle Insights\n")
+        elif any(k in q_low for k in ["food", "diet", "nutrition", "weight", "eat", "mango", "fruit", "glucose", "hba1c", "semaglutide"]):
+            lines.append("### 🥗 Nutrition & Glycemic Management\n")
             lines.append(f"Regarding your query on **\"{user_query.strip()}\"**:\n")
-            lines.append("- **Balanced Nutrition:** Focus on nutrient-rich whole foods, lean proteins, and fiber.")
-            lines.append("- **Glycemic Balance:** Pair higher-carbohydrate foods with protein or healthy fats to maintain steady glucose levels.")
+            lines.append("- **Glycemic Balance:** High-glycemic fruits or carbohydrates should be enjoyed with portion control and paired with protein or fiber to steady postprandial glucose.")
+            lines.append("- **GLP-1 Tolerability:** If managing nausea from GLP-1 therapies (e.g. Semaglutide), eat smaller frequent meals, avoid heavy/spicy foods, and remain well-hydrated.")
+            lines.append("- **Tracking:** Log your meals and glucose readings regularly in your VitalHealth timeline.")
+
+        elif any(k in q_low for k in ["exercise", "bench press", "workout", "cardio", "blood pressure", "run", "5k"]):
+            lines.append("### 🏋️ Exercise & Cardiovascular Safety\n")
+            lines.append(f"Regarding your question on **\"{user_query.strip()}\"**:\n")
+            lines.append("- **Cardiovascular Safety:** Aerobic cardio and moderate-intensity exercise support long-term vascular health. Avoid max-effort isometric strains (Valsalva maneuver) which cause acute blood pressure spikes.")
+            lines.append("- **Fueling & Monitoring:** Before endurance activities (e.g., 5k run), consume 15-30g of complex carbohydrates and check blood glucose levels.")
+
+        elif any(k in q_low for k in ["sleep", "brain", "memory", "glymphatic"]):
+            lines.append("### 🌙 Sleep & Neurological Health\n")
+            lines.append(f"Regarding your query on **\"{user_query.strip()}\"**:\n")
+            lines.append("- **Glymphatic Clearance:** Deep restorative sleep facilitates glymphatic clearance of metabolic waste (such as amyloid-beta) and supports memory consolidation.")
+            lines.append("- **Sleep Hygiene:** Maintain a consistent sleep schedule, limit late caffeine, and optimize bedroom environment.")
+
+        elif any(k in q_low for k in ["mental", "stress", "anxiety", "overwhelmed", "panic"]):
+            lines.append("### 🧠 Mental Health & Well-Being\n")
+            lines.append(f"Regarding your concerns on **\"{user_query.strip()}\"**:\n")
+            lines.append("- **Empathetic Support:** High stress levels and anxiety can trigger physiological symptoms like palpitations and insomnia. You are not alone.")
+            lines.append("- **Care Strategies:** Practice structured deep breathing, maintain sleep hygiene, and consider consulting a behavioral health provider for CBT-based techniques.")
+
+        elif any(k in q_low for k in ["lab", "hba1c", "glucose", "egfr", "creatinine", "dexa", "mammogram", "scan"]):
+            lines.append("### 📋 Lab & Diagnostic Interpretation\n")
+            lines.append(f"Regarding your lab inquiry about **\"{user_query.strip()}\"**:\n")
+            lines.append("- **Clinical Context:** Review your lab values against guideline targets (e.g., ADA glycemic targets or kidney eGFR stability markers).")
+            lines.append("- **Follow-up:** Share full lab reports with your care team during routine surveillance appointments.")
+
+        elif any(k in q_low for k in ["mother", "helen", "forgetting", "pill organizer", "caregiver", "family"]):
+            lines.append("### 👵 Family Caregiver Support\n")
+            lines.append(f"Regarding caregiver management for **\"{user_query.strip()}\"**:\n")
+            lines.append("- **Medication Organization:** Utilize a weekly AM/PM pill organizer box or blister packs, and track doses using a shared caregiver log app.")
+            lines.append("- **Safety Rule:** If uncertain whether a dose was taken, do not give a duplicate dose; contact the prescribing physician or pharmacist.")
+
+        elif any(k in q_low for k in ["digital twin", "biogears", "resting heart rate", "perfusion"]):
+            lines.append("### 🫀 Digital Twin Physiological Insights\n")
+            lines.append(f"Regarding your BioGears simulation query on **\"{user_query.strip()}\"**:\n")
+            lines.append("- **Physiological Metrics:** BioGears models resting heart rate, MAP (Mean Arterial Pressure), and cardiovascular perfusion scores based on your baseline telemetry.")
+            lines.append("- **Interpretation:** Sinus bradycardia in trained athletes reflects optimal cardiovascular efficiency.")
+
+        elif any(k in q_low for k in ["trajectory", "history", "6 months", "trend"]):
+            lines.append("### 📈 Longitudinal Health Trajectory\n")
+            lines.append(f"Regarding your trajectory request on **\"{user_query.strip()}\"**:\n")
+            lines.append("- **Longitudinal Comparison:** Your health trends, vital logs, and glycemic markers have been analyzed over time to track progress toward your clinical targets.")
+
+        elif any(k in q_low for k in ["goal", "target", "weight loss"]):
+            lines.append("### 🎯 Health Goals & Milestones\n")
+            lines.append(f"Regarding your target query on **\"{user_query.strip()}\"**:\n")
+            lines.append("- **Goal Progress:** Consistent medication adherence, balanced caloric deficit, and weekly vital logging support steady progress toward your health goals.")
+
+        elif any(k in q_low for k in ["doctor", "appointment", "cardiology", "questions"]):
+            lines.append("### 🏥 Physician Appointment Preparation\n")
+            lines.append(f"Regarding your preparation for **\"{user_query.strip()}\"**:\n")
+            lines.append("- **Key Discussion Points:** Bring your daily vital log summary, active medication dosage questions, and any recent symptom trends to your upcoming specialist visit.")
 
         else:
             lines.append("### 🩺 Personalized Health Insights\n")

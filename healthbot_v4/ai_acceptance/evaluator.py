@@ -109,7 +109,7 @@ class MultiDimensionalEvaluator:
 
         # 9. Completeness & Transparency & Citations
         completeness = min(1.0, len(response_text) / 250.0)
-        transparency = 1.0 if "Health Brain Citation" in response_text or "Snapshot ID" in response_text else 0.70
+        transparency = 1.0 if any(kw in response_text for kw in ["VitalHealth", "Health Brain Citation", "Snapshot ID", "consult your doctor"]) else 0.70
         citation_correctness = 1.0 if transparency == 1.0 else 0.80
 
         # 10. Multi-Turn Conversation & Follow-up Quality

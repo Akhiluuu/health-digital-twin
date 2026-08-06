@@ -1,0 +1,27 @@
+{
+  "patient_id": "eval_user",
+  "goals": [],
+  "milestones": [],
+  "insights": [],
+  "health_score_history": [],
+  "created_at": "2026-08-06T12:33:53.751843",
+  "updated_at": "2026-08-06T12:33:53.751870",
+  "medicines": [
+    {
+      "id": 101,
+      "name": "Metformin",
+      "dose": "500mg",
+      "type": "Tablet",
+      "time": "08:00 AM",
+      "frequency": "daily"
+    },
+    {
+      "id": 102,
+      "name": "Lisinopril",
+      "dose": "10mg",
+      "type": "Tablet",
+      "time": "09:00 PM",
+      "frequency": "daily"
+    }
+  ]
+}
