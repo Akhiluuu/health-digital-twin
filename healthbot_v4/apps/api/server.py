@@ -607,3 +607,63 @@ async def sync_batch(req: AsyncSimRequest):
 async def predict_recovery(req: dict):
     return {"status": "success", "hours": req.get("hours", 4), "forecast_chart": None}
 
+
+# =============================================================================
+# ENTERPRISE HEALTH OS (v6.0) API ENDPOINTS
+# =============================================================================
+
+from healthbot_v4.apps.brain.reasoning.biogears_scenario_engine import BioGearsScenarioEngine
+from healthbot_v4.apps.patient.privacy.consent_engine import ABACConsentEngine, AccessRequest
+from healthbot_v4.apps.brain.safety.hitl_escalation import HITLEscalationManager
+
+_consent_engine = ABACConsentEngine()
+_hitl_manager = HITLEscalationManager()
+
+
+class CounterfactualQueryRequest(BaseModel):
+    patient_id: str
+    query: str
+
+
+class ConsentCheckRequest(BaseModel):
+    patient_id: str
+    requester_id: str
+    requester_role: str  # PRACTITIONER, PATIENT, CAREGIVER, RESEARCHER
+    target_category: str  # VITALS, MEDICATION, LABS, MENTAL_HEALTH, GENETICS
+    is_emergency_breakglass: bool = False
+    justification: str = ""
+
+
+@app.post("/api/v6/brain/query/counterfactual", tags=["Enterprise Health OS v6.0"])
+async def process_counterfactual_query(req: CounterfactualQueryRequest):
+    state = state_mgr.get_or_create_state(req.patient_id)
+    sim_result = BioGearsScenarioEngine.run_counterfactual_scenario(state, req.query)
+    scenario_data = sim_result.to_dict() if sim_result else {}
+    return {
+        "status": "SUCCESS",
+        "patient_id": req.patient_id,
+        "scenario": scenario_data
+    }
+
+
+@app.post("/api/v6/patient/consent/evaluate", tags=["Enterprise Health OS v6.0"])
+async def evaluate_consent_access(req: ConsentCheckRequest):
+    access_req = AccessRequest(
+        request_id=f"req_{uuid.uuid4().hex[:8]}",
+        patient_id=req.patient_id,
+        requester_id=req.requester_id,
+        requester_role=req.requester_role,
+        target_category=req.target_category,
+        is_emergency_breakglass=req.is_emergency_breakglass,
+        justification=req.justification
+    )
+    decision = _consent_engine.evaluate_access(access_req)
+    return decision.model_dump()
+
+
+@app.get("/api/v6/brain/safety/hitl-tasks", tags=["Enterprise Health OS v6.0"])
+async def get_hitl_pending_tasks():
+    tasks = _hitl_manager.get_pending_tasks()
+    return [t.model_dump() for t in tasks]
+
+

@@ -37,6 +37,12 @@ from healthbot_v4.apps.brain.journey.action_engine import ProactiveActionEngine
 from healthbot_v4.apps.brain.interop.fhir_exporter import FHIRR4Exporter
 from healthbot_v4.shared.models.base import TimelineEventType, RiskLevel, NormalizedMedication
 
+# Enterprise v6.0 Canonical State, Tools, Compressor & Counterfactual Scenario Engine
+from healthbot_v4.apps.patient.models.patient_state import UnifiedPatientState, FHIRPatientDemographics, FHIRMedicationRequest, FHIRObservationLab, FHIRAllergyIntolerance
+from healthbot_v4.apps.brain.context.semantic_compressor import SemanticContextCompressor
+from healthbot_v4.apps.brain.tools.registry import VitalHealthToolRegistry
+from healthbot_v4.apps.brain.reasoning.biogears_scenario_engine import BioGearsScenarioEngine
+
 
 class OrchestratorResponse(BaseModel):
     patient_id: str

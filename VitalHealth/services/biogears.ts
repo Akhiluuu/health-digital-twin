@@ -607,6 +607,71 @@ export async function getSubstances(): Promise<{ substances: Record<string, stri
   return apiFetch('/substances', undefined, 10_000);
 }
 
+// ─── Enterprise Health OS (v6.0 / v7.0) API Methods ─────────────────────────
+
+export interface CounterfactualResponse {
+  status: string;
+  patient_id: string;
+  scenario: {
+    scenario_title: string;
+    query: string;
+    baseline: Record<string, any>;
+    predicted: Record<string, any>;
+    delta: Record<string, any>;
+    confidence: string;
+    interpretation: string;
+  };
+}
+
+export interface ConsentEvaluationResponse {
+  decision_id: string;
+  allowed: boolean;
+  reason: string;
+  policy_id_applied?: string;
+}
+
+/**
+ * Execute Counterfactual Scenario Query ("What happens if I stop taking Metformin?")
+ */
+export async function queryCounterfactual(patientId: string, queryText: string): Promise<CounterfactualResponse> {
+  return apiFetch('/api/v6/brain/query/counterfactual', {
+    method: 'POST',
+    body: JSON.stringify({ patient_id: patientId, query: queryText }),
+  }, 30_000);
+}
+
+/**
+ * Evaluate ABAC Patient Data Access Consent
+ */
+export async function evaluateConsentAccess(
+  patientId: string,
+  requesterId: string,
+  requesterRole: 'PRACTITIONER' | 'PATIENT' | 'CAREGIVER' | 'RESEARCHER',
+  targetCategory: 'VITALS' | 'MEDICATION' | 'LABS' | 'MENTAL_HEALTH' | 'GENETICS',
+  isEmergencyBreakglass: boolean = false,
+  justification: string = ''
+): Promise<ConsentEvaluationResponse> {
+  return apiFetch('/api/v6/patient/consent/evaluate', {
+    method: 'POST',
+    body: JSON.stringify({
+      patient_id: patientId,
+      requester_id: requesterId,
+      requester_role: requesterRole,
+      target_category: targetCategory,
+      is_emergency_breakglass: isEmergencyBreakglass,
+      justification: justification,
+    }),
+  }, 10_000);
+}
+
+/**
+ * Fetch pending Practitioner Human-in-the-Loop (HITL) review tasks
+ */
+export async function getHITLTasks(): Promise<any[]> {
+  return apiFetch('/api/v6/brain/safety/hitl-tasks', undefined, 10_000);
+}
+
+
 
 
 // ─── Session Metadata (local AsyncStorage) ───────────────────────────────────
