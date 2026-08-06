@@ -1,6 +1,6 @@
-# Dr. Aria — Advanced Personal Medical Assistant (Health AI v3.2 Upgraded)
+# Personal Health Assistant — Advanced Health AI Assistant (v3.2 Upgraded)
 
-Welcome to the **Health AI v3.2** repository. This is an offline, stateless personal medical assistant named **Dr. Aria**. The backend is built on FastAPI and is designed to run locally or in production.
+Welcome to the **Health AI v3.2** repository. This is an offline, stateless **Personal Health Assistant**. The backend is built on FastAPI and is designed to run locally or in production.
 
 ---
 
@@ -13,7 +13,7 @@ Welcome to the **Health AI v3.2** repository. This is an offline, stateless pers
 │   ├── config/
 │   │   └── settings.py             # Server, speed, models, & folder settings
 │   ├── core/
-│   │   ├── character.py            # Dr. Aria system prompts, keywords, & routing logic
+│   │   ├── character.py            # Personal Health Assistant system prompts, keywords, & routing logic
 │   │   ├── exceptions.py           # Custom application exceptions
 │   │   ├── logger.py               # Rotating logger engine (max 10MB, 5 backups)
 │   │   └── safety.py               # Crisis symptom keyword matching & disclaimer formatting
