@@ -11,11 +11,13 @@ export type BugCategory = "ui" | "vitals" | "ai" | "sync" | "crash" | "feedback"
 export type BugSeverity = "low" | "medium" | "high" | "critical";
 
 export interface BugReportPayload {
-  category: BugCategory;
-  severity: BugSeverity;
+  category?: BugCategory;
+  severity?: BugSeverity;
   summary: string;
   description: string;
   userEmail?: string;
+  screenshotUri?: string;
+  screenshotBase64?: string;
   includeDiagnostics?: boolean;
   stackTrace?: string;
   currentRoute?: string;
@@ -93,6 +95,9 @@ function formatWebhookPayload(
   payload: BugReportPayload,
   diag: SystemDiagnostics
 ) {
+  const cat = payload.category || "ui";
+  const sev = payload.severity || "medium";
+
   const severityEmoji: Record<BugSeverity, string> = {
     low: "🟢 Low",
     medium: "🟡 Medium",
@@ -109,14 +114,18 @@ function formatWebhookPayload(
     feedback: "💡 Feedback / Feature",
   };
 
-  let content = `🐛 **[VitalHealth Beta Bug Report]**\n`;
-  content += `> **Category:** ${categoryEmoji[payload.category]}\n`;
-  content += `> **Severity:** ${severityEmoji[payload.severity]}\n`;
-  content += `> **Summary:** ${payload.summary}\n\n`;
+  let content = `🐛 **[VitalHealth User Bug Report]**\n`;
+  content += `> **Category:** ${categoryEmoji[cat]}\n`;
+  content += `> **Severity:** ${severityEmoji[sev]}\n`;
+  content += `> **Title:** ${payload.summary}\n\n`;
   content += `**Description:**\n${payload.description}\n\n`;
 
   if (payload.userEmail) {
     content += `**User Contact:** ${payload.userEmail}\n`;
+  }
+
+  if (payload.screenshotUri || payload.screenshotBase64) {
+    content += `🖼️ **Screenshot Attached:** Yes\n`;
   }
 
   if (payload.includeDiagnostics !== false) {
@@ -137,7 +146,7 @@ function formatWebhookPayload(
   }
 
   return {
-    username: "VitalHealth Beta Bot",
+    username: "VitalHealth Support Bot",
     avatar_url: "https://vitalhealth.app/assets/icon.png",
     content,
   };
@@ -153,8 +162,9 @@ async function saveToLocalHistory(payload: BugReportPayload, diag: SystemDiagnos
     history.unshift({
       id: `bug-${Date.now()}`,
       summary: payload.summary,
-      category: payload.category,
-      severity: payload.severity,
+      category: payload.category || "ui",
+      severity: payload.severity || "medium",
+      hasScreenshot: Boolean(payload.screenshotUri || payload.screenshotBase64),
       timestamp: diag.timestamp,
     });
     // Keep last 20 reports
@@ -176,6 +186,9 @@ export async function submitBugReport(
   const diag = await getSystemDiagnostics(payload.currentRoute, payload.profileId);
   await saveToLocalHistory(payload, diag);
 
+  const finalCat = payload.category || "ui";
+  const finalSev = payload.severity || "medium";
+
   // 1. Primary Option: Dispatch to Backend Server API endpoint (/api/v1/bug-reports)
   let rawServerUrl = "";
   try {
@@ -191,11 +204,12 @@ export async function submitBugReport(
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          category: payload.category,
-          severity: payload.severity,
+          category: finalCat,
+          severity: finalSev,
           summary: payload.summary,
           description: payload.description,
           user_email: payload.userEmail,
+          screenshot_base64: payload.screenshotBase64,
           include_diagnostics: payload.includeDiagnostics ?? true,
           stack_trace: payload.stackTrace,
           current_route: payload.currentRoute,
@@ -243,10 +257,10 @@ export async function submitBugReport(
 
   // 3. Fallback Option: Native Email
   const subject = encodeURIComponent(
-    `[VitalHealth Beta Bug] [${payload.category.toUpperCase()}] ${payload.summary}`
+    `[VitalHealth User Bug] [${finalCat.toUpperCase()}] ${payload.summary}`
   );
   
-  let bodyText = `Category: ${payload.category}\nSeverity: ${payload.severity}\n`;
+  let bodyText = `Category: ${finalCat}\nSeverity: ${finalSev}\n`;
   bodyText += `Summary: ${payload.summary}\n\nDescription:\n${payload.description}\n\n`;
   if (payload.userEmail) bodyText += `Contact: ${payload.userEmail}\n\n`;
 
