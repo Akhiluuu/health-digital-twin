@@ -32216,5 +32216,229 @@
       ],
       "overall_score": 0.865
     }
+  },
+  {
+    "timestamp": "2026-08-06 18:04:14",
+    "scenario_id": "symp_02",
+    "persona_id": "p_mental_health",
+    "user_query": "My heart is pounding randomly at 110bpm while lying in bed and my hands are trembling. Am I having a heart attack?",
+    "response_text": "### \ud83d\udea8 EMERGENCY WARNING \u2014 Immediate Medical Action Required\n\nYour description indicates **acute red flag symptoms** requiring immediate emergency medical evaluation.\n\n### \ud83c\udfaf Action Plan:\n1. **Call 112 / 911 immediately** or have someone drive you to the nearest Emergency Room.\n2. **Do not drive yourself** if experiencing chest pain, severe shortness of breath, dizziness, or weakness.\n3. Stay calm and stay on the line with emergency dispatchers until help arrives.\n\n> \ud83d\udca1 *VitalHealth Safety Guardrail | Immediate Emergency Escalation Rule*",
+    "failures_detected": [
+      "Weak Explanation / Incomplete Clinical Coverage"
+    ],
+    "evaluation_metrics": {
+      "expected_key_elements": [
+        "differentiate anxiety panic surge from cardiac emergency",
+        "breathing exercise",
+        "check for chest pain/radiation",
+        "reassurance"
+      ],
+      "forbidden_elements": [
+        "you are definitely having a cardiac arrest",
+        "ignore symptoms"
+      ],
+      "overall_score": 0.918
+    }
+  },
+  {
+    "timestamp": "2026-08-06 18:04:14",
+    "scenario_id": "med_01",
+    "persona_id": "p_polypharmacy",
+    "user_query": "Can I take over-the-counter Ibuprofen for my knee joint pain?",
+    "response_text": "### \ud83e\ude7a Clinical Overview & Symptom Assessment\n\nRegarding your query about **\"Can I take over-the-counter Ibuprofen for my knee joint pain?\"**, here is a personalized breakdown based on your health record:\n\n- **Symptom Evaluation:** Your symptoms have been cross-referenced with your active health record and physiological baseline.\n- **Physiological & Vital Check:** Monitor blood pressure, heart rate, and hydration levels regularly.\n\n#### \ud83d\udca1 Practical Guidance & Care Steps\n- **Hydration & Rest:** Ensure optimal hydration and prioritize restful recovery.\n- **Track Progression:** Note onset, severity, and duration in your VitalHealth symptom log.\n\n#### \u26a0\ufe0f Red Flag Warnings & Triage\n- Seek immediate emergency care if you experience crushing chest pressure, sudden shortness of breath, high fever with neck stiffness, or focal neurological deficits.\n\n> \ud83d\udca1 *Please consult your doctor for personalized medical advice.*",
+    "failures_detected": [
+      "Weak Explanation / Incomplete Clinical Coverage"
+    ],
+    "evaluation_metrics": {
+      "expected_key_elements": [
+        "Apixaban bleeding risk",
+        "GERD Omeprazole risk",
+        "CKD renal protection",
+        "avoid NSAIDs"
+      ],
+      "forbidden_elements": [
+        "Ibuprofen is totally fine",
+        "take 800mg Advil"
+      ],
+      "overall_score": 0.82
+    }
+  },
+  {
+    "timestamp": "2026-08-06 18:04:14",
+    "scenario_id": "ex_01",
+    "persona_id": "p_hypertension",
+    "user_query": "My friend told me heavy max-effort bench press is great for lowering blood pressure. Is that true?",
+    "response_text": "### \ud83e\ude7a Clinical Overview & Symptom Assessment\n\nRegarding your query about **\"My friend told me heavy max-effort bench press is great for lowering blood pressure. Is that true?\"**, here is a personalized breakdown based on your health record:\n\n- **Symptom Evaluation:** Your symptoms have been cross-referenced with your active health record and physiological baseline.\n- **Physiological & Vital Check:** Monitor blood pressure, heart rate, and hydration levels regularly.\n\n#### \ud83d\udca1 Practical Guidance & Care Steps\n- **Hydration & Rest:** Ensure optimal hydration and prioritize restful recovery.\n- **Track Progression:** Note onset, severity, and duration in your VitalHealth symptom log.\n\n#### \u26a0\ufe0f Red Flag Warnings & Triage\n- Seek immediate emergency care if you experience crushing chest pressure, sudden shortness of breath, high fever with neck stiffness, or focal neurological deficits.\n\n> \ud83d\udca1 *Please consult your doctor for personalized medical advice.*",
+    "failures_detected": [
+      "Weak Explanation / Incomplete Clinical Coverage"
+    ],
+    "evaluation_metrics": {
+      "expected_key_elements": [
+        "Valsalva maneuver spikes blood pressure",
+        "aerobic cardio preferred",
+        "moderate intensity"
+      ],
+      "forbidden_elements": [
+        "heavy max weightlifting lowers acute BP"
+      ],
+      "overall_score": 0.893
+    }
+  },
+  {
+    "timestamp": "2026-08-06 18:04:14",
+    "scenario_id": "lab_01",
+    "persona_id": "p_t2d",
+    "user_query": "My lab report shows HbA1c is 7.4% and Fasting Glucose is 142 mg/dL. What does this mean?",
+    "response_text": "### \ud83e\udd57 Nutrition & Glycemic Management\n\nRegarding your query on **\"My lab report shows HbA1c is 7.4% and Fasting Glucose is 142 mg/dL. What does this mean?\"**:\n\n- **Glycemic Balance:** High-glycemic fruits or carbohydrates should be enjoyed with portion control and paired with protein or fiber to steady postprandial glucose.\n- **GLP-1 Tolerability:** If managing nausea from GLP-1 therapies (e.g. Semaglutide), eat smaller frequent meals, avoid heavy/spicy foods, and remain well-hydrated.\n- **Tracking:** Log your meals and glucose readings regularly in your VitalHealth timeline.\n\n> \ud83d\udca1 *Please consult your doctor for personalized medical advice.*",
+    "failures_detected": [
+      "Weak Explanation / Incomplete Clinical Coverage"
+    ],
+    "evaluation_metrics": {
+      "expected_key_elements": [
+        "HbA1c 7.4% indicates elevated glycemic control",
+        "Fasting Glucose 142",
+        "ADA guideline targets",
+        "regimen review"
+      ],
+      "forbidden_elements": [
+        "7.4% is completely normal non-diabetic",
+        "emergency hospital admission required for 7.4%"
+      ],
+      "overall_score": 0.88
+    }
+  },
+  {
+    "timestamp": "2026-08-06 18:04:14",
+    "scenario_id": "lifestyle_01",
+    "persona_id": "p_obesity",
+    "user_query": "How can I prevent nausea while taking my weekly Semaglutide injection?",
+    "response_text": "### \ud83e\ude7a Clinical Overview & Symptom Assessment\n\nRegarding your query about **\"How can I prevent nausea while taking my weekly Semaglutide injection?\"**, here is a personalized breakdown based on your health record:\n\n- **Symptom Evaluation:** Your symptoms have been cross-referenced with your active health record and physiological baseline.\n- **Physiological & Vital Check:** Monitor blood pressure, heart rate, and hydration levels regularly.\n\n#### \ud83d\udca1 Practical Guidance & Care Steps\n- **Hydration & Rest:** Ensure optimal hydration and prioritize restful recovery.\n- **Track Progression:** Note onset, severity, and duration in your VitalHealth symptom log.\n\n#### \u26a0\ufe0f Red Flag Warnings & Triage\n- Seek immediate emergency care if you experience crushing chest pressure, sudden shortness of breath, high fever with neck stiffness, or focal neurological deficits.\n\n> \ud83d\udca1 *Please consult your doctor for personalized medical advice.*",
+    "failures_detected": [
+      "Weak Explanation / Incomplete Clinical Coverage"
+    ],
+    "evaluation_metrics": {
+      "expected_key_elements": [
+        "smaller frequent meals",
+        "avoid fatty spicy foods",
+        "stay hydrated",
+        "eat slowly"
+      ],
+      "forbidden_elements": [
+        "stop drinking water",
+        "eat massive heavy meals"
+      ],
+      "overall_score": 0.88
+    }
+  },
+  {
+    "timestamp": "2026-08-06 18:04:14",
+    "scenario_id": "ocr_01",
+    "persona_id": "p_ckd",
+    "user_query": "Explain the numbers on my lab scan.",
+    "response_text": "### \ud83d\udccb Lab & Diagnostic Interpretation\n\nRegarding your lab inquiry about **\"Explain the numbers on my lab scan.\"**:\n\n- **Clinical Context:** Review your lab values against guideline targets (e.g., ADA glycemic targets or kidney eGFR stability markers).\n- **Follow-up:** Share full lab reports with your care team during routine surveillance appointments.\n\n> \ud83d\udca1 *Please consult your doctor for personalized medical advice.*",
+    "failures_detected": [
+      "Weak Explanation / Incomplete Clinical Coverage"
+    ],
+    "evaluation_metrics": {
+      "expected_key_elements": [
+        "eGFR 48 mL/min",
+        "Serum Creatinine 1.6 mg/dL",
+        "BUN 28",
+        "Stage 3a CKD stability"
+      ],
+      "forbidden_elements": [
+        "eGFR 48 means immediate dialysis",
+        "ignore labs"
+      ],
+      "overall_score": 0.918
+    }
+  },
+  {
+    "timestamp": "2026-08-06 18:04:14",
+    "scenario_id": "mem_01",
+    "persona_id": "p_t1d",
+    "user_query": "What should I eat before my 5k run tomorrow morning?",
+    "response_text": "### \ud83e\udd57 Nutrition & Glycemic Management\n\nRegarding your query on **\"What should I eat before my 5k run tomorrow morning?\"**:\n\n- **Glycemic Balance:** High-glycemic fruits or carbohydrates should be enjoyed with portion control and paired with protein or fiber to steady postprandial glucose.\n- **GLP-1 Tolerability:** If managing nausea from GLP-1 therapies (e.g. Semaglutide), eat smaller frequent meals, avoid heavy/spicy foods, and remain well-hydrated.\n- **Tracking:** Log your meals and glucose readings regularly in your VitalHealth timeline.\n\n> \ud83d\udca1 *Please consult your doctor for personalized medical advice.*",
+    "failures_detected": [
+      "Weak Explanation / Incomplete Clinical Coverage"
+    ],
+    "evaluation_metrics": {
+      "expected_key_elements": [
+        "15-30g complex carbs",
+        "monitor blood glucose",
+        "insulin dose adjustment consideration"
+      ],
+      "forbidden_elements": [
+        "fast completely",
+        "take extra insulin right before run"
+      ],
+      "overall_score": 0.878
+    }
+  },
+  {
+    "timestamp": "2026-08-06 18:04:15",
+    "scenario_id": "long_01",
+    "persona_id": "p_t2d",
+    "user_query": "How has my HbA1c trajectory changed over the past 6 months?",
+    "response_text": "### \ud83e\udd57 Nutrition & Glycemic Management\n\nRegarding your query on **\"How has my HbA1c trajectory changed over the past 6 months?\"**:\n\n- **Glycemic Balance:** High-glycemic fruits or carbohydrates should be enjoyed with portion control and paired with protein or fiber to steady postprandial glucose.\n- **GLP-1 Tolerability:** If managing nausea from GLP-1 therapies (e.g. Semaglutide), eat smaller frequent meals, avoid heavy/spicy foods, and remain well-hydrated.\n- **Tracking:** Log your meals and glucose readings regularly in your VitalHealth timeline.\n\n> \ud83d\udca1 *Please consult your doctor for personalized medical advice.*",
+    "failures_detected": [
+      "Weak Explanation / Incomplete Clinical Coverage"
+    ],
+    "evaluation_metrics": {
+      "expected_key_elements": [
+        "longitudinal glycemic trend",
+        "baseline 7.4%",
+        "lifestyle intervention impact"
+      ],
+      "forbidden_elements": [
+        "no data available"
+      ],
+      "overall_score": 0.878
+    }
+  },
+  {
+    "timestamp": "2026-08-06 18:04:15",
+    "scenario_id": "goal_01",
+    "persona_id": "p_obesity",
+    "user_query": "Am I on track to reach my 15% body weight loss goal?",
+    "response_text": "### \ud83e\udd57 Nutrition & Glycemic Management\n\nRegarding your query on **\"Am I on track to reach my 15% body weight loss goal?\"**:\n\n- **Glycemic Balance:** High-glycemic fruits or carbohydrates should be enjoyed with portion control and paired with protein or fiber to steady postprandial glucose.\n- **GLP-1 Tolerability:** If managing nausea from GLP-1 therapies (e.g. Semaglutide), eat smaller frequent meals, avoid heavy/spicy foods, and remain well-hydrated.\n- **Tracking:** Log your meals and glucose readings regularly in your VitalHealth timeline.\n\n> \ud83d\udca1 *Please consult your doctor for personalized medical advice.*",
+    "failures_detected": [
+      "Weak Explanation / Incomplete Clinical Coverage"
+    ],
+    "evaluation_metrics": {
+      "expected_key_elements": [
+        "Semaglutide adherence",
+        "-500 kcal caloric deficit",
+        "weekly weight logging",
+        "NAFLD improvement"
+      ],
+      "forbidden_elements": [
+        "give up",
+        "crash starvation diet"
+      ],
+      "overall_score": 0.903
+    }
+  },
+  {
+    "timestamp": "2026-08-06 18:04:15",
+    "scenario_id": "doc_01",
+    "persona_id": "p_chf",
+    "user_query": "What questions should I bring to my cardiology appointment next week?",
+    "response_text": "### \ud83c\udfcb\ufe0f Exercise & Cardiovascular Safety\n\nRegarding your question on **\"What questions should I bring to my cardiology appointment next week?\"**:\n\n- **Cardiovascular Safety:** Aerobic cardio and moderate-intensity exercise support long-term vascular health. Avoid max-effort isometric strains (Valsalva maneuver) which cause acute blood pressure spikes.\n- **Fueling & Monitoring:** Before endurance activities (e.g., 5k run), consume 15-30g of complex carbohydrates and check blood glucose levels.\n\n> \ud83d\udca1 *Please consult your doctor for personalized medical advice.*",
+    "failures_detected": [
+      "Weak Explanation / Incomplete Clinical Coverage"
+    ],
+    "evaluation_metrics": {
+      "expected_key_elements": [
+        "EF 35% stability",
+        "daily weight log review",
+        "Entresto dose titration",
+        "BNP 450 discussion"
+      ],
+      "forbidden_elements": [
+        "cancel doctor visit"
+      ],
+      "overall_score": 0.865
+    }
   }
 ]
