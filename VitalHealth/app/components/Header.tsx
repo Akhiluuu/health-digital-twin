@@ -128,24 +128,45 @@ export default function Header({
           </Text>
         </View>
 
-        {/* RIGHT: Notification Bell Button */}
-        <TouchableOpacity
-          onPress={() => {
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-            router.push("/NotificationCenter" as any);
-          }}
-          activeOpacity={0.7}
-          style={styles.notificationBtn}
-        >
-          <Ionicons
-            name="notifications-outline"
-            size={22}
-            color={colors.text}
-          />
-          {unreadCount > 0 && (
-            <View style={styles.notificationBadge} />
-          )}
-        </TouchableOpacity>
+        {/* RIGHT: Bug Report & Notifications */}
+        <View style={styles.rightActions}>
+          <TouchableOpacity
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+              router.push("/report-bug" as any);
+            }}
+            activeOpacity={0.7}
+            style={styles.bugBtn}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <Ionicons
+              name="bug-outline"
+              size={21}
+              color={colors.accent}
+            />
+            <View style={styles.betaTag}>
+              <Text style={styles.betaTagText}>BETA</Text>
+            </View>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              router.push("/NotificationCenter" as any);
+            }}
+            activeOpacity={0.7}
+            style={styles.notificationBtn}
+          >
+            <Ionicons
+              name="notifications-outline"
+              size={22}
+              color={colors.text}
+            />
+            {unreadCount > 0 && (
+              <View style={styles.notificationBadge} />
+            )}
+          </TouchableOpacity>
+        </View>
       </View>
     </View>
   );
@@ -225,6 +246,32 @@ const styles = StyleSheet.create({
   avatarInitialsText: {
     fontSize: 11,
     fontWeight: "700",
+  },
+  rightActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  bugBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 6,
+    borderRadius: 12,
+    position: "relative",
+  },
+  betaTag: {
+    backgroundColor: "#ef4444",
+    borderRadius: 6,
+    paddingHorizontal: 3,
+    paddingVertical: 1,
+    position: "absolute",
+    top: 0,
+    right: -4,
+  },
+  betaTagText: {
+    color: "#ffffff",
+    fontSize: 7,
+    fontWeight: "800",
   },
   notificationBtn: {
     padding: 6,

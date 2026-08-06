@@ -2400,3 +2400,74 @@ def list_backups(user_id: str):
             for f in files
         ]
     }
+
+
+# ── BETA BUG REPORTING ENDPOINTS ──────────────────────────────────────────────
+
+class BugReportInput(BaseModel):
+    category: str
+    severity: str
+    summary: str
+    description: str
+    user_email: Optional[str] = None
+    include_diagnostics: Optional[bool] = True
+    stack_trace: Optional[str] = None
+    current_route: Optional[str] = None
+    profile_id: Optional[str] = None
+    diagnostics: Optional[Dict[str, Any]] = None
+
+BUG_REPORTS_DIR = BASE_DIR / "bug_reports"
+BUG_REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+BUG_REPORTS_FILE = BUG_REPORTS_DIR / "reports.json"
+
+@app.post("/bug-reports", summary="Submit a beta user bug report to backend")
+@app.post("/api/v1/bug-reports", summary="Submit a beta user bug report to backend")
+def receive_bug_report(report: BugReportInput):
+    """
+    Receives user bug report from VitalHealth app and stores it in persistent server storage.
+    """
+    report_id = f"bug_{int(time.time())}_{uuid.uuid4().hex[:6]}"
+    report_data = {
+        "id": report_id,
+        "received_at": datetime.datetime.now().isoformat(),
+        "category": report.category,
+        "severity": report.severity,
+        "summary": report.summary,
+        "description": report.description,
+        "user_email": report.user_email,
+        "include_diagnostics": report.include_diagnostics,
+        "stack_trace": report.stack_trace,
+        "current_route": report.current_route,
+        "profile_id": report.profile_id,
+        "diagnostics": report.diagnostics or {},
+    }
+
+    # Save to disk store
+    with _jobs_lock:
+        existing = []
+        if BUG_REPORTS_FILE.exists():
+            try:
+                existing = json.loads(BUG_REPORTS_FILE.read_text(encoding="utf-8"))
+            except Exception:
+                existing = []
+        existing.insert(0, report_data)
+        BUG_REPORTS_FILE.write_text(json.dumps(existing, indent=2), encoding="utf-8")
+
+    logger.info(f"🐛 [BUG REPORT RECEIVED] ID: {report_id} | Cat: {report.category} | Severity: {report.severity} | Title: {report.summary}")
+    return {"status": "ok", "id": report_id, "message": "Bug report successfully recorded on backend server."}
+
+@app.get("/bug-reports", summary="Get list of beta user bug reports")
+@app.get("/api/v1/bug-reports", summary="Get list of beta user bug reports")
+def list_bug_reports(limit: int = 50, category: Optional[str] = None):
+    """
+    Returns list of received bug reports for developers.
+    """
+    if not BUG_REPORTS_FILE.exists():
+        return {"reports": [], "count": 0}
+    try:
+        reports = json.loads(BUG_REPORTS_FILE.read_text(encoding="utf-8"))
+        if category:
+            reports = [r for r in reports if r.get("category") == category]
+        return {"reports": reports[:limit], "count": len(reports)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to read bug reports: {e}")

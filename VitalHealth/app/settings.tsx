@@ -95,6 +95,7 @@ export default function SettingsScreen() {
 
         <View style={[styles.section, { backgroundColor: colors.card, borderColor: colors.border }]}>
           {Item("Help Center", "/settings-help")}
+          {Item("🐛  Report a Bug (Beta)", "/report-bug")}
           {Item("About VitalTwin", "/settings-about")}
         </View>
 
