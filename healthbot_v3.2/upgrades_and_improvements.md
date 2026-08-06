@@ -120,7 +120,7 @@ Added `document\_processor.py` to extract structured data from raw OCR texts and
 
 * **`chat.html` Preserved:**
 
-  * An interactive local HTML interface allowing developers to upload documents, view active symptoms/prescriptions, check intent classifications, and converse with Dr. Aria in real time.
+  * An interactive local HTML interface allowing developers to upload documents, view active symptoms/prescriptions, check intent classifications, and converse with Personal Health Assistant in real time.
   * **Thought Process Hidden:** Updated response processing in `chat.html` to hide the AI's internal reasoning `<think>...</think>` block from the user:
 
 &#x20;   ```javascript

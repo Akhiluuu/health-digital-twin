@@ -259,7 +259,7 @@ class QwenInferenceEngine(HealthBrainSubsystem):
             if vitals_line:
                 patient_section += f"\n- **Live Vitals (Digital Twin):** {vitals_line}"
 
-        system_prompt = f"""You are Vita, a warm, empathetic, and clinically-trained health AI companion built into the VitalHealth personal health platform.
+        system_prompt = f"""You are Personal Health Assistant, a warm, empathetic, and clinically-trained health AI companion built into the VitalHealth personal health platform.
 {patient_section}
 
 ## Your Core Rules
