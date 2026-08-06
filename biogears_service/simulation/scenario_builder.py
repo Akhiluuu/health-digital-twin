@@ -283,8 +283,8 @@ _sb_log = _sb_logger.getLogger("DigitalTwin.ScenarioBuilder")
 
 def _exercise_xml(intensity: float) -> str:
     """Emit BioGears ExerciseData XML. Intensity is ALWAYS clamped to [0.0, 1.0]."""
-    clamped = max(0.0, min(1.0, float(intensity)))
-    if clamped != float(intensity):
+    clamped = max(0.0, min(1.0, intensity))
+    if clamped != intensity:
         _sb_log.warning(
             f"_exercise_xml: intensity {intensity} out of [0,1] — clamped to {clamped:.4f}. "
             f"Fix the caller to send a normalised value."
@@ -326,7 +326,7 @@ def _chunked_advance_xml(total_seconds: int) -> str:
     if total_seconds <= 0:
         return ''
     xml = ''
-    remaining = int(total_seconds)
+    remaining = total_seconds
     while remaining > 0:
         chunk = min(remaining, _MAX_ADVANCE_CHUNK_S)
         xml += _advance_xml(chunk)
@@ -352,7 +352,7 @@ def _stress_xml(intensity: float) -> str:
     Intensity: 0.0 = no stress (clears state) → 1.0 = panic / maximum stress.
     XSD-validated: AcuteStressData.Severity is Scalar0To1Data (Bound0To1Double, inclusive).
     """
-    clamped = max(0.0, min(1.0, float(intensity)))
+    clamped = max(0.0, min(1.0, intensity))
     return (
         f'        <Action xsi:type="AcuteStressData">\n'
         f'            <Severity value="{clamped:.4f}"/>\n'
@@ -413,7 +413,7 @@ def _fasting_xml(hours: float) -> str:
 
     Hours clamped 1–48.
     """
-    hours   = max(1.0, min(48.0, float(hours)))
+    hours   = max(1.0, min(48.0, hours))
     seconds = int(hours * 3600)
     # Pure time advance — BioGears metabolic model handles glucose drop,
     # free fatty acid mobilization, and ketogenesis automatically.
