@@ -84,3 +84,4 @@ firebase-adminsdk*.json
 # Models directory GGUF model binary files
 /models/*.gguf
 /models/
+app-release.apk
