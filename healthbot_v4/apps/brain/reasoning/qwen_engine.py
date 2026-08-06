@@ -161,6 +161,15 @@ class QwenInferenceEngine(HealthBrainSubsystem):
                 logger.info(f"✅ GGUF [{intent}] {elapsed:.0f}ms")
                 return self._pack_result(context.patient_id, refined, sources, "qwen2.5-14b-gguf", elapsed)
 
+        # ── Tier 2.5: Cloud LLM API (if OPENAI_API_KEY or GROQ_API_KEY set) ──
+        raw = self._call_external_llm(messages, temperature, max_tokens)
+        if raw and self._is_quality_response(raw, user_query):
+            elapsed = (time.time() - start) * 1000
+            refined = self.verify_and_refine_response(raw, context, user_query)
+            self._update_stats(elapsed)
+            logger.info(f"✅ Cloud LLM API [{intent}] {elapsed:.0f}ms")
+            return self._pack_result(context.patient_id, refined, sources, "cloud-llm-api", elapsed)
+
         # ── Tier 3: Smart context-aware fallback ─────────────────────────────
         logger.warning("⚠️ Both Ollama and GGUF unavailable — using smart context fallback")
         fallback = self._smart_context_fallback(context, user_query)
@@ -346,11 +355,32 @@ You are the patient's trusted health companion. Answer clearly, safely, and with
     # Inference tiers
     # =========================================================================
 
+    def _get_available_ollama_model(self) -> Optional[str]:
+        """Queries Ollama /api/tags to detect installed models dynamically."""
+        try:
+            tags_url = _OLLAMA_ENDPOINT.replace("/api/chat", "/api/tags")
+            req = urllib.request.Request(tags_url, headers={"Content-Type": "application/json"}, method="GET")
+            with urllib.request.urlopen(req, timeout=3) as resp:
+                if resp.status == 200:
+                    data = json.loads(resp.read().decode("utf-8"))
+                    models = [m.get("name") for m in data.get("models", []) if m.get("name")]
+                    if not models:
+                        return None
+                    for m in models:
+                        if _OLLAMA_MODEL in m or m in _OLLAMA_MODEL:
+                            return m
+                    logger.info(f"🤖 Auto-selected available Ollama model: '{models[0]}' (requested '{_OLLAMA_MODEL}')")
+                    return models[0]
+        except Exception:
+            pass
+        return None
+
     def _call_ollama(self, messages: List[Dict[str, str]], temperature: float = 0.60, top_p: float = 0.92, max_tokens: int = 700) -> Optional[str]:
         """Calls local Ollama /api/chat. Zero data leaves the server."""
+        model_to_use = self._get_available_ollama_model() or _OLLAMA_MODEL
         try:
             payload = json.dumps({
-                "model": _OLLAMA_MODEL,
+                "model": model_to_use,
                 "messages": messages,
                 "stream": False,
                 "options": {
@@ -372,7 +402,35 @@ You are the patient's trusted health companion. Answer clearly, safely, and with
                     if text and len(text) > 30:
                         return text
         except Exception as e:
-            logger.debug(f"Ollama unavailable ({type(e).__name__}) — falling through to GGUF")
+            logger.debug(f"Ollama unavailable ({type(e).__name__}) — falling through")
+        return None
+
+    def _call_external_llm(self, messages: List[Dict[str, str]], temperature: float = 0.60, max_tokens: int = 700) -> Optional[str]:
+        """Optional cloud LLM fallback if local Ollama/GGUF are offline and OPENAI_API_KEY/GROQ_API_KEY is configured."""
+        api_key = os.getenv("OPENAI_API_KEY") or os.getenv("GROQ_API_KEY") or os.getenv("LLM_API_KEY")
+        if not api_key:
+            return None
+        endpoint = os.getenv("LLM_API_ENDPOINT", "https://api.openai.com/v1/chat/completions")
+        model = os.getenv("LLM_API_MODEL", "gpt-4o-mini" if "openai" in endpoint else "llama-3.3-70b-versatile")
+        try:
+            payload = json.dumps({
+                "model": model,
+                "messages": messages,
+                "temperature": temperature,
+                "max_tokens": max_tokens,
+            }).encode("utf-8")
+            req = urllib.request.Request(
+                endpoint, data=payload,
+                headers={"Content-Type": "application/json", "Authorization": f"Bearer {api_key}"}, method="POST"
+            )
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                if resp.status == 200:
+                    data = json.loads(resp.read().decode("utf-8"))
+                    choices = data.get("choices", [])
+                    if choices:
+                        return choices[0].get("message", {}).get("content", "").strip()
+        except Exception as e:
+            logger.warning(f"External LLM API call failed: {e}")
         return None
 
     def _call_llama_cpp(self, messages: List[Dict[str, str]], temperature: float = 0.60, top_p: float = 0.92, max_tokens: int = 700) -> Optional[str]:
