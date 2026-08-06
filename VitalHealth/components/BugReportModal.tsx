@@ -1,6 +1,6 @@
 // components/BugReportModal.tsx
 // ─────────────────────────────────────────────────────────────────────────────
-// Production-grade User Bug Reporting Modal for VitalHealth Beta Testing
+// Simplified & Intuitive Bug Reporting Modal for VitalHealth
 // ─────────────────────────────────────────────────────────────────────────────
 
 import React, { useState, useEffect } from "react";
@@ -16,17 +16,18 @@ import {
   KeyboardAvoidingView,
   Platform,
   Alert,
+  Image,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { usePathname } from "expo-router";
 import * as Haptics from "expo-haptics";
+import * as ImagePicker from "expo-image-picker";
 
 import { useTheme } from "../context/ThemeContext";
 import { useFamily } from "../context/FamilyContext";
 import { colors } from "../theme/colors";
 import {
   BugCategory,
-  BugSeverity,
   submitBugReport,
   getSystemDiagnostics,
   SystemDiagnostics,
@@ -50,15 +51,11 @@ export default function BugReportModal({
   const pathname = usePathname();
   const { activeProfile } = useFamily();
 
-  const [category, setCategory] = useState<BugCategory>(initialCategory);
-  const [severity, setSeverity] = useState<BugSeverity>(
-    initialStackTrace ? "critical" : "medium"
-  );
   const [summary, setSummary] = useState("");
   const [description, setDescription] = useState("");
   const [userEmail, setUserEmail] = useState("");
-  const [includeDiag, setIncludeDiag] = useState(true);
-  const [showDiagPreview, setShowDiagPreview] = useState(false);
+  const [screenshotUri, setScreenshotUri] = useState<string | null>(null);
+  const [screenshotBase64, setScreenshotBase64] = useState<string | null>(null);
 
   const [submitting, setSubmitting] = useState(false);
   const [diagnostics, setDiagnostics] = useState<SystemDiagnostics | null>(null);
@@ -66,8 +63,6 @@ export default function BugReportModal({
   useEffect(() => {
     if (visible) {
       if (initialStackTrace) {
-        setCategory("crash");
-        setSeverity("critical");
         setSummary("Unexpected application crash");
         setDescription(
           `App encountered an error stack trace:\n${initialStackTrace.slice(0, 300)}`
@@ -78,29 +73,71 @@ export default function BugReportModal({
     }
   }, [visible, initialStackTrace, pathname, activeProfile?.firstName]);
 
-  const categories: { key: BugCategory; label: string; icon: string }[] = [
-    { key: "ui", label: "UI / Design", icon: "color-palette-outline" },
-    { key: "vitals", label: "Vitals / Sensor", icon: "heart-outline" },
-    { key: "ai", label: "AI Health Twin", icon: "sparkles-outline" },
-    { key: "sync", label: "Sync & Server", icon: "cloud-offline-outline" },
-    { key: "crash", label: "Crash / Freeze", icon: "warning-outline" },
-    { key: "feedback", label: "Feedback", icon: "bulb-outline" },
-  ];
+  const handlePickImage = async () => {
+    try {
+      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permission.granted) {
+        Alert.alert("Permission Needed", "Photo library access is required to select a screenshot.");
+        return;
+      }
 
-  const severities: { key: BugSeverity; label: string; color: string }[] = [
-    { key: "low", label: "🟢 Low", color: "#10b981" },
-    { key: "medium", label: "🟡 Medium", color: "#f59e0b" },
-    { key: "high", label: "🔴 High", color: "#ef4444" },
-    { key: "critical", label: "💥 Critical", color: "#8b5cf6" },
-  ];
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        quality: 0.7,
+        base64: true,
+      });
+
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        const asset = result.assets[0];
+        setScreenshotUri(asset.uri);
+        if (asset.base64) {
+          setScreenshotBase64(`data:image/jpeg;base64,${asset.base64}`);
+        }
+      }
+    } catch (err: any) {
+      Alert.alert("Error", "Unable to select image.");
+    }
+  };
+
+  const handleTakePhoto = async () => {
+    try {
+      const permission = await ImagePicker.requestCameraPermissionsAsync();
+      if (!permission.granted) {
+        Alert.alert("Permission Needed", "Camera access is required to take a picture.");
+        return;
+      }
+
+      const result = await ImagePicker.launchCameraAsync({
+        allowsEditing: true,
+        quality: 0.7,
+        base64: true,
+      });
+
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        const asset = result.assets[0];
+        setScreenshotUri(asset.uri);
+        if (asset.base64) {
+          setScreenshotBase64(`data:image/jpeg;base64,${asset.base64}`);
+        }
+      }
+    } catch (err: any) {
+      Alert.alert("Error", "Unable to take photo.");
+    }
+  };
+
+  const handleRemoveScreenshot = () => {
+    setScreenshotUri(null);
+    setScreenshotBase64(null);
+  };
 
   const handleSubmit = async () => {
     if (!summary.trim()) {
-      Alert.alert("Missing Title", "Please enter a brief summary of the issue.");
+      Alert.alert("Issue Title Required", "Please enter a title for the issue.");
       return;
     }
     if (!description.trim()) {
-      Alert.alert("Missing Details", "Please describe what happened or steps to reproduce.");
+      Alert.alert("Description Required", "Please describe what happened.");
       return;
     }
 
@@ -110,12 +147,14 @@ export default function BugReportModal({
     try {
       const profileId = activeProfile?.firstName ? `User-${activeProfile.firstName}` : "Anon-User";
       const res = await submitBugReport({
-        category,
-        severity,
+        category: initialStackTrace ? "crash" : initialCategory,
+        severity: initialStackTrace ? "critical" : "medium",
         summary: summary.trim(),
         description: description.trim(),
         userEmail: userEmail.trim() || undefined,
-        includeDiagnostics: includeDiag,
+        screenshotUri: screenshotUri || undefined,
+        screenshotBase64: screenshotBase64 || undefined,
+        includeDiagnostics: true,
         stackTrace: initialStackTrace,
         currentRoute: pathname,
         profileId,
@@ -125,7 +164,7 @@ export default function BugReportModal({
 
       if (res.success) {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        Alert.alert("✅ Report Sent", res.message, [
+        Alert.alert("Thank You!", "Your issue report has been submitted.", [
           {
             text: "OK",
             onPress: () => {
@@ -147,8 +186,8 @@ export default function BugReportModal({
     setSummary("");
     setDescription("");
     setUserEmail("");
-    setCategory("ui");
-    setSeverity("medium");
+    setScreenshotUri(null);
+    setScreenshotBase64(null);
   };
 
   return (
@@ -171,13 +210,13 @@ export default function BugReportModal({
           {/* ── HEADER ── */}
           <View style={[styles.header, { borderBottomColor: c.border }]}>
             <View style={styles.headerTitleRow}>
-              <View style={[styles.bugIconWrap, { backgroundColor: c.accent + "18" }]}>
+              <View style={[styles.iconWrap, { backgroundColor: c.accent + "18" }]}>
                 <Ionicons name="bug-outline" size={20} color={c.accent} />
               </View>
               <View>
-                <Text style={[styles.title, { color: c.text }]}>Report a Bug</Text>
+                <Text style={[styles.title, { color: c.text }]}>Report an Issue</Text>
                 <Text style={[styles.subtitle, { color: c.sub }]}>
-                  Beta Tester Feedback & Diagnostics
+                  Describe what went wrong to help us fix it
                 </Text>
               </View>
             </View>
@@ -191,102 +230,25 @@ export default function BugReportModal({
             contentContainerStyle={styles.scrollContent}
             keyboardShouldPersistTaps="handled"
           >
-            {/* ── CATEGORY SELECTOR ── */}
-            <Text style={[styles.label, { color: c.sub }]}>BUG CATEGORY</Text>
-            <View style={styles.chipRow}>
-              {categories.map((cat) => {
-                const isSelected = category === cat.key;
-                return (
-                  <TouchableOpacity
-                    key={cat.key}
-                    onPress={() => {
-                      Haptics.selectionAsync();
-                      setCategory(cat.key);
-                    }}
-                    style={[
-                      styles.chip,
-                      {
-                        backgroundColor: isSelected
-                          ? c.accent + "20"
-                          : c.bg,
-                        borderColor: isSelected ? c.accent : c.border,
-                      },
-                    ]}
-                  >
-                    <Ionicons
-                      name={cat.icon as any}
-                      size={14}
-                      color={isSelected ? c.accent : c.sub}
-                    />
-                    <Text
-                      style={[
-                        styles.chipText,
-                        { color: isSelected ? c.accent : c.sub },
-                      ]}
-                    >
-                      {cat.label}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-
-            {/* ── SEVERITY SELECTOR ── */}
-            <Text style={[styles.label, { color: c.sub, marginTop: 14 }]}>
-              SEVERITY LEVEL
-            </Text>
-            <View style={styles.chipRow}>
-              {severities.map((sev) => {
-                const isSelected = severity === sev.key;
-                return (
-                  <TouchableOpacity
-                    key={sev.key}
-                    onPress={() => {
-                      Haptics.selectionAsync();
-                      setSeverity(sev.key);
-                    }}
-                    style={[
-                      styles.sevChip,
-                      {
-                        backgroundColor: isSelected
-                          ? sev.color + "25"
-                          : c.bg,
-                        borderColor: isSelected ? sev.color : c.border,
-                      },
-                    ]}
-                  >
-                    <Text
-                      style={[
-                        styles.sevText,
-                        { color: isSelected ? sev.color : c.sub },
-                      ]}
-                    >
-                      {sev.label}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-
-            {/* ── BUG TITLE SUMMARY ── */}
-            <Text style={[styles.label, { color: c.sub, marginTop: 14 }]}>
-              SUMMARY / ISSUE TITLE <Text style={{ color: "#ef4444" }}>*</Text>
+            {/* ── ISSUE TITLE (MANDATORY) ── */}
+            <Text style={[styles.label, { color: c.sub }]}>
+              ISSUE TITLE <Text style={{ color: "#ef4444" }}>*</Text>
             </Text>
             <TextInput
               style={[
                 styles.input,
                 { backgroundColor: c.bg, borderColor: c.border, color: c.text },
               ]}
-              placeholder="e.g. Heart scanner camera feed frozen"
+              placeholder="Brief title (e.g. Heart scanner camera frozen)"
               placeholderTextColor={c.sub + "80"}
               value={summary}
               onChangeText={setSummary}
               maxLength={100}
             />
 
-            {/* ── DETAILED DESCRIPTION ── */}
+            {/* ── ISSUE DESCRIPTION (MANDATORY) ── */}
             <Text style={[styles.label, { color: c.sub, marginTop: 14 }]}>
-              STEPS TO REPRODUCE / DETAILS <Text style={{ color: "#ef4444" }}>*</Text>
+              ISSUE DESCRIPTION <Text style={{ color: "#ef4444" }}>*</Text>
             </Text>
             <TextInput
               style={[
@@ -294,7 +256,7 @@ export default function BugReportModal({
                 styles.multilineInput,
                 { backgroundColor: c.bg, borderColor: c.border, color: c.text },
               ]}
-              placeholder="What were you doing when the bug occurred? Expected vs actual behavior..."
+              placeholder="Please explain what happened, what screen you were on, or steps to reproduce..."
               placeholderTextColor={c.sub + "80"}
               value={description}
               onChangeText={setDescription}
@@ -303,16 +265,16 @@ export default function BugReportModal({
               textAlignVertical="top"
             />
 
-            {/* ── USER CONTACT (OPTIONAL) ── */}
+            {/* ── YOUR EMAIL (OPTIONAL) ── */}
             <Text style={[styles.label, { color: c.sub, marginTop: 14 }]}>
-              YOUR EMAIL <Text style={{ fontSize: 11, fontWeight: "400" }}>(Optional, for follow up)</Text>
+              YOUR EMAIL <Text style={{ fontSize: 11, fontWeight: "400" }}>(Optional)</Text>
             </Text>
             <TextInput
               style={[
                 styles.input,
                 { backgroundColor: c.bg, borderColor: c.border, color: c.text },
               ]}
-              placeholder="e.g. tester@example.com"
+              placeholder="e.g. name@example.com (so we can follow up)"
               placeholderTextColor={c.sub + "80"}
               value={userEmail}
               onChangeText={setUserEmail}
@@ -320,40 +282,42 @@ export default function BugReportModal({
               autoCapitalize="none"
             />
 
-            {/* ── DIAGNOSTICS TOGGLE ── */}
-            <View style={[styles.diagRow, { borderTopColor: c.border }]}>
-              <TouchableOpacity
-                style={styles.diagToggle}
-                onPress={() => setIncludeDiag(!includeDiag)}
-                activeOpacity={0.7}
-              >
-                <Ionicons
-                  name={includeDiag ? "checkbox" : "square-outline"}
-                  size={20}
-                  color={includeDiag ? c.accent : c.sub}
-                />
-                <Text style={[styles.diagText, { color: c.text }]}>
-                  Include anonymous system diagnostics
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                onPress={() => setShowDiagPreview(!showDiagPreview)}
-              >
-                <Text style={{ color: c.accent, fontSize: 12, fontWeight: "600" }}>
-                  {showDiagPreview ? "Hide" : "View Specs"}
-                </Text>
-              </TouchableOpacity>
-            </View>
+            {/* ── ATTACH SCREENSHOT (OPTIONAL) ── */}
+            <Text style={[styles.label, { color: c.sub, marginTop: 14 }]}>
+              ATTACH SCREENSHOT <Text style={{ fontSize: 11, fontWeight: "400" }}>(Optional)</Text>
+            </Text>
 
-            {showDiagPreview && diagnostics && (
-              <View style={[styles.diagPreviewBox, { backgroundColor: c.bg, borderColor: c.border }]}>
-                <Text style={[styles.diagCode, { color: c.sub }]}>
-                  • App Version: {diagnostics.appVersion}{"\n"}
-                  • Platform: {diagnostics.platform} (v{diagnostics.osVersion}){"\n"}
-                  • Screen Resolution: {diagnostics.screenSize}{"\n"}
-                  • Active Route: {diagnostics.currentRoute}{"\n"}
-                  • BioGears Server: {diagnostics.serverUrl}
-                </Text>
+            {screenshotUri ? (
+              <View style={[styles.previewContainer, { borderColor: c.border, backgroundColor: c.bg }]}>
+                <Image source={{ uri: screenshotUri }} style={styles.previewImage} resizeMode="cover" />
+                <TouchableOpacity
+                  style={styles.removeBtn}
+                  onPress={handleRemoveScreenshot}
+                  activeOpacity={0.8}
+                >
+                  <Ionicons name="trash-outline" size={16} color="#ffffff" />
+                  <Text style={styles.removeBtnText}>Remove Photo</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <View style={styles.photoActionRow}>
+                <TouchableOpacity
+                  style={[styles.photoBtn, { backgroundColor: c.bg, borderColor: c.border }]}
+                  onPress={handlePickImage}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons name="images-outline" size={18} color={c.accent} />
+                  <Text style={[styles.photoBtnText, { color: c.text }]}>Choose Photo</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.photoBtn, { backgroundColor: c.bg, borderColor: c.border }]}
+                  onPress={handleTakePhoto}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons name="camera-outline" size={18} color={c.accent} />
+                  <Text style={[styles.photoBtnText, { color: c.text }]}>Take Photo</Text>
+                </TouchableOpacity>
               </View>
             )}
 
@@ -362,14 +326,14 @@ export default function BugReportModal({
               style={[styles.submitBtn, { backgroundColor: c.accent }]}
               onPress={handleSubmit}
               disabled={submitting}
-              activeOpacity={0.8}
+              activeOpacity={0.85}
             >
               {submitting ? (
                 <ActivityIndicator color="#ffffff" size="small" />
               ) : (
                 <>
                   <Ionicons name="paper-plane" size={18} color="#ffffff" />
-                  <Text style={styles.submitBtnText}>Send Bug Report</Text>
+                  <Text style={styles.submitBtnText}>Submit Issue</Text>
                 </>
               )}
             </TouchableOpacity>
@@ -406,7 +370,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 12,
   },
-  bugIconWrap: {
+  iconWrap: {
     width: 38,
     height: 38,
     borderRadius: 12,
@@ -434,34 +398,6 @@ const styles = StyleSheet.create({
     letterSpacing: 0.8,
     marginBottom: 8,
   },
-  chipRow: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 8,
-  },
-  chip: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 14,
-    borderWidth: 1,
-  },
-  chipText: {
-    fontSize: 12,
-    fontWeight: "600",
-  },
-  sevChip: {
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 14,
-    borderWidth: 1,
-  },
-  sevText: {
-    fontSize: 12,
-    fontWeight: "700",
-  },
   input: {
     borderRadius: 14,
     borderWidth: 1,
@@ -470,35 +406,51 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   multilineInput: {
-    minHeight: 90,
+    minHeight: 100,
   },
-  diagRow: {
+  photoActionRow: {
+    flexDirection: "row",
+    gap: 12,
+  },
+  photoBtn: {
+    flex: 1,
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
-    marginTop: 18,
-    paddingTop: 14,
-    borderTopWidth: 1,
-  },
-  diagToggle: {
-    flexDirection: "row",
-    alignItems: "center",
+    justifyContent: "center",
     gap: 8,
-  },
-  diagText: {
-    fontSize: 12,
-    fontWeight: "500",
-  },
-  diagPreviewBox: {
-    marginTop: 10,
-    padding: 12,
-    borderRadius: 12,
+    paddingVertical: 12,
+    borderRadius: 14,
     borderWidth: 1,
   },
-  diagCode: {
-    fontSize: 11,
-    fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
-    lineHeight: 18,
+  photoBtnText: {
+    fontSize: 13,
+    fontWeight: "600",
+  },
+  previewContainer: {
+    borderRadius: 16,
+    borderWidth: 1,
+    padding: 10,
+    alignItems: "center",
+    gap: 10,
+  },
+  previewImage: {
+    width: "100%",
+    height: 160,
+    borderRadius: 12,
+  },
+  removeBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: "#ef4444",
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 12,
+  },
+  removeBtnText: {
+    color: "#ffffff",
+    fontSize: 12,
+    fontWeight: "600",
   },
   submitBtn: {
     flexDirection: "row",
@@ -507,7 +459,7 @@ const styles = StyleSheet.create({
     gap: 8,
     height: 52,
     borderRadius: 16,
-    marginTop: 20,
+    marginTop: 24,
   },
   submitBtnText: {
     color: "#ffffff",
