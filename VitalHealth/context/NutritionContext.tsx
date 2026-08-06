@@ -359,8 +359,24 @@ const NutritionContext = createContext<NutritionContextType | null>(null);
 // ─── Provider ─────────────────────────────────────────────────────────────────
 export function NutritionProvider({ children }: { children: React.ReactNode }) {
   const [state, dispatch] = useReducer(reducer, initialState);
-  const { isSwitched, activeMemberId } = useFamily();
+  const { isSwitched, activeMemberId, reportLoading } = useFamily();
   const { todayEvents, setTodayEvents, sessions } = useBiogearsTwin();
+
+  useEffect(() => {
+    if (reportLoading) {
+      reportLoading("nutrition", !state.loaded);
+    }
+  }, [state.loaded, reportLoading]);
+
+  // Safety timer to prevent state.loaded from staying false forever
+  useEffect(() => {
+    if (!state.loaded) {
+      const timer = setTimeout(() => {
+        dispatch({ type: "LOAD", payload: {} });
+      }, 2500);
+      return () => clearTimeout(timer);
+    }
+  }, [state.loaded]);
 
   // Sync / Load with Firebase
   const syncNutritionWithFirebase = useCallback(async () => {

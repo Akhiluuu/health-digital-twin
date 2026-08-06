@@ -1,0 +1,19 @@
+{
+  "patient_id": "p_t1d",
+  "goals": [],
+  "milestones": [],
+  "insights": [],
+  "health_score_history": [],
+  "created_at": "2026-08-06T04:36:37.337529",
+  "updated_at": "2026-08-06T06:30:30.315320",
+  "medicines": [
+    {
+      "name": "Insulin Lispro",
+      "dose": "Slide Scale before meals"
+    },
+    {
+      "name": "Insulin Glargine",
+      "dose": "22 units bedtime"
+    }
+  ]
+}

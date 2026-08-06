@@ -573,6 +573,15 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
     setIsTwinLoading(true);
   }, [twinUserId]);
 
+  // Safety timer to prevent isTwinLoading from hanging
+  useEffect(() => {
+    if (!isTwinLoading) return;
+    const timer = setTimeout(() => {
+      setIsTwinLoading(false);
+    }, 2500);
+    return () => clearTimeout(timer);
+  }, [isTwinLoading]);
+
   useEffect(() => {
     // Guard 1: skip if twinUserId is not yet resolved.
     // Guard 2: skip 'temp_user' — that's the AsyncStorage placeholder before
@@ -683,7 +692,7 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
         } catch (e) {
           error('[BiogearsTwin] Sync & load error:', e);
         } finally {
-          if (active) setIsTwinLoading(false);
+          setIsTwinLoading(false);
         }
       })();
 

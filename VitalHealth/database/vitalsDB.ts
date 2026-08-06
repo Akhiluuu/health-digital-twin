@@ -9,6 +9,7 @@ export interface VitalsRecord {
   timestamp: number;
   date: string; // YYYY-MM-DD
   time: string; // HH:MM
+  member_id?: string; // profile owner ('self' or member UID)
   heartRate?: number | null;
   bpSystolic?: number | null;
   bpDiastolic?: number | null;
@@ -30,6 +31,7 @@ export const initVitalsDB = async () => {
         timestamp           INTEGER NOT NULL,
         date                TEXT NOT NULL,
         time                TEXT NOT NULL,
+        member_id           TEXT DEFAULT 'self',
         heartRate           INTEGER,
         bpSystolic          INTEGER,
         bpDiastolic         INTEGER,
@@ -43,6 +45,11 @@ export const initVitalsDB = async () => {
         notes               TEXT
       );
     `);
+    try {
+      await db.execAsync("ALTER TABLE vitals_log ADD COLUMN member_id TEXT DEFAULT 'self';");
+    } catch (_) {
+      // Column already exists
+    }
     log("✅ Vitals Log DB ready (shared vital_health.db)");
   } catch (err) {
     log("❌ initVitalsDB error:", err);
@@ -50,21 +57,26 @@ export const initVitalsDB = async () => {
   }
 };
 
-export const addVitalsRecord = async (record: Omit<VitalsRecord, "id" | "timestamp">): Promise<string> => {
+export const addVitalsRecord = async (
+  record: Omit<VitalsRecord, "id" | "timestamp">,
+  memberId: string = "self"
+): Promise<string> => {
   try {
     const id = `vital_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     const timestamp = Date.now();
+    const ownerId = memberId || record.member_id || "self";
     
     db.runSync(
       `INSERT INTO vitals_log (
-        id, timestamp, date, time, heartRate, bpSystolic, bpDiastolic,
+        id, timestamp, date, time, member_id, heartRate, bpSystolic, bpDiastolic,
         spo2, temperature, respiratoryRate, weight, bloodGlucose, feeling, medicationTaken, notes
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         id,
         timestamp,
         record.date,
         record.time,
+        ownerId,
         record.heartRate !== undefined && record.heartRate !== null ? Number(record.heartRate) : null,
         record.bpSystolic !== undefined && record.bpSystolic !== null ? Number(record.bpSystolic) : null,
         record.bpDiastolic !== undefined && record.bpDiastolic !== null ? Number(record.bpDiastolic) : null,
@@ -79,7 +91,7 @@ export const addVitalsRecord = async (record: Omit<VitalsRecord, "id" | "timesta
       ]
     );
     
-    log("🟢 Vitals record added with ID:", id);
+    log("🟢 Vitals record added with ID:", id, "for member:", ownerId);
     return id;
   } catch (err) {
     log("❌ addVitalsRecord error:", err);
@@ -89,10 +101,12 @@ export const addVitalsRecord = async (record: Omit<VitalsRecord, "id" | "timesta
 
 export const updateVitalsRecord = async (record: VitalsRecord): Promise<void> => {
   try {
+    const ownerId = record.member_id || "self";
     db.runSync(
       `UPDATE vitals_log SET
         date = ?,
         time = ?,
+        member_id = ?,
         heartRate = ?,
         bpSystolic = ?,
         bpDiastolic = ?,
@@ -108,6 +122,7 @@ export const updateVitalsRecord = async (record: VitalsRecord): Promise<void> =>
       [
         record.date,
         record.time,
+        ownerId,
         record.heartRate !== undefined && record.heartRate !== null ? Number(record.heartRate) : null,
         record.bpSystolic !== undefined && record.bpSystolic !== null ? Number(record.bpSystolic) : null,
         record.bpDiastolic !== undefined && record.bpDiastolic !== null ? Number(record.bpDiastolic) : null,
@@ -139,9 +154,15 @@ export const deleteVitalsRecord = async (id: string): Promise<void> => {
   }
 };
 
-export const getAllVitalsRecords = async (): Promise<VitalsRecord[]> => {
+export const getAllVitalsRecords = async (memberId: string = "self"): Promise<VitalsRecord[]> => {
   try {
-    return (db.getAllSync(`SELECT * FROM vitals_log ORDER BY timestamp DESC`) as VitalsRecord[]) || [];
+    const ownerId = memberId || "self";
+    return (
+      (db.getAllSync(
+        `SELECT * FROM vitals_log WHERE member_id = ? OR (member_id IS NULL AND ? = 'self') ORDER BY timestamp DESC`,
+        [ownerId, ownerId]
+      ) as VitalsRecord[]) || []
+    );
   } catch (err) {
     log("❌ getAllVitalsRecords error:", err);
     return [];

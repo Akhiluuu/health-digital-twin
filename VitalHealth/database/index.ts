@@ -306,17 +306,18 @@ class WebSQLiteMock {
         timestamp: params[1],
         date: params[2],
         time: params[3],
-        heartRate: params[4],
-        bpSystolic: params[5],
-        bpDiastolic: params[6],
-        spo2: params[7],
-        temperature: params[8],
-        respiratoryRate: params[9],
-        weight: params[10],
-        bloodGlucose: params[11],
-        feeling: params[12],
-        medicationTaken: params[13],
-        notes: params[14]
+        member_id: params[4] || "self",
+        heartRate: params[5],
+        bpSystolic: params[6],
+        bpDiastolic: params[7],
+        spo2: params[8],
+        temperature: params[9],
+        respiratoryRate: params[10],
+        weight: params[11],
+        bloodGlucose: params[12],
+        feeling: params[13],
+        medicationTaken: params[14],
+        notes: params[15]
       };
       const idx = this.tables.vitals_log.findIndex((x: any) => x.id === record.id);
       if (idx >= 0) this.tables.vitals_log[idx] = record;
@@ -326,18 +327,19 @@ class WebSQLiteMock {
       const record = {
         date: params[0],
         time: params[1],
-        heartRate: params[2],
-        bpSystolic: params[3],
-        bpDiastolic: params[4],
-        spo2: params[5],
-        temperature: params[6],
-        respiratoryRate: params[7],
-        weight: params[8],
-        bloodGlucose: params[9],
-        feeling: params[10],
-        medicationTaken: params[11],
-        notes: params[12],
-        id: params[13]
+        member_id: params[2] || "self",
+        heartRate: params[3],
+        bpSystolic: params[4],
+        bpDiastolic: params[5],
+        spo2: params[6],
+        temperature: params[7],
+        respiratoryRate: params[8],
+        weight: params[9],
+        bloodGlucose: params[10],
+        feeling: params[11],
+        medicationTaken: params[12],
+        notes: params[13],
+        id: params[14]
       };
       const idx = this.tables.vitals_log.findIndex((x: any) => x.id === record.id);
       if (idx >= 0) {
@@ -404,6 +406,12 @@ class WebSQLiteMock {
       if (sqlLower.includes("where id = ?")) {
         const id = params[0];
         return this.tables.vitals_log.filter((x: any) => x.id == id) as unknown as T[];
+      }
+      if (sqlLower.includes("where member_id = ?")) {
+        const mId = params[0] || "self";
+        return [...this.tables.vitals_log]
+          .filter((x: any) => x.member_id === mId || (!x.member_id && mId === "self"))
+          .sort((a: any, b: any) => b.timestamp - a.timestamp) as unknown as T[];
       }
       return [...this.tables.vitals_log].sort((a: any, b: any) => b.timestamp - a.timestamp) as unknown as T[];
     } else if (sqlLower.includes("select * from db_meta")) {

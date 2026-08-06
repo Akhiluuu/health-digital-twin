@@ -18,6 +18,8 @@ import {
   ActivityIndicator,
   Share,
   Platform,
+  PermissionsAndroid,
+  Alert,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter, useNavigation } from "expo-router";
@@ -215,6 +217,27 @@ export default function HeartScannerScreen() {
       return;
     }
 
+    if (Platform.OS === "android") {
+      try {
+        const granted = await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.CAMERA);
+        if (granted !== PermissionsAndroid.RESULTS.GRANTED) {
+          setHasPermission(false);
+          Alert.alert("Permission Required", "Camera access is required for heart rate measurement.");
+          return;
+        }
+      } catch (e) {
+        console.warn("Android camera permission error:", e);
+      }
+    }
+
+    const { status } = await Camera.requestCameraPermissionsAsync();
+    if (status !== "granted") {
+      setHasPermission(false);
+      Alert.alert("Permission Required", "Camera access is required for heart rate measurement.");
+      return;
+    }
+
+    setHasPermission(true);
     setScreenState("measuring");
   };
 
@@ -263,7 +286,7 @@ export default function HeartScannerScreen() {
         time: timeStr,
         heartRate: Math.round(finalResult.bpm),
         notes: "Camera PPG Heart Rate Scan",
-      }).catch(err => console.log("Failed to insert heartRate record into vitalsDB:", err));
+      }, activeMemberId || "self").catch(err => console.log("Failed to insert heartRate record into vitalsDB:", err));
 
       Vibration.vibrate(50);
       router.back();

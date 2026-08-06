@@ -193,6 +193,15 @@ export function SymptomsProvider({ children }: { children: React.ReactNode }) {
     }
   }, [isLoadingMemberSymptoms, reportLoading]);
 
+  // Safety timer to prevent isLoadingMemberSymptoms from hanging
+  useEffect(() => {
+    if (!isLoadingMemberSymptoms) return;
+    const timer = setTimeout(() => {
+      setIsLoadingMember(false);
+    }, 2500);
+    return () => clearTimeout(timer);
+  }, [isLoadingMemberSymptoms]);
+
   //////////////////////////////////////////////////////////
   // REFRESH — reacts to profile switching
   // When switched → fetch ONLY from member's Firebase doc
@@ -405,6 +414,7 @@ export function SymptomsProvider({ children }: { children: React.ReactNode }) {
 
   const removeSymptom = useCallback(async (id: number) => {
     setActiveSymptoms((prev) => prev.filter((s) => s.id !== id));
+    setHistorySymptoms((prev) => prev.filter((s) => s.id !== id));
     if (isSwitched && activeMemberId && activeMemberId !== "self") {
       syncWithRetry(() => syncDeleteSymptom(id, activeMemberId), "DeleteSymptom");
       return;

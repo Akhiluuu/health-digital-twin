@@ -145,7 +145,7 @@ export default function SymptomLogScreen() {
           Symptom Log
         </Text>
 
-        <TouchableOpacity>
+        <TouchableOpacity onPress={() => router.push("/symptom-history")}>
           <Ionicons
             name="time-outline"
             size={24}

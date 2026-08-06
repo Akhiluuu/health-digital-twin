@@ -100,6 +100,15 @@ export const HydrationProvider = ({
     }
   }, [isLoadingHydration, reportLoading]);
 
+  // Safety timer to prevent isLoadingHydration from hanging
+  useEffect(() => {
+    if (!isLoadingHydration) return;
+    const timer = setTimeout(() => {
+      setIsLoadingHydration(false);
+    }, 2500);
+    return () => clearTimeout(timer);
+  }, [isLoadingHydration]);
+
   const isMountedRef = React.useRef(true);
   useEffect(() => {
     return () => { isMountedRef.current = false; };

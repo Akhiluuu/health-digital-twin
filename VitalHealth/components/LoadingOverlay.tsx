@@ -70,6 +70,16 @@ export function LoadingOverlay() {
     isLoadingHyd,
   ]);
 
+  // Max 1.5s lock on profile switch to prevent indefinite overlays
+  useEffect(() => {
+    if (isSyncingSwitchedProfile) {
+      const timer = setTimeout(() => {
+        setIsSyncingSwitchedProfile(false);
+      }, 1500);
+      return () => clearTimeout(timer);
+    }
+  }, [isSyncingSwitchedProfile]);
+
   const [forceDismiss, setForceDismiss] = useState(false);
 
   // Reset force dismissal when activeMemberId changes
@@ -94,13 +104,13 @@ export function LoadingOverlay() {
       isLoadingNutr ||
       isLoadingHyd);
 
-  // Safety timeout: if any loading screen stays up for more than 8 seconds, force dismiss it
+  // Safety timeout: if any loading screen stays up for more than 2 seconds, force dismiss it
   useEffect(() => {
     if (showOverlay) {
       const timer = setTimeout(() => {
         console.warn("[LoadingOverlay] Safety timeout triggered: forcing overlay dismissal");
         setForceDismiss(true);
-      }, 8000);
+      }, 2000);
       return () => clearTimeout(timer);
     } else {
       setForceDismiss(false);

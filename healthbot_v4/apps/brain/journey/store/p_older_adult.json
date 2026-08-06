@@ -1,0 +1,23 @@
+{
+  "patient_id": "p_older_adult",
+  "goals": [],
+  "milestones": [],
+  "insights": [],
+  "health_score_history": [],
+  "created_at": "2026-08-06T04:36:37.311176",
+  "updated_at": "2026-08-06T06:30:30.308126",
+  "medicines": [
+    {
+      "name": "Donepezil (Aricept)",
+      "dose": "10mg bedtime"
+    },
+    {
+      "name": "Tamsulosin (Flomax)",
+      "dose": "0.4mg daily"
+    },
+    {
+      "name": "Meloxicam",
+      "dose": "7.5mg daily"
+    }
+  ]
+}

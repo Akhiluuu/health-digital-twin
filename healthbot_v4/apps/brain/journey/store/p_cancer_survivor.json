@@ -1,0 +1,15 @@
+{
+  "patient_id": "p_cancer_survivor",
+  "goals": [],
+  "milestones": [],
+  "insights": [],
+  "health_score_history": [],
+  "created_at": "2026-08-06T04:36:37.323463",
+  "updated_at": "2026-08-06T06:30:30.311760",
+  "medicines": [
+    {
+      "name": "Anastrozole (Arimidex)",
+      "dose": "1mg daily"
+    }
+  ]
+}

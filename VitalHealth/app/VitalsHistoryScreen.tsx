@@ -14,6 +14,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useRouter, useNavigation } from "expo-router";
 import { useTheme } from "../context/ThemeContext";
 import { colors } from "../theme/colors";
+import { useFamily } from "../context/FamilyContext";
 import { getAllVitalsRecords, VitalsRecord } from "../database/vitalsDB";
 import { log } from "../utils/logger";
 
@@ -27,23 +28,25 @@ export default function VitalsHistoryScreen() {
   const navigation = useNavigation();
   const { theme } = useTheme();
   const c = colors[theme];
+  const { activeMemberId, isSwitched } = useFamily();
+  const memberId = isSwitched && activeMemberId ? activeMemberId : "self";
 
   const [records, setRecords] = useState<VitalsRecord[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // ─── LOAD RECORDS ON MOUNT AND FOCUS ───
+  // ─── LOAD RECORDS ON MOUNT, FOCUS, AND PROFILE SWITCH ───
   useEffect(() => {
     loadRecords();
     const unsubscribe = navigation.addListener("focus", () => {
       loadRecords();
     });
     return unsubscribe;
-  }, [navigation]);
+  }, [navigation, memberId]);
 
   const loadRecords = async () => {
     try {
       setLoading(true);
-      const data = await getAllVitalsRecords();
+      const data = await getAllVitalsRecords(memberId);
       setRecords(data);
     } catch (err) {
       log("Failed to load vitals history:", err);

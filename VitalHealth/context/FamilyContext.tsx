@@ -341,6 +341,13 @@ export const FamilyProvider = ({
   useEffect(() => {
     if (!isSwitchLoading) return;
 
+    // Safety timer: Never allow isSwitchLoading to hang for more than 2000ms
+    const safetyTimer = setTimeout(() => {
+      log("⚠️ [FamilyContext] Safety timeout: auto-clearing isSwitchLoading");
+      setIsSwitchLoading(false);
+      isSwitchingRef.current = false;
+    }, 2000);
+
     // Check if any reported context is currently loading
     const anyLoading = Object.values(loadingStates).some((loading) => loading === true);
 
@@ -351,8 +358,13 @@ export const FamilyProvider = ({
         setIsSwitchLoading(false);
         isSwitchingRef.current = false;
       }, remaining);
-      return () => clearTimeout(timer);
+      return () => {
+        clearTimeout(timer);
+        clearTimeout(safetyTimer);
+      };
     }
+
+    return () => clearTimeout(safetyTimer);
   }, [loadingStates, isSwitchLoading]);
 
   /* ── SWITCH BACK TO SELF ─────────────────────────────────────────
@@ -362,11 +374,7 @@ export const FamilyProvider = ({
   const switchToSelf = useCallback(async () => {
     log("🔄 Switching back to self");
     lastSwitchTimeRef.current = Date.now();
-    setLoadingStates({
-      medicine: true,
-      symptoms: true,
-      hydration: true,
-    });
+    setLoadingStates({});
     setIsSwitchLoading(true);
     try {
       setActiveMemberId("self");
@@ -375,6 +383,7 @@ export const FamilyProvider = ({
     } catch (e) {
       error("❌ switchToSelf error:", e);
       setIsSwitchLoading(false);
+      isSwitchingRef.current = false;
     }
   }, []);
 
@@ -403,11 +412,7 @@ export const FamilyProvider = ({
 
     isSwitchingRef.current = true;
     lastSwitchTimeRef.current = Date.now();
-    setLoadingStates({
-      medicine: true,
-      symptoms: true,
-      hydration: true,
-    });
+    setLoadingStates({});
     setIsSwitchLoading(true);
     try {
       log("🔄 Switching profile to UID:", memberUid);

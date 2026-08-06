@@ -108,7 +108,7 @@ class StepDetector {
     this.kalman += gain * (mag - this.kalman);
     this.kErr = (1 - gain) * this.kErr + 0.005;
     const now = Date.now();
-    if (this.kalman > 0.09 && (now - this.lastAt) > 280) {
+    if (this.kalman > 1.2 && (now - this.lastAt) > 250) {
       this.lastAt = now; this.onStep?.();
     }
   }
@@ -301,13 +301,11 @@ export const StepProvider: React.FC<{
       if (!isTrackingRef.current) return;
       try {
         const { steps: nativeSteps, source } = await getTodayStepsNative();
-        if (nativeSteps > 0 && nativeSteps > stepsRef.current) {
+        if (nativeSteps >= 0 && nativeSteps !== stepsRef.current) {
           stepsRef.current = nativeSteps;
           dirtyRef.current = true;
           setSteps(nativeSteps);
           setDataSource(source);
-        } else if (stepsRef.current > nativeSteps && nativeSteps > 0) {
-          updateNativeSteps(stepsRef.current);
         }
       } catch { /* ignore */ }
     }, 3000);
@@ -458,8 +456,8 @@ export const StepProvider: React.FC<{
   const startAndroidNativeSubscription = useCallback(() => {
     nativeUnsubRef.current?.();
     nativeUnsubRef.current = subscribeToStepUpdates((event) => {
-      // Native service sends absolute daily step count
-      if (event.steps > stepsRef.current) {
+      // Native service sends absolute daily step count ground-truth
+      if (event.steps !== stepsRef.current) {
         stepsRef.current = event.steps;
         dirtyRef.current = true;
         setSteps(event.steps);
@@ -611,13 +609,11 @@ export const StepProvider: React.FC<{
     if (Platform.OS !== 'android') return;
     if (isSwitched) return;
     const { steps: nativeSteps, source } = await getTodayStepsNative();
-    if (nativeSteps > stepsRef.current) {
+    if (nativeSteps >= 0) {
       stepsRef.current = nativeSteps;
       dirtyRef.current = true;
       setSteps(nativeSteps);
       setDataSource(source);
-    } else if (stepsRef.current > nativeSteps) {
-      updateNativeSteps(stepsRef.current);
     }
   }, [isSwitched]);
 

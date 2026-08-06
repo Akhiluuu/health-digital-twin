@@ -1,0 +1,19 @@
+{
+  "patient_id": "p_hypertension",
+  "goals": [],
+  "milestones": [],
+  "insights": [],
+  "health_score_history": [],
+  "created_at": "2026-08-06T04:36:37.288334",
+  "updated_at": "2026-08-06T06:30:30.306995",
+  "medicines": [
+    {
+      "name": "Lisinopril",
+      "dose": "20mg daily"
+    },
+    {
+      "name": "Amlodipine",
+      "dose": "5mg daily"
+    }
+  ]
+}

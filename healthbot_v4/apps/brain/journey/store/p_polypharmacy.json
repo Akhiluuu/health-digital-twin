@@ -1,0 +1,43 @@
+{
+  "patient_id": "p_polypharmacy",
+  "goals": [],
+  "milestones": [],
+  "insights": [],
+  "health_score_history": [],
+  "created_at": "2026-08-06T04:36:37.296584",
+  "updated_at": "2026-08-06T06:30:30.303894",
+  "medicines": [
+    {
+      "name": "Apixaban (Eliquis)",
+      "dose": "5mg twice daily"
+    },
+    {
+      "name": "Metformin",
+      "dose": "500mg BID"
+    },
+    {
+      "name": "Metoprolol Tartrate",
+      "dose": "25mg BID"
+    },
+    {
+      "name": "Omeprazole",
+      "dose": "20mg daily"
+    },
+    {
+      "name": "Alendronate (Fosamax)",
+      "dose": "70mg weekly"
+    },
+    {
+      "name": "Atorvastatin",
+      "dose": "20mg daily"
+    },
+    {
+      "name": "Calcium + Vit D3",
+      "dose": "600mg/400IU BID"
+    },
+    {
+      "name": "Levothyroxine",
+      "dose": "75mcg daily"
+    }
+  ]
+}

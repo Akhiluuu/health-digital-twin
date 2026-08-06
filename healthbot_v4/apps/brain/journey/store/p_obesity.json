@@ -1,0 +1,15 @@
+{
+  "patient_id": "p_obesity",
+  "goals": [],
+  "milestones": [],
+  "insights": [],
+  "health_score_history": [],
+  "created_at": "2026-08-06T04:36:37.326365",
+  "updated_at": "2026-08-06T06:30:30.318720",
+  "medicines": [
+    {
+      "name": "Semaglutide (Wegovy)",
+      "dose": "1.0mg weekly injection"
+    }
+  ]
+}

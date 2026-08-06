@@ -19,6 +19,7 @@ import * as Haptics from "expo-haptics";
 
 import { useTheme } from "../context/ThemeContext";
 import { colors } from "../theme/colors";
+import { useFamily } from "../context/FamilyContext";
 import DatePicker from "../components/twin/DatePicker";
 import TimePicker from "../components/twin/TimePicker";
 import {
@@ -41,6 +42,8 @@ export default function LogVitalsScreen() {
 
   const { theme } = useTheme();
   const c = colors[theme];
+  const { activeMemberId, isSwitched } = useFamily();
+  const memberOwnerId = isSwitched && activeMemberId ? activeMemberId : "self";
 
   // ─── STATE VARIABLES ───
   const [date, setDate] = useState(() => {
@@ -266,7 +269,7 @@ export default function LogVitalsScreen() {
       // Sync vitals to Firebase and AsyncStorage for Live Telemetry Grid
       if (recordData.heartRate || recordData.spo2) {
         try {
-          const uid = await getUserId();
+          const uid = isSwitched && activeMemberId ? activeMemberId : await getUserId();
           if (uid) {
             const updates: any = { updatedAt: new Date().toISOString() };
             if (recordData.heartRate) {
@@ -291,6 +294,7 @@ export default function LogVitalsScreen() {
         const updatedRecord: VitalsRecord = {
           id: recordId,
           timestamp: Date.now(), // update timestamp
+          member_id: memberOwnerId,
           ...recordData,
         };
         await updateVitalsRecord(updatedRecord);
@@ -299,10 +303,11 @@ export default function LogVitalsScreen() {
         ]);
       } else {
         // Create Mode
-        const newId = await addVitalsRecord(recordData);
+        const newId = await addVitalsRecord(recordData, memberOwnerId);
         const record = {
           id: newId,
           timestamp: Date.now(),
+          member_id: memberOwnerId,
           ...recordData,
         };
         setSavedRecord(record);

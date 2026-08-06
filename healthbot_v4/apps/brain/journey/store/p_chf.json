@@ -1,0 +1,23 @@
+{
+  "patient_id": "p_chf",
+  "goals": [],
+  "milestones": [],
+  "insights": [],
+  "health_score_history": [],
+  "created_at": "2026-08-06T04:36:37.353839",
+  "updated_at": "2026-08-06T06:30:30.319534",
+  "medicines": [
+    {
+      "name": "Entresto (Sacubitril/Valsartan)",
+      "dose": "49/51mg twice daily"
+    },
+    {
+      "name": "Metoprolol Succinate",
+      "dose": "50mg daily"
+    },
+    {
+      "name": "Spironolactone",
+      "dose": "25mg daily"
+    }
+  ]
+}

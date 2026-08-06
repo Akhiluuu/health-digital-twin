@@ -673,10 +673,15 @@ export default function AIHealthScreen() {
   }, []);
 
   // ── Sync Chat History & Session on Profile Switch ──────────────────────────
+  const loadedUserIdRef = useRef<string | null>(null);
+
   useEffect(() => {
+    let active = true;
+    loadedUserIdRef.current = null; // Lock persistence while loading new profile's history
     (async () => {
       try {
         const history = await loadChatHistory(currentUserId);
+        if (!active) return;
         setChatSessions(history);
         if (history.length > 0) {
           const latest = history[0];
@@ -689,10 +694,16 @@ export default function AIHealthScreen() {
           historyRef.current = [];
           await fetchGreeting();
         }
+        if (active) {
+          loadedUserIdRef.current = currentUserId;
+        }
       } catch (e) {
         console.error(e);
       }
     })();
+    return () => {
+      active = false;
+    };
   }, [currentUserId]);
 
   // ── Focus: auto-connect to production server ─────────────────────────────────
@@ -715,6 +726,7 @@ export default function AIHealthScreen() {
   // ── Persist current conversation per profile ──────────────────────────────
 
   useEffect(() => {
+    if (loadedUserIdRef.current !== currentUserId) return;
     if (!messages.some((m) => m.sender === "user")) return;
     const session: ChatSession = {
       id: currentSessionId,

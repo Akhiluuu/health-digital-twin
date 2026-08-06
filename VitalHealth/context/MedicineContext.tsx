@@ -196,6 +196,15 @@ export const MedicineProvider = ({
     }
   }, [isLoadingMemberMedicines, reportLoading]);
 
+  // Safety timer to prevent isLoadingMemberMedicines from hanging
+  React.useEffect(() => {
+    if (!isLoadingMemberMedicines) return;
+    const timer = setTimeout(() => {
+      setIsLoadingMember(false);
+    }, 2500);
+    return () => clearTimeout(timer);
+  }, [isLoadingMemberMedicines]);
+
   ///////////////////////////////////////////////////////////
   // LOAD MEDICINES
   // When switched → fetch from Firebase for that member UID

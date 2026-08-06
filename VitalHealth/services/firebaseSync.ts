@@ -525,7 +525,8 @@ export async function syncDeleteSymptom(id: number, targetUid?: string): Promise
     if (!uid) return;
 
     await deleteDoc(doc(symptomsCol(uid), String(id)));
-    log("✅ Symptom deleted from Firebase:", id);
+    await deleteDoc(doc(symptomHistCol(uid), String(id)));
+    log("✅ Symptom deleted from Firebase (active + history):", id);
   } catch (e) {
     log("⚠️ syncDeleteSymptom failed (non-critical):", e);
   }

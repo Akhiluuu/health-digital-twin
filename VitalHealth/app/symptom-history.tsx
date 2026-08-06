@@ -23,7 +23,7 @@ import { colors } from "../theme/colors";
 export default function SymptomHistory() {
   const router = useRouter();
   const { theme } = useTheme();
-  const { historySymptoms, removeSymptom } = useSymptoms();
+  const { historySymptoms, removeSymptom, clearHistory } = useSymptoms();
   const c = colors[theme];
 
   const [symptoms, setSymptoms] = useState<Symptom[]>([]);
@@ -37,6 +37,23 @@ export default function SymptomHistory() {
       setSymptoms(historySymptoms);
     }, [historySymptoms])
   );
+
+  const handleClearAll = () => {
+    Alert.alert(
+      "Clear Symptom History",
+      "Are you sure you want to clear your entire symptom history?",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Clear All",
+          style: "destructive",
+          onPress: async () => {
+            await clearHistory();
+          },
+        },
+      ]
+    );
+  };
 
   const handleDeleteSymptom = async (
     id: number
@@ -262,7 +279,13 @@ export default function SymptomHistory() {
           Symptom History
         </Text>
 
-        <View style={{ width: 24 }} />
+        {symptoms.length > 0 ? (
+          <TouchableOpacity onPress={handleClearAll}>
+            <Ionicons name="trash-outline" size={22} color="#ef4444" />
+          </TouchableOpacity>
+        ) : (
+          <View style={{ width: 24 }} />
+        )}
       </View>
 
       <FlatList
@@ -273,7 +296,16 @@ export default function SymptomHistory() {
         renderItem={renderSymptomItem}
         contentContainerStyle={{
           padding: 16,
+          flexGrow: 1,
         }}
+        ListEmptyComponent={
+          <View style={styles.emptyContainer}>
+            <Ionicons name="time-outline" size={48} color={c.sub} />
+            <Text style={[styles.emptyText, { color: c.sub }]}>
+              No symptom history found
+            </Text>
+          </View>
+        }
       />
 
       {/* MODAL */}
@@ -435,5 +467,15 @@ const styles = StyleSheet.create({
     marginTop: 20,
     alignItems: "center",
     padding: 10,
+  },
+  emptyContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    paddingTop: 80,
+  },
+  emptyText: {
+    marginTop: 12,
+    fontSize: 15,
   },
 });

@@ -238,28 +238,36 @@ export default function HomeScreen() {
 
     const loadLocalVitalsFallback = async (uid: string) => {
       try {
+        let foundHr: number | null = null;
+        let foundSpo2: number = 0;
+
         const storedSpo2 = await AsyncStorage.getItem(`latest_spo2_${uid}`);
-        if (active && storedSpo2) {
+        if (storedSpo2) {
           const parsed = JSON.parse(storedSpo2);
-          if (parsed?.value) setSpo2((prev) => (prev > 0 ? prev : Number(parsed.value)));
+          if (parsed?.value) foundSpo2 = Number(parsed.value);
         }
 
         const storedHr = await AsyncStorage.getItem(`latest_heartRate_${uid}`);
-        if (active && storedHr) {
+        if (storedHr) {
           const parsed = JSON.parse(storedHr);
-          if (parsed?.value) setMeasuredHeartRate((prev) => (prev !== null ? prev : Number(parsed.value)));
+          if (parsed?.value) foundHr = Number(parsed.value);
         }
 
-        const records = await getAllVitalsRecords();
-        if (active && records && records.length > 0) {
-          const latestHrRec = records.find((r) => r.heartRate !== null && r.heartRate !== undefined);
-          if (latestHrRec?.heartRate) {
-            setMeasuredHeartRate((prev) => (prev !== null ? prev : Number(latestHrRec.heartRate)));
+        const records = await getAllVitalsRecords(uid);
+        if (records && records.length > 0) {
+          if (foundHr === null) {
+            const latestHrRec = records.find((r) => r.heartRate !== null && r.heartRate !== undefined);
+            if (latestHrRec?.heartRate) foundHr = Number(latestHrRec.heartRate);
           }
-          const latestSpo2Rec = records.find((r) => r.spo2 !== null && r.spo2 !== undefined);
-          if (latestSpo2Rec?.spo2) {
-            setSpo2((prev) => (prev > 0 ? prev : Number(latestSpo2Rec.spo2)));
+          if (foundSpo2 === 0) {
+            const latestSpo2Rec = records.find((r) => r.spo2 !== null && r.spo2 !== undefined);
+            if (latestSpo2Rec?.spo2) foundSpo2 = Number(latestSpo2Rec.spo2);
           }
+        }
+
+        if (active) {
+          setSpo2(foundSpo2);
+          setMeasuredHeartRate(foundHr);
         }
       } catch (e) {
         console.log("Local vitals fallback load error:", e);
