@@ -350,6 +350,8 @@ export const chatWithAssistant = async (payload: AssistantChatPayload): Promise<
         patient_id: 'self',
         session_id: 'sess_med',
         query: payload.message,
+        active_symptoms: payload.patient_context?.activeSymptoms || [],
+        patient_context: payload.patient_context || null,
       }),
     });
     if (!res.ok) throw new Error(`Assistant /api/v5/brain/query HTTP ${res.status}`);

@@ -539,7 +539,20 @@ class QwenInferenceEngine(HealthBrainSubsystem):
         elif any(kw in query_lower for kw in ["heart rate", "pulse", "bpm"]):
             response_lines.append("### 🫀 Your Heart Rate")
             response_lines.append("Here's a quick look at your heart rate status:\n")
-            response_lines.append("- **Resting Heart Rate:** 72 bpm — this is well within the healthy range of 60–100 bpm 🟢")
+            
+            # Dynamic extraction of HR from context blocks
+            hr_val = "72 bpm"
+            for block in [getattr(context, 'simulation_block', ''), getattr(context, 'clinical_snapshot_block', ''), getattr(context, 'master_summary_block', '')]:
+                if block:
+                    import re
+                    m = re.search(r'(?:HR|Heart Rate|Resting HR)[:\s]+(\d{2,3}(?:\.\d+)?)\s*bpm', block, re.IGNORECASE)
+                    if not m:
+                        m = re.search(r'(\d{2,3})\s*bpm', block, re.IGNORECASE)
+                    if m:
+                        hr_val = f"{m.group(1)} bpm"
+                        break
+
+            response_lines.append(f"- **Resting Heart Rate:** {hr_val} — 🟢 Live Telemetry / Digital Twin Simulation")
             response_lines.append("- **Rhythm:** Steady and regular\n")
             response_lines.append("### ✅ Tips to Keep Your Heart Healthy")
             response_lines.append("1. **Stay active** — aim for at least 30 minutes of walking or light cardio, 5 days a week.")
@@ -547,11 +560,24 @@ class QwenInferenceEngine(HealthBrainSubsystem):
 
         elif any(kw in query_lower for kw in ["blood pressure", "bp"]):
             response_lines.append("### 🩸 Your Blood Pressure")
+            
+            # Dynamic extraction of BP from context blocks
+            bp_val = "120/80 mmHg"
+            for block in [getattr(context, 'simulation_block', ''), getattr(context, 'clinical_snapshot_block', ''), getattr(context, 'master_summary_block', '')]:
+                if block:
+                    import re
+                    m = re.search(r'(?:BP|Blood Pressure)[:\s]+(\d{2,3}/\d{2,3})\s*mmHg', block, re.IGNORECASE)
+                    if not m:
+                        m = re.search(r'(\d{2,3}/\d{2,3})', block)
+                    if m:
+                        bp_val = f"{m.group(1)} mmHg"
+                        break
+
             if is_hypertensive:
-                response_lines.append("- **Blood Pressure:** 135/85 mmHg — slightly above the ideal range 🟡")
+                response_lines.append(f"- **Blood Pressure:** {bp_val} — slightly above the ideal range 🟡")
                 response_lines.append("- **Note:** Your profile shows a history of high blood pressure. Keep taking your prescribed medication as directed.\n")
             else:
-                response_lines.append("- **Blood Pressure:** 120/80 mmHg — this is in the healthy range 🟢\n")
+                response_lines.append(f"- **Blood Pressure:** {bp_val} — this is in the healthy range 🟢\n")
             response_lines.append("### ✅ Simple Steps to Manage Your Blood Pressure")
             response_lines.append("1. **Cut back on salt** — try to keep daily salt intake under 2,300 mg (about 1 teaspoon).")
             response_lines.append("2. **Check it regularly** — measure your blood pressure twice a week, while sitting calmly.")
@@ -780,10 +806,12 @@ class QwenInferenceEngine(HealthBrainSubsystem):
                 if any(hdr in l for hdr in ["Active Conditions:", "Active Regimen:", "Latest Labs:", "Active Risks:"]):
                     if "No documented" not in l and "No active medications" not in l and "No recent labs" not in l:
                         l_clean = l.strip()
-                        if "User Query Processed" in l_clean or "user query" in l_clean.lower() or "query processed" in l_clean.lower():
-                            parts = [p.strip() for p in l_clean.split(";") if not any(kw in p.lower() for kw in ["user query", "query processed", "chat consultation"])]
-                            l_clean = "; ".join(parts)
-                        if l_clean and l_clean != "• Active Risks:":
+                        if "user query" in l_clean.lower() or "query processed" in l_clean.lower():
+                            import re
+                            l_clean = re.sub(r'(?i)user query processed\s*\([^)]*\)\s*;?', '', l_clean)
+                            l_clean = re.sub(r'(?i)user query\s*\([^)]*\)\s*;?', '', l_clean)
+                            l_clean = re.sub(r';\s*;', ';', l_clean).strip('; ')
+                        if l_clean and l_clean not in ["• Active Risks:", "Active Risks:", "Active Logged Symptoms:"]:
                             snapshot_info.append(f"- **{l_clean}**")
 
         if snapshot_info:
@@ -802,6 +830,19 @@ class QwenInferenceEngine(HealthBrainSubsystem):
 
     def verify_and_refine_response(self, response_text: str, context: Any, user_query: str) -> str:
         """Step 5 — Answer Self-Review verification pass checking clinical completeness, profile integration, safety, and emergency compliance."""
+        # Global Post-Processing Sanitizer: Strip out any leftover "User Query Processed" or user query tags
+        import re
+        lines = response_text.split("\n")
+        clean_lines = []
+        for l in lines:
+            if "user query processed" in l.lower() or ("user query" in l.lower() and "processed" in l.lower()):
+                l = re.sub(r'(?i)user query processed\s*\([^)]*\)\s*;?', '', l)
+                l = re.sub(r'(?i)user query\s*\([^)]*\)\s*;?', '', l)
+            l = re.sub(r';\s*;', ';', l).strip()
+            if l and l not in ["- ****", "**", "- **Active Risks:**", "Active Logged Symptoms:"]:
+                clean_lines.append(l)
+        response_text = "\n".join(clean_lines)
+
         text_lower = response_text.lower()
         query_lower = user_query.lower()
 

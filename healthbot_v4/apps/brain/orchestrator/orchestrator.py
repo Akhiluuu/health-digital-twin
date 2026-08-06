@@ -160,8 +160,21 @@ class AIOrchestrator(HealthBrainSubsystem):
         def _is_valid_symptom(item_str: str) -> bool:
             if not item_str:
                 return False
-            low = str(item_str).lower()
-            return not any(kw in low for kw in ["user query", "query processed", "chat consultation", "user_query", "processed ("])
+            low = str(item_str).lower().strip()
+            # Filter out system tags and query processing artifacts
+            if any(kw in low for kw in ["user query", "query processed", "chat consultation", "user_query", "processed (", "processed"]):
+                return False
+            # Filter out UI suggestion chip queries and generic user question strings
+            query_phrases = [
+                "explain my symptoms", "check my medications", "read my lab results", "how's my heart health?",
+                "how is my heart health", "active medicine", "symptoms", "medications", "lab results", "heart health",
+                "is there any chance that i can get diabetes in near future", "can i have apple or does it have high sugars"
+            ]
+            if low in query_phrases:
+                return False
+            if low.endswith("?") or any(low.startswith(w) for w in ["how ", "can ", "what ", "is ", "explain ", "check ", "read ", "tell ", "show ", "does ", "should ", "will ", "why ", "where ", "when "]):
+                return False
+            return True
 
         # Parse symptoms explicitly sent from mobile client
         if active_symptoms:
@@ -257,6 +270,55 @@ class AIOrchestrator(HealthBrainSubsystem):
                                 is_active=True
                             )
                         )
+                # Persist raw_meds into journey store for persistence
+                try:
+                    from healthbot_v4.apps.brain.journey.journey_engine import _load_journey_store, _save_journey_store
+                    store = _load_journey_store(patient_id)
+                    store["medicines"] = raw_meds
+                    _save_journey_store(patient_id, store)
+                except Exception:
+                    pass
+
+        # Fallback to journey store if active_medications is empty
+        if not state.active_medications:
+            try:
+                from healthbot_v4.apps.brain.journey.journey_engine import _load_journey_store
+                store = _load_journey_store(patient_id)
+                saved_meds = store.get("medicines") or store.get("active_medications") or []
+                for m in saved_meds:
+                    if isinstance(m, dict) and (m.get("name") or m.get("medicineName")):
+                        m_name = m.get("name") or m.get("medicineName")
+                        m_dose_str = str(m.get("dose") or m.get("dose_quantity") or "500mg")
+                        m_type = m.get("type") or m.get("dosage_form") or "Tablet"
+                        m_time = m.get("time") or m.get("frequency") or "daily"
+                        num_dose = 500.0
+                        digits = "".join([c for c in m_dose_str if c.isdigit() or c == '.'])
+                        if digits:
+                            try:
+                                num_dose = float(digits)
+                            except ValueError:
+                                pass
+                        state.active_medications.append(
+                            NormalizedMedication(
+                                name=m_name,
+                                dose_quantity=num_dose,
+                                dosage_form=f"{m_dose_str} ({m_type})",
+                                frequency=m_time,
+                                is_active=True
+                            )
+                        )
+                    elif isinstance(m, str) and m.strip():
+                        state.active_medications.append(
+                            NormalizedMedication(
+                                name=m.strip(),
+                                dose_quantity=500.0,
+                                dosage_form="Tablet",
+                                frequency="daily",
+                                is_active=True
+                            )
+                        )
+            except Exception:
+                pass
 
         # Parse timeline events
         timeline_events = self.timeline_engine.get_timeline(patient_id, limit=30)
@@ -288,7 +350,7 @@ class AIOrchestrator(HealthBrainSubsystem):
             cog_a = patient_context.get("cognitive_assessment") or {}
             fit_a = patient_context.get("fitness_activity") or {}
             hyd_a = patient_context.get("hydration") or {}
-            sim_v = patient_context.get("sim_vitals") or patient_context.get("simulation_vitals") or {}
+            sim_v = patient_context.get("sim_vitals") or patient_context.get("simulation_vitals") or patient_context.get("vitals") or {}
             organ_s = patient_context.get("organ_scores") or patient_context.get("organScores") or {}
 
             extra_lines = []

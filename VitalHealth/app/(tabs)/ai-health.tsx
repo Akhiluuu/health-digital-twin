@@ -794,8 +794,8 @@ export default function AIHealthScreen() {
         weight: pWeight,
         bmi: pBmi,
         blood_type: pBloodType,
-        resting_hr: activeProfile?.biogears_resting_hr || lastVitals?.heart_rate || 72,
-        blood_pressure: lastVitals ? `${(lastVitals as any).systolic_bp || 120}/${(lastVitals as any).diastolic_bp || 80} mmHg` : '120/80 mmHg',
+        resting_hr: lastVitals?.heart_rate || activeProfile?.biogears_resting_hr || 72,
+        blood_pressure: lastVitals ? `${(lastVitals as any).systolic_bp || 120}/${(lastVitals as any).diastolic_bp || 80} mmHg` : (activeProfile?.biogears_systolic_bp ? `${activeProfile.biogears_systolic_bp}/${activeProfile.biogears_diastolic_bp || 80} mmHg` : '120/80 mmHg'),
       },
       cognitive_assessment: {
         cognitive_age: cognitiveAge || pAge,
@@ -806,6 +806,7 @@ export default function AIHealthScreen() {
         domain_trends: getDomainTrends ? getDomainTrends() : null,
       },
       simulation_vitals: lastVitals || null,
+      vitals: lastVitals || null,
       organ_scores: organScores || null,
       fitness_activity: {
         steps: steps || 0,
