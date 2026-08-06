@@ -41,6 +41,24 @@ const STORAGE_KEY_WEBHOOK = "VITAL_BUG_WEBHOOK_URL";
 const STORAGE_KEY_HISTORY = "VITAL_BUG_REPORTS_HISTORY";
 
 /**
+ * Utility to redact IP addresses from URLs for privacy and security
+ */
+export function maskServerIp(rawUrl: string): string {
+  if (!rawUrl || rawUrl === "Not connected" || rawUrl === "Unknown") return rawUrl;
+  try {
+    const u = new URL(rawUrl);
+    const isIp = /^(?:\d{1,3}\.){3}\d{1,3}$/.test(u.hostname) || u.hostname === 'localhost' || u.hostname === '127.0.0.1';
+    if (isIp) {
+      const portStr = u.port ? `:${u.port}` : '';
+      return `${u.protocol}//[REDACTED_IP]${portStr}`;
+    }
+    return rawUrl;
+  } catch {
+    return rawUrl.replace(/\b(?:\d{1,3}\.){3}\d{1,3}\b/g, '[REDACTED_IP]');
+  }
+}
+
+/**
  * Gathers non-sensitive system environment diagnostics
  */
 export async function getSystemDiagnostics(
@@ -50,7 +68,8 @@ export async function getSystemDiagnostics(
   const { width, height } = Dimensions.get("window");
   let serverUrl = "Unknown";
   try {
-    serverUrl = await getBiogearsBaseUrl();
+    const rawUrl = await getBiogearsBaseUrl();
+    serverUrl = maskServerIp(rawUrl);
   } catch {
     serverUrl = "Not connected";
   }
@@ -158,9 +177,16 @@ export async function submitBugReport(
   await saveToLocalHistory(payload, diag);
 
   // 1. Primary Option: Dispatch to Backend Server API endpoint (/api/v1/bug-reports)
-  if (diag.serverUrl && diag.serverUrl.startsWith("http")) {
+  let rawServerUrl = "";
+  try {
+    rawServerUrl = await getBiogearsBaseUrl();
+  } catch {
+    rawServerUrl = "";
+  }
+
+  if (rawServerUrl && rawServerUrl.startsWith("http")) {
     try {
-      const serverEndpoint = `${diag.serverUrl.replace(/\/+$/, "")}/api/v1/bug-reports`;
+      const serverEndpoint = `${rawServerUrl.replace(/\/+$/, "")}/api/v1/bug-reports`;
       const res = await fetch(serverEndpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
