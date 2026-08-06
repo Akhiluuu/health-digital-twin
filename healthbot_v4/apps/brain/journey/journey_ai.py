@@ -8,7 +8,7 @@ with Qwen3 narrative polish as the secondary optional layer.
 """
 
 from typing import List, Dict, Any, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 
 from healthbot_v4.apps.brain.core import HealthBrainSubsystem
 from healthbot_v4.shared.logger.logger import logger
@@ -49,10 +49,10 @@ def _get_motivational_message(state: PatientState) -> str:
     conditions_lower = [c.condition_name.lower() for c in state.current_conditions]
     for key, messages in _MOTIVATIONAL_TEMPLATES.items():
         if key != "default" and any(key in c for c in conditions_lower):
-            idx = hash(datetime.utcnow().date().isoformat()) % len(messages)
+            idx = hash(datetime.now(timezone.utc).date().isoformat()) % len(messages)
             return messages[idx]
     defaults = _MOTIVATIONAL_TEMPLATES["default"]
-    idx = hash(datetime.utcnow().date().isoformat()) % len(defaults)
+    idx = hash(datetime.now(timezone.utc).date().isoformat()) % len(defaults)
     return defaults[idx]
 
 
@@ -159,7 +159,7 @@ class JourneyAIEngine(HealthBrainSubsystem):
         # ── What's New ────────────────────────────────────────────────────
         today_events = [
             e for e in self.timeline_engine.get_timeline(patient_id, limit=50)
-            if (datetime.utcnow() - e.timestamp).total_seconds() < 86400
+            if (datetime.now(timezone.utc) - e.timestamp).total_seconds() < 86400
         ]
         whats_new = (
             f"{len(today_events)} health events in the last 24 hours"
@@ -182,7 +182,7 @@ class JourneyAIEngine(HealthBrainSubsystem):
 
         return DailyBriefingV2(
             patient_id=patient_id,
-            briefing_date=datetime.utcnow().strftime("%B %d, %Y"),
+            briefing_date=datetime.now(timezone.utc).strftime("%B %d, %Y"),
             greeting=greeting,
             health_score=score,
             health_score_display=score_display,

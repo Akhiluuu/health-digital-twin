@@ -4150,5 +4150,52 @@
       "fake advice"
     ],
     "first_failed_at": "2026-08-04 17:26:43"
+  },
+  {
+    "scenario_id": "sleep_01",
+    "persona_id": "p_older_adult",
+    "user_query": "How does sleep affect brain health and memory in older adults?",
+    "expected_key_elements": [
+      "glymphatic clearance",
+      "amyloid-beta clearance",
+      "synaptic consolidation",
+      "sleep hygiene"
+    ],
+    "forbidden_elements": [
+      "sleep has no connection to brain health"
+    ],
+    "first_failed_at": "2026-08-06 15:46:18"
+  },
+  {
+    "scenario_id": "lab_01",
+    "persona_id": "p_t2d",
+    "user_query": "My lab report shows HbA1c is 7.4% and Fasting Glucose is 142 mg/dL. What does this mean?",
+    "expected_key_elements": [
+      "HbA1c 7.4% indicates elevated glycemic control",
+      "Fasting Glucose 142",
+      "ADA guideline targets",
+      "regimen review"
+    ],
+    "forbidden_elements": [
+      "7.4% is completely normal non-diabetic",
+      "emergency hospital admission required for 7.4%"
+    ],
+    "first_failed_at": "2026-08-06 15:46:18"
+  },
+  {
+    "scenario_id": "twin_01",
+    "persona_id": "p_athlete",
+    "user_query": "What does my BioGears digital twin predict for my resting heart rate and organ scores?",
+    "expected_key_elements": [
+      "Heart rate 42 bpm athletic sinus bradycardia",
+      "Cardiovascular score 99/100",
+      "MAP 81.3 mmHg",
+      "optimal perfusion"
+    ],
+    "forbidden_elements": [
+      "42 bpm requires immediate cardiac pacemaker",
+      "organ failure flag"
+    ],
+    "first_failed_at": "2026-08-06 15:46:18"
   }
 ]

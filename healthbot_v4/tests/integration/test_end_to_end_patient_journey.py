@@ -14,7 +14,7 @@ Executes complete real-world patient stories:
 """
 
 import pytest
-from datetime import datetime, date, timedelta
+from datetime import datetime, timezone, date, timedelta
 from fastapi.testclient import TestClient
 
 from healthbot_v4.apps.api.server import app
@@ -262,7 +262,7 @@ def test_journey_6_wearable_vitals_trend_engine(client):
     patient_id = "usr_diabetic_john"
     state_mgr = PatientStateManager()
 
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     state_mgr.add_vital(patient_id, NormalizedVital(vital_type="heart_rate", value_primary=72.0, unit="bpm", timestamp=now - timedelta(days=2)))
     state_mgr.add_vital(patient_id, NormalizedVital(vital_type="heart_rate", value_primary=78.0, unit="bpm", timestamp=now - timedelta(days=1)))
     state_mgr.add_vital(patient_id, NormalizedVital(vital_type="heart_rate", value_primary=86.0, unit="bpm", timestamp=now))

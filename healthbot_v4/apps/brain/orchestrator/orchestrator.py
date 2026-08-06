@@ -6,6 +6,8 @@ Supports Production Streaming, Timeout Safeguards, Circuit Breakers, and Model W
 """
 
 import asyncio
+import re
+import time
 from typing import Dict, Any, List, Optional, AsyncGenerator
 from pydantic import BaseModel, Field
 
@@ -26,6 +28,13 @@ from healthbot_v4.apps.brain.reasoning.retrieval_planner import ContextRetrieval
 from healthbot_v4.apps.brain.copilot.clinical_snapshot import ClinicalSnapshotEngine
 from healthbot_v4.apps.brain.reasoning.longitudinal_engine import LongitudinalEngine
 from healthbot_v4.apps.twin.simulation_runner import DigitalTwinRunner
+from healthbot_v4.apps.brain.cache.semantic_cache import SemanticQueryCache
+from healthbot_v4.apps.brain.guardrails.safety_router import EmergencySafetyRouter
+from healthbot_v4.apps.ocr.multimodal_engine import MultimodalTriageEngine
+from healthbot_v4.apps.brain.guardrails.fact_verifier import FactVerificationGuard
+from healthbot_v4.apps.brain.reasoning.model_router import MultiModelRouter
+from healthbot_v4.apps.brain.journey.action_engine import ProactiveActionEngine
+from healthbot_v4.apps.brain.interop.fhir_exporter import FHIRR4Exporter
 from healthbot_v4.shared.models.base import TimelineEventType, RiskLevel, NormalizedMedication
 
 
@@ -58,6 +67,18 @@ class AIOrchestrator(HealthBrainSubsystem):
         self.snapshot_engine = ClinicalSnapshotEngine()
         self.longitudinal_engine = LongitudinalEngine()
         self.twin_runner = DigitalTwinRunner()
+        self.safety_router = EmergencySafetyRouter()
+        self.semantic_cache = SemanticQueryCache()
+        self.multimodal_engine = MultimodalTriageEngine()
+        self.fact_verifier = FactVerificationGuard()
+        self.model_router = MultiModelRouter()
+        self.action_engine = ProactiveActionEngine()
+        self.fhir_exporter = FHIRR4Exporter()
+        # In-memory session store for multi-turn conversation memory.
+        # Key: session_id, Value: {"history": [...turns], "last_active": float}
+        # Turns: [{"role": "user"|"assistant", "content": str}]
+        self._session_store: Dict[str, Dict] = {}
+        self._session_ttl: float = 1800.0  # 30-minute TTL
 
     async def initialize(self) -> None:
         await self.state_mgr.initialize()
@@ -75,10 +96,70 @@ class AIOrchestrator(HealthBrainSubsystem):
         await self.snapshot_engine.initialize()
         await self.longitudinal_engine.initialize()
         await self.twin_runner.initialize()
+        await self.safety_router.initialize()
+        await self.semantic_cache.initialize()
+        await self.multimodal_engine.initialize()
+        await self.fact_verifier.initialize()
+        await self.model_router.initialize()
+        await self.action_engine.initialize()
+        await self.fhir_exporter.initialize()
         
         # Production Model Warm-Up Execution
         await self.warmup_model()
-        logger.info("🤖 AI Orchestrator initialized (Multi-Agent Tool Router & Guardrails Active)")
+        logger.info("🤖 AI Orchestrator initialized (Multi-Turn Memory + Local LLM — Zero External APIs)")
+
+    # =========================================================================
+    # Session memory helpers
+    # =========================================================================
+
+    def _get_session_history(self, session_id: str) -> List[Dict[str, str]]:
+        """Returns the conversation history for a session, pruning expired sessions."""
+        now = time.time()
+        # Evict expired sessions
+        expired = [sid for sid, data in self._session_store.items()
+                   if now - data["last_active"] > self._session_ttl]
+        for sid in expired:
+            del self._session_store[sid]
+            logger.debug(f"Session {sid} expired and evicted.")
+        return self._session_store.get(session_id, {}).get("history", [])
+
+    def _resolve_query_context(self, query: str, history: List[Dict[str, str]]) -> str:
+        """
+        Resolves ambiguous user follow-up queries (e.g. 'what caused it?', 'how do I treat that?')
+        by expanding ambiguous pronouns ('it', 'that', 'this') using recent conversation turns.
+        """
+        trimmed = query.strip()
+        words = [re.sub(r'[^\w\s]', '', w) for w in trimmed.lower().split()]
+        
+        ambiguous_pronouns = {"it", "this", "that", "them", "these", "those"}
+        has_pronoun = any(w in ambiguous_pronouns for w in words)
+        
+        # Only rewrite if explicit pronouns are used in follow-ups
+        if has_pronoun and history:
+            last_assistant_turn = None
+            for turn in reversed(history):
+                if turn.get("role") == "assistant" and turn.get("content"):
+                    last_assistant_turn = turn["content"]
+                    break
+            
+            if last_assistant_turn:
+                heading_match = re.search(r'###\s*([^\n]+)', last_assistant_turn)
+                topic = heading_match.group(1).strip() if heading_match else last_assistant_turn[:80].strip()
+                logger.info(f"🔍 Resolved ambiguous follow-up: '{query}' -> Context topic: '{topic}'")
+                return f"{query} (Context: referring to previous discussion about {topic})"
+                
+        return query
+
+    def _append_to_session(self, session_id: str, role: str, content: str) -> None:
+        """Appends a turn to session history and refreshes TTL."""
+        if session_id not in self._session_store:
+            self._session_store[session_id] = {"history": [], "last_active": time.time()}
+        self._session_store[session_id]["history"].append({"role": role, "content": content})
+        self._session_store[session_id]["last_active"] = time.time()
+        if len(self._session_store[session_id]["history"]) > 20:
+            self._session_store[session_id]["history"] = \
+                self._session_store[session_id]["history"][-20:]
+
 
     async def warmup_model(self) -> None:
         """Executes lightweight synthetic inference query on startup to warm up GGUF/LLM weights."""
@@ -100,6 +181,11 @@ class AIOrchestrator(HealthBrainSubsystem):
         except Exception as e:
             logger.warning(f"⚠️ Model warm-up skipped or failed: {e}")
 
+    def export_patient_fhir_bundle(self, patient_id: str, care_plan_actions: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
+        """Generates HL7 FHIR R4 Bundle for patient state and active CarePlan."""
+        state = self.state_mgr.get_or_create_state(patient_id)
+        return self.fhir_exporter.export_patient_bundle(state, care_plan_actions)
+
     async def process_patient_query(
         self,
         patient_id: str,
@@ -107,16 +193,55 @@ class AIOrchestrator(HealthBrainSubsystem):
         query: str,
         active_symptoms: Optional[List[Any]] = None,
         patient_context: Optional[Dict[str, Any]] = None,
+        image_payload: Optional[str] = None,
     ) -> OrchestratorResponse:
         logger.info(f"AIOrchestrator processing query for patient {patient_id} in session {session_id}")
+
+        # Check for image/document payload
+        multimodal_res = None
+        if image_payload or (patient_context and patient_context.get("image_payload")):
+            raw_img = image_payload or (patient_context.get("image_payload") if patient_context else "")
+            multimodal_res = self.multimodal_engine.process_image_payload(raw_img, patient_id=patient_id)
+            query += f"\n\n[Multimodal Context: {multimodal_res.triage_summary}]"
+
+        # Retrieve conversation history for this session (multi-turn memory)
+        conversation_history = self._get_session_history(session_id)
+        
+        # Resolve ambiguous pronouns using recent conversation history
+        resolved_query = self._resolve_query_context(query, conversation_history)
+        
+        # Step 0: Sub-2ms Pre-Guardrail Emergency Router Bypass
+        is_emerg, emerg_resp, emerg_lat = self.safety_router.evaluate_query(query)
+        if is_emerg and emerg_resp:
+            self._append_to_session(session_id, "assistant", emerg_resp)
+            return OrchestratorResponse(
+                patient_id=patient_id,
+                response_text=emerg_resp,
+                emergency_triggered=True,
+                confidence_score=1.0,
+                metadata={"latency_ms": emerg_lat, "guardrail": "PRE_GUARDRAIL_SAFETY_ROUTER"},
+            )
+
+        # Step 0.5: Sub-5ms Semantic Query Cache Lookup
+        cache_hit = self.semantic_cache.get(query)
+        if cache_hit:
+            cached_resp, cached_sources, cache_lat = cache_hit
+            self._append_to_session(session_id, "assistant", cached_resp)
+            return OrchestratorResponse(
+                patient_id=patient_id,
+                response_text=cached_resp,
+                emergency_triggered=False,
+                confidence_score=0.98,
+                metadata={"latency_ms": cache_lat, "cache_hit": True, "sources_cited": cached_sources},
+            )
 
         state = self.state_mgr.get_or_create_state(patient_id)
         risks = self.risk_engine.evaluate_patient_risks(state)
         state = self.state_mgr.update_risks(patient_id, risks)
 
         # 1. Intent Analysis & Safety Gatekeeper
-        intent_res = self.intent_engine.classify_intent(query)
-        decision = self.decision_engine.decide_query_action(state, query)
+        intent_res = self.intent_engine.classify_intent(resolved_query)
+        decision = self.decision_engine.decide_query_action(state, resolved_query)
 
         if ActionType.emergency_redirect in decision.actions or intent_res.primary_intent == "EMERGENCY":
             emergency_text = (
@@ -160,7 +285,7 @@ class AIOrchestrator(HealthBrainSubsystem):
         def _is_valid_symptom(item_str: str) -> bool:
             if not item_str:
                 return False
-            low = str(item_str).lower().strip()
+            low = item_str.lower().strip()
             # Filter out system tags and query processing artifacts
             if any(kw in low for kw in ["user query", "query processed", "chat consultation", "user_query", "processed (", "processed"]):
                 return False
@@ -287,10 +412,10 @@ class AIOrchestrator(HealthBrainSubsystem):
                 saved_meds = store.get("medicines") or store.get("active_medications") or []
                 for m in saved_meds:
                     if isinstance(m, dict) and (m.get("name") or m.get("medicineName")):
-                        m_name = m.get("name") or m.get("medicineName")
+                        m_name = m.get("name") or m.get("medicineName") or "Medication"
                         m_dose_str = str(m.get("dose") or m.get("dose_quantity") or "500mg")
-                        m_type = m.get("type") or m.get("dosage_form") or "Tablet"
-                        m_time = m.get("time") or m.get("frequency") or "daily"
+                        m_type = str(m.get("type") or m.get("dosage_form") or "Tablet")
+                        m_time = str(m.get("time") or m.get("frequency") or "daily")
                         num_dose = 500.0
                         digits = "".join([c for c in m_dose_str if c.isdigit() or c == '.'])
                         if digits:
@@ -343,6 +468,8 @@ class AIOrchestrator(HealthBrainSubsystem):
         cleaned_symptoms = [s for s in symptoms_logged if _is_valid_symptom(s)]
         if cleaned_symptoms:
             snapshot.active_risks_summary = f"Active Logged Symptoms: {'; '.join(set(cleaned_symptoms))}"
+        elif not state.active_risks:
+            snapshot.active_risks_summary = "No active symptoms or clinical risks logged"
 
         # Inject multi-domain context (body measurements, cognitive assessment, fitness, hydration) into snapshot
         if patient_context and isinstance(patient_context, dict):
@@ -437,35 +564,75 @@ class AIOrchestrator(HealthBrainSubsystem):
 
         # 6. Qwen3 Reasoning Engine Output with Timeout Circuit-Breaker
         try:
-            # 15 second production timeout cap
+            # 30 second production timeout (GGUF on CPU needs more time for complex queries)
             reasoning_res = await asyncio.wait_for(
-                asyncio.to_thread(self.qwen_engine.generate_reasoning_response, budgeted_ctx, query),
-                timeout=15.0
+                asyncio.to_thread(
+                    self.qwen_engine.generate_reasoning_response,
+                    budgeted_ctx,
+                    resolved_query,
+                    conversation_history,
+                    intent_res.primary_intent.value,
+                ),
+                timeout=30.0
             )
         except asyncio.TimeoutError:
-            logger.error(f"⏱️ AI Reasoning timed out after 15s for patient {patient_id}. Triggering graceful fallback.")
+            logger.error(f"⏱️ AI Reasoning timed out after 30s for patient {patient_id}. Triggering graceful fallback.")
             reasoning_res = {
-                "response": f"Based on your clinical record summary:\n• Health Score: {state.current_health_score}/100\n• Active Regimens: {len(state.active_medications)}\n\n(Clinical Fallback: AI reasoning service timed out, but your underlying profile remains healthy.)",
-                "confidence_score": 0.80,
-                "sources_cited": ["VitalHealth Clinical State Fallback Engine"],
+                "response": (
+                    f"### ⏳ Response Timeout\n"
+                    f"The AI reasoning engine is taking longer than expected. "
+                    f"Your health profile shows a score of **{state.current_health_score:.0f}/100** "
+                    f"with **{len(state.active_medications)}** active medication(s) on record.\n\n"
+                    "Please try again in a moment.\n\n"
+                    "> 💡 *Please consult your doctor for personalized medical advice.*"
+                ),
+                "confidence_score": 0.70,
+                "sources_cited": ["VitalHealth Clinical State"],
             }
+
+        # Record the assistant's response in session history for multi-turn continuity
+        self._append_to_session(session_id, "assistant", str(reasoning_res.get("response", "")))
 
         self.timeline_engine.record_event(
             patient_id, TimelineEventType.consultation_completed, "Chat Consultation Query", query
         )
 
+        resp_text = str(reasoning_res.get("response", ""))
+        sources = reasoning_res.get("sources_cited", [])
+        intent_name = intent_res.primary_intent.value
+
+        # Step 7: Medically Grounded Fact Verification Guard
+        verified_text, fact_corrected, fact_lat = self.fact_verifier.verify_and_correct_response(resp_text, patient_context)
+
+        # Step 8: Proactive Health Journey Action Extraction
+        proactive_actions = self.action_engine.extract_proactive_actions(patient_id, verified_text, query)
+
+        # Store in Semantic Cache if non-personalized education query
+        self.semantic_cache.put(query, intent_name, verified_text, sources)
+
+        # Step 9: Dynamic Load-Balanced Multi-Model Route selection
+        route_res = self.model_router.select_model_route(query, intent_name, len(state.active_risks), len(state.active_medications))
+
+        raw_score = reasoning_res.get("confidence_score", 0.90)
+        conf_score = float(raw_score) if isinstance(raw_score, (int, float, str)) else 0.90
+
         return OrchestratorResponse(
             patient_id=patient_id,
-            response_text=reasoning_res["response"],
+            response_text=verified_text,
             emergency_triggered=False,
-            confidence_score=reasoning_res["confidence_score"],
+            confidence_score=conf_score,
             metadata={
-                "intent": intent_res.primary_intent.value,
+                "intent": intent_name,
                 "retrieval_plan": plan.explainable_matrix,
                 "actions": [a.value for a in decision.actions],
                 "tokens_budgeted": budgeted_ctx.total_token_estimate,
                 "health_score": state.current_health_score,
-                "sources_cited": reasoning_res.get("sources_cited", []),
+                "sources_cited": sources,
+                "model_route": route_res["target_model"],
+                "complexity_score": route_res["complexity_score"],
+                "fact_verification": {"corrected": fact_corrected, "latency_ms": fact_lat},
+                "proactive_actions": [act.model_dump() for act in proactive_actions],
+                "multimodal_summary": multimodal_res.triage_summary if multimodal_res else None
             },
         )
 

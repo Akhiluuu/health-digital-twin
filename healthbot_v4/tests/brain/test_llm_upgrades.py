@@ -3,6 +3,7 @@ healthbot_v4/tests/brain/test_llm_upgrades.py
 Comprehensive test suite verifying VitalHealth v5.0 LLM Architectural Upgrades.
 """
 
+import pytest
 import asyncio
 from healthbot_v4.apps.brain.reasoning.qwen_engine import QwenInferenceEngine
 from healthbot_v4.apps.brain.reasoning.llm_router import LLMRouter, ModelTier
@@ -12,6 +13,7 @@ from healthbot_v4.apps.brain.evaluation.semantic_cache import SemanticResponseCa
 from healthbot_v4.apps.brain.context.context_builder import BudgetedContext
 
 
+@pytest.mark.asyncio
 async def test_qwen_engine_stream_and_context():
     engine = QwenInferenceEngine()
     engine.model_loaded = False
@@ -52,6 +54,7 @@ def test_llm_router_tiers():
     assert d2.requires_drug_check is True
 
 
+@pytest.mark.asyncio
 async def test_clinical_tools_registry():
     registry = ClinicalToolsRegistry()
     schemas = registry.get_tool_schemas()
