@@ -73,10 +73,10 @@ export default function BugReportModal({
           `App encountered an error stack trace:\n${initialStackTrace.slice(0, 300)}`
         );
       }
-      const profileId = activeProfile?.email || activeProfile?.firstName || "Anon-User";
+      const profileId = activeProfile?.firstName ? `User-${activeProfile.firstName}` : "Anon-User";
       getSystemDiagnostics(pathname, profileId).then(setDiagnostics);
     }
-  }, [visible, initialStackTrace, pathname, activeProfile?.email, activeProfile?.firstName]);
+  }, [visible, initialStackTrace, pathname, activeProfile?.firstName]);
 
   const categories: { key: BugCategory; label: string; icon: string }[] = [
     { key: "ui", label: "UI / Design", icon: "color-palette-outline" },
@@ -108,7 +108,7 @@ export default function BugReportModal({
     setSubmitting(true);
 
     try {
-      const profileId = activeProfile?.email || activeProfile?.firstName || "Anon-User";
+      const profileId = activeProfile?.firstName ? `User-${activeProfile.firstName}` : "Anon-User";
       const res = await submitBugReport({
         category,
         severity,
