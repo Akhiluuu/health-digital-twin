@@ -157,15 +157,25 @@ class AIOrchestrator(HealthBrainSubsystem):
         # 4. Clinical Snapshot with Logged Symptoms
         symptoms_logged = []
 
+        def _is_valid_symptom(item_str: str) -> bool:
+            if not item_str:
+                return False
+            low = str(item_str).lower()
+            return not any(kw in low for kw in ["user query", "query processed", "chat consultation", "user_query", "processed ("])
+
         # Parse symptoms explicitly sent from mobile client
         if active_symptoms:
             for s in active_symptoms:
                 if isinstance(s, dict):
                     name = s.get("name") or s.get("title") or "Symptom"
                     sev = s.get("severity") or "Active"
-                    symptoms_logged.append(f"{name} (Severity: {sev})")
+                    item = f"{name} (Severity: {sev})"
                 elif isinstance(s, str):
-                    symptoms_logged.append(s)
+                    item = s
+                else:
+                    item = ""
+                if _is_valid_symptom(item):
+                    symptoms_logged.append(item)
 
         if patient_context and isinstance(patient_context, dict):
             # Parse patient profile metadata explicitly sent from mobile client
@@ -198,7 +208,13 @@ class AIOrchestrator(HealthBrainSubsystem):
                 if isinstance(s, dict):
                     name = s.get("name") or "Symptom"
                     sev = s.get("severity") or "Active"
-                    symptoms_logged.append(f"{name} (Severity: {sev})")
+                    item = f"{name} (Severity: {sev})"
+                elif isinstance(s, str):
+                    item = s
+                else:
+                    item = ""
+                if _is_valid_symptom(item):
+                    symptoms_logged.append(item)
 
             # Ingest active medications from mobile client
             raw_meds = patient_context.get("medicines") or patient_context.get("active_medications") or []
@@ -246,7 +262,7 @@ class AIOrchestrator(HealthBrainSubsystem):
         timeline_events = self.timeline_engine.get_timeline(patient_id, limit=30)
         for evt in timeline_events:
             evt_str = f"{evt.title} {evt.description}".lower()
-            if evt.event_type == TimelineEventType.symptom_logged and not any(kw in evt_str for kw in ["user query", "chat consultation", "query processed"]):
+            if evt.event_type == TimelineEventType.symptom_logged and _is_valid_symptom(evt_str):
                 symptoms_logged.append(f"{evt.title} ({evt.description})")
         
         # Check fallback journey store for persistent symptoms
@@ -255,13 +271,16 @@ class AIOrchestrator(HealthBrainSubsystem):
             store = _load_journey_store(patient_id)
             if store.get("symptoms"):
                 for s in store["symptoms"]:
-                    symptoms_logged.append(f"{s.get('name', 'Symptom')} (Severity: {s.get('severity', 'Moderate')})")
+                    item = f"{s.get('name', 'Symptom')} (Severity: {s.get('severity', 'Moderate')})"
+                    if _is_valid_symptom(item):
+                        symptoms_logged.append(item)
         except Exception:
             pass
 
         snapshot = self.snapshot_engine.generate_snapshot(state, twin_summary=twin_summary)
-        if symptoms_logged:
-            snapshot.active_risks_summary = f"Active Logged Symptoms: {'; '.join(set(symptoms_logged))}"
+        cleaned_symptoms = [s for s in symptoms_logged if _is_valid_symptom(s)]
+        if cleaned_symptoms:
+            snapshot.active_risks_summary = f"Active Logged Symptoms: {'; '.join(set(cleaned_symptoms))}"
 
         # Inject multi-domain context (body measurements, cognitive assessment, fitness, hydration) into snapshot
         if patient_context and isinstance(patient_context, dict):

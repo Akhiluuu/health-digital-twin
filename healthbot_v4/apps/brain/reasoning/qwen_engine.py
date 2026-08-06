@@ -779,7 +779,12 @@ class QwenInferenceEngine(HealthBrainSubsystem):
             for l in context.clinical_snapshot_block.split("\n"):
                 if any(hdr in l for hdr in ["Active Conditions:", "Active Regimen:", "Latest Labs:", "Active Risks:"]):
                     if "No documented" not in l and "No active medications" not in l and "No recent labs" not in l:
-                        snapshot_info.append(f"- **{l.strip()}**")
+                        l_clean = l.strip()
+                        if "User Query Processed" in l_clean or "user query" in l_clean.lower() or "query processed" in l_clean.lower():
+                            parts = [p.strip() for p in l_clean.split(";") if not any(kw in p.lower() for kw in ["user query", "query processed", "chat consultation"])]
+                            l_clean = "; ".join(parts)
+                        if l_clean and l_clean != "• Active Risks:":
+                            snapshot_info.append(f"- **{l_clean}**")
 
         if snapshot_info:
             lines.extend(snapshot_info)
