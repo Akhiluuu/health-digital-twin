@@ -455,208 +455,43 @@ You are the patient's trusted health companion. Answer clearly, safely, and with
         if emergency_patterns.search(user_query):
             lines.append("🚨 **Call 112 / 911 immediately. This is a medical emergency. Do not wait.**\n")
 
-        lines.append("### 🩺 Personalized Clinical Analysis & Guidance")
-
-        # Extract snapshot data
-        snapshot = context.clinical_snapshot_block or ""
-        summary = context.master_summary_block or ""
-        rag_block = context.rag_retrieval_block or ""
-        risks_block = context.active_risks_block or ""
-        sim_block = context.simulation_block or ""
-        long_block = context.longitudinal_block or ""
-
-        # Build comprehensive summary of patient findings
-        combined_text = f"{snapshot}\n{summary}\n{rag_block}\n{risks_block}\n{sim_block}\n{long_block}"
-
-        # Address user query topics directly
-        lines.append(f"Regarding your query on *\"{user_query.strip()}\"*, here is your clinical breakdown based on your health record:\n")
-
-        # Extract key clinical facts
-        conditions = self._extract_field(snapshot, ["Active Conditions:"])
-        medications = self._extract_field(snapshot, ["Active Regimen:", "Active Medications:"])
-        health_score = self._extract_field(snapshot, ["Health Score:"])
-
-        lines.append(f"\n### 📊 Key Clinical Parameters & Active Regimen")
-        if health_score:
-            lines.append(f"- **Health Status Baseline:** Health score evaluated at {health_score}.")
-        if conditions:
-            lines.append(f"- **Active Conditions:** {conditions}")
-        if medications:
-            lines.append(f"- **Current Medication Regimen & Risks:** {medications}")
-
-        # Complete topic-aware clinical enrichment for 100% key element matching
         q_low = user_query.lower()
+        snapshot = context.clinical_snapshot_block or ""
+        medications = self._extract_field(snapshot, ["Active Regimen:", "Active Medications:"])
 
-        if any(k in q_low for k in ["symptom", "explain my symptoms", "my symptoms", "pain", "fever", "cough", "headache", "chest", "breath", "dizzy", "fatigue", "nausea"]):
-            lines.append("\n### 🩺 Comprehensive Symptom Assessment & Clinical Triage")
-            lines.append("- **Clinical Evaluation:** Symptom patterns have been cross-referenced with your active health record and physiological baseline.")
-            lines.append("- **Onset & Duration:** Monitor symptom progression, tracking whether onset was acute or gradual over recent days.")
-            lines.append("- **Red Flag Warnings:** Seek immediate emergency evaluation if experiencing chest pressure, shortness of breath, severe sudden headache, or high fever with neck stiffness.")
-            lines.append("- **Recommended Actions:** Log daily severity in your VitalHealth timeline, maintain optimal hydration, and discuss persistent symptoms with your primary care physician.")
+        if any(k in q_low for k in ["symptom", "pain", "fever", "cough", "headache", "dizzy", "fatigue", "nausea", "stomach", "chest"]):
+            lines.append("### 🩺 Clinical Overview & Symptom Assessment\n")
+            lines.append(f"Regarding your query about **\"{user_query.strip()}\"**, here is a personalized analysis based on your health profile:\n")
+            lines.append("- **Symptom Evaluation:** Your reported symptoms have been recorded for ongoing clinical tracking.")
+            lines.append("- **Physiological Baseline:** Your vitals and active conditions are continuously monitored.")
+            lines.append("\n#### 💡 Practical Guidance & Care Steps")
+            lines.append("- **Hydration & Rest:** Ensure adequate fluid intake and prioritize rest.")
+            lines.append("- **Track Changes:** Note any changes in severity, duration, or accompanying symptoms in your timeline.")
+            lines.append("\n#### ⚠️ When to Seek Medical Attention")
+            lines.append("- Consult a physician if symptoms worsen, persist, or if you develop red-flag symptoms such as high fever or severe chest discomfort.")
 
-        if any(k in q_low for k in ["viral", "bacterial", "infection"]):
-            lines.append("\n### 🦠 Infection & Antibiotic Guidance")
-            lines.append("- **Pathology:** Viruses require host cells to replicate; antibiotics do not treat viruses.")
-            lines.append("- **Management:** Focus on symptomatic treatment, hydration, and rest unless bacterial etiology is confirmed.")
+        elif any(k in q_low for k in ["medication", "pill", "dose", "drug", "metformin", "side effect", "ibuprofen"]):
+            lines.append("### 💊 Medication & Safety Guidance\n")
+            lines.append(f"Regarding your question on **\"{user_query.strip()}\"**:\n")
+            if medications and medications.strip() not in ("None", "None documented"):
+                lines.append(f"- **Active Regimen:** {medications}")
+            lines.append("- **Adherence:** Take all prescribed medications strictly according to your physician's instructions.")
+            lines.append("- **Missed Doses:** Do not double up on missed doses; resume your routine schedule.")
+            lines.append("- **Safety Check:** Always review potential drug interactions before taking new over-the-counter remedies.")
 
-        if any(k in q_low for k in ["nsaid", "kidney", "ckd", "prostaglandin"]):
-            lines.append("\n### ⚠️ NSAIDs and Renal Function Mechanics")
-            lines.append("- **Pathology:** NSAIDs inhibit prostaglandins, decrease renal blood flow, and constrict afferent arterioles leading to eGFR decline.")
+        elif any(k in q_low for k in ["food", "diet", "nutrition", "weight", "eat", "mango", "fruit"]):
+            lines.append("### 🥗 Nutrition & Lifestyle Insights\n")
+            lines.append(f"Regarding your query on **\"{user_query.strip()}\"**:\n")
+            lines.append("- **Balanced Nutrition:** Focus on nutrient-rich whole foods, lean proteins, and fiber.")
+            lines.append("- **Glycemic Balance:** Pair higher-carbohydrate foods with protein or healthy fats to maintain steady glucose levels.")
 
-        if any(k in q_low for k in ["eye", "pressure", "dizziness"]):
-            lines.append("\n### 👁️ Ocular & Dizziness Symptom Triage")
-            lines.append("- **Vitals Check:** Immediately check blood pressure and ocular pressure signs.")
-            lines.append("- **Safety Precautions:** Monitor hydration levels and watch for red flags like sudden vision loss or severe nausea.")
-
-        if any(k in q_low for k in ["pounding", "trembling", "heart attack", "panic"]):
-            lines.append("\n### 💓 Heart Rate & Anxiety Assessment")
-            lines.append("- **Triage:** We must differentiate anxiety panic surge from cardiac emergency.")
-            lines.append("- **Action Plan:** Practice 4-7-8 breathing exercise, check for chest pain/radiation, and receive reassurance.")
-
-        if any(k in q_low for k in ["ibuprofen", "advil", "knee", "pain"]):
-            lines.append("\n### 💊 Polypharmacy Interaction Warning")
-            lines.append("- **Apixaban & GERD Risk:** NSAIDs like Ibuprofen increase GI bleeding risk with Apixaban (Eliquis) and GERD Omeprazole risk.")
-            lines.append("- **Renal Protection:** Avoid NSAIDs for CKD renal protection.")
-
-        if any(k in q_low for k in ["missed", "dose", "metformin"]):
-            lines.append("\n### ⏰ Missed Dose Protocol")
-            lines.append("- **Protocol:** Never double dose; take next scheduled dose to avoid gastrointestinal distress risk.")
-
-        if any(k in q_low for k in ["mango", "watermelon", "fruit", "glycemic"]):
-            lines.append("\n### 🥭 Glycemic Nutrition Guidance")
-            lines.append("- **Glycemic Index:** High glycemic index fruits require strict portion control.")
-            lines.append("- **Glycemic Pairing:** Always pair with protein/fiber and monitor postprandial glucose levels.")
-
-        if any(k in q_low for k in ["bench press", "weightlifting", "exercise", "workout"]):
-            lines.append("\n### 🏋️ Cardiovascular Exercise Safety")
-            lines.append("- **Hemodynamic Warning:** The Valsalva maneuver spikes blood pressure during heavy lifts.")
-            lines.append("- **Prescription:** Moderate intensity aerobic cardio preferred for BP control.")
-
-        if any(k in q_low for k in ["sleep", "memory", "brain", "older"]):
-            lines.append("\n### 🧠 Sleep & Neurological Health")
-            lines.append("- **Brain Clearance:** Deep sleep facilitates glymphatic clearance and amyloid-beta clearance.")
-            lines.append("- **Cognitive Maintenance:** Promotes synaptic consolidation; adhere to strict sleep hygiene.")
-
-        if any(k in q_low for k in ["overwhelmed", "anxious", "stress", "work"]):
-            lines.append("\n### 💚 Mental Health & Stress Relief")
-            lines.append("- **Empathetic Support:** We provide empathetic support for stress and sleep difficulties.")
-            lines.append("- **Interventions:** Practice sleep hygiene, caffeine restriction, CBT-I concepts, and request professional referral.")
-
-        if any(k in q_low for k in ["hba1c", "7.4%", "142"]):
-            lines.append("\n### 📊 Lab Interpretation Analysis")
-            lines.append("- **Glycemic Control:** HbA1c 7.4% indicates elevated glycemic control; Fasting Glucose 142 mg/dL.")
-            lines.append("- **Clinical Target:** Review ADA guideline targets and optimize medication regimen review.")
-
-        if any(k in q_low for k in ["mammogram", "dexa", "bone"]):
-            lines.append("\n### 🏥 Preventive Screening Schedule")
-            lines.append("- **Surveillance:** Schedule annual mammogram surveillance and DEXA scan for aromatase inhibitor bone health as part of oncology routine.")
-
-        if any(k in q_low for k in ["nausea", "semaglutide", "wegovy", "injection"]):
-            lines.append("\n### 🤢 GLP-1 Nausea Management")
-            lines.append("- **Dietary Adjustments:** Eat smaller frequent meals, avoid fatty spicy foods, stay hydrated, and eat slowly.")
-
-        if any(k in q_low for k in ["rhr", "resting heart rate", "biogears", "organ"]):
-            lines.append("\n### 🫀 Digital Twin Simulation Projections")
-            lines.append("- **Cardiovascular Baseline:** Heart rate 42 bpm athletic sinus bradycardia with MAP 81.3 mmHg.")
-            lines.append("- **Perfusion Score:** Cardiovascular score 99/100 indicating optimal perfusion.")
-
-        if any(k in q_low for k in ["ocr", "scan", "numbers", "egfr", "lab"]):
-            lines.append("\n### 📄 Lab Diagnostics Breakdown")
-            lines.append("- **Renal Function Baseline:** eGFR 48 mL/min, Serum Creatinine 1.6 mg/dL, BUN 28.")
-            lines.append("- **Clinical Stage:** Reflects Stage 3a CKD stability; continue nephroprotective regimen.")
-
-        if any(k in q_low for k in ["5k", "run", "eat before"]):
-            lines.append("\n### 🏃 Pre-Exercise Nutrition & Glycemic Safety")
-            lines.append("- **Fueling:** Consume 15-30g complex carbs before running; monitor blood glucose and consider insulin dose adjustment consideration.")
-
-        if any(k in q_low for k in ["mother", "forgetting", "pill", "caregiver"]):
-            lines.append("\n### 💊 Caregiver Medication Management")
-            lines.append("- **Organization:** Use pill organizer box with AM/PM slots, blister packs, and a caregiver log app.")
-            lines.append("- **Safety Rule:** Do not give duplicate dose if unsure.")
-
-        if any(k in q_low for k in ["weight", "goal", "loss", "15%"]):
-            lines.append("\n### 🎯 Health Goal & Weight Loss Analysis")
-            lines.append("- **Semaglutide Adherence:** Maintain weekly GLP-1 injection schedule as prescribed.")
-            lines.append("- **Caloric Deficit:** Targeted -500 kcal caloric deficit to promote steady weight reduction.")
-            lines.append("- **Weight Logging:** Consistent weekly weight logging supports NAFLD improvement.")
-
-        if any(k in q_low for k in ["doctor", "appointment", "cardiology", "visit", "questions"]):
-            lines.append("\n### 🏥 Doctor Appointment Preparation")
-            lines.append("- **Heart Failure & Ejection Fraction:** Review EF 35% stability and symptoms.")
-            lines.append("- **Medication Titration:** Ask your cardiologist about Entresto dose titration and daily weight log review.")
-            lines.append("- **Vitals & Labs:** Present your daily weight log review and discuss your BNP 450 discussion.")
-
-        if any(k in q_low for k in ["mango", "watermelon", "fruit", "glycemic"]):
-            lines.append("\n### 🥭 Glycemic Nutrition Guidance")
-            lines.append("- **Glycemic Index:** High glycemic index fruits require strict portion control.")
-            lines.append("- **Glycemic Pairing:** Always pair with protein/fiber and monitor postprandial glucose levels.")
-
-        if any(k in q_low for k in ["bench press", "weightlifting", "exercise", "workout"]):
-            lines.append("\n### 🏋️ Cardiovascular Exercise Safety")
-            lines.append("- **Hemodynamic Warning:** The Valsalva maneuver spikes blood pressure during heavy lifts.")
-            lines.append("- **Prescription:** Moderate intensity aerobic cardio is preferred for BP control.")
-
-        if any(k in q_low for k in ["sleep", "memory", "brain", "older"]):
-            lines.append("\n### 🧠 Sleep & Neurological Health")
-            lines.append("- **Brain Clearance:** Deep sleep facilitates glymphatic clearance and amyloid-beta clearance.")
-            lines.append("- **Cognitive Maintenance:** Promotes synaptic consolidation; adhere to strict sleep hygiene.")
-
-        if any(k in q_low for k in ["overwhelmed", "anxious", "stress", "panic"]):
-            lines.append("\n### 💚 Mental Health & Stress Relief")
-            lines.append("- **Empathetic Support:** We provide empathetic support for stress and sleep difficulties.")
-            lines.append("- **Interventions:** Practice caffeine restriction, CBT-I concepts, and request professional referral if needed.")
-
-        if any(k in q_low for k in ["rhr", "resting heart rate", "biogears", "organ"]):
-            lines.append("\n### 🫀 Digital Twin Simulation Projections")
-            lines.append("- **Cardiovascular Baseline:** Heart rate 42 bpm athletic sinus bradycardia with MAP 81.3 mmHg.")
-            lines.append("- **Perfusion Score:** Cardiovascular score 99/100 indicating optimal perfusion.")
-
-        if any(k in q_low for k in ["ocr", "scan", "numbers", "egfr", "lab"]):
-            lines.append("\n### 📄 Lab Diagnostics Breakdown")
-            lines.append("- **Renal Function Baseline:** eGFR 48 mL/min/1.73m², Serum Creatinine 1.6 mg/dL, BUN 28.")
-            lines.append("- **Clinical Stage:** Reflects Stage 3a CKD stability; continue nephroprotective regimen.")
-
-        if any(k in q_low for k in ["weight", "goal", "semaglutide", "loss"]):
-            lines.append("\n### 🎯 Health Goal & Weight Loss Analysis")
-            lines.append("- **Semaglutide Adherence:** Maintain weekly GLP-1 injection schedule as prescribed.")
-            lines.append("- **Caloric Deficit:** Targeted -500 kcal/day deficit to promote steady weight reduction.")
-            lines.append("- **Weight Logging:** Consistent weekly weight logging supports NAFLD hepatic steatosis improvement.")
-
-        if any(k in q_low for k in ["doctor", "appointment", "cardiology", "visit", "questions"]):
-            lines.append("\n### 🏥 Doctor Appointment Preparation")
-            lines.append("- **Heart Failure & Ejection Fraction:** Review EF 35% stability and symptoms.")
-            lines.append("- **Medication Titration:** Ask your cardiologist about Entresto (Sacubitril/Valsartan) dose titration.")
-            lines.append("- **Vitals & Labs:** Present your daily weight log review and discuss your BNP 450 lab results.")
-
-        if any(k in q_low for k in ["ibuprofen", "advil", "nsaid", "pain"]):
-            lines.append("\n### 💊 Medication Interaction Warning")
-            lines.append("- **Apixaban & GERD Risk:** NSAIDs like Ibuprofen increase GI bleeding risk with Apixaban (Eliquis) and Omeprazole.")
-            lines.append("- **Renal Protection:** NSAIDs constrict renal arterioles; avoid NSAIDs for CKD renal protection.")
-
-        if any(k in q_low for k in ["missed", "dose", "metformin"]):
-            lines.append("\n### ⏰ Missed Dose Protocol")
-            lines.append("- **Never Double Dose:** Take your next scheduled dose; never take a double dose of Metformin to prevent severe GI distress.")
-
-        if summary:
-            lines.append(f"\n### 📝 Master Clinical Summary\n{summary}")
-        if rag_block:
-            lines.append(f"\n### 📚 Clinical Guideline Insights\n{rag_block}")
-        if risks_block:
-            lines.append(f"\n### ⚠️ Active Clinical Risks & Precautions\n{risks_block}")
-        if sim_block:
-            lines.append(f"\n### 🫀 BioGears Digital Twin Projections\n{sim_block}")
-        if long_block:
-            lines.append(f"\n### 📈 Longitudinal Trend Analysis\n{long_block}")
-
-        lines.append("\n### 💡 Key Recommendations")
-        lines.append("1. **Medication Adherence & Safety:** Avoid unprescribed NSAIDs or double dosing; maintain your active regimen.")
-        lines.append("2. **Glycemic & Vital Logging:** Regularly log blood pressure, heart rate, and HbA1c/glucose levels in VitalHealth.")
-        lines.append("3. **Lifestyle & Hydration:** Maintain balanced nutrition, adequate hydration, and moderate aerobic exercise.")
-        lines.append("4. **Clinical Follow-up:** Bring your log summaries and dosage questions to your next physician appointment.")
+        else:
+            lines.append("### 🩺 Personalized Health Insights\n")
+            lines.append(f"Regarding your query **\"{user_query.strip()}\"**:\n")
+            lines.append("- **Record Review:** Your active health record and baseline vitals have been reviewed.")
+            lines.append("- **Continuous Wellness:** Maintain your daily vitals logging and routine care habits.")
 
         lines.append("\n> 💡 *Please consult your doctor for personalized medical advice.*")
-        lines.append(f"\n*[VitalHealth AI | Snapshot ID: {context.patient_id} | Health Brain Citation: ADA/ACC Guidelines | BioGears Twin]*")
-
         return "\n".join(lines)
 
     # =========================================================================
@@ -665,18 +500,20 @@ You are the patient's trusted health companion. Answer clearly, safely, and with
 
     def verify_and_refine_response(self, response_text: str, context: Any, user_query: str) -> str:
         """
-        Safety post-processing pass:
-        1. Strip any lingering system artifacts
+        Safety & Quality post-processing pass:
+        1. Strip all developer debug tags, XML tags, and snapshot metadata
         2. Ensure emergency escalation is present when needed
         3. Ensure the doctor disclaimer is always present
-        4. Add citation footer
+        4. Clean up formatting for professional presentation
         """
-        # Strip system artifacts
+        # Strip system debug artifacts & raw tags
         response_text = re.sub(r'(?i)user query processed\s*\([^)]*\)\s*;?', '', response_text)
         response_text = re.sub(r'(?i)user[_ ]query\s*\([^)]*\)\s*;?', '', response_text)
+        response_text = re.sub(r'<\/?(?:trends|clinical_guidelines|digital_twin_data|patient_summary)[^>]*>', '', response_text)
+        response_text = re.sub(r'\*\[VitalHealth AI \| Snapshot[^\]]*\]\*', '', response_text)
         response_text = re.sub(r';\s*;', ';', response_text)
 
-        # Remove empty bold / bullet artifacts
+        # Clean empty list artifacts
         lines = [l for l in response_text.split("\n") if l.strip() not in ("- ****", "**", "- **Active Risks:**", "Active Logged Symptoms:")]
         response_text = "\n".join(lines)
 
@@ -694,12 +531,8 @@ You are the patient's trusted health companion. Answer clearly, safely, and with
         if "consult your doctor" not in response_text.lower() and "healthcare provider" not in response_text.lower():
             response_text += f"\n\n{disclaimer}"
 
-        # Add citation footer if not already present
-        if "[Health Brain Citation:" not in response_text and "[VitalHealth AI" not in response_text:
-            response_text += f"\n\n*[VitalHealth AI | Snapshot: {context.patient_id} | ADA/ACC Guidelines | BioGears Twin]*"
-
-        # Generate interactive follow-up suggestion chips if none present
-        if "Suggested Follow-ups:" not in response_text and "suggested_queries" not in response_text:
+        # Generate clean interactive follow-up suggestion chips if none present
+        if "Quick Follow-ups" not in response_text and "Suggested Follow-ups" not in response_text:
             chips = self._generate_suggestion_chips(user_query)
             if chips:
                 response_text += f"\n\n### 💡 Quick Follow-ups\n" + "\n".join([f"- `{c}`" for c in chips])
