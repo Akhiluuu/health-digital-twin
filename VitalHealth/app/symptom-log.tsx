@@ -104,7 +104,7 @@ export default function SymptomLogScreen() {
   /**
    * Starts diagnosis for custom symptoms
    */
-  const handleCustomDiagnosis = () => {
+  const handleCustomDiagnosis = async () => {
     if (!symptomName.trim()) {
       Alert.alert("Input Required", "Please enter a name for your symptom.");
       return;
@@ -117,20 +117,11 @@ export default function SymptomLogScreen() {
 
     const symptomText = customSymptom.trim();
 
+    await logCustomSymptom(symptomText, "mild");
     setShowModal(false);
-
-    // Navigate to AI Health page inside Tabs
-    router.push({
-      pathname: "/(tabs)/ai-health",
-      params: {
-        symptom: symptomText,
-        symptomName: symptomName.trim(),
-        source: "symptom-log",
-      },
-    });
-
     setSymptomName("");
     setCustomSymptom("");
+    Alert.alert("Symptom Logged", "Your symptom has been saved to your health history.");
   };
 
   return (

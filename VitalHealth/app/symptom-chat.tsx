@@ -172,14 +172,9 @@ export default function SymptomChat() {
       setTimeout(async () => {
         setMessages((prev) => [...prev, finalMessage]);
         await saveSymptom();
-        const symptomQuery = `I reported symptom "${query}". Answers: ${answers.join(" | ")}. Please analyze with my patient profile and give me a full medical assessment.`;
-        router.push({
-          pathname: "/(tabs)/ai-health",
-          params: {
-            symptom: symptomQuery,
-            source: "symptom-chat",
-          },
-        });
+        Alert.alert("Symptom Recorded", "Your symptom has been saved to your health history.", [
+          { text: "OK", onPress: () => router.back() }
+        ]);
       }, 800);
     }
   };
