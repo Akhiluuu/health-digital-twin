@@ -34,6 +34,7 @@ class TimelineEventType(str, Enum):
     risk_flagged = "risk_flagged"
     symptom_logged = "symptom_logged"
     twin_simulated = "twin_simulated"
+    consultation_completed = "consultation_completed"
     # Journey Engine event types
     journey_milestone_reached = "journey_milestone_reached"
     goal_created = "goal_created"

@@ -745,6 +745,7 @@ class QwenInferenceEngine(HealthBrainSubsystem):
             dynamic_lines = self.synthesize_dynamic_response(context, user_query, query_lower, is_diabetic, is_hypertensive)
             response_lines.extend(dynamic_lines)
 
+        response_lines.append(f"\n*Clinical Reference: VitalHealth Snapshot ID {context.patient_id} | ADA/ACC Guidelines | BioGears Digital Twin*")
         response_text = "\n".join(response_lines)
 
         # Step 5 — Answer Self-Review Verification Pass
