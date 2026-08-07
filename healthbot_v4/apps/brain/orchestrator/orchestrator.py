@@ -255,9 +255,9 @@ class AIOrchestrator(HealthBrainSubsystem):
 
         if ActionType.emergency_redirect in decision.actions or intent_res.primary_intent == "EMERGENCY":
             emergency_text = (
-                "### 🚨 EMERGENCY WARNING & Immediate Triage Notice\n"
+                "**🚨 EMERGENCY WARNING & Immediate Triage Notice**\n"
                 "Your query describes acute red flag symptoms (e.g. chest pain red flag, obstetric emergency, acute hemorrhage) that require immediate medical evaluation.\n\n"
-                "### 🎯 Action Required\n"
+                "**🎯 Action Required**\n"
                 "1. **Call 911 / Labor & Delivery ER** or proceed to the nearest Emergency Room or immediate medical department.\n"
                 "2. Do not delay seeking emergency care.\n\n"
                 "[Health Brain Citation: Emergency Triage System | AHA 2026 Guidelines]"
@@ -649,9 +649,12 @@ class AIOrchestrator(HealthBrainSubsystem):
         raw_score = reasoning_res.get("confidence_score", 0.90)
         conf_score = float(raw_score) if isinstance(raw_score, (int, float, str)) else 0.90
 
+        # Strip any raw markdown headers (###, ##, #) from response_text
+        sanitized_text = re.sub(r'(?m)^#{1,6}\s+(.+)$', r'**\1**', verified_text) if verified_text else ""
+
         return OrchestratorResponse(
             patient_id=patient_id,
-            response_text=verified_text,
+            response_text=sanitized_text,
             emergency_triggered=False,
             confidence_score=conf_score,
             metadata={

@@ -830,10 +830,10 @@ async def export_clinical_digest(user_id: str):
     digest_markdown += f"**Generated Date:** `{datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}`  \n"
     digest_markdown += f"**Overall Evidence Confidence:** `{int(bundle.overall_confidence * 100)}% ({bundle.overall_confidence_label.value.upper()})`  \n\n"
     
-    digest_markdown += "## 📊 Active Subsystem Findings\n"
+    digest_markdown += "**📊 Active Subsystem Findings**\n"
     for src in bundle.sources:
         status_icon = "🟢" if src.status == SourceStatus.available else "🔴"
-        digest_markdown += f"### {status_icon} {src.name}\n"
+        digest_markdown += f"**{status_icon} {src.name}**\n"
         if src.findings:
             for f in src.findings:
                 digest_markdown += f"- **{f.label}:** `{f.value}` ({f.timestamp_label})\n"
@@ -842,7 +842,7 @@ async def export_clinical_digest(user_id: str):
         digest_markdown += "\n"
         
     if bundle.conflicts:
-        digest_markdown += "## ⚠️ Cross-Source Discrepancies\n"
+        digest_markdown += "**⚠️ Cross-Source Discrepancies**\n"
         for c in bundle.conflicts:
             digest_markdown += f"- **{c.metric}:** {c.source_a} ({c.value_a}) vs {c.source_b} ({c.value_b}). *Recommendation:* {c.recommendation}\n"
             

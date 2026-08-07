@@ -63,9 +63,9 @@ class EmergencySafetyRouter(HealthBrainSubsystem):
                 logger.warning(f"🚨 Pre-Guardrail EMERGENCY Triggered [{category}] in {elapsed_ms:.2f}ms for: '{query}'")
                 
                 triage_response = (
-                    "### 🚨 EMERGENCY WARNING — Immediate Medical Action Required\n\n"
+                    "**🚨 EMERGENCY WARNING — Immediate Medical Action Required**\n\n"
                     "Your description indicates **acute red flag symptoms** requiring immediate emergency medical evaluation.\n\n"
-                    "### 🎯 Action Plan:\n"
+                    "**🎯 Action Plan:**\n"
                     "1. **Call 112 / 911 immediately** or have someone drive you to the nearest Emergency Room.\n"
                     "2. **Do not drive yourself** if experiencing chest pain, severe shortness of breath, dizziness, or weakness.\n"
                     "3. Stay calm and stay on the line with emergency dispatchers until help arrives.\n\n"
