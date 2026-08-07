@@ -596,6 +596,9 @@ function RichText({ text, style }: { text: string; style?: any }) {
     );
   });
 
+  return <View>{blocks}</View>;
+}
+
 // ─── Evidence Bundle Collapsible Card ─────────────────────────────────────────
 
 function EvidenceCard({ bundle, c, theme }: { bundle: EvidenceBundleMeta; c: any; theme: string }) {
@@ -943,9 +946,11 @@ export default function AIHealthScreen() {
     return () => clearTimeout(t);
   }, [symptom]);
 
-  // ── Auto-scroll ─────────────────────────────────────────────────────────────
-
-  useEffect(() => { setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 100); }, [messages]);
+  useEffect(() => {
+    if (messages.length > 1) {
+      setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 100);
+    }
+  }, [messages]);
 
   // ── New / restore chat ──────────────────────────────────────────────────────
 
@@ -1363,7 +1368,7 @@ export default function AIHealthScreen() {
       </View>
 
       {/* Chat + input */}
-      <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === "ios" ? "padding" : "height"} keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 0}>
+      <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === "ios" ? "padding" : undefined} keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 0}>
         <View style={[styles.container, { backgroundColor: c.bg }]}>
           <FlatList
             ref={listRef} data={messages} renderItem={renderMessage}

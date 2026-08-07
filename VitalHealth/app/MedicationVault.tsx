@@ -469,50 +469,8 @@ export default function MedicationVault() {
   };
 
   const handleExportReport = async () => {
-    try {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-      
-      const { downloadReport } = await import("../services/medicationVaultAPI");
-      const blob = await downloadReport({
-        report_type: "clinical",
-        format: "pdf",
-      });
-
-      const reader = new FileReader();
-      reader.onloadend = async () => {
-        try {
-          const base64data = (reader.result as string).split(",")[1];
-          const fileUri = `${FileSystem.cacheDirectory}medication_report.pdf`;
-          
-          await FileSystem.writeAsStringAsync(fileUri, base64data, {
-            encoding: "base64",
-          });
-
-          const canShare = await Sharing.isAvailableAsync();
-          if (canShare) {
-            await Sharing.shareAsync(fileUri, {
-              mimeType: "application/pdf",
-              dialogTitle: "Share Medication Report",
-            });
-          } else {
-            Alert.alert("Sharing Not Available", "Sharing is not supported on this device.");
-          }
-        } catch (err) {
-          log("Error writing/sharing PDF report file:", err);
-          Alert.alert("Export Error", "Failed to share the generated PDF report.");
-        }
-      };
-
-      reader.onerror = (err) => {
-        log("FileReader error reading PDF report blob:", err);
-        Alert.alert("Export Error", "Failed to read the generated PDF report.");
-      };
-
-      reader.readAsDataURL(blob);
-    } catch (err) {
-      log("Error exporting PDF report:", err);
-      Alert.alert("Export Failed", "Failed to generate report from server.");
-    }
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    router.push("/settings-export-summary" as any);
   };
 
   // Header Component

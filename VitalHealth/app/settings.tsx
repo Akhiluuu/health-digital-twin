@@ -83,6 +83,7 @@ export default function SettingsScreen() {
 
         {/* Settings Sections */}
         <View style={[styles.section, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          {Item("📄  Export Doctor Summary", "/settings-export-summary")}
           {Item("Data Sharing", "/settings-data")}
           {Item("☁️  Backup & Restore", "/backup-restore")}
         </View>
