@@ -96,11 +96,20 @@ const fmtRelativeDate = (ts: number): string => {
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
+type EvidenceBundleMeta = {
+  intent?: string;
+  overall_confidence?: number;
+  sources_reviewed?: { name: string; status: string; records: number }[];
+  missing_data?: string[];
+  conflicts_detected?: number;
+};
+
 type Message = {
   id: string;
   text: string;
   sender: "user" | "ai" | "system";
   timestamp: Date;
+  evidenceBundle?: EvidenceBundleMeta;
 };
 
 type Doc = {
@@ -116,6 +125,7 @@ type SerializedMessage = {
   text: string;
   sender: "user" | "ai" | "system";
   timestamp: number;
+  evidenceBundle?: EvidenceBundleMeta;
 };
 
 type ChatSession = {
@@ -849,6 +859,7 @@ export default function AIHealthScreen() {
       const apiKey = await getApiKey();
       
       let aiReply = "";
+      let evidenceBundleData: EvidenceBundleMeta | undefined = undefined;
       try {
         const brainRes = await fetch(`${baseUrl}/api/v5/brain/query`, {
           method: "POST",
@@ -867,6 +878,7 @@ export default function AIHealthScreen() {
         if (brainRes.ok) {
           const brainData = await brainRes.json();
           aiReply = brainData.response_text || brainData.response || brainData.reply || "";
+          evidenceBundleData = brainData.metadata?.evidence_bundle;
         }
       } catch (err) {}
 
@@ -882,9 +894,10 @@ export default function AIHealthScreen() {
         if (!genRes.ok) { const err = await genRes.json().catch(() => ({})); throw new Error(err.detail || `Generate failed: ${genRes.status}`); }
         const resData = await genRes.json();
         aiReply = resData.response_text || resData.response || resData.reply || "No response from server.";
+        evidenceBundleData = resData.metadata?.evidence_bundle;
       }
 
-      setMessages((prev) => [...prev, { id: genId(), text: aiReply, sender: "ai", timestamp: new Date() }]);
+      setMessages((prev) => [...prev, { id: genId(), text: aiReply, sender: "ai", timestamp: new Date(), evidenceBundle: evidenceBundleData }]);
       historyRef.current = [...history, query, aiReply].slice(-10);
       setConnected(true);
     } catch (e: any) {
@@ -1013,6 +1026,35 @@ export default function AIHealthScreen() {
           isUser ? styles.userBubble : styles.aiBubble,
           { backgroundColor: isUser ? getUserBubbleColor() : getAiBubbleColor(), borderColor: isUser ? getUserBubbleBorder() : getAiBubbleBorder() }
         ]}>
+          {/* Evidence Bundle Transparency Header Card */}
+          {!isUser && item.evidenceBundle && (
+            <View style={{ backgroundColor: theme === 'dark' ? '#0f172a' : '#f8fafc', borderRadius: 8, padding: 8, marginBottom: 8, borderWidth: 1, borderColor: c.border }}>
+              <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+                  <Ionicons name="shield-checkmark" size={14} color="#10b981" />
+                  <Text style={{ fontSize: 11, fontWeight: "700", color: c.text }}>Evidence-Based Intelligence</Text>
+                </View>
+                {item.evidenceBundle.overall_confidence !== undefined && (
+                  <View style={{ backgroundColor: item.evidenceBundle.overall_confidence >= 0.8 ? '#10b98120' : '#f59e0b20', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 }}>
+                    <Text style={{ fontSize: 10, fontWeight: "700", color: item.evidenceBundle.overall_confidence >= 0.8 ? '#10b981' : '#f59e0b' }}>
+                      {Math.round(item.evidenceBundle.overall_confidence * 100)}% Confidence
+                    </Text>
+                  </View>
+                )}
+              </View>
+              {item.evidenceBundle.sources_reviewed && item.evidenceBundle.sources_reviewed.length > 0 && (
+                <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 4, marginTop: 4 }}>
+                  {item.evidenceBundle.sources_reviewed.map((src, sIdx) => (
+                    <View key={sIdx} style={{ flexDirection: "row", alignItems: "center", gap: 2, backgroundColor: src.status === 'available' ? '#10b98115' : '#ef444415', paddingHorizontal: 5, paddingVertical: 2, borderRadius: 4 }}>
+                      <Ionicons name={src.status === 'available' ? 'checkmark-circle' : 'alert-circle'} size={10} color={src.status === 'available' ? '#10b981' : '#ef4444'} />
+                      <Text style={{ fontSize: 9, color: src.status === 'available' ? '#10b981' : '#ef4444', fontWeight: "600" }}>{src.name}</Text>
+                    </View>
+                  ))}
+                </View>
+              )}
+            </View>
+          )}
+
           <RichText text={item.text} style={[styles.messageText, { color: isUser ? userTextColor : c.text }]} />
 
           {/* Interactive AI Action Chips */}
