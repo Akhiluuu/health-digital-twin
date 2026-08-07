@@ -659,7 +659,7 @@ class AIOrchestrator(HealthBrainSubsystem):
                 "actions": [a.value for a in decision.actions],
                 "tokens_budgeted": budgeted_ctx.total_token_estimate,
                 "health_score": state.current_health_score,
-                "sources_cited": sources,
+                "sources_cited": sources_list,
                 "model_route": route_res["target_model"],
                 "complexity_score": route_res["complexity_score"],
                 "fact_verification": {"corrected": fact_corrected, "latency_ms": fact_lat},
