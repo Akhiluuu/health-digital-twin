@@ -100,6 +100,63 @@ def test_phi_sanitizer_hipaa():
     assert "John" not in cleaned
 
 
+def test_dynamic_response_strategy_7_layers():
+    from healthbot_v4.apps.brain.reasoning.response_strategy import ResponseStrategyPlanner, QueryComplexity, VerbosityBudget, UIModality
+    planner = ResponseStrategyPlanner()
+
+    # 1. Chit-chat micro query
+    s_chat = planner.plan_strategy("GENERAL_CONVERSATION", "Hello! How are you?")
+    assert s_chat.formatting_schema == "CHIT_CHAT"
+    assert s_chat.complexity == QueryComplexity.MICRO_CHAT
+    assert s_chat.verbosity == VerbosityBudget.MICRO
+
+    # 2. Medication query
+    s_med = planner.plan_strategy("MEDICATION", "How should I take Metformin 500mg?")
+    assert s_med.formatting_schema == "PHARMACOLOGY_SAFETY"
+    assert s_med.temperature == 0.28
+
+    # 3. Emergency query
+    s_emerg = planner.plan_strategy("EMERGENCY", "I have severe chest pain and left arm numbness")
+    assert s_emerg.formatting_schema == "EMERGENCY_TRIAGE"
+    assert s_emerg.requires_alert_banner is True
+
+    # 4. Mental health query
+    s_mental = planner.plan_strategy("MENTAL_HEALTH", "I feel overwhelmed and stressed")
+    assert s_mental.formatting_schema == "MENTAL_HEALTH_WELLBEING"
+    assert s_mental.temperature == 0.65
+
+    # 5. Lab report audit
+    s_lab = planner.plan_strategy("LAB_REPORT", "Explain my HbA1c and glucose results")
+    assert s_lab.formatting_schema == "LAB_REPORT_ANALYSIS"
+    assert s_lab.complexity == QueryComplexity.DEEP_CLINICAL_AUDIT
+
+
+@pytest.mark.asyncio
+async def test_qwen_engine_adaptive_formatting():
+    from healthbot_v4.apps.brain.reasoning.response_strategy import ResponseStrategyPlanner
+    engine = QwenInferenceEngine()
+    engine.model_loaded = False
+    ctx = BudgetedContext(
+        patient_id="p_test_dyn",
+        clinical_snapshot_block="Heart Rate: 70 bpm",
+        master_summary_block="Healthy male profile",
+        active_risks_block="None",
+        retrieval_plan_block="Plan",
+    )
+    planner = ResponseStrategyPlanner()
+
+    # Test Chit-Chat fallback
+    strat_chat = planner.plan_strategy("GENERAL_CONVERSATION", "Hi")
+    res_chat = engine.generate_reasoning_response(ctx, "Hi", intent="GENERAL_CONVERSATION", strategy=strat_chat)
+    assert "Executive Summary" not in res_chat["response"]
+    assert "VitalHealth AI" in res_chat["response"] or "Hello" in res_chat["response"]
+
+    # Test Emergency fallback
+    strat_emerg = planner.plan_strategy("EMERGENCY", "chest pain")
+    res_emerg = engine.generate_reasoning_response(ctx, "chest pain", intent="EMERGENCY", strategy=strat_emerg)
+    assert "🚨 **EMERGENCY WARNING" in res_emerg["response"]
+
+
 if __name__ == "__main__":
     print("🚀 Running LLM Architectural Upgrades Verification Suite...")
     asyncio.run(test_qwen_engine_stream_and_context())
@@ -107,6 +164,12 @@ if __name__ == "__main__":
     
     test_llm_router_tiers()
     print("✅ test_llm_router_tiers PASSED")
+
+    test_dynamic_response_strategy_7_layers()
+    print("✅ test_dynamic_response_strategy_7_layers PASSED")
+
+    asyncio.run(test_qwen_engine_adaptive_formatting())
+    print("✅ test_qwen_engine_adaptive_formatting PASSED")
     
     asyncio.run(test_clinical_tools_registry())
     print("✅ test_clinical_tools_registry PASSED")
@@ -121,4 +184,5 @@ if __name__ == "__main__":
     print("✅ test_phi_sanitizer_hipaa PASSED")
     
     print("\n🎉 ALL LLM UPGRADE SUITE TESTS PASSED SUCCESSFULLY!")
+
 

@@ -129,22 +129,32 @@ class QwenInferenceEngine(HealthBrainSubsystem):
         conversation_history: Optional[List[Dict[str, str]]] = None,
         intent: str = "GENERAL_HEALTH",
         evidence_bundle: Optional[Any] = None,
+        strategy: Optional[Any] = None,
     ) -> ReasoningResult:
         """
         Generate a health AI response. Tries Ollama → llama-cpp GGUF → smart fallback.
-        Uses intent-aware inference parameters for optimal quality per query type.
+        Uses 7-layer dynamic specs (intent, complexity, tone, verbosity, ui modality, sampling).
         All inference is 100% local. No data leaves the server.
         """
         logger.info(f"QwenInferenceEngine [{intent}]: generating for {context.patient_id}")
         start = time.time()
 
-        temperature, top_p, max_tokens = _INTENT_PARAMS.get(intent, _DEFAULT_PARAMS)
-        messages = self._build_chat_messages(context, user_query, conversation_history or [], intent=intent, evidence_bundle=evidence_bundle)
+        if strategy and hasattr(strategy, "temperature"):
+            temperature = strategy.temperature
+            top_p = strategy.top_p
+            max_tokens = strategy.max_tokens
+        else:
+            temperature, top_p, max_tokens = _INTENT_PARAMS.get(intent, _DEFAULT_PARAMS)
+
+        messages = self._build_chat_messages(
+            context, user_query, conversation_history or [],
+            intent=intent, evidence_bundle=evidence_bundle, strategy=strategy
+        )
         sources: List[str] = self._collect_sources(context, evidence_bundle=evidence_bundle)
 
         # ── Tier 1: Ollama ────────────────────────────────────────────────────
         raw = self._call_ollama(messages, temperature, top_p, max_tokens)
-        if raw and self._is_quality_response(raw, user_query):
+        if raw and self._is_quality_response(raw, user_query, strategy=strategy):
             elapsed = (time.time() - start) * 1000
             refined = self.verify_and_refine_response(raw, context, user_query)
             self._update_stats(elapsed)
@@ -155,8 +165,8 @@ class QwenInferenceEngine(HealthBrainSubsystem):
         if self.model_loaded and self._llm:
             raw = self._call_llama_cpp(messages, temperature, top_p, max_tokens)
             if raw:
-                # Quality guard: retry once with lower temp if response is too short
-                if not self._is_quality_response(raw, user_query):
+                # Quality guard: retry once with lower temp if response fails quality standards
+                if not self._is_quality_response(raw, user_query, strategy=strategy):
                     logger.info("Quality guard failed — retrying with lower temperature")
                     raw = self._call_llama_cpp(messages, max(0.20, temperature - 0.15), top_p, max_tokens) or raw
                 elapsed = (time.time() - start) * 1000
@@ -167,35 +177,52 @@ class QwenInferenceEngine(HealthBrainSubsystem):
 
         # ── Tier 3: Smart context-aware fallback ─────────────────────────────
         logger.warning("⚠️ Both Ollama and GGUF unavailable — using smart context fallback")
-        fallback = self._smart_context_fallback(context, user_query, evidence_bundle=evidence_bundle, intent=intent)
+        fallback = self._smart_context_fallback(context, user_query, evidence_bundle=evidence_bundle, intent=intent, strategy=strategy)
         elapsed = (time.time() - start) * 1000
         return self._pack_result(context.patient_id, fallback, sources, "context-fallback", elapsed, confidence=0.70)
 
     @staticmethod
-    def _is_quality_response(text: str, query: str) -> bool:
-        """Returns True if the LLM response meets minimum quality standards."""
-        if not text or len(text.split()) < 40:
+    def _is_quality_response(text: str, query: str, strategy: Optional[Any] = None) -> bool:
+        """Returns True if the LLM response meets quality standards for its specific complexity type."""
+        if not text:
             return False
-        # Must have at least one markdown heading for non-trivial queries
-        if len(query.split()) > 4 and "###" not in text and "##" not in text:
-            return False
-        # Must not contain raw model control tokens
+        
+        # Check control tokens
         if any(tok in text for tok in ["<|im_end|>", "<|im_start|>", "<|endoftext|>"]):
             return False
+
+        complexity = getattr(strategy, "complexity", None)
+        complexity_val = str(complexity.value if hasattr(complexity, "value") else complexity or "").upper()
+
+        # For micro chit-chat or short QA, length requirement is very low
+        if "MICRO" in complexity_val or len(query.split()) <= 4:
+            if len(text.split()) < 3:
+                return False
+            return True
+
+        if len(text.split()) < 20:
+            return False
+
         # Emergency queries must contain escalation
         emergency_kws = ["chest pain", "can't breath", "difficulty breathing", "suicid"]
         if any(kw in query.lower() for kw in emergency_kws):
             return "911" in text or "112" in text
+
         return True
 
     # =========================================================================
     # Prompt construction
     # =========================================================================
 
-    def _build_health_system_prompt(self, context: BudgetedContext, intent: str = "GENERAL_HEALTH") -> str:
+    def _build_health_system_prompt(
+        self,
+        context: BudgetedContext,
+        intent: str = "GENERAL_HEALTH",
+        strategy: Optional[Any] = None,
+    ) -> str:
         """
-        Constructs the production system prompt with intent-aware specialization.
-        Injects real patient data so every response is personalized.
+        Constructs the production system prompt with 7-layer dynamic specs.
+        Injects real patient data and intent/complexity-aware formatting instructions.
         """
         # Extract patient facts from context blocks
         patient_name    = self._extract_field(context.clinical_snapshot_block, ["Patient Profile:", "Name:"])
@@ -215,133 +242,236 @@ class QwenInferenceEngine(HealthBrainSubsystem):
                     vitals_line = line.replace("• BIOGEARS DIGITAL TWIN VITALS:", "").strip()
                     break
 
-        # Intent-specific guidance block
-        intent_guidance = ""
-        if intent in ("SYMPTOMS", "INJURY", "DERMATOLOGY", "DENTAL", "PEDIATRIC", "WOMENS_HEALTH"):
-            intent_guidance = """
-### 🩺 CLINICAL FOCUS & TRIAGE GUIDANCE:
-- Focus on onset, duration, severity, and potential triggers.
-- Clearly highlight Red Flags that require urgent evaluation.
-- Provide practical immediate self-care / first-aid measures.
-"""
-        elif intent in ("MEDICATION", "PRESCRIPTION"):
-            intent_guidance = """
-### 💊 PHARMACOLOGY & SAFETY GUIDANCE:
-- Clearly explain indication, standard dosing concepts, and key side effects.
-- Emphasize drug safety, potential interactions, and adherence.
-- Remind patient never to alter prescription doses without consulting their physician.
-"""
-        elif intent in ("MENTAL_HEALTH",):
-            intent_guidance = """
-### 🧠 MENTAL HEALTH & WELLBEING GUIDANCE:
-- Use an extraordinarily supportive, non-judgmental, and validating tone.
-- Provide actionable grounding exercises, sleep hygiene techniques, or stress-reduction steps.
-- Offer local/helpline resources if distress or crisis is implied.
-"""
-        elif intent in ("NUTRITION", "EXERCISE", "PREVENTIVE_CARE"):
-            intent_guidance = """
-### 🍏 LIFESTYLE & PREVENTIVE GUIDANCE:
-- Provide structured, practical advice tailored to active health conditions.
-- Break recommendations down into achievable daily/weekly habits.
-"""
-        elif intent in ("LAB_REPORT", "LONGITUDINAL_COMPARISON", "GENERAL_HEALTH_EDUCATION"):
-            intent_guidance = """
-### 📊 CLINICAL EDUCATION & LAB ANALYSIS:
-- Explain medical terms, biomarkers, and reference ranges in plain English.
-- Use comparison tables or structured summaries whenever helpful.
-"""
+        persona = getattr(strategy, "persona", None) if strategy else None
 
-        # Build the patient profile section
         patient_section = ""
-        if patient_name or health_score or conditions:
+        if patient_name or health_score or conditions or persona:
+            name_disp = persona.first_name if persona and persona.first_name else (patient_name or "VitalHealth User")
             patient_section = f"""
-## Your Patient's Health Profile
-- **Name / Profile:** {patient_name or "VitalHealth User"}
+## Patient Context & Persona Profile
+- **Name / Profile:** {name_disp} ({persona.age if persona else 40}y {persona.biological_sex if persona else 'male'})
 - **Health Score:** {health_score or "Calculated from vitals"}
-- **Active Conditions:** {conditions or "None documented"}
-- **Active Medications:** {medications or "None documented"}
+- **Active Conditions:** {conditions or (", ".join(persona.chronic_conditions) if persona and persona.chronic_conditions else "None documented")}
+- **Active Medications:** {medications or (", ".join(persona.active_medications) if persona and persona.active_medications else "None documented")}
 - **Recent Labs:** {labs or "None on record"}
 - **Active Clinical Risks:** {risks}"""
             if vitals_line:
                 patient_section += f"\n- **Live Vitals (Digital Twin):** {vitals_line}"
+            if persona:
+                patient_section += f"\n- **Health Literacy:** {persona.literacy_level.value}"
+                patient_section += f"\n- **Emotional Sentiment:** {persona.emotional_sentiment.value}"
+                patient_section += f"\n- **Age Cohort:** {persona.age_cohort.value}"
+                patient_section += f"\n- **Polypharmacy Risk:** {persona.polypharmacy_risk.value}"
+                if persona.is_hyper_acute_vitals:
+                    patient_section += f"\n- **CRITICAL VITALS ANOMALIES:** {'; '.join(persona.hyper_acute_details)}"
+
+        # Literacy, Cohort and Extreme Case Instructions
+        literacy_instructions = ""
+        if persona:
+            if persona.literacy_level.value == "NOVICE":
+                literacy_instructions += "\n- **LITERACY RULE:** Explain medical concepts in plain English using simple everyday analogies. Avoid complex medical jargon."
+            elif persona.literacy_level.value == "EXPERT":
+                literacy_instructions += "\n- **LITERACY RULE:** Use precise clinical terminology, physiological mechanisms, and biomarker reference ranges."
+
+            if persona.first_name and persona.first_name.lower() not in ("friend", "anonymous", "user"):
+                literacy_instructions += f"\n- **PERSONALIZATION:** Warmly address the user as **{persona.first_name}** in your opening or conclusion where natural."
+
+            if persona.is_hyper_acute_vitals:
+                literacy_instructions += f"\n- **🚨 HYPER-ACUTE VITALS ALERT:** Patient has critical vital anomalies: {'; '.join(persona.hyper_acute_details)}. Immediately prioritize clinical safety advice and urge urgent medical consult."
+
+            if persona.polypharmacy_risk.value == "HIGH":
+                literacy_instructions += f"\n- **💊 POLYPHARMACY SAFETY AUDIT:** Patient takes 4+ medications ({', '.join(persona.active_medications)}). Highlight drug-drug interaction cautions and adherence consistency."
+
+            if persona.age_cohort.value == "GERIATRIC":
+                literacy_instructions += "\n- **👴 GERIATRIC CARE DIRECTIVE:** Format for maximum legibility. Highlight fall precautions, dosage timing, and hydration."
+            elif persona.pediatric_caregiver:
+                literacy_instructions += "\n- **👶 PEDIATRIC CARE DIRECTIVE:** Provide reassuring parent/caregiver advice with clear pediatric red flags and weight-based dosage warnings."
+
+        schema = getattr(strategy, "formatting_schema", "ADAPTIVE_HEALTH") if strategy else "ADAPTIVE_HEALTH"
+        tone = getattr(strategy, "tone", "Warm & Professional") if strategy else "Warm & Professional"
+
+        # Explicit format instructions for all 28 clinical intent domains
+        schema_map = {
+            "EMERGENCY_TRIAGE": """# RESPONSE INSTRUCTIONS — URGENT EMERGENCY TRIAGE
+- VERY FIRST LINE MUST BE: 🚨 **Call 112 / 911 immediately. This is an immediate medical emergency. Do not wait.**
+- Follow with 2–3 immediate first-aid / action steps. Keep it brief, direct, and authoritative.""",
+
+            "ACUTE_SYMPTOM": """# RESPONSE INSTRUCTIONS — ACUTE SYMPTOM EVALUATION
+- Structure:
+  1. 🩺 **Symptom Overview & Possible Causes** (Onset, duration, severity)
+  2. ⚠️ **Red Flag Warning Signs** (When to seek urgent care)
+  3. 🩹 **Immediate Self-Care & Relief Steps** (Comfort measures & hydration)
+  4. 👨‍⚕️ **Next Steps & Monitoring** (When to consult your doctor)""",
+
+            "PHARMACOLOGY_SAFETY": """# RESPONSE INSTRUCTIONS — PHARMACOLOGY & DRUG SAFETY
+- Structure:
+  1. 💊 **Purpose & Mechanism** (What the medication does)
+  2. ⏱️ **Dosing & Administration Rules** (How & when to take safely)
+  3. ⚠️ **Precautions & Known Interactions** (Foods, alcohol, other drugs)
+  4. 🛑 **Side Effects & When to Stop** (Mild vs serious side effects)""",
+
+            "PRESCRIPTION_AUDIT": """# RESPONSE INSTRUCTIONS — PRESCRIPTION AUDIT & REGIMEN REVIEW
+- Structure:
+  1. 📋 **Regimen Overview** (Active medications & schedules)
+  2. ⚡ **Interaction & Contraindication Audit** (Detected risks)
+  3. ⏱️ **Adherence & Timing Recommendations** (Optimal daily schedule)""",
+
+            "LAB_REPORT_ANALYSIS": """# RESPONSE INSTRUCTIONS — DIAGNOSTIC LAB REPORT ANALYSIS
+- Structure:
+  1. 📊 **Key Biomarker Breakdown** (Values, reference ranges, abnormal flags)
+  2. 💡 **Clinical Meaning** (What these markers indicate in plain English)
+  3. 🧠 **Ecosystem Correlation** (Cross-reference with vitals & history)
+  4. ✅ **Actionable Recommendations & Follow-Up Tests**""",
+
+            "LONGITUDINAL_TREND": """# RESPONSE INSTRUCTIONS — LONGITUDINAL TREND ANALYSIS
+- Structure:
+  1. 📈 **Telemetry & Vital Trends** (Multi-week/month comparison)
+  2. 🔄 **Progress Highlights & Key Changes** (Improving vs declining metrics)
+  3. 💡 **Clinical Drivers** (Factors influencing trend changes)
+  4. 🎯 **Next Milestones & Target Goals**""",
+
+            "DIGITAL_TWIN_SIMULATION": """# RESPONSE INSTRUCTIONS — DIGITAL TWIN PHYSIOLOGICAL SIMULATION
+- Structure:
+  1. 🫀 **BioGears Organ & System State** (Cardiovascular, Respiratory, Autonomic)
+  2. 🔮 **Predictive Projections** (Simulated outcome of intervention vs baseline)
+  3. 🧬 **Physiological Insights** (Systemic organ impacts)
+  4. 💡 **Target Optimization Advice**""",
+
+            "MENTAL_HEALTH_WELLBEING": """# RESPONSE INSTRUCTIONS — MENTAL HEALTH & WELLBEING
+- Structure:
+  1. 🧠 **Supportive Validation** (Empathetic, non-judgmental response)
+  2. 🌿 **Grounding & Stress Reduction Techniques** (4-7-8 breathing, mindfulness)
+  3. 💤 **Sleep & Autonomic Recovery Habits** (Restorative routines)
+  4. 📞 **Support & Crisis Helplines** (Available resources)""",
+
+            "NUTRITION_DIETETICS": """# RESPONSE INSTRUCTIONS — NUTRITION & DIETETICS
+- Structure:
+  1. 🍏 **Dietary Analysis & Macro Recommendations** (Tailored to active conditions)
+  2. 🥗 **Practical Meal & Hydration Plan** (Achievable daily choices)
+  3. ⚠️ **Nutritional Cautions** (Excess sodium, sugar, or deficiency risks)""",
+
+            "EXERCISE_PHYSIOLOGY": """# RESPONSE INSTRUCTIONS — EXERCISE & PHYSIOLOGY
+- Structure:
+  1. 🏋️ **Fitness & Movement Plan** (Target HR zones, cardio/strength split)
+  2. ⏱️ **Recovery & Strain Management** (Rest intervals & fatigue prevention)
+  3. ⚠️ **Safety Precautions** (Joint protection & intensity limits)""",
+
+            "PREVENTIVE_CARE": """# RESPONSE INSTRUCTIONS — PREVENTIVE CARE & SCREENING
+- Structure:
+  1. 🛡️ **Preventive Screening Guidelines** (Age/gender appropriate checks)
+  2. 💉 **Vaccination & Immunity Status** (Recommended immunizations)
+  3. 💡 **Proactive Risk Reduction Steps**""",
+
+            "INJURY_FIRST_AID": """# RESPONSE INSTRUCTIONS — INJURY & FIRST AID
+- Structure:
+  1. 🩹 **Immediate First Aid Actions** (R.I.C.E. protocol, wound care)
+  2. 🚨 **Fracture / Severe Damage Warning Flags** (When to visit ER)
+  3. ⏱️ **Recovery & Rehab Phases**""",
+
+            "PEDIATRIC_CARE": """# RESPONSE INSTRUCTIONS — PEDIATRIC HEALTH
+- Structure:
+  1. 👶 **Child Health Evaluation** (Age-adjusted assessment & fever guidance)
+  2. ⚠️ **Pediatric Warning Signs** (Dehydration, lethargy, respiratory distress)
+  3. 🍼 **Care & Comfort Guidelines** (Hydration, rest, pediatrician contact)""",
+
+            "WOMENS_HEALTH": """# RESPONSE INSTRUCTIONS — WOMEN'S HEALTH
+- Structure:
+  1. 🌸 **Hormonal & Cycle Insights** (Tracking, symptoms, patterns)
+  2. 💡 **Wellness & Nutritional Support** (Iron, calcium, energy management)
+  3. 👨‍⚕️ **Gynecological Care Guidelines**""",
+
+            "DERMATOLOGY": """# RESPONSE INSTRUCTIONS — DERMATOLOGY & SKIN CARE
+- Structure:
+  1. 🧴 **Skin Condition Assessment** (Descriptors & potential triggers)
+  2. 🧼 **Gentle Skin Care & Topical Advice** (Cleanliness, moisture, protection)
+  3. ⚠️ **Warning Sign Audit** (ABCDE rule for moles/lesions)""",
+
+            "DENTAL_CARE": """# RESPONSE INSTRUCTIONS — DENTAL & ORAL HEALTH
+- Structure:
+  1. 🦷 **Oral Health Assessment** (Pain triggers, gum sensitivity)
+  2. 🪥 **Hygiene & Comfort Measures** (Rinsing, gentle flossing, OTC pain relief)
+  3. 🚨 **Urgent Dental Red Flags** (Abscess, swelling, trauma)""",
+
+            "TRAVEL_HEALTH": """# RESPONSE INSTRUCTIONS — TRAVEL HEALTH & IMMUNIZATION
+- Structure:
+  1. ✈️ **Destination Risk Profile** (Endemic diseases & environmental factors)
+  2. 💉 **Vaccinations & Prophylaxis** (Required & recommended shots)
+  3. 🧳 **Travel First Aid & Water Safety**""",
+
+            "HEALTH_GOALS": """# RESPONSE INSTRUCTIONS — HEALTH GOAL OPTIMIZATION
+- Structure:
+  1. 🎯 **Goal Strategy & Benchmarks** (SMART health milestones)
+  2. 📋 **Weekly Habit Tracker** (Daily micro-habits)
+  3. 📈 **Progress Tracking Indicators**""",
+
+            "DOCTOR_PREPARATION": """# RESPONSE INSTRUCTIONS — DOCTOR VISIT PREPARATION
+- Structure:
+  1. 📋 **Key Symptoms & Timeline Summary** (Concise bullet list for doctor)
+  2. ❓ **Top Questions to Ask Your Doctor** (3–4 targeted questions)
+  3. 💊 **Current Medication & Lab Summary**""",
+
+            "HEALTH_SUMMARY": """# RESPONSE INSTRUCTIONS — 360-DEGREE HEALTH SUMMARY
+- Structure:
+  1. 🩺 **Overall Health Profile Summary** (Vitals, health score, conditions)
+  2. 📊 **Key Metrics & Biomarkers** (Latest telemetry & labs)
+  3. 🛡️ **Active Clinical Risks & Recommendations**""",
+
+            "TIMELINE_HISTORY": """# RESPONSE INSTRUCTIONS — MEDICAL TIMELINE & HISTORY
+- Structure:
+  1. 📅 **Chronological Health Events** (Diagnoses, surgeries, lab dates)
+  2. 📈 **Key Historical Patterns** (Long-term progression)""",
+
+            "FAMILY_HEALTH": """# RESPONSE INSTRUCTIONS — FAMILY & HEREDITARY HEALTH
+- Structure:
+  1. 🧬 **Family History & Hereditary Risks** (Genetic predispositions)
+  2. 🛡️ **Screening & Early Detection Recommendations**""",
+
+            "REMINDER_SCHEDULE": """# RESPONSE INSTRUCTIONS — HEALTH REMINDERS & SCHEDULE
+- Structure:
+  1. ⏰ **Upcoming Medication & Test Schedule** (Timings & dosages)
+  2. 📅 **Follow-Up Appointment Reminders**""",
+
+            "RISK_STRATIFICATION": """# RESPONSE INSTRUCTIONS — CLINICAL RISK STRATIFICATION
+- Structure:
+  1. ⚠️ **Risk Category Assessment** (Cardiovascular / Metabolic risk tier)
+  2. 💡 **Modifiable Risk Factors** (Target lifestyle changes)
+  3. 🛡️ **Preventive Intervention Strategy**""",
+
+            "LIFESTYLE_HABITS": """# RESPONSE INSTRUCTIONS — DAILY LIFESTYLE & HABITS
+- Structure:
+  1. 🌿 **Habit Assessment** (Sleep, activity, hydration balance)
+  2. 📋 **Actionable Daily Improvement Steps**""",
+
+            "HEALTH_EDUCATION": """# RESPONSE INSTRUCTIONS — HEALTH EDUCATION
+- Structure:
+  1. 💡 **Clear Explanation** (Plain English definition & physiological mechanism)
+  2. 📌 **Key Facts & Clinical Takeaways**""",
+
+            "CHIT_CHAT": """# RESPONSE INSTRUCTIONS — CONVERSATIONAL MODE
+- Respond in a warm, friendly, natural human tone (1–3 sentences).
+- Do NOT output any markdown headers, executive summaries, or clinical audit sections.""",
+
+            "ADAPTIVE_HEALTH": f"""# RESPONSE INSTRUCTIONS — ADAPTIVE HEALTH MODE ({tone})
+- Answer the user's question directly, clearly, and concisely.
+- Use clean bullet points and section headers appropriate to the topic.
+- Do NOT output generic empty placeholders."""
+        }
+
+        format_instructions = schema_map.get(schema, schema_map["ADAPTIVE_HEALTH"])
 
         system_prompt = f"""# ROLE
 You are VitalHealth AI, an advanced AI-powered Personal Health Assistant integrated into the VitalHealth Personal Health Operating System.
-You are NOT a general-purpose chatbot. You are a trusted healthcare companion helping users understand, manage, monitor, and improve their health using personalized information available within the VitalHealth ecosystem.
+You are a trusted healthcare companion helping users understand, manage, monitor, and improve their health using personalized information within the VitalHealth ecosystem.
 
 {patient_section}
 
-# CORE OBJECTIVE — EVIDENCE-BASED PERSONAL HEALTH INTELLIGENCE
-
-You are NOT a report summarizer. You are a multidisciplinary clinical intelligence system.
-
-Before answering ANY question, you will receive a structured EVIDENCE BUNDLE collected by the Orchestration & Tool Manager (OTM) from every relevant health module. You MUST:
-1. Reason ONLY over the evidence in the bundle — never invent data not present.
-2. Cite the exact source and timestamp for every finding you mention.
-3. Explicitly call out when a relevant data source is MISSING (use ⚠).
-4. Detect and flag any contradictions between sources.
-5. Explain your clinical reasoning step by step.
-
-{intent_guidance}
-
-# RESPONSE PHILOSOPHY & TONE
-- Answer: "What is most helpful for THIS patient right now, based on the evidence collected?"
-- Professional, Warm, Calm, Confident, Respectful, Supportive. Never robotic or dramatic.
-- Default length: 200–400 words. Never overwhelm.
-
-# EVIDENCE-BASED RESPONSE FORMAT
-
-Use this structure for every response:
-
-🩺 **Executive Summary**
-(2–3 sentences directly answering the question based on the evidence)
-
-✅ **Sources Reviewed**
-(List every source with ✓ if data was found or ⚠ if missing. Example:
-✓ BioGears Digital Twin — [simulation timestamp]
-✓ Vital History — [N readings]
-⚠ Lab Reports — No recent cholesterol test on file
-⚠ ECG/Scans — None uploaded)
-
-📊 **Key Findings**
-(Each finding must include: Value | [Source: name | Timeframe | Confidence])
-
-🧠 **Clinical Reasoning**
-(Explain WHY you reached your conclusion. Reference specific evidence. Example: "I concluded this because blood pressure remained consistently normal across 15 readings, BioGears predicts stable cardiac output, and no cardiac conditions are documented.")
-
-🔄 **Cross-Source Insights**
-(Compare findings across sources. Note agreements and contradictions.)
-
-✅ **Recommended Next Steps**
-(Every recommendation must reference its evidence. Instead of "Exercise more", say "Your telemetry shows 4,000 steps/day [Telemetry | Last 30 days] which is below the recommended 7,500–10,000. Increasing activity may improve cardiovascular fitness.")
-
-⚠ **Missing Information**
-(Tell the user exactly what additional data would improve confidence. Example: "A recent cholesterol panel would significantly improve cardiac risk assessment.")
-
-💬 **Suggested Follow-Up Questions**
-1. [Question 1]
-2. [Question 2]
-3. [Question 3]
-
-💡 What This Means
-(Explain findings in simple language without textbook definitions)
-
-✅ Recommended Next Steps
-(Provide practical, prioritized, personalized actions)
-
-⚠ Seek Medical Attention If
-(Mention only relevant warning signs)
-
-💬 Suggested Follow-Up Questions
-1. [Relevant Follow-up Question 1]
-2. [Relevant Follow-up Question 2]
-3. [Relevant Follow-up Question 3]
+{format_instructions}
+{literacy_instructions}
 
 # SAFETY & EMERGENCIES
 - Never diagnose with certainty, prescribe medications, or recommend prescription dosages.
-- Emergency rule: If symptoms suggest chest pain, difficulty breathing, stroke symptoms (facial droop/slurred speech), severe bleeding, loss of consciousness, or suicidal thoughts, your VERY FIRST line MUST be:
-  🚨 **Call 112 / 911 immediately. This is an immediate medical emergency. Do not wait.**
-- Always end responses with: `> 💡 *VitalHealth Personal Health Assistant | Consult your physician for medical advice.*`"""
+- Emergency rule: If symptoms suggest chest pain, difficulty breathing, stroke, severe bleeding, or suicidal thoughts, start immediately with emergency helpline advice (112 / 911).
+- End clinical responses with: `> 💡 *VitalHealth Personal Health Assistant | Consult your physician for medical advice.*`"""
 
         return system_prompt
 
@@ -352,14 +482,34 @@ Use this structure for every response:
         history: List[Dict[str, str]],
         intent: str = "GENERAL_HEALTH",
         evidence_bundle: Optional[Any] = None,
+        strategy: Optional[Any] = None,
     ) -> List[Dict[str, str]]:
         """
         Builds an OpenAI-compatible messages array: [system, ...history, user]
-        When an EvidenceBundle is provided, it is injected into the user message
-        as a structured block so the LLM reasons only over pre-collected evidence.
+        Injects strategy-aware formatting rules into the system prompt.
         """
-        system_prompt = self._build_health_system_prompt(context, intent)
+        system_prompt = self._build_health_system_prompt(context, intent=intent, strategy=strategy)
         messages: List[Dict[str, str]] = [{"role": "system", "content": system_prompt}]
+
+        # Inject last 8 history turns
+        for turn in (history[-8:] if len(history) > 8 else history):
+            if turn.get("role") in ("user", "assistant") and turn.get("content"):
+                messages.append({"role": turn["role"], "content": turn["content"]})
+
+        # Build user message — evidence bundle takes priority over addendum
+        if evidence_bundle is not None:
+            try:
+                bundle_block = evidence_bundle.to_prompt_block()
+                user_content = f"{bundle_block}\n\nPatient Question: {user_query}"
+            except Exception:
+                context_addendum = self._build_context_addendum(context, intent)
+                user_content = f"{context_addendum}\n\n{user_query}" if context_addendum else user_query
+        else:
+            context_addendum = self._build_context_addendum(context, intent)
+            user_content = f"{context_addendum}\n\n{user_query}" if context_addendum else user_query
+
+        messages.append({"role": "user", "content": user_content})
+        return messages
 
         # Inject last 8 history turns
         for turn in (history[-8:] if len(history) > 8 else history):
@@ -500,23 +650,150 @@ Use this structure for every response:
         user_query: str,
         evidence_bundle: Optional[Any] = None,
         intent: Optional[str] = None,
+        strategy: Optional[Any] = None,
     ) -> str:
         """
-        Evidence-Based fallback renderer.
-        When an EvidenceBundle is available, synthesizes a structured PHIS response
-        directly from the collected evidence — no hardcoded keyword matching.
-        Falls back to snapshot-only rendering if no bundle is provided.
+        Dynamic Evidence-Based Fallback Engine.
+        Adapts fallback output layout to match the requested 7-layer specs (strategy/schema/complexity).
         """
         lines: List[str] = []
         target_intent = intent or (evidence_bundle.intent if evidence_bundle and hasattr(evidence_bundle, "intent") else "GENERAL_HEALTH")
+        schema = getattr(strategy, "formatting_schema", "ADAPTIVE_HEALTH") if strategy else "ADAPTIVE_HEALTH"
+        persona = getattr(strategy, "persona", None) if strategy else None
+
+        # ── 0. Hyper-Acute Vitals Guard ───────────────────────────────────────
+        if persona and persona.is_hyper_acute_vitals:
+            v_details = "; ".join(persona.hyper_acute_details)
+            return (
+                f"🚨 **CRITICAL CLINICAL ALERT ({persona.first_name})**: Severe vital sign anomalies detected: {v_details}.\n\n"
+                "• **Immediate Action:** Seek urgent medical evaluation at the nearest clinic or emergency room.\n"
+                "• **Rest & Safety:** Sit down in a safe, comfortable position and avoid physical exertion.\n"
+                "• **Monitoring:** Continue monitoring your symptoms and inform healthcare providers of these readings."
+            )
 
         # Emergency guard always runs first
         emergency_patterns = re.compile(
             r"\b(chest\s+pain|can['\u2019]?t\s+breath|cannot\s+breath|difficulty\s+breath|stroke|facial\s+droop|severe\s+bleed|unconscious|seizure|overdose|suicid)\b",
             re.IGNORECASE
         )
-        if emergency_patterns.search(user_query):
-            lines.append("🚨 **EMERGENCY WARNING: Call 112 / 911 immediately. This is an immediate medical emergency. Do not wait.**\n")
+        if emergency_patterns.search(user_query) or schema == "EMERGENCY_TRIAGE":
+            return (
+                "🚨 **EMERGENCY WARNING: Call 112 / 911 immediately. This is an immediate medical emergency. Do not wait.**\n\n"
+                "• Sit down comfortably and remain as still and calm as possible.\n"
+                "• Unlock your front door so emergency responders can access your location easily.\n"
+                "• If someone is with you, have them stay by your side until paramedics arrive."
+            )
+
+        # ── 1. Chit-Chat / Micro Fallback ────────────────────────────────────
+        if schema == "CHIT_CHAT" or any(k in user_query.lower() for k in ["hi", "hello", "hey", "good morning", "good evening"]) and len(user_query.split()) <= 4:
+            if persona and persona.first_name and persona.first_name.lower() not in ("friend", "anonymous", "user"):
+                return f"Hello {persona.first_name}! I am your VitalHealth AI Personal Health Assistant. How can I help you manage your health today?"
+            return "Hello! I am your VitalHealth AI Personal Health Assistant. How can I help you manage or understand your health today?"
+
+        # ── 2. Health Education / Brief QA Fallback ────────────────────────────
+        if schema in ["HEALTH_EDUCATION", "BRIEF_QA"]:
+            explanation = self._get_fallback_explanation(user_query, target_intent)
+            notes = self._clinical_knowledge_supplement(user_query) or self._default_fallback_recommendations(user_query, target_intent)
+            return f"### 💡 Overview & Insights\n{explanation}\n\n### ✅ Key Takeaways & Recommendations\n" + "\n".join(notes) + "\n\n> 💡 *VitalHealth Personal Health Assistant | Consult your physician for medical advice.*"
+
+        # ── 3. Pharmacology & Medication Fallback ─────────────────────────────
+        if schema in ["PHARMACOLOGY_SAFETY", "PRESCRIPTION_AUDIT"]:
+            explanation = self._get_fallback_explanation(user_query, target_intent)
+            return (
+                f"### 💊 Medication Safety Review\n{explanation}\n\n"
+                "### ⏱️ Key Precautions & Administration\n"
+                "- **Regimen Adherence:** Take medications exactly at prescribed times without skipping or doubling doses.\n"
+                "- **Food Interactions:** Verify whether your prescription should be taken with meals or on an empty stomach.\n"
+                "- **Physician Consultation:** Always consult your prescribing physician before stopping or altering dosages.\n\n"
+                "> 💡 *VitalHealth Personal Health Assistant | Consult your physician for medical advice.*"
+            )
+
+        # ── 4. Mental Health & Wellbeing Fallback ─────────────────────────────
+        if schema == "MENTAL_HEALTH_WELLBEING":
+            return (
+                "### 🧠 Mindful Wellbeing & Support\n"
+                "Your emotional wellbeing and mental health are deeply connected to physical vitality and autonomic balance. "
+                "Taking intentional moments to ground yourself helps clear stress hormones like cortisol and restores parasympathetic focus.\n\n"
+                "### 🌿 Recommended Grounding Exercises\n"
+                "- **4-7-8 Breathing Technique:** Inhale through your nose for 4s, hold breath for 7s, exhale slowly through your mouth for 8s. Repeat 4 cycles.\n"
+                "- **Sleep Hygiene:** Maintain a consistent sleep-wake schedule and restrict blue light exposure 60 minutes before bed.\n"
+                "- **Helpline Support:** If you feel overwhelmed, reach out to a professional counselor or local mental health helpline immediately.\n\n"
+                "> 💡 *VitalHealth Personal Health Assistant | Consult your physician for medical advice.*"
+            )
+
+        # ── 5. Nutrition & Dietetics Fallback ─────────────────────────────────
+        if schema == "NUTRITION_DIETETICS":
+            explanation = self._get_fallback_explanation(user_query, target_intent)
+            return (
+                f"### 🍏 Dietary & Nutritional Guidance\n{explanation}\n\n"
+                "### 🥗 Actionable Nutrition Habits\n"
+                "- **Balanced Meals:** Focus on whole foods, lean proteins, fiber-rich vegetables, and healthy fats.\n"
+                "- **Hydration Goal:** Aim for 2.5–3.0 liters of water daily to support metabolic clearance and cellular function.\n"
+                "- **Dietary Precautions:** Limit ultra-processed sodium, refined sugars, and trans fats to optimize vascular health.\n\n"
+                "> 💡 *VitalHealth Personal Health Assistant | Consult your physician for medical advice.*"
+            )
+
+        # ── 6. Exercise & Physiology Fallback ────────────────────────────────
+        if schema == "EXERCISE_PHYSIOLOGY":
+            explanation = self._get_fallback_explanation(user_query, target_intent)
+            return (
+                f"### 🏋️ Exercise & Cardiovascular Physiology\n{explanation}\n\n"
+                "### ⏱️ Training & Recovery Protocol\n"
+                "- **Cardiovascular Target:** Aim for 150+ minutes of moderate-intensity aerobic exercise per week.\n"
+                "- **Heart Rate Zone:** Maintain Zone 2 aerobic training (60–70% HR max) to build mitochondrial density.\n"
+                "- **Active Recovery:** Ensure adequate rest days and post-workout hydration to allow muscle fiber repair.\n\n"
+                "> 💡 *VitalHealth Personal Health Assistant | Consult your physician for medical advice.*"
+            )
+
+        # ── 7. Injury & First Aid Fallback ────────────────────────────────────
+        if schema == "INJURY_FIRST_AID":
+            return (
+                "### 🩹 First Aid & Injury Care\n"
+                "For acute musculoskeletal strains or mild soft-tissue injuries, immediate conservative management prevents further edema and tissue stress.\n\n"
+                "### 🧊 R.I.C.E. Protocol & Measures\n"
+                "- **Rest:** Protect the injured area from weight-bearing or strain.\n"
+                "- **Ice:** Apply cold packs wrapped in a cloth for 15–20 minutes every 2 hours.\n"
+                "- **Compression:** Use a gentle elastic bandage to support the joint without restricting blood flow.\n"
+                "- **Elevation:** Prop the injured limb above heart level when resting.\n"
+                "🚨 **Seek immediate medical attention if:** You experience deformity, severe numbness, inability to bear weight, or intense unrelenting pain.\n\n"
+                "> 💡 *VitalHealth Personal Health Assistant | Consult your physician for medical advice.*"
+            )
+
+        # ── 8. Pediatric & Children's Health Fallback ──────────────────────────
+        if schema == "PEDIATRIC_CARE":
+            return (
+                "### 👶 Pediatric Care & Guidance\n"
+                "Pediatric care requires careful monitoring of hydration, behavior, and age-specific vital signs. Never administer adult medications or unverified OTC dosages to children.\n\n"
+                "### 🍼 Key Comfort & Monitoring Steps\n"
+                "- **Fluid Intake:** Offer frequent small sips of oral rehydration solution, water, or electrolyte fluids.\n"
+                "- **Fever Management:** Monitor temperature regularly; consult your pediatrician for weight-matched antipyretic dosing.\n"
+                "🚨 **Urgent Pediatric Warning Signs:** Seek emergency care if child displays lethargy, rapid/labored breathing, persistent vomiting, or stiff neck.\n\n"
+                "> 💡 *VitalHealth Personal Health Assistant | Consult your physician for medical advice.*"
+            )
+
+        # ── 9. Dermatology & Skin Care Fallback ──────────────────────────────
+        if schema == "DERMATOLOGY":
+            explanation = self._get_fallback_explanation(user_query, target_intent)
+            return (
+                f"### 🧴 Dermatology & Skin Health Review\n{explanation}\n\n"
+                "### 🧼 Care Guidelines & ABCDE Warning Check\n"
+                "- **Gentle Cleansing:** Cleanse affected skin with fragrance-free, mild cleansers and lukewarm water.\n"
+                "- **Barrier Protection:** Apply hypoallergenic moisturizers to maintain skin barrier hydration.\n"
+                "- **Lesion Monitoring:** Check moles for Asymmetry, Border irregularity, Color variation, Diameter >6mm, or Evolving changes.\n\n"
+                "> 💡 *VitalHealth Personal Health Assistant | Consult your physician for medical advice.*"
+            )
+
+        # ── 10. Doctor Visit Preparation Fallback ─────────────────────────────
+        if schema == "DOCTOR_PREPARATION":
+            explanation = self._get_fallback_explanation(user_query, target_intent)
+            return (
+                f"### 📋 Consultation Preparation Summary\n{explanation}\n\n"
+                "### ❓ Questions to Ask Your Doctor\n"
+                "1. *\"What are the primary underlying causes of my current symptoms or lab findings?\"*\n"
+                "2. *\"Are there any dietary, exercise, or lifestyle modifications recommended for my profile?\"*\n"
+                "3. *\"What specific monitoring or follow-up tests should we schedule next?\"*\n\n"
+                "> 💡 *VitalHealth Personal Health Assistant | Consult your physician for medical advice.*"
+            )
 
         # ── Bundle-driven rendering ────────────────────────────────────────────
         if evidence_bundle is not None:
@@ -613,16 +890,25 @@ Use this structure for every response:
         # ── Snapshot-only fallback (no bundle available) ──────────────────────
         snapshot = context.clinical_snapshot_block or ""
         medications = self._extract_field(snapshot, ["Active Regimen:", "Active Medications:"])
+        risks = self._extract_field(snapshot, ["Active Risks:", "Active Clinical Risks:"])
         lines.append("🩺 **Executive Summary**")
         lines.append(f"Here is your personalized health guidance regarding **\"{user_query.strip()}\"** based on your current clinical profile.\n")
         lines.append("📊 **Key Findings**")
         if medications and medications != "None":
             lines.append(f"- **Active Medications:** {medications}  \n  *[Source: Clinical Profile | Current]*")
-        lines.append("- **[BioGears Digital Twin]:** Normal physiological baseline.  \n  *[Source: BioGears Simulation | Latest]*")
-        lines.append("- **[Lab Reports]:** No lab reports on file for this query.  \n  *[Source: Documents Tab | Not uploaded]*")
+        if risks and "none" not in risks.lower():
+            lines.append(f"- **Logged Symptoms / Risks:** {risks}  \n  *[Source: Symptom Journal | Recent]*")
+        else:
+            lines.append("- **Symptom Journal:** No active symptoms currently logged. You can log symptoms anytime in the Symptoms tab of the app.  \n  *[Source: Symptom Journal | Current]*")
+        
+        q_lower = user_query.lower()
+        if any(k in q_lower for k in ["biogears", "twin", "simulation", "organ"]):
+            lines.append("- **[BioGears Digital Twin]:** Normal physiological baseline.  \n  *[Source: BioGears Simulation | Latest]*")
+        lines.append("- **[Lab Reports]:** No recent lab reports on file for this query.  \n  *[Source: Documents Tab | Not uploaded]*")
         lines.append("\n⚠ **Missing Information**")
+        lines.append("• Log your symptoms directly in the Symptoms section of the app to enable personalized AI clinical tracking.")
         lines.append("• Upload lab reports in the Documents tab to improve response accuracy.")
-        lines.append("• Log vitals regularly in the Vitals tab.")
+
         
         explanation = self._get_fallback_explanation(user_query, target_intent)
         lines.append("\n💡 **Detailed Explanation & Clinical Insights**")

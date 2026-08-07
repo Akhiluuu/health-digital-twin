@@ -122,6 +122,7 @@ class PatientState(BaseModel):
     current_conditions: List[NormalizedCondition] = Field(default_factory=list)
     recent_labs: List[NormalizedLab] = Field(default_factory=list)
     recent_vitals: List[NormalizedVital] = Field(default_factory=list)
+    recent_symptoms: List[Dict[str, Any]] = Field(default_factory=list)
     active_risks: List[RiskFlag] = Field(default_factory=list)
     current_health_score: float = 100.0
     overall_confidence: float = 0.85

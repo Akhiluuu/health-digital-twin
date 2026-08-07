@@ -47,20 +47,37 @@ class UIComponentSelector:
     ) -> UIComponentSelection:
         widgets: List[UIWidget] = []
 
+        persona = getattr(strategy, "persona", None)
+
         # 1. Emergency Alert Banner
-        if strategy.requires_alert_banner or strategy.mode == StrategyMode.URGENT_TRIAGE:
+        if strategy.requires_alert_banner or strategy.mode == StrategyMode.URGENT_TRIAGE or (persona and persona.is_hyper_acute_vitals):
+            msg = "Your query or vitals indicate potential urgent symptoms. Please seek emergency medical care immediately."
+            if persona and persona.is_hyper_acute_vitals:
+                msg = f"Critical vital anomaly for {persona.first_name}: {'; '.join(persona.hyper_acute_details)}. Seek medical evaluation."
             widgets.append(UIWidget(
                 widget_type="alert_banner",
                 title="🚨 Medical Alert / Immediate Attention Recommended",
-                payload={"message": "Your query or vitals indicate potential urgent symptoms. Please seek emergency medical care immediately.", "level": "critical"}
+                payload={"message": msg, "level": "critical"}
             ))
 
         # 2. Executive Summary Card
         widgets.append(UIWidget(
             widget_type="summary_card",
-            title="Clinical Summary",
+            title=f"Clinical Summary ({persona.first_name})" if persona and persona.first_name else "Clinical Summary",
             payload={"text": summary_text, "mode": strategy.mode.value}
         ))
+
+        # 2b. Polypharmacy Safety Card (if 4+ active meds)
+        if persona and persona.polypharmacy_risk.value == "HIGH":
+            widgets.append(UIWidget(
+                widget_type="medication_safety_card",
+                title="💊 Polypharmacy Safety Audit",
+                payload={
+                    "active_med_count": len(persona.active_medications),
+                    "medications": persona.active_medications,
+                    "warning": "Concurrent medication regimen requires routine drug-interaction checks and timing adherence.",
+                }
+            ))
 
         # 3. BioGears Simulation Digital Twin Card
         if strategy.include_biogears_card:

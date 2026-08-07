@@ -194,6 +194,31 @@ async def process_explainable_query(req: QueryRequest):
     }
 
 
+class SymptomLogRequest(BaseModel):
+    patient_id: str
+    name: str
+    severity: Optional[str] = "Moderate"
+    notes: Optional[str] = None
+    date: Optional[str] = None
+
+
+@app.post("/api/v5/symptoms/log", tags=["Patient Management"])
+@app.post("/api/v5/patients/{patient_id}/symptoms", tags=["Patient Management"])
+async def log_patient_symptom(req: SymptomLogRequest, patient_id: Optional[str] = None):
+    pid = patient_id or req.patient_id
+    sym_dict = {
+        "name": req.name,
+        "severity": req.severity,
+        "notes": req.notes or "",
+        "date": req.date or datetime.now(timezone.utc).isoformat(),
+    }
+    state = state_mgr.add_symptom(pid, sym_dict)
+    timeline_engine.record_event(
+        pid, TimelineEventType.symptom_logged, f"Symptom Logged: {req.name}", req.notes or f"Severity: {req.severity}"
+    )
+    return {"status": "SUCCESS", "patient_id": pid, "symptom": sym_dict, "recent_symptoms_count": len(state.recent_symptoms)}
+
+
 @app.post("/api/v6/brain/phos/query", tags=["Enterprise PHOS Engine"])
 async def process_phos_query(req: QueryRequest):
     """
@@ -201,8 +226,17 @@ async def process_phos_query(req: QueryRequest):
     Returns complete structured evidence, intent analysis, hypotheses, strategy, and UI widgets.
     """
     state = state_mgr.get_or_create_state(req.patient_id)
-    response_payload = phos_orchestrator.process_query(req.query, state)
+    if req.active_symptoms:
+        for sym in req.active_symptoms:
+            state_mgr.add_symptom(req.patient_id, sym)
+    response_payload = phos_orchestrator.process_query(
+        query=req.query,
+        state=state,
+        active_symptoms=req.active_symptoms,
+        patient_context=req.patient_context,
+    )
     return response_payload.to_full_contract()
+
 
 
 @app.post("/api/v5/brain/query/stream", tags=["AI Reasoning Engine"])

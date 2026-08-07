@@ -4,7 +4,7 @@ Patient State Management Subsystem for VitalHealth v5.0.
 Supports L1 In-Memory Caching + L2 Redis Distributed Sync with Graceful Fallback.
 """
 
-from typing import Dict, Optional
+from typing import Dict, Optional, Any
 import json
 from datetime import datetime, timezone
 from healthbot_v4.apps.brain.core import HealthBrainSubsystem
@@ -114,6 +114,23 @@ class PatientStateManager(HealthBrainSubsystem):
     def add_vital(self, patient_id: str, vital: NormalizedVital) -> PatientState:
         state = self.get_or_create_state(patient_id)
         state.recent_vitals.insert(0, vital)
+        state.last_updated = datetime.now(timezone.utc)
+        self._sync_to_redis(state)
+        return state
+
+    def add_symptom(self, patient_id: str, symptom: Any) -> PatientState:
+        state = self.get_or_create_state(patient_id)
+        if isinstance(symptom, str):
+            sym_obj = {"name": symptom, "timestamp": datetime.now(timezone.utc).isoformat()}
+        elif isinstance(symptom, dict):
+            sym_obj = symptom
+        else:
+            sym_obj = {"name": str(symptom), "timestamp": datetime.now(timezone.utc).isoformat()}
+        
+        # Check if already present to prevent duplicate spam
+        existing_names = [s.get("name") if isinstance(s, dict) else str(s) for s in state.recent_symptoms]
+        if sym_obj.get("name") not in existing_names:
+            state.recent_symptoms.insert(0, sym_obj)
         state.last_updated = datetime.now(timezone.utc)
         self._sync_to_redis(state)
         return state

@@ -91,8 +91,7 @@ export async function getCentralMedApiUrl(): Promise<string> {
 /** Get the AI/Personal Health Assistant API base URL */
 export async function getCentralAiBaseUrl(): Promise<string> {
   const base = await getCentralBiogearsBaseUrl();
-  const cleanBase = base.replace(/:8000\/?$/, "").replace(/\/ai\/?$/, "");
-  return `${cleanBase}/ai`;
+  return base.replace(/\/ai\/?$/, "").replace(/\/$/, "");
 }
 
 /**

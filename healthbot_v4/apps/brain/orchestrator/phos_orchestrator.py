@@ -19,6 +19,7 @@ from healthbot_v4.apps.brain.evidence.correlation_engine import EvidenceCorrelat
 from healthbot_v4.apps.brain.reasoning.hypothesis_engine import HypothesisEngine
 from healthbot_v4.apps.brain.reasoning.confidence_gap_engine import ConfidenceAndGapEngine
 from healthbot_v4.apps.brain.reasoning.response_strategy import ResponseStrategyPlanner
+from healthbot_v4.apps.brain.reasoning.patient_persona import PatientPersonaEngine
 from healthbot_v4.apps.brain.reasoning.qwen_engine import QwenInferenceEngine
 from healthbot_v4.apps.brain.reasoning.followup_generator import FollowUpGenerator
 from healthbot_v4.apps.brain.reasoning.ui_selector import UIComponentSelector
@@ -71,6 +72,7 @@ class PHOSOrchestrator:
         self.correlation_engine = EvidenceCorrelationEngine(self.graph_engine)
         self.hypothesis_engine = HypothesisEngine()
         self.confidence_gap_engine = ConfidenceAndGapEngine()
+        self.persona_engine = PatientPersonaEngine()
         self.strategy_planner = ResponseStrategyPlanner()
         self.qwen_engine = QwenInferenceEngine()
         self.followup_generator = FollowUpGenerator()
@@ -89,10 +91,19 @@ class PHOSOrchestrator:
         query: str,
         state: UnifiedPatientState,
         conversation_history: Optional[List[Dict[str, str]]] = None,
+        active_symptoms: Optional[List[Any]] = None,
+        patient_context: Optional[Dict[str, Any]] = None,
     ) -> PHOSResponsePayload:
         start_time = time.time()
         patient_id = state.patient_id
         logger.info(f"⚡ [PHOS Engine] Processing query: '{query}' for patient {patient_id}")
+
+        # Ingest any active symptoms passed directly in query payload into state manager
+        if active_symptoms:
+            from healthbot_v4.apps.brain.state.patient_state_manager import PatientStateManager
+            sm = PatientStateManager()
+            for sym in active_symptoms:
+                sm.add_symptom(patient_id, sym)
 
         # Step 1 & 2: Intent Understanding
         intent_res = self.intent_engine.classify_intent(query)
@@ -113,6 +124,8 @@ class PHOSOrchestrator:
             query=query,
             intent=intent_res.primary_intent.value,
             state=state,
+            patient_context=patient_context,
+            symptoms_logged=active_symptoms,
         )
         logger.info(f"Step 4-5: Collected evidence bundle ({len(bundle.findings)} findings across {len(bundle.sources)} sources)")
 
@@ -133,11 +146,13 @@ class PHOSOrchestrator:
         confidence_res = self.confidence_gap_engine.analyze(bundle)
         logger.info(f"Step 10: Confidence analyzed ({confidence_res.confidence_label}, overall {confidence_res.overall_confidence * 100:.0f}%)")
 
-        # Step 11: Response Strategy Selection
+        # Step 11: Response Strategy & Persona Selection
+        persona = self.persona_engine.build_persona(state=state, query=query)
         strategy = self.strategy_planner.plan_strategy(
             intent=intent_res.primary_intent.value,
             query=query,
             confidence_label=confidence_res.confidence_label,
+            persona=persona,
         )
         logger.info(f"Step 11: Response strategy set to [{strategy.mode.value}] ({strategy.tone})")
 
@@ -153,15 +168,17 @@ class PHOSOrchestrator:
             conversation_history=conversation_history,
             intent=intent_res.primary_intent.value,
             evidence_bundle=bundle,
+            strategy=strategy,
         )
         answer_text = reasoning_res["response"]
         logger.info("Step 12: Answer composed via Qwen reasoning engine")
 
-        # Step 13: Follow-Up Questions
+        # Step 13: Follow-Up Questions (Persona-Aware Synthesis)
         follow_ups_dict = self.followup_generator.generate_followups(
             intent=intent_res.primary_intent.value,
             query=query,
             missing_gaps=confidence_res.missing_gaps,
+            persona=persona,
         )
         follow_ups = follow_ups_dict.get("followUps", [])
 

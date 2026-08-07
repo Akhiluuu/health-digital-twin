@@ -86,7 +86,7 @@ class OrchestratorToolManager:
             "vitals_history":  lambda: self._collect_vitals_history(state, pc),
             "telemetry":       lambda: self._collect_telemetry(pc),
             "medications":     lambda: self._collect_medications(state),
-            "symptoms":        lambda: self._collect_symptoms(state, symptoms_logged or []),
+            "symptoms":        lambda: self._collect_symptoms(state, symptoms_logged or [], pc),
             "labs":            lambda: self._collect_labs(state),
             "family_history":  lambda: self._collect_family_history(pc),
             "lifestyle":       lambda: self._collect_lifestyle(pc),
@@ -327,18 +327,63 @@ class OrchestratorToolManager:
             missing_reason="No active medications on record" if not findings else None,
         )
 
-    def _collect_symptoms(self, state: Any, symptoms_logged: List[str]) -> EvidenceSource:
+    def _collect_symptoms(self, state: Any, symptoms_logged: List[str], pc: Optional[Dict] = None) -> EvidenceSource:
         findings: List[EvidenceFinding] = []
         seen: set = set()
-        for s in symptoms_logged:
-            if s not in seen:
-                seen.add(s)
+        patient_ctx = pc or {}
+
+        def _add_finding(sym_text: str, ts_label: str = "Logged"):
+            if not sym_text:
+                return
+            clean_text = str(sym_text).strip()
+            if clean_text and clean_text not in seen:
+                seen.add(clean_text)
                 findings.append(EvidenceFinding(
                     finding_id=_fid(), label="Active Symptom",
-                    value=s, source_name="Symptom Journal",
-                    source_type="symptom_journal", timestamp_label="Logged",
+                    value=clean_text, source_name="Symptom Journal",
+                    source_type="symptom_journal", timestamp_label=ts_label,
                     confidence=ConfidenceLevel.high,
                 ))
+
+        # 1. From symptoms_logged list argument
+        for s in symptoms_logged:
+            if isinstance(s, dict):
+                n = s.get("name") or s.get("title") or "Symptom"
+                sev = s.get("severity") or "Active"
+                notes = s.get("notes") or ""
+                val = f"{n} (Severity: {sev})" + (f" - {notes}" if notes else "")
+                _add_finding(val)
+            elif isinstance(s, str):
+                _add_finding(s)
+
+        # 2. From state.recent_symptoms, state.symptoms, state.logged_symptoms
+        state_syms = (
+            getattr(state, "recent_symptoms", []) or
+            getattr(state, "symptoms", []) or
+            getattr(state, "logged_symptoms", []) or
+            getattr(state, "active_symptoms", [])
+        )
+        for s in state_syms:
+            if isinstance(s, dict):
+                n = s.get("name") or s.get("title") or "Symptom"
+                sev = s.get("severity") or "Active"
+                notes = s.get("notes") or ""
+                val = f"{n} (Severity: {sev})" + (f" - {notes}" if notes else "")
+                _add_finding(val, s.get("date") or s.get("timestamp") or "Logged")
+            elif isinstance(s, str):
+                _add_finding(s)
+
+        # 3. From patient_context activeSymptoms / symptoms
+        ctx_syms = patient_ctx.get("active_symptoms") or patient_ctx.get("activeSymptoms") or patient_ctx.get("symptoms") or []
+        for s in ctx_syms:
+            if isinstance(s, dict):
+                n = s.get("name") or s.get("title") or "Symptom"
+                sev = s.get("severity") or "Active"
+                notes = s.get("notes") or ""
+                val = f"{n} (Severity: {sev})" + (f" - {notes}" if notes else "")
+                _add_finding(val)
+            elif isinstance(s, str):
+                _add_finding(s)
 
         status = SourceStatus.available if findings else SourceStatus.missing
         return EvidenceSource(
@@ -348,6 +393,7 @@ class OrchestratorToolManager:
             findings=findings,
             missing_reason="No symptoms currently logged in journal" if not findings else None,
         )
+
 
     def _collect_labs(self, state: Any) -> EvidenceSource:
         findings: List[EvidenceFinding] = []
