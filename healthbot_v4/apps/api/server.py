@@ -627,7 +627,25 @@ async def receive_telemetry_stream(packet: TelemetryPacket):
     
     # Auto update state vital history for dynamic context
     if packet.heart_rate or packet.systolic_bp:
-        state.patient_context["sim_vitals"] = current_data
+        from healthbot_v4.shared.models.base import NormalizedVital
+        if packet.heart_rate:
+            state_mgr.add_vital(packet.user_id, NormalizedVital(
+                vital_id=f"vit_{uuid.uuid4().hex[:8]}",
+                patient_id=packet.user_id,
+                name="Heart Rate",
+                value=float(packet.heart_rate),
+                unit="bpm",
+                timestamp=datetime.now(timezone.utc)
+            ))
+        if packet.systolic_bp and packet.diastolic_bp:
+            state_mgr.add_vital(packet.user_id, NormalizedVital(
+                vital_id=f"vit_{uuid.uuid4().hex[:8]}",
+                patient_id=packet.user_id,
+                name="Blood Pressure",
+                value=float(packet.systolic_bp),
+                unit="mmHg",
+                timestamp=datetime.now(timezone.utc)
+            ))
     
     return {
         "status": "success",
