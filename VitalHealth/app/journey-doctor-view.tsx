@@ -13,14 +13,18 @@ import { useRouter } from "expo-router";
 import { useTheme } from "../context/ThemeContext";
 import { getDoctorView, DoctorView } from "../services/journeyService";
 
+import { useFamily } from "../context/FamilyContext";
+import { getTwinId } from "../utils/twinUtils";
+
 export default function DoctorViewScreen() {
   const router = useRouter();
   const { theme } = useTheme();
+  const { activeProfile } = useFamily();
   const isDark = theme === "dark";
 
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState<DoctorView | null>(null);
-  const [patientId] = useState("usr_diabetic_john");
+  const patientId = activeProfile ? getTwinId(activeProfile) : "p_healthy";
 
   useEffect(() => {
     async function load() {

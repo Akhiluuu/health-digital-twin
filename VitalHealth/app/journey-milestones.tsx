@@ -14,14 +14,18 @@ import { useTheme } from "../context/ThemeContext";
 import { colors } from "../theme/colors";
 import { getJourneyMilestones, HealthMilestone } from "../services/journeyService";
 
+import { useFamily } from "../context/FamilyContext";
+import { getTwinId } from "../utils/twinUtils";
+
 export default function JourneyMilestonesScreen() {
   const router = useRouter();
   const { theme } = useTheme();
+  const { activeProfile } = useFamily();
   const isDark = theme === "dark";
 
   const [loading, setLoading] = useState(true);
   const [milestones, setMilestones] = useState<HealthMilestone[]>([]);
-  const [patientId] = useState("usr_diabetic_john");
+  const patientId = activeProfile ? getTwinId(activeProfile) : "p_healthy";
 
   useEffect(() => {
     async function load() {

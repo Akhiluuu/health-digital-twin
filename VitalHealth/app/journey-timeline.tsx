@@ -15,9 +15,13 @@ import { useTheme } from "../context/ThemeContext";
 import { colors } from "../theme/colors";
 import { getJourneyTimeline, JourneyTimelineEvent } from "../services/journeyService";
 
+import { useFamily } from "../context/FamilyContext";
+import { getTwinId } from "../utils/twinUtils";
+
 export default function JourneyTimelineScreen() {
   const router = useRouter();
   const { theme } = useTheme();
+  const { activeProfile } = useFamily();
   const isDark = theme === "dark";
   const c = colors[theme];
 
@@ -25,7 +29,7 @@ export default function JourneyTimelineScreen() {
   const [events, setEvents] = useState<JourneyTimelineEvent[]>([]);
   const [activeFilter, setActiveFilter] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
-  const [patientId] = useState("usr_diabetic_john");
+  const patientId = activeProfile ? getTwinId(activeProfile) : "p_healthy";
 
   const filterChips = [
     { id: "all", label: "All Events" },

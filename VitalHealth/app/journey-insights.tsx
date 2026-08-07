@@ -13,14 +13,18 @@ import { useRouter } from "expo-router";
 import { useTheme } from "../context/ThemeContext";
 import { getJourneyInsights, JourneyInsight } from "../services/journeyService";
 
+import { useFamily } from "../context/FamilyContext";
+import { getTwinId } from "../utils/twinUtils";
+
 export default function JourneyInsightsFeedScreen() {
   const router = useRouter();
   const { theme } = useTheme();
+  const { activeProfile } = useFamily();
   const isDark = theme === "dark";
 
   const [loading, setLoading] = useState(true);
   const [insights, setInsights] = useState<JourneyInsight[]>([]);
-  const [patientId] = useState("usr_diabetic_john");
+  const patientId = activeProfile ? getTwinId(activeProfile) : "p_healthy";
 
   useEffect(() => {
     async function load() {
@@ -35,7 +39,7 @@ export default function JourneyInsightsFeedScreen() {
       }
     }
     load();
-  }, []);
+  }, [patientId]);
 
   const getSeverityBadge = (severity: string) => {
     if (severity === "critical" || severity === "high") return { color: "#EF4444", bg: "rgba(239,68,68,0.15)", icon: "alert-circle" };

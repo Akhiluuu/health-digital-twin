@@ -13,15 +13,19 @@ import { useRouter, useLocalSearchParams } from "expo-router";
 import { useTheme } from "../context/ThemeContext";
 import { getJourneyGoals, HealthGoal } from "../services/journeyService";
 
+import { useFamily } from "../context/FamilyContext";
+import { getTwinId } from "../utils/twinUtils";
+
 export default function JourneyGoalDetailScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
   const { theme } = useTheme();
+  const { activeProfile } = useFamily();
   const isDark = theme === "dark";
 
   const [loading, setLoading] = useState(true);
   const [goal, setGoal] = useState<HealthGoal | null>(null);
-  const [patientId] = useState("usr_diabetic_john");
+  const patientId = activeProfile ? getTwinId(activeProfile) : "p_healthy";
 
   useEffect(() => {
     async function load() {
