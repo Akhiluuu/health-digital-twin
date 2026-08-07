@@ -167,7 +167,7 @@ class QwenInferenceEngine(HealthBrainSubsystem):
 
         # ── Tier 3: Smart context-aware fallback ─────────────────────────────
         logger.warning("⚠️ Both Ollama and GGUF unavailable — using smart context fallback")
-        fallback = self._smart_context_fallback(context, user_query, evidence_bundle=evidence_bundle)
+        fallback = self._smart_context_fallback(context, user_query, evidence_bundle=evidence_bundle, intent=intent)
         elapsed = (time.time() - start) * 1000
         return self._pack_result(context.patient_id, fallback, sources, "context-fallback", elapsed, confidence=0.70)
 
@@ -499,6 +499,7 @@ Use this structure for every response:
         context: BudgetedContext,
         user_query: str,
         evidence_bundle: Optional[Any] = None,
+        intent: Optional[str] = None,
     ) -> str:
         """
         Evidence-Based fallback renderer.
@@ -507,6 +508,7 @@ Use this structure for every response:
         Falls back to snapshot-only rendering if no bundle is provided.
         """
         lines: List[str] = []
+        target_intent = intent or (evidence_bundle.intent if evidence_bundle and hasattr(evidence_bundle, "intent") else "GENERAL_HEALTH")
 
         # Emergency guard always runs first
         emergency_patterns = re.compile(
@@ -583,20 +585,20 @@ Use this structure for every response:
                         lines.append(f"• {gap}")
 
                 # Detailed Explanation Section
-                explanation = self._get_fallback_explanation(user_query, evidence_bundle.intent if evidence_bundle else "GENERAL_HEALTH")
+                explanation = self._get_fallback_explanation(user_query, target_intent)
                 lines.append("\n💡 **Detailed Explanation & Clinical Insights**")
                 lines.append(explanation)
 
                 # Clinical Knowledge Supplement (query-matched guidance when LLM offline)
                 clinical_notes = self._clinical_knowledge_supplement(user_query)
                 if not clinical_notes:
-                    clinical_notes = self._default_fallback_recommendations(user_query, evidence_bundle.intent if evidence_bundle else "GENERAL_HEALTH")
+                    clinical_notes = self._default_fallback_recommendations(user_query, target_intent)
 
                 lines.append("\n✅ **Recommended Next Steps**")
                 lines.extend(clinical_notes)
 
                 # Suggested Follow-Up Questions
-                followups = self._get_fallback_followup_questions(user_query, evidence_bundle.intent if evidence_bundle else "GENERAL_HEALTH")
+                followups = self._get_fallback_followup_questions(user_query, target_intent)
                 if followups:
                     lines.append("\n❓ **Suggested Follow-Up Questions**")
                     for f_q in followups:
@@ -622,15 +624,15 @@ Use this structure for every response:
         lines.append("• Upload lab reports in the Documents tab to improve response accuracy.")
         lines.append("• Log vitals regularly in the Vitals tab.")
         
-        explanation = self._get_fallback_explanation(user_query, intent or "GENERAL_HEALTH")
+        explanation = self._get_fallback_explanation(user_query, target_intent)
         lines.append("\n💡 **Detailed Explanation & Clinical Insights**")
         lines.append(explanation)
 
-        fallback_notes = self._clinical_knowledge_supplement(user_query) or self._default_fallback_recommendations(user_query, "GENERAL_HEALTH")
+        fallback_notes = self._clinical_knowledge_supplement(user_query) or self._default_fallback_recommendations(user_query, target_intent)
         lines.append("\n✅ **Recommended Next Steps**")
         lines.extend(fallback_notes)
 
-        followups = self._get_fallback_followup_questions(user_query, intent or "GENERAL_HEALTH")
+        followups = self._get_fallback_followup_questions(user_query, target_intent)
         if followups:
             lines.append("\n❓ **Suggested Follow-Up Questions**")
             for f_q in followups:
