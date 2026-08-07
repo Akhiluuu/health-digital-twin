@@ -89,7 +89,7 @@ class PHOSOrchestrator:
     def process_query(
         self,
         query: str,
-        state: UnifiedPatientState,
+        state: Any,
         conversation_history: Optional[List[Dict[str, str]]] = None,
         active_symptoms: Optional[List[Any]] = None,
         patient_context: Optional[Dict[str, Any]] = None,

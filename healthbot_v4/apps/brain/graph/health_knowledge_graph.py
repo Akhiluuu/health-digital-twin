@@ -110,6 +110,26 @@ class HealthKnowledgeGraphEngine:
             "connected_nodes_count": len(set(paths))
         }
 
+    def get_patient_subgraph(self, patient_id: str) -> Dict[str, Any]:
+        """Returns patient subgraph nodes and edges for API endpoint compatibility."""
+        patient_node = f"Patient:{patient_id}"
+        nodes = []
+        edges = []
+
+        for node_id, node in self._nodes.items():
+            nodes.append({"id": node_id, "label": node.label, "properties": node.properties})
+
+        for edge in self._edges:
+            edges.append({"source": edge.source_id, "target": edge.target_id, "relation": edge.relationship})
+
+        return {"patient_id": patient_id, "nodes": nodes, "edges": edges}
+
+    def add_clinical_entity(self, patient_id: str, entity_name: str, entity_type: str, relation: str = "HAS_CONDITION"):
+        """Adds a clinical entity and connects it to the patient node in the graph."""
+        patient_node = f"Patient:{patient_id}"
+        target_node = f"{entity_type}:{entity_name}"
+        self._add_edge(patient_node, target_node, relation, patient_id=patient_id)
+
     def ingest_evidence_item(self, patient_id: str, item: Any) -> str:
         """Dynamic ingestion of EvidenceItem into PHKG with temporal attribution."""
         patient_node = f"Patient:{patient_id}"
