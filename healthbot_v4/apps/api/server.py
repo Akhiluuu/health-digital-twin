@@ -5,6 +5,7 @@ Exposes REST endpoints for Patient Management, OCR Ingestion, BioGears Digital T
 """
 
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional
 from pydantic import BaseModel
 from fastapi import FastAPI, HTTPException, status, Depends
