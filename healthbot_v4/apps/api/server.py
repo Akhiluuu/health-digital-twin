@@ -629,15 +629,15 @@ async def receive_telemetry_stream(packet: TelemetryPacket):
         if packet.heart_rate:
             state_mgr.add_vital(packet.user_id, NormalizedVital(
                 vital_type="heart_rate",
-                value_primary=float(packet.heart_rate),
+                value_primary=packet.heart_rate,
                 unit="bpm",
                 timestamp=datetime.now(timezone.utc)
             ))
         if packet.systolic_bp:
             state_mgr.add_vital(packet.user_id, NormalizedVital(
                 vital_type="blood_pressure",
-                value_primary=float(packet.systolic_bp),
-                value_secondary=float(packet.diastolic_bp) if packet.diastolic_bp else None,
+                value_primary=packet.systolic_bp,
+                value_secondary=packet.diastolic_bp,
                 unit="mmHg",
                 timestamp=datetime.now(timezone.utc)
             ))
