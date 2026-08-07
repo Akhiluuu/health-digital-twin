@@ -624,7 +624,13 @@ class AIOrchestrator(HealthBrainSubsystem):
         )
 
         resp_text = str(reasoning_res.get("response", ""))
-        sources = reasoning_res.get("sources_cited", [])
+        raw_sources = reasoning_res.get("sources_cited", [])
+        if isinstance(raw_sources, list):
+            sources_list: List[str] = [str(s) for s in raw_sources]
+        elif isinstance(raw_sources, str):
+            sources_list = [raw_sources]
+        else:
+            sources_list = []
         intent_name = intent_res.primary_intent.value
 
         # Step 7: Medically Grounded Fact Verification Guard
@@ -634,7 +640,7 @@ class AIOrchestrator(HealthBrainSubsystem):
         proactive_actions = self.action_engine.extract_proactive_actions(patient_id, verified_text, query)
 
         # Store in Semantic Cache if non-personalized education query
-        self.semantic_cache.put(query, intent_name, verified_text, sources)
+        self.semantic_cache.put(query, intent_name, verified_text, sources_list)
 
         # Step 9: Dynamic Load-Balanced Multi-Model Route selection
         route_res = self.model_router.select_model_route(query, intent_name, len(state.active_risks), len(state.active_medications))
