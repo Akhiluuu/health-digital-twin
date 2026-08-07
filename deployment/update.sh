@@ -67,9 +67,18 @@ if sudo systemctl is-active --quiet healthbot; then
 fi
 
 if [[ -f "$DEPLOY_DIR/templates/nginx.conf" ]]; then
-    info "Refreshing Nginx site configuration..."
+    info "Refreshing Nginx site configuration across sites-available, sites-enabled, and conf.d..."
+    sudo mkdir -p /etc/nginx/sites-available /etc/nginx/sites-enabled /etc/nginx/conf.d
     sudo sed -e "s|{{PROJECT_DIR}}|${PROJECT_DIR}|g" "$DEPLOY_DIR/templates/nginx.conf" | sudo tee /etc/nginx/sites-available/digitaltwin > /dev/null
-    sudo systemctl reload nginx || sudo systemctl restart nginx
+    sudo sed -e "s|{{PROJECT_DIR}}|${PROJECT_DIR}|g" "$DEPLOY_DIR/templates/nginx.conf" | sudo tee /etc/nginx/conf.d/digitaltwin.conf > /dev/null
+    sudo ln -sf /etc/nginx/sites-available/digitaltwin /etc/nginx/sites-enabled/digitaltwin 2>/dev/null || true
+    sudo rm -f /etc/nginx/sites-enabled/default /etc/nginx/conf.d/default.conf 2>/dev/null || true
+    if sudo nginx -t; then
+        sudo systemctl restart nginx || sudo nginx -s reload
+    else
+        warn "Nginx configuration syntax check failed. Attempting reload..."
+        sudo systemctl reload nginx || true
+    fi
 fi
 
 # 5. Run post-update health validation
