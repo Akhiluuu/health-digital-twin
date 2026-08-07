@@ -31,9 +31,13 @@ logs/
 server_log.txt
 
 # Runtime databases / job stores
-twins_database.db
+twins_database.db*
 twins_database.json
 biogears_service/jobs_store.json
+uvicorn.log
+*.tmp
+dummy_state*
+window_dump.xml
 
 # Server backups
 backups/
