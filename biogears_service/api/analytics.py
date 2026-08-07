@@ -936,13 +936,13 @@ def compute_personal_norms(user_id: str, history_dir: Path,
             continue
         for col in tracked:
             if col in df.columns:
-                all_means[col].append(float(df[col].mean()))
+                all_means[col].append(df[col].mean())
 
     personal_norms = {}
     for col, vals in all_means.items():
         if len(vals) >= min_sessions:
-            mean = round(float(np.mean(vals)), 2)
-            sd   = round(float(np.std(vals)),  2)
+            mean = round(np.mean(vals), 2)
+            sd   = round(np.std(vals), 2)
             personal_norms[col] = {
                 "label":          tracked[col]["label"],
                 "unit":           tracked[col]["unit"],
@@ -987,7 +987,7 @@ def generate_weekly_summary(user_id: str, history_dir: Path) -> Dict[str, Any]:
             ("SystolicArterialPressure", "sys"), ("RespirationRate", "rr")
         ]:
             if col in df.columns:
-                s[alias] = round(float(df[col].mean()), 1)
+                s[alias] = round(df[col].mean(), 1)
         s["session"] = f.name
         s["date"]    = datetime.datetime.fromtimestamp(f.stat().st_mtime).strftime("%A %d %b")
         session_stats.append(s)
@@ -1001,7 +1001,7 @@ def generate_weekly_summary(user_id: str, history_dir: Path) -> Dict[str, Any]:
 
     # Glucose average
     g_vals = [s["glucose"] for s in session_stats if "glucose" in s]
-    avg_g  = round(float(np.mean(g_vals)), 1) if g_vals else None
+    avg_g  = round(np.mean(g_vals), 1) if g_vals else None
 
     # HR trend
     hr_series = [s["hr"] for s in session_stats if "hr" in s]
@@ -1068,17 +1068,16 @@ def compute_recovery_readiness(user_id: str, history_dir: Path,
     personal_hr_mean = None
 
     if latest_df is not None and "HeartRate" in latest_df.columns:
-        resting_hr = round(float(latest_df["HeartRate"].mean()), 1)
-
-        # Compute personal HR mean from last 5 sessions
+        resting_hr = round(latest_df["HeartRate"].mean(), 1)
+        
         hr_means = []
-        for f in csv_files[1:6]:
+        for f in csv_files[-7:]:
             df = _clean_df(f)
             if df is not None and "HeartRate" in df.columns:
-                hr_means.append(float(df["HeartRate"].mean()))
-
+                hr_means.append(df["HeartRate"].mean())
+                
         if hr_means:
-            personal_hr_mean = round(float(np.mean(hr_means)), 1)
+            personal_hr_mean = round(np.mean(hr_means), 1)
             hr_elevation = resting_hr - personal_hr_mean
             if hr_elevation > 10:
                 penalty = min(30, int(hr_elevation * 2))
