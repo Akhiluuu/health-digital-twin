@@ -690,6 +690,21 @@ You are a trusted healthcare companion helping users understand, manage, monitor
                 return f"Hello {persona.first_name}! I am your VitalHealth AI Personal Health Assistant. How can I help you manage your health today?"
             return "Hello! I am your VitalHealth AI Personal Health Assistant. How can I help you manage or understand your health today?"
 
+        # ── 1b. Active Symptoms & Relief Fallback ─────────────────────────────
+        if schema == "ACUTE_SYMPTOM" or target_intent in ["SYMPTOMS", "ACUTE_SYMPTOM"] or any(k in user_query.lower() for k in ["active symptom", "my symptoms", "symptoms i have"]):
+            explanation = self._get_fallback_explanation(user_query, target_intent)
+            return (
+                f"### 🩺 Active Symptoms Evaluation & Relief\n{explanation}\n\n"
+                "### 🩹 Targeted Evidence-Based Remedies & Management\n"
+                "- **Hydration & Electrolytes:** Maintain fluid intake (water, herbal tea, or electrolyte solution) to aid recovery.\n"
+                "- **Targeted Rest:** Rest comfortably and avoid physical strain to allow body healing.\n"
+                "- **Symptom Journaling:** Track severity and duration in your VitalHealth Symptom Journal.\n"
+                "- **Comfort Measures:** For mild discomfort, discuss appropriate OTC options with a pharmacist or physician.\n\n"
+                "### ⚠️ Red Flag Warning Signs\n"
+                "- Seek immediate clinical care if experiencing severe pain, persistent high fever, breathing difficulty, or sudden neurological deficits.\n\n"
+                "> 💡 *VitalHealth Personal Health Assistant | Consult your physician for medical advice.*"
+            )
+
         # ── 2. Health Education / Brief QA Fallback ────────────────────────────
         if schema in ["HEALTH_EDUCATION", "BRIEF_QA"]:
             explanation = self._get_fallback_explanation(user_query, target_intent)

@@ -212,7 +212,7 @@ class ResponseStrategyPlanner:
                 top_p=0.82,
                 max_tokens=550,
                 requires_alert_banner=False,
-                include_biogears_card=True,
+                include_biogears_card=False,
                 include_trend_chart=False,
             ))
 
@@ -229,7 +229,7 @@ class ResponseStrategyPlanner:
                 top_p=0.85,
                 max_tokens=700,
                 requires_alert_banner=False,
-                include_biogears_card=True,
+                include_biogears_card=False,
                 include_trend_chart=True,
             ))
 
@@ -264,7 +264,7 @@ class ResponseStrategyPlanner:
                 top_p=0.88,
                 max_tokens=650 if is_lab else 450,
                 requires_alert_banner=False,
-                include_biogears_card=True,
+                include_biogears_card=False,
                 include_trend_chart=is_lab,
             ))
 
@@ -287,7 +287,7 @@ class ResponseStrategyPlanner:
                 top_p=0.90,
                 max_tokens=500,
                 requires_alert_banner=False,
-                include_biogears_card=True,
+                include_biogears_card=False,
                 include_trend_chart=False,
             ))
 
@@ -318,7 +318,7 @@ class ResponseStrategyPlanner:
                 top_p=0.85,
                 max_tokens=550,
                 requires_alert_banner=False,
-                include_biogears_card=True,
+                include_biogears_card=False,
                 include_trend_chart=False,
             ))
 
@@ -335,7 +335,7 @@ class ResponseStrategyPlanner:
             top_p=0.90,
             max_tokens=500,
             requires_alert_banner=False,
-            include_biogears_card=True,
+            include_biogears_card=False,
             include_trend_chart=False,
         ))
 

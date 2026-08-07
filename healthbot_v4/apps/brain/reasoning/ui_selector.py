@@ -79,8 +79,19 @@ class UIComponentSelector:
                 }
             ))
 
-        # 3. BioGears Simulation Digital Twin Card
-        if strategy.include_biogears_card:
+        # 2c. Active Symptoms Card (when schema is ACUTE_SYMPTOM or symptoms are evaluated)
+        if strategy.formatting_schema == "ACUTE_SYMPTOM":
+            widgets.append(UIWidget(
+                widget_type="active_symptoms_card",
+                title="🩺 Active Symptoms & Evidence-Based Remedies",
+                payload={
+                    "mode": "SYMPTOM_EVALUATION",
+                    "guidance": "Focus on rest, hydration, monitoring symptom progression, and seeking medical evaluation if red flags develop.",
+                }
+            ))
+
+        # 3. BioGears Simulation Digital Twin Card (ONLY for explicit simulation requests)
+        if strategy.include_biogears_card and strategy.formatting_schema == "DIGITAL_TWIN_SIMULATION":
             widgets.append(UIWidget(
                 widget_type="biogears_card",
                 title="Digital Twin Physiological Simulation",

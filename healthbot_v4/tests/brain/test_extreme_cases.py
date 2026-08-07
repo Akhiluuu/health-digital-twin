@@ -122,6 +122,25 @@ def test_personalized_followup_generation():
     assert any("Type 2 Diabetes" in f for f in res2["followUps"])
 
 
+def test_symptom_query_focus_no_biogears():
+    from healthbot_v4.apps.brain.reasoning.ui_selector import UIComponentSelector
+    engine = PatientPersonaEngine()
+    planner = ResponseStrategyPlanner()
+    selector = UIComponentSelector()
+
+    profile = PatientProfile(patient_id="p_sym", first_name="Maria", age=35)
+    state = PatientState(patient_id="p_sym", profile=profile)
+    persona = engine.build_persona(state=state, query="What are my active symptoms?")
+
+    strat = planner.plan_strategy("SYMPTOMS", "What are my active symptoms?", persona=persona)
+    assert strat.include_biogears_card is False
+
+    ui_selection = selector.select_components(strat, "Sample Summary", ["Followup 1"])
+    widget_types = [w.widget_type for w in ui_selection.widgets]
+    assert "biogears_card" not in widget_types
+    assert "active_symptoms_card" in widget_types
+
+
 if __name__ == "__main__":
     print("🚀 Running Extreme Case Test Suite...")
     test_hyper_acute_vitals_detection()
@@ -135,5 +154,8 @@ if __name__ == "__main__":
 
     test_personalized_followup_generation()
     print("✅ test_personalized_followup_generation PASSED")
+
+    test_symptom_query_focus_no_biogears()
+    print("✅ test_symptom_query_focus_no_biogears PASSED")
 
     print("\n🎉 ALL EXTREME CASE TESTS PASSED SUCCESSFULLY!")
