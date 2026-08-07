@@ -45,15 +45,19 @@ class PHOSResponsePayload(BaseModel):
         return {
             "query": self.query,
             "patient_id": self.patient_id,
+            "text": self.answer_text,
+            "response": self.answer_text,
+            "answerText": self.answer_text,
+            "widgets": self.ui_components,
+            "uiComponents": self.ui_components,
+            "suggested_actions": self.follow_ups,
+            "followUps": self.follow_ups,
             "intentAnalysis": self.intent_analysis,
             "evidencePlan": self.evidence_plan,
             "correlations": self.phkg_correlations,
             "hypotheses": self.hypotheses,
             "confidence": self.confidence_analysis,
             "strategy": self.response_strategy,
-            "answerText": self.answer_text,
-            "followUps": self.follow_ups,
-            "uiComponents": self.ui_components,
             "latencyMs": self.pipeline_latency_ms,
         }
 

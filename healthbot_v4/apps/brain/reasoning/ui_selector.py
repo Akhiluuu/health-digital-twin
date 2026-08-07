@@ -81,12 +81,38 @@ class UIComponentSelector:
 
         # 2c. Active Symptoms Card (when schema is ACUTE_SYMPTOM or symptoms are evaluated)
         if strategy.formatting_schema == "ACUTE_SYMPTOM":
+            symptom_list = persona.logged_symptoms if (persona and hasattr(persona, "logged_symptoms") and persona.logged_symptoms) else []
             widgets.append(UIWidget(
                 widget_type="active_symptoms_card",
                 title="🩺 Active Symptoms & Evidence-Based Remedies",
                 payload={
                     "mode": "SYMPTOM_EVALUATION",
+                    "active_symptoms": symptom_list,
                     "guidance": "Focus on rest, hydration, monitoring symptom progression, and seeking medical evaluation if red flags develop.",
+                }
+            ))
+
+        # 2d. Health Education Card (when schema is HEALTH_EDUCATION or BRIEF_QA)
+        if strategy.formatting_schema in ["HEALTH_EDUCATION", "BRIEF_QA"]:
+            widgets.append(UIWidget(
+                widget_type="health_education_card",
+                title="💡 Medical Knowledge & Physiological Insights",
+                payload={
+                    "mode": "EDUCATIONAL_TAKEOUT",
+                    "topic": strategy.target_intent or "GENERAL_HEALTH",
+                    "takeaway": "Understanding physiological mechanisms helps empower proactive health management.",
+                }
+            ))
+
+        # 2e. Medication Safety & Regimen Card (when schema is PHARMACOLOGY_SAFETY or PRESCRIPTION_AUDIT)
+        if strategy.formatting_schema in ["PHARMACOLOGY_SAFETY", "PRESCRIPTION_AUDIT"]:
+            active_meds = persona.active_medications if (persona and hasattr(persona, "active_medications")) else []
+            widgets.append(UIWidget(
+                widget_type="medication_card",
+                title="💊 Medication Regimen Audit & Safety Guidelines",
+                payload={
+                    "active_medications": active_meds,
+                    "guidance": "Strict adherence to dosage timings and verifying potential drug-food interactions is vital.",
                 }
             ))
 
@@ -108,6 +134,20 @@ class UIComponentSelector:
                 widget_type="trend_chart",
                 title="6-Month Vitals Trend",
                 payload={"metric": "Resting Heart Rate", "unit": "bpm", "status": "Stable Range"}
+            ))
+
+        # 4b. Proactive Action Cards
+        if strategy.formatting_schema in ["HEALTH_GOALS", "LIFESTYLE_HABITS", "DOCTOR_PREPARATION"]:
+            widgets.append(UIWidget(
+                widget_type="action_cards",
+                title="📋 Recommended Health Micro-Habits",
+                payload={
+                    "actions": [
+                        "Log daily fluid intake in VitalHealth App",
+                        "Maintain 7–8 hours of consistent restorative sleep",
+                        "Schedule periodic follow-up evaluation with primary physician"
+                    ]
+                }
             ))
 
         # 5. Follow-up Chips
