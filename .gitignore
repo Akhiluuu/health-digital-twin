@@ -35,6 +35,7 @@ twins_database.db*
 twins_database.json
 biogears_service/jobs_store.json
 uvicorn.log
+uvicorn.pid
 *.tmp
 dummy_state*
 window_dump.xml
