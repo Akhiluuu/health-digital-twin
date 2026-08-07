@@ -1007,6 +1007,147 @@ export default function AIHealthScreen() {
 
           <Text style={[styles.welcomeTime, { color: c.sub }]}>{fmtTime(item.timestamp.getTime())}</Text>
         </View>
+// ─── Evidence Bundle Collapsible Card ─────────────────────────────────────────
+
+function EvidenceCard({ bundle, c, theme }: { bundle: EvidenceBundleMeta; c: any; theme: string }) {
+  const [expanded, setExpanded] = useState(false);
+  if (!bundle) return null;
+
+  const confidencePct = bundle.overall_confidence !== undefined ? Math.round(bundle.overall_confidence * 100) : null;
+  const isHighConf = (bundle.overall_confidence ?? 1.0) >= 0.8;
+  const badgeColor = isHighConf ? "#10b981" : "#f59e0b";
+  const badgeBg = isHighConf ? "#10b98118" : "#f59e0b18";
+
+  return (
+    <View style={{ backgroundColor: theme === 'dark' ? '#0f172a' : '#f8fafc', borderRadius: 12, paddingHorizontal: 10, paddingVertical: 8, marginBottom: 8, borderWidth: 1, borderColor: c.border }}>
+      <TouchableOpacity 
+        onPress={() => setExpanded(!expanded)} 
+        activeOpacity={0.7}
+        style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}
+      >
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+          <Ionicons name="shield-checkmark" size={14} color="#10b981" />
+          <Text style={{ fontSize: 11, fontWeight: "700", color: c.text }}>Evidence Intelligence</Text>
+          {confidencePct !== null && (
+            <View style={{ backgroundColor: badgeBg, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 }}>
+              <Text style={{ fontSize: 10, fontWeight: "700", color: badgeColor }}>
+                {confidencePct}% Confidence
+              </Text>
+            </View>
+          )}
+        </View>
+        <Ionicons name={expanded ? "chevron-up" : "chevron-down"} size={14} color={c.sub} />
+      </TouchableOpacity>
+
+      {expanded && (
+        <View style={{ marginTop: 8, paddingTop: 8, borderTopWidth: 1, borderTopColor: c.border }}>
+          {bundle.intent && (
+            <Text style={{ fontSize: 10, fontWeight: "600", color: c.sub, marginBottom: 4 }}>
+              INTENT: {bundle.intent}
+            </Text>
+          )}
+          {bundle.sources_reviewed && bundle.sources_reviewed.length > 0 && (
+            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 4 }}>
+              {bundle.sources_reviewed.map((src, sIdx) => (
+                <View key={sIdx} style={{ flexDirection: "row", alignItems: "center", gap: 3, backgroundColor: src.status === 'available' ? '#10b98115' : '#ef444415', paddingHorizontal: 6, paddingVertical: 3, borderRadius: 6 }}>
+                  <Ionicons name={src.status === 'available' ? 'checkmark-circle' : 'alert-circle'} size={10} color={src.status === 'available' ? '#10b981' : '#ef4444'} />
+                  <Text style={{ fontSize: 10, color: src.status === 'available' ? '#10b981' : '#ef4444', fontWeight: "600" }}>{src.name}</Text>
+                </View>
+              ))}
+            </View>
+          )}
+        </View>
+      )}
+    </View>
+  );
+}
+
+const getQuickSuggestions = (text: string): string[] => {
+  const t = text.toLowerCase();
+  const chips: string[] = [];
+  if (t.includes("hba1c") || t.includes("glucose") || t.includes("blood sugar")) {
+    chips.push("What should my target HbA1c be?", "How does diet affect glucose?");
+  }
+  if (t.includes("bp") || t.includes("blood pressure") || t.includes("hypertension")) {
+    chips.push("What are normal BP ranges?", "How can I lower my blood pressure?");
+  }
+  if (t.includes("medication") || t.includes("metformin") || t.includes("dose")) {
+    chips.push("What are common side effects?", "When should I take this?");
+  }
+  if (t.includes("water") || t.includes("hydrat")) {
+    chips.push("How much water do I need daily?", "Signs of dehydration?");
+  }
+  if (t.includes("symptom") || t.includes("pain")) {
+    chips.push("When to see a doctor?", "What home remedies help?");
+  }
+  if (chips.length === 0) {
+    chips.push("Tell me more about this", "Recommended next steps?", "Should I discuss with doctor?");
+  }
+  return chips.slice(0, 3);
+};
+
+  const renderMessage = ({ item, index }: { item: Message; index: number }) => {
+    const isUser   = item.sender === "user";
+    const isSystem = item.sender === "system";
+    const isWelcome = item.id === "welcome" && !isUser;
+
+    if (isSystem) return (
+      <View style={styles.sysRow}>
+        <View style={[styles.sysPill, { backgroundColor: c.card, borderColor: c.border }]}>
+          <Text style={[styles.sysTxt, { color: c.sub }]}>{item.text}</Text>
+        </View>
+      </View>
+    );
+
+    // ── Premium Welcome Card ──────────────────────────────────────────────────
+    if (isWelcome) {
+      const displayText = item.text === "__welcome__"
+        ? "Good to see you. I'm your **personal health assistant**.\n\nAsk me about your symptoms, medications, or lab results — I'll give you a clear, honest answer."
+        : item.text;
+      return (
+        <View style={[styles.welcomeCard, { backgroundColor: c.card, borderColor: c.border }]}>
+          {/* Header row */}
+          <View style={styles.welcomeHeader}>
+            <View style={[styles.welcomeAvatar, { backgroundColor: theme === 'dark' ? '#1a2e5a' : '#eff6ff', borderColor: theme === 'dark' ? '#2a4070' : '#bfdbfe' }]}>
+              <Ionicons name="medkit" size={26} color={c.accent} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.welcomeName, { color: c.text }]}>Personal Health Assistant</Text>
+              <View style={styles.welcomeBadgeRow}>
+                <View style={[styles.welcomeBadge, { backgroundColor: connected ? '#10b98120' : '#ef444420' }]}>
+                  <View style={[styles.welcomeBadgeDot, { backgroundColor: connected ? '#10b981' : '#ef4444' }]} />
+                  <Text style={[styles.welcomeBadgeTxt, { color: connected ? '#10b981' : '#ef4444' }]}>
+                    {connected ? 'Online' : 'Connecting…'}
+                  </Text>
+                </View>
+                <Text style={[styles.welcomeRole, { color: c.sub }]}>AI Health Assistant</Text>
+              </View>
+            </View>
+          </View>
+
+          {/* Divider */}
+          <View style={[styles.welcomeDivider, { backgroundColor: c.border }]} />
+
+          {/* Greeting text */}
+          <RichText text={displayText} style={[styles.welcomeText, { color: c.text }]} />
+
+          {/* Suggestion chips */}
+          <Text style={[styles.welcomeChipLabel, { color: c.sub }]}>Suggested questions</Text>
+          <View style={styles.welcomeChips}>
+            {SUGGESTIONS.map(({ label, icon, query }) => (
+              <TouchableOpacity
+                key={label}
+                style={[styles.welcomeChip, { backgroundColor: theme === 'dark' ? '#0b1329' : '#f1f5f9', borderColor: c.border }]}
+                onPress={() => doSend(query)}
+              >
+                <Ionicons name={icon} size={12} color={c.accent} />
+                <Text style={[styles.welcomeChipTxt, { color: c.accent }]}>{label}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          <Text style={[styles.welcomeTime, { color: c.sub }]}>{fmtTime(item.timestamp.getTime())}</Text>
+        </View>
       );
     }
 
@@ -1026,33 +1167,9 @@ export default function AIHealthScreen() {
           isUser ? styles.userBubble : styles.aiBubble,
           { backgroundColor: isUser ? getUserBubbleColor() : getAiBubbleColor(), borderColor: isUser ? getUserBubbleBorder() : getAiBubbleBorder() }
         ]}>
-          {/* Evidence Bundle Transparency Header Card */}
+          {/* Collapsible Evidence Bundle Transparency Card */}
           {!isUser && item.evidenceBundle && (
-            <View style={{ backgroundColor: theme === 'dark' ? '#0f172a' : '#f8fafc', borderRadius: 8, padding: 8, marginBottom: 8, borderWidth: 1, borderColor: c.border }}>
-              <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
-                <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
-                  <Ionicons name="shield-checkmark" size={14} color="#10b981" />
-                  <Text style={{ fontSize: 11, fontWeight: "700", color: c.text }}>Evidence-Based Intelligence</Text>
-                </View>
-                {item.evidenceBundle.overall_confidence !== undefined && (
-                  <View style={{ backgroundColor: item.evidenceBundle.overall_confidence >= 0.8 ? '#10b98120' : '#f59e0b20', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 }}>
-                    <Text style={{ fontSize: 10, fontWeight: "700", color: item.evidenceBundle.overall_confidence >= 0.8 ? '#10b981' : '#f59e0b' }}>
-                      {Math.round(item.evidenceBundle.overall_confidence * 100)}% Confidence
-                    </Text>
-                  </View>
-                )}
-              </View>
-              {item.evidenceBundle.sources_reviewed && item.evidenceBundle.sources_reviewed.length > 0 && (
-                <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 4, marginTop: 4 }}>
-                  {item.evidenceBundle.sources_reviewed.map((src, sIdx) => (
-                    <View key={sIdx} style={{ flexDirection: "row", alignItems: "center", gap: 2, backgroundColor: src.status === 'available' ? '#10b98115' : '#ef444415', paddingHorizontal: 5, paddingVertical: 2, borderRadius: 4 }}>
-                      <Ionicons name={src.status === 'available' ? 'checkmark-circle' : 'alert-circle'} size={10} color={src.status === 'available' ? '#10b981' : '#ef4444'} />
-                      <Text style={{ fontSize: 9, color: src.status === 'available' ? '#10b981' : '#ef4444', fontWeight: "600" }}>{src.name}</Text>
-                    </View>
-                  ))}
-                </View>
-              )}
-            </View>
+            <EvidenceCard bundle={item.evidenceBundle} c={c} theme={theme} />
           )}
 
           <RichText text={item.text} style={[styles.messageText, { color: isUser ? userTextColor : c.text }]} />
@@ -1181,6 +1298,39 @@ export default function AIHealthScreen() {
             keyExtractor={(item) => item.id} contentContainerStyle={styles.messagesList}
             showsVerticalScrollIndicator={false} onTouchStart={Keyboard.dismiss} keyboardShouldPersistTaps="handled"
           />
+
+          {/* Horizontal Follow-Up Suggestions Pill Bar */}
+          {(() => {
+            const lastAiMsg = [...messages].reverse().find((m) => m.sender === "ai" && m.id !== "welcome");
+            const currentQuickSuggestions = lastAiMsg ? getQuickSuggestions(lastAiMsg.text) : [];
+            if (currentQuickSuggestions.length === 0 || loading) return null;
+            return (
+              <View style={{ marginBottom: 6, paddingHorizontal: 16 }}>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
+                  {currentQuickSuggestions.map((chipText, idx) => (
+                    <TouchableOpacity
+                      key={idx}
+                      onPress={() => doSend(chipText)}
+                      style={{
+                        backgroundColor: theme === 'dark' ? '#1e293b' : '#f1f5f9',
+                        borderColor: c.border,
+                        borderWidth: 1,
+                        paddingHorizontal: 12,
+                        paddingVertical: 6,
+                        borderRadius: 16,
+                        flexDirection: "row",
+                        alignItems: "center",
+                        gap: 5,
+                      }}
+                    >
+                      <Ionicons name="sparkles" size={11} color={c.accent} />
+                      <Text style={{ fontSize: 12, fontWeight: "600", color: c.text }}>{chipText}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              </View>
+            );
+          })()}
 
           <View style={[styles.inputContainer, { backgroundColor: c.card, borderColor: c.border }]}>
             <TouchableOpacity onPress={handleFile} style={styles.iconButton}>
