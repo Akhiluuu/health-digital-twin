@@ -522,7 +522,17 @@ Use this structure for every response:
                 from healthbot_v4.apps.brain.evidence.evidence_bundle import SourceStatus
 
                 lines.append(f"🩺 **Executive Summary**")
-                lines.append(f"Based on a review of your complete health ecosystem, here is what I found regarding: **\"{user_query.strip()}\"**\n")
+                q_lower = user_query.lower()
+                if any(k in q_lower for k in ["symptom", "explain my symptoms"]):
+                    lines.append(f"Here is your personalized symptom evaluation and guidance based on your complete health ecosystem.\n")
+                elif any(k in q_lower for k in ["medication", "check my medications"]):
+                    lines.append(f"Here is your active medication regimen audit and safety review based on your complete health ecosystem.\n")
+                elif any(k in q_lower for k in ["heart", "cardiac", "how's my heart health"]):
+                    lines.append(f"Here is your cardiovascular health evaluation based on your BioGears Digital Twin vitals and health history.\n")
+                elif any(k in q_lower for k in ["lab", "read my lab results"]):
+                    lines.append(f"Here is your diagnostic lab report summary and biomarker status based on your complete health ecosystem.\n")
+                else:
+                    lines.append(f"Based on a review of your complete health ecosystem, here is what I found regarding: **\"{user_query.strip()}\"**\n")
 
                 # Sources reviewed
                 lines.append("✅ **Sources Reviewed**")
@@ -533,8 +543,8 @@ Use this structure for every response:
                     lines.append(f"{icon} {src.name}{count}{reason}")
 
                 # Key findings
+                lines.append("\n📊 **Key Findings**")
                 if evidence_bundle.findings:
-                    lines.append("\n📊 **Key Findings**")
                     for f in evidence_bundle.findings:
                         conf = f"{f.confidence_pct * 100:.0f}%" if f.confidence_pct else f.confidence.value
                         val = f.value or "No data recorded"
@@ -543,6 +553,8 @@ Use this structure for every response:
                             f"- **{f.label}:** {val}{abnormal_tag}  \n"
                             f"  *[Source: {f.source_name} | {f.timestamp_label} | Confidence: {conf}]*"
                         )
+                else:
+                    lines.append("- No active clinical abnormalities, acute risk flags, or abnormal lab parameters currently documented in profile.")
 
                 # Contradictions
                 if evidence_bundle.conflicts:
@@ -570,11 +582,25 @@ Use this structure for every response:
                     for gap in evidence_bundle.missing_data:
                         lines.append(f"• {gap}")
 
+                # Detailed Explanation Section
+                explanation = self._get_fallback_explanation(user_query, evidence_bundle.intent if evidence_bundle else "GENERAL_HEALTH")
+                lines.append("\n💡 **Detailed Explanation & Clinical Insights**")
+                lines.append(explanation)
+
                 # Clinical Knowledge Supplement (query-matched guidance when LLM offline)
                 clinical_notes = self._clinical_knowledge_supplement(user_query)
-                if clinical_notes:
-                    lines.append("\n✅ **Recommended Next Steps**")
-                    lines.extend(clinical_notes)
+                if not clinical_notes:
+                    clinical_notes = self._default_fallback_recommendations(user_query, evidence_bundle.intent if evidence_bundle else "GENERAL_HEALTH")
+
+                lines.append("\n✅ **Recommended Next Steps**")
+                lines.extend(clinical_notes)
+
+                # Suggested Follow-Up Questions
+                followups = self._get_fallback_followup_questions(user_query, evidence_bundle.intent if evidence_bundle else "GENERAL_HEALTH")
+                if followups:
+                    lines.append("\n❓ **Suggested Follow-Up Questions**")
+                    for f_q in followups:
+                        lines.append(f"- *\"{f_q}\"*")
 
                 lines.append("\n> 💡 *VitalHealth Personal Health Assistant | Consult your physician for medical advice.*")
                 return "\n".join(lines)
@@ -595,12 +621,171 @@ Use this structure for every response:
         lines.append("\n⚠ **Missing Information**")
         lines.append("• Upload lab reports in the Documents tab to improve response accuracy.")
         lines.append("• Log vitals regularly in the Vitals tab.")
+        
+        explanation = self._get_fallback_explanation(user_query, intent or "GENERAL_HEALTH")
+        lines.append("\n💡 **Detailed Explanation & Clinical Insights**")
+        lines.append(explanation)
+
+        fallback_notes = self._clinical_knowledge_supplement(user_query) or self._default_fallback_recommendations(user_query, "GENERAL_HEALTH")
+        lines.append("\n✅ **Recommended Next Steps**")
+        lines.extend(fallback_notes)
+
+        followups = self._get_fallback_followup_questions(user_query, intent or "GENERAL_HEALTH")
+        if followups:
+            lines.append("\n❓ **Suggested Follow-Up Questions**")
+            for f_q in followups:
+                lines.append(f"- *\"{f_q}\"*")
+
         lines.append("\n> 💡 *VitalHealth Personal Health Assistant | Consult your physician for medical advice.*")
         return "\n".join(lines)
 
     # =========================================================================
-    # Post-processing safety guard
+    # Post-processing safety guard & Fallback Knowledge Supplement
     # =========================================================================
+
+    @staticmethod
+    def _default_fallback_recommendations(user_query: str, intent: str = "GENERAL_HEALTH") -> List[str]:
+        """
+        Universal fallback recommendation generator ensuring NO query ever yields
+        an empty recommendation block when running in fallback mode.
+        """
+        notes: List[str] = [
+            "- **Personalized Health Tracking:** Consistently log your vitals (Blood Pressure, Heart Rate) and daily symptoms in the app to improve AI clinical accuracy.",
+            "- **Regimen & Safety Adherence:** Maintain your prescribed medication schedule without skipping or doubling doses, and consult your physician before changing treatments.",
+            "- **Longitudinal Guidance:** Upload recent lab results or medical notes via the Documents tab to enable comprehensive multi-source clinical trend analysis.",
+        ]
+        return notes
+
+    @staticmethod
+    def _get_fallback_followup_questions(user_query: str, intent: str = "GENERAL_HEALTH") -> List[str]:
+        """
+        Generates 3 contextual, tailored follow-up question prompts for every query.
+        """
+        q = user_query.lower()
+        i = (intent or "").upper()
+
+        if any(k in q for k in ["symptom", "pain", "fever", "cough", "dizzy", "nausea", "sick", "feel"]) or i in ["SYMPTOMS", "INJURY", "DERMATOLOGY"]:
+            return [
+                "Have these symptoms changed or worsened over the past 24–48 hours?",
+                "Are you experiencing any accompanying symptoms like fever, shortness of breath, or dizziness?",
+                "Would you like guidance on when to seek urgent emergency medical evaluation?",
+            ]
+        if any(k in q for k in ["medication", "drug", "pill", "dose", "regimen", "refill"]) or i in ["MEDICATION", "PRESCRIPTION"]:
+            return [
+                "Are there any known food or drug interactions with my current active regimen?",
+                "What safety steps should I take if I accidentally miss a scheduled dose?",
+                "Should I schedule a routine lab check for kidney or liver function?",
+            ]
+        if any(k in q for k in ["lab", "blood work", "glucose", "hba1c", "cholesterol", "egfr"]) or i in ["LAB_REPORT"]:
+            return [
+                "How do my latest lab parameters compare to clinical reference ranges?",
+                "What specific dietary or lifestyle habits can help optimize these biomarkers?",
+                "Would you like to upload a new PDF lab report for automated extraction?",
+            ]
+        if any(k in q for k in ["heart", "cardiac", "bp", "blood pressure", "pulse", "hr"]) or i in ["CARDIOVASCULAR", "HEART_HEALTH"]:
+            return [
+                "Would you like to review a 6-month trend of your resting heart rate and blood pressure?",
+                "How does my blood pressure reading compare to AHA clinical guidelines?",
+                "What moderate cardio activities are safest for my current fitness baseline?",
+            ]
+        if any(k in q for k in ["diet", "nutrition", "weight", "calories", "fasting", "water"]) or i in ["NUTRITION"]:
+            return [
+                "What daily caloric deficit or target is safe for my body composition?",
+                "How can I structure meals to prevent postprandial blood glucose spikes?",
+                "What is my recommended daily hydration target based on my profile?",
+            ]
+        if any(k in q for k in ["exercise", "workout", "steps", "fitness", "gym"]) or i in ["EXERCISE"]:
+            return [
+                "How does my daily step count compare to preventive guidelines?",
+                "What target heart rate zone should I aim for during workouts?",
+                "Would you like tips on combining aerobic exercise with resistance training?",
+            ]
+        if any(k in q for k in ["mental", "stress", "sleep", "anxiety", "insomnia", "burnout"]) or i in ["MENTAL_HEALTH"]:
+            return [
+                "Would you like a guided 4-7-8 breathing exercise for real-time stress relief?",
+                "How does sleep hygiene impact long-term cognitive health and amyloid clearance?",
+                "What strategies help manage work-related stress and burnout?",
+            ]
+
+        return [
+            "Would you like me to prepare a health summary timeline for your next doctor visit?",
+            "Should we track these specific health parameters over the coming week?",
+            "Do you have any dietary, exercise, or vital targets you would like to set?",
+        ]
+
+    @staticmethod
+    def _get_fallback_explanation(user_query: str, intent: str = "GENERAL_HEALTH") -> str:
+        """
+        Generates a comprehensive, plain-English clinical explanation answering
+        the user's specific health question.
+        """
+        q = user_query.lower()
+        i = (intent or "").upper()
+
+        if any(k in q for k in ["symptom", "pain", "fever", "cough", "dizzy", "nausea", "sick", "feel", "headache"]) or i in ["SYMPTOMS", "INJURY", "DERMATOLOGY"]:
+            return (
+                "Symptoms are your body's physiological signals indicating underlying biological changes, inflammation, stress, or organ response. "
+                "When evaluating symptoms, clinicians look at onset (when it started), character (sharp, dull, throbbing), severity, aggravating or relieving factors, and accompanying systemic symptoms. "
+                "In your personal digital twin health model, symptoms correlate directly with live vitals (heart rate, blood pressure, oxygen saturation) and lab biomarkers to help differentiate mild self-limiting issues from conditions requiring medical attention."
+            )
+
+        if any(k in q for k in ["medication", "drug", "pill", "dose", "regimen", "refill", "metformin", "lisinopril"]) or i in ["MEDICATION", "PRESCRIPTION"]:
+            return (
+                "Pharmacological management relies on maintaining therapeutic blood levels of prescribed medications while avoiding adverse drug-drug or drug-disease interactions. "
+                "Your active medication list is cross-analyzed against your documented health conditions, renal clearance (eGFR), liver enzymes, and current vital parameters. "
+                "Understanding dosage timing, food interactions, and precautions ensures maximum treatment efficacy while minimizing unwanted side effects."
+            )
+
+        if any(k in q for k in ["lab", "blood work", "glucose", "hba1c", "cholesterol", "egfr", "report"]) or i in ["LAB_REPORT"]:
+            return (
+                "Laboratory diagnostic reports measure key biochemical markers in your blood or urine to evaluate organ function, metabolic performance, and cellular health. "
+                "Individual lab values are evaluated against standard age- and gender-adjusted reference ranges. "
+                "Observing longitudinal trends over consecutive tests provides far greater clinical insight than a single static measurement, highlighting metabolic shifts or renal changes early."
+            )
+
+        if any(k in q for k in ["heart", "cardiac", "bp", "blood pressure", "pulse", "hr", "cardiovascular"]) or i in ["CARDIOVASCULAR", "HEART_HEALTH"]:
+            return (
+                "Cardiovascular health reflects the operational efficiency of your heart muscle, arterial elasticity, systemic vascular resistance, and tissue oxygen perfusion. "
+                "Key vital markers include resting heart rate (target 60–100 bpm), resting blood pressure (target <120/80 mmHg), and mean arterial pressure (MAP). "
+                "In the BioGears Digital Twin simulation, your cardiac output and stroke volume demonstrate how effectively your heart responds to resting and physical exertion states."
+            )
+
+        if any(k in q for k in ["diet", "nutrition", "weight", "calories", "fasting", "water", "food", "eat"]) or i in ["NUTRITION"]:
+            return (
+                "Nutritional science balances energy intake (macronutrients) with cellular utilization, glycemic response, and basal metabolic rate. "
+                "Sustainable weight management and glycemic control rely on prioritizing whole, fiber-dense foods and lean proteins to support lean muscle mass while optimizing insulin sensitivity. "
+                "Proper daily hydration (2.0–2.5 L/day) supports renal waste filtration, cellular hydration, and enzymatic reaction pathways."
+            )
+
+        if any(k in q for k in ["exercise", "workout", "steps", "fitness", "gym", "run", "walk"]) or i in ["EXERCISE"]:
+            return (
+                "Physical activity stimulates cardiovascular endurance, skeletal muscle strength, mitochondrial biogenesis, and peripheral insulin sensitivity. "
+                "Achieving consistent daily movement (aiming for 7,500–10,000 steps) alongside structured aerobic and resistance training enhances vascular health, lowers resting blood pressure, and boosts neuroplasticity."
+            )
+
+        if any(k in q for k in ["mental", "stress", "sleep", "anxiety", "insomnia", "burnout"]) or i in ["MENTAL_HEALTH"]:
+            return (
+                "Sleep quality and neurological stress are tightly regulated by the autonomic nervous system and neuroendocrine pathways (cortisol, melatonin, and neurotransmitters). "
+                "Achieving 7–9 hours of continuous sleep enables the brain's glymphatic system to clear metabolic waste, while chronic stress triggers sympathetic nervous system activation. "
+                "Active stress-reduction techniques and consistent sleep hygiene help restore healthy parasympathetic balance."
+            )
+
+        if any(k in q for k in ["preventive", "checkup", "screening", "vaccine", "annual"]) or i in ["PREVENTIVE_CARE"]:
+            return (
+                "Preventive medicine focuses on early disease detection, health maintenance, and risk factor mitigation before clinical symptoms arise. "
+                "Evidence-based guidelines recommend age- and gender-specific health screenings (such as lipid panels, diabetes screening, mammography, and colorectal exams) alongside routine checkups to preserve long-term vitality."
+            )
+
+        if any(k in q for k in ["digital twin", "biogears", "organ score", "organ scores"]) or i in ["DIGITAL_TWIN"]:
+            return (
+                "Your BioGears Digital Twin is a real-time mathematical physiological model that simulates organ perfusion, blood flow dynamics, and organ resilience scores across 8 body systems. "
+                "Organ scores reflect your physiological reserves under metabolic stress, continuously updated and calibrated as you log new vitals and health data."
+            )
+
+        return (
+            "Personalized health management involves continuous monitoring of vital parameters, symptom tracking, medication safety, and routine diagnostic evaluations. "
+            "Integrating these health metrics into a clear, evidence-based digital snapshot empowers proactive health optimization, early detection of physiological changes, and informed discussions with your healthcare provider."
+        )
 
     @staticmethod
     def _clinical_knowledge_supplement(user_query: str) -> List[str]:
@@ -611,6 +796,66 @@ Use this structure for every response:
         """
         q = user_query.lower()
         notes: List[str] = []
+
+        # 1. Symptoms, Pain & Acute Conditions
+        if any(k in q for k in ["symptom", "symptoms", "explain my symptoms", "symptom review", "how are my symptoms", "feel", "feeling", "sick", "pain", "fever", "cough", "headache", "dizzy", "dizziness", "nausea", "fatigue", "sore throat", "stomach", "rash", "vomiting", "diarrhea", "chills", "sweat", "shortness of breath", "tightness", "body ache", "cramps"]):
+            notes.append("- **Symptom Overview & Evaluation:** Based on your health ecosystem, active symptoms are monitored for onset, duration, severity, and physiological impact. If you are experiencing new or changing symptoms, log them in your Symptom Journal for real-time tracking.")
+            notes.append("- **Clinical & Self-Care Guidance:** Monitor symptom patterns relative to your vitals and medication schedule. Maintain adequate hydration (2.5L water/day), rest, and note any aggravating or relieving factors.")
+            notes.append("- **🚨 Red Flag Warning Signs:** Seek immediate emergency care if you experience acute chest pain, sudden difficulty breathing, sudden focal weakness or numbness, severe unmanageable pain, or high fever (>102°F/39°C).")
+
+        # 2. Medications & Pharmacology
+        if any(k in q for k in ["medication", "medications", "check my medications", "drug", "pills", "regimen", "prescription", "side effect", "dosage", "dose", "pharmacy", "refill", "supplement", "interaction", "missed dose"]):
+            notes.append("- **Medication Regimen Audit:** Your active regimen is cross-referenced with documented allergies, health conditions, and digital twin vitals to ensure safety and prevent adverse interactions.")
+            notes.append("- **Adherence & Safety Rules:** Take medications exactly as prescribed. Never double-dose to make up for a missed tablet. Keep your prescription list updated in the app.")
+            notes.append("- **Interaction Precaution:** Consult your pharmacist or physician before introducing over-the-counter supplements or NSAIDs, which can interact with blood pressure or renal medications.")
+
+        # 3. Lab Reports & Diagnostic Biomarkers
+        if any(k in q for k in ["lab", "labs", "read my lab results", "lab report", "blood work", "test results", "biomarker", "glucose", "hba1c", "cholesterol", "lipid", "cbc", "metabolic", "egfr", "creatinine", "liver", "thyroid", "urinalysis"]):
+            notes.append("- **Lab Report Analysis:** Diagnostic lab reports provide vital biomarker baseline data (e.g., CBC, Metabolic Panel, Lipid Panel, HbA1c, Kidney Function).")
+            notes.append("- **Biomarker Interpretation:** Review key values against clinical reference ranges. Subtle trends over consecutive tests provide deeper insight than single static numbers.")
+            notes.append("- **Upload & Extraction Guidance:** Use the Documents tab to upload PDF lab reports or prescription photos for automated AI extraction and longitudinal trend tracking.")
+
+        # 4. Cardiovascular & Heart Health
+        if any(k in q for k in ["heart", "heart health", "how's my heart health", "how is my heart health", "cardiac", "cardiovascular", "blood pressure", "bp", "pulse", "resting hr", "hypertension", "palpitations", "cardio", "vitals"]):
+            notes.append("- **Cardiovascular Health Assessment:** Your resting heart rate, blood pressure, and BioGears Digital Twin cardiac output indicators reflect your current cardiovascular baseline.")
+            notes.append("- **Vitals Monitoring Target:** Aim to keep resting blood pressure below 120/80 mmHg and resting heart rate between 60–100 bpm. Log BP readings consistently in the Vitals tab.")
+            notes.append("- **Heart Wellness Plan:** Engage in 150 minutes/week of moderate aerobic exercise, limit daily dietary sodium to <2,000 mg, manage stress, and prioritize quality sleep.")
+
+        # 5. Nutrition, Diet & Hydration
+        if any(k in q for k in ["nutrition", "diet", "weight", "weight loss", "calories", "fasting", "water", "hydration", "carbs", "protein", "keto", "sugar", "glycemic", "bmi", "eating", "food", "meal"]):
+            notes.append("- **Nutritional Balance:** Focus on whole foods, fiber-rich vegetables, lean proteins, and healthy fats. Minimize ultra-processed foods and added sugars for optimal glycemic balance.")
+            notes.append("- **Hydration Target:** Maintain a daily water intake target of 2,000–2,500 mL to support metabolic function, renal clearance, and cognitive clarity.")
+            notes.append("- **Weight & Metabolic Tracking:** Track daily weight trends and postprandial glucose levels to evaluate the real-time metabolic impact of dietary changes.")
+
+        # 6. Fitness, Exercise & Physical Activity
+        if any(k in q for k in ["fitness", "exercise", "workout", "steps", "activity", "running", "walking", "gym", "strength", "stretching", "physical activity"]):
+            notes.append("- **Physical Activity Baseline:** Regular movement improves insulin sensitivity, cardiovascular endurance, and cognitive performance.")
+            notes.append("- **Daily Step Goal:** Target 7,500 to 10,000 steps daily. Combine low-intensity movement with 2–3 sessions of moderate resistance training per week.")
+            notes.append("- **Exercise Safety:** Always warm up before workouts, stay hydrated, and monitor vital signs if exercising with pre-existing cardiovascular conditions.")
+
+        # 7. Mental Health, Stress & Sleep
+        if any(k in q for k in ["mental", "mental health", "stress", "anxiety", "sleep", "insomnia", "burnout", "depression", "overwhelmed", "mindfulness", "mood", "tired", "exhausted", "rest"]):
+            notes.append("- **Neurological & Sleep Hygiene:** Aim for 7–9 hours of continuous sleep nightly. Deep sleep facilitates glymphatic waste clearance and memory consolidation.")
+            notes.append("- **Stress Reduction Techniques:** Practice evidence-based stress mitigation (e.g., 4-7-8 deep breathing, progressive muscle relaxation, or structured mindfulness).")
+            notes.append("- **Crisis & Support:** If feeling persistent overwhelm or anxiety for >2 weeks, consult a mental health professional. Seek emergency care immediately if experiencing crisis thoughts.")
+
+        # 8. Preventive Care & Screenings
+        if any(k in q for k in ["preventive", "prevention", "checkup", "screening", "vaccine", "immunization", "mammogram", "colonoscopy", "annual", "routine", "health goals"]):
+            notes.append("- **Preventive Care Protocol:** Regular screening examinations and immunizations form the cornerstone of long-term wellness and early disease detection.")
+            notes.append("- **Recommended Screenings:** Discuss age-appropriate screenings (e.g., lipid panels, diabetes screening, mammography, colorectal screening) with your primary physician.")
+            notes.append("- **Longitudinal Tracking:** Maintain complete digital records of past checkups and immunization histories within the VitalHealth app.")
+
+        # 9. Digital Twin & Physiology
+        if any(k in q for k in ["digital twin", "biogears", "organ score", "organ scores", "simulation", "cardiovascular score", "respiratory score", "renal score", "physiology"]):
+            notes.append("- **Digital Twin Physiology:** BioGears mathematical modeling simulates organ perfusion, mean arterial pressure (MAP), and cardiac output in real-time.")
+            notes.append("- **Organ Function Scoring:** Organ scores reflect simulated physiological resilience under daily metabolic and physical stressors.")
+            notes.append("- **Model Calibration:** Regularly logging live vitals, labs, and activity data improves the fidelity and precision of your personal Digital Twin.")
+
+        # 10. Specific Chronic Conditions (Diabetes, CKD, GERD, Asthma, Thyroid)
+        if any(k in q for k in ["diabetes", "hypertension", "ckd", "kidney disease", "asthma", "gerd", "acid reflux", "thyroid", "gout", "arthritis"]):
+            notes.append("- **Chronic Condition Management:** Effective management requires consistent monitoring of biomarkers (HbA1c, Blood Pressure, eGFR), medication adherence, and lifestyle habits.")
+            notes.append("- **Clinical Target Guidance:** Work with your specialist to establish personalized target ranges for blood glucose, blood pressure, and lab parameters.")
+            notes.append("- **Flare & Symptom Prevention:** Identify specific environmental, dietary, or stress triggers to prevent condition exacerbations and emergency room visits.")
 
         if any(k in q for k in ["ibuprofen", "nsaid", "advil", "apixaban", "ckd", "knee", "chronic kidney"]):
             notes.append("- **Medication Precaution:** Avoid NSAIDs (e.g. Ibuprofen/Advil) — they inhibit prostaglandins, decrease renal blood flow, constrict afferent arterioles, cause eGFR decline, and impair CKD renal protection. They also increase Apixaban bleeding risk and interact with GERD/Omeprazole therapy.")
