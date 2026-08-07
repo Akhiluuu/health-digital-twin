@@ -6,6 +6,7 @@ Exposes REST endpoints for Patient Management, OCR Ingestion, BioGears Digital T
 
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
+import uuid
 from typing import Dict, Any, List, Optional
 from pydantic import BaseModel
 from fastapi import FastAPI, HTTPException, status, Depends
@@ -439,14 +440,14 @@ class LabOCRScanRequest(BaseModel):
 
 @app.post("/lab-report/ocr", tags=["Lab OCR Processing"])
 async def process_lab_ocr_scan(req: LabOCRScanRequest):
-    from healthbot_v4.shared.models.base import LabResult
+    from healthbot_v4.shared.models.base import NormalizedLab
     state = state_mgr.get_or_create_state(req.user_id)
     
     parsed_labs = []
     # If explicit findings were sent from client parser or mock OCR
     if req.findings:
         for f in req.findings:
-            lab_obj = LabResult(
+            lab_obj = NormalizedLab(
                 lab_id=f"lab_{uuid.uuid4().hex[:8]}",
                 patient_id=req.user_id,
                 canonical_name=f.get("name") or "Hemoglobin",
@@ -461,15 +462,15 @@ async def process_lab_ocr_scan(req: LabOCRScanRequest):
         # Default smart OCR extraction on document title/content
         text_lower = (req.report_title + " " + (req.text_content or "")).lower()
         if "cbc" in text_lower or "blood" in text_lower or "lab" in text_lower:
-            parsed_labs.append(LabResult(
+            parsed_labs.append(NormalizedLab(
                 lab_id=f"lab_{uuid.uuid4().hex[:8]}", patient_id=req.user_id,
                 canonical_name="Hemoglobin", value=14.5, unit="g/dL", reference_range="13.5-17.5", classification="Normal", timestamp=datetime.now(timezone.utc)
             ))
-            parsed_labs.append(LabResult(
+            parsed_labs.append(NormalizedLab(
                 lab_id=f"lab_{uuid.uuid4().hex[:8]}", patient_id=req.user_id,
                 canonical_name="WBC Count", value=6.8, unit="k/uL", reference_range="4.5-11.0", classification="Normal", timestamp=datetime.now(timezone.utc)
             ))
-            parsed_labs.append(LabResult(
+            parsed_labs.append(NormalizedLab(
                 lab_id=f"lab_{uuid.uuid4().hex[:8]}", patient_id=req.user_id,
                 canonical_name="Fasting Glucose", value=92.0, unit="mg/dL", reference_range="70-99", classification="Normal", timestamp=datetime.now(timezone.utc)
             ))
