@@ -42,6 +42,7 @@ from healthbot_v4.apps.patient.models.patient_state import UnifiedPatientState, 
 from healthbot_v4.apps.brain.context.semantic_compressor import SemanticContextCompressor
 from healthbot_v4.apps.brain.tools.registry import VitalHealthToolRegistry
 from healthbot_v4.apps.brain.reasoning.biogears_scenario_engine import BioGearsScenarioEngine
+from healthbot_v4.apps.brain.evidence.otm import OrchestratorToolManager
 
 
 class OrchestratorResponse(BaseModel):
@@ -80,6 +81,7 @@ class AIOrchestrator(HealthBrainSubsystem):
         self.model_router = MultiModelRouter()
         self.action_engine = ProactiveActionEngine()
         self.fhir_exporter = FHIRR4Exporter()
+        self.otm = OrchestratorToolManager()
         # In-memory session store for multi-turn conversation memory.
         # Key: session_id, Value: {"history": [...turns], "last_active": float}
         # Turns: [{"role": "user"|"assistant", "content": str}]
@@ -561,7 +563,17 @@ class AIOrchestrator(HealthBrainSubsystem):
 
         rag_context = self.rag_service.retrieve_context(patient_id, query) if plan.retrieve_rag else ""
 
-        # 5. Dynamic Context Budgeter
+        # 5a. OTM — collect structured evidence bundle from all relevant modules
+        evidence_bundle = self.otm.collect_evidence(
+            query=resolved_query,
+            intent=intent_res.primary_intent.value,
+            state=state,
+            patient_context=patient_context,
+            symptoms_logged=symptoms_logged,
+            longitudinal_res=longitudinal_res,
+        )
+
+        # 5b. Dynamic Context Budgeter (still used for Ollama/GGUF system prompt base)
         budgeted_ctx = self.context_budgeter.assemble_context(
             state,
             snapshot,
@@ -582,6 +594,7 @@ class AIOrchestrator(HealthBrainSubsystem):
                     resolved_query,
                     conversation_history,
                     intent_res.primary_intent.value,
+                    evidence_bundle,
                 ),
                 timeout=30.0
             )
@@ -642,7 +655,17 @@ class AIOrchestrator(HealthBrainSubsystem):
                 "complexity_score": route_res["complexity_score"],
                 "fact_verification": {"corrected": fact_corrected, "latency_ms": fact_lat},
                 "proactive_actions": [act.model_dump() for act in proactive_actions],
-                "multimodal_summary": multimodal_res.triage_summary if multimodal_res else None
+                "multimodal_summary": multimodal_res.triage_summary if multimodal_res else None,
+                "evidence_bundle": {
+                    "intent": evidence_bundle.intent,
+                    "overall_confidence": evidence_bundle.overall_confidence,
+                    "sources_reviewed": [
+                        {"name": s.name, "status": s.status.value, "records": s.records_count}
+                        for s in evidence_bundle.sources
+                    ],
+                    "missing_data": evidence_bundle.missing_data,
+                    "conflicts_detected": len(evidence_bundle.conflicts),
+                }
             },
         )
 

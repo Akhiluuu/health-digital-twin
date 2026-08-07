@@ -19,6 +19,9 @@ from typing import Dict, Any, Optional, List, AsyncGenerator, TypedDict
 from healthbot_v4.apps.brain.core import HealthBrainSubsystem
 from healthbot_v4.apps.brain.context.context_builder import BudgetedContext
 from healthbot_v4.shared.logger.logger import logger
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from healthbot_v4.apps.brain.evidence.evidence_bundle import EvidenceBundle
 from healthbot_v4.shared.config.settings import settings
 
 
@@ -125,6 +128,7 @@ class QwenInferenceEngine(HealthBrainSubsystem):
         user_query: str,
         conversation_history: Optional[List[Dict[str, str]]] = None,
         intent: str = "GENERAL_HEALTH",
+        evidence_bundle: Optional[Any] = None,
     ) -> ReasoningResult:
         """
         Generate a health AI response. Tries Ollama → llama-cpp GGUF → smart fallback.
@@ -135,8 +139,8 @@ class QwenInferenceEngine(HealthBrainSubsystem):
         start = time.time()
 
         temperature, top_p, max_tokens = _INTENT_PARAMS.get(intent, _DEFAULT_PARAMS)
-        messages = self._build_chat_messages(context, user_query, conversation_history or [], intent=intent)
-        sources: List[str] = self._collect_sources(context)
+        messages = self._build_chat_messages(context, user_query, conversation_history or [], intent=intent, evidence_bundle=evidence_bundle)
+        sources: List[str] = self._collect_sources(context, evidence_bundle=evidence_bundle)
 
         # ── Tier 1: Ollama ────────────────────────────────────────────────────
         raw = self._call_ollama(messages, temperature, top_p, max_tokens)
@@ -163,7 +167,7 @@ class QwenInferenceEngine(HealthBrainSubsystem):
 
         # ── Tier 3: Smart context-aware fallback ─────────────────────────────
         logger.warning("⚠️ Both Ollama and GGUF unavailable — using smart context fallback")
-        fallback = self._smart_context_fallback(context, user_query)
+        fallback = self._smart_context_fallback(context, user_query, evidence_bundle=evidence_bundle)
         elapsed = (time.time() - start) * 1000
         return self._pack_result(context.patient_id, fallback, sources, "context-fallback", elapsed, confidence=0.70)
 
@@ -267,35 +271,57 @@ You are NOT a general-purpose chatbot. You are a trusted healthcare companion he
 
 {patient_section}
 
-# CORE OBJECTIVE
-- Understand what the user actually wants.
-- Retrieve only context directly relevant to the user's question.
-- Reason over available information.
-- Generate a personalized response with query-relevant data provenance:
-  1. Only list clinical metrics directly RELEVANT to the user's query/symptom.
-  2. Clearly state where each relevant value came from (e.g. [BioGears Digital Twin], [Logged Vitals], [Uploaded Lab Reports]).
-  3. If relevant data is missing for that specific category, simply note it (e.g. "No formal lab reports on file for ECG/cardio").
-- Recommend meaningful next steps.
-- Suggest 3 useful follow-up questions.
-- Avoid generic textbook explanations unless explicitly requested.
-- Never generate information not supported by patient data or reliable medical knowledge.
+# CORE OBJECTIVE — EVIDENCE-BASED PERSONAL HEALTH INTELLIGENCE
+
+You are NOT a report summarizer. You are a multidisciplinary clinical intelligence system.
+
+Before answering ANY question, you will receive a structured EVIDENCE BUNDLE collected by the Orchestration & Tool Manager (OTM) from every relevant health module. You MUST:
+1. Reason ONLY over the evidence in the bundle — never invent data not present.
+2. Cite the exact source and timestamp for every finding you mention.
+3. Explicitly call out when a relevant data source is MISSING (use ⚠).
+4. Detect and flag any contradictions between sources.
+5. Explain your clinical reasoning step by step.
 
 {intent_guidance}
 
 # RESPONSE PHILOSOPHY & TONE
-- Answer: "What is most helpful for THIS patient right now?"
-- Write naturally: Professional, Warm, Calm, Confident, Respectful, Supportive. Never robotic or dramatic.
-- Never answer like a textbook or Wikipedia. Never overwhelm the user.
-- Keep paragraphs short (maximum 3 sentences per paragraph). Default length: 150–300 words.
+- Answer: "What is most helpful for THIS patient right now, based on the evidence collected?"
+- Professional, Warm, Calm, Confident, Respectful, Supportive. Never robotic or dramatic.
+- Default length: 200–400 words. Never overwhelm.
 
-# RESPONSE FORMAT
-Whenever appropriate, structure responses using these exact section headers:
+# EVIDENCE-BASED RESPONSE FORMAT
 
-🩺 Summary
-(Answer the user's question immediately without unnecessary intros)
+Use this structure for every response:
 
-📊 What I Found
-(Summarize ONLY query-relevant findings with clean source attribution [e.g. BioGears Twin, Logged Vitals, Lab Reports] and state if relevant records are absent)
+🩺 **Executive Summary**
+(2–3 sentences directly answering the question based on the evidence)
+
+✅ **Sources Reviewed**
+(List every source with ✓ if data was found or ⚠ if missing. Example:
+✓ BioGears Digital Twin — [simulation timestamp]
+✓ Vital History — [N readings]
+⚠ Lab Reports — No recent cholesterol test on file
+⚠ ECG/Scans — None uploaded)
+
+📊 **Key Findings**
+(Each finding must include: Value | [Source: name | Timeframe | Confidence])
+
+🧠 **Clinical Reasoning**
+(Explain WHY you reached your conclusion. Reference specific evidence. Example: "I concluded this because blood pressure remained consistently normal across 15 readings, BioGears predicts stable cardiac output, and no cardiac conditions are documented.")
+
+🔄 **Cross-Source Insights**
+(Compare findings across sources. Note agreements and contradictions.)
+
+✅ **Recommended Next Steps**
+(Every recommendation must reference its evidence. Instead of "Exercise more", say "Your telemetry shows 4,000 steps/day [Telemetry | Last 30 days] which is below the recommended 7,500–10,000. Increasing activity may improve cardiovascular fitness.")
+
+⚠ **Missing Information**
+(Tell the user exactly what additional data would improve confidence. Example: "A recent cholesterol panel would significantly improve cardiac risk assessment.")
+
+💬 **Suggested Follow-Up Questions**
+1. [Question 1]
+2. [Question 2]
+3. [Question 3]
 
 💡 What This Means
 (Explain findings in simple language without textbook definitions)
@@ -325,10 +351,12 @@ Whenever appropriate, structure responses using these exact section headers:
         user_query: str,
         history: List[Dict[str, str]],
         intent: str = "GENERAL_HEALTH",
+        evidence_bundle: Optional[Any] = None,
     ) -> List[Dict[str, str]]:
         """
         Builds an OpenAI-compatible messages array: [system, ...history, user]
-        Keeps last 8 turns for multi-turn continuity.
+        When an EvidenceBundle is provided, it is injected into the user message
+        as a structured block so the LLM reasons only over pre-collected evidence.
         """
         system_prompt = self._build_health_system_prompt(context, intent)
         messages: List[Dict[str, str]] = [{"role": "system", "content": system_prompt}]
@@ -338,8 +366,18 @@ Whenever appropriate, structure responses using these exact section headers:
             if turn.get("role") in ("user", "assistant") and turn.get("content"):
                 messages.append({"role": turn["role"], "content": turn["content"]})
 
-        context_addendum = self._build_context_addendum(context, intent)
-        user_content = f"{context_addendum}\n\n{user_query}" if context_addendum else user_query
+        # Build user message — evidence bundle takes priority over addendum
+        if evidence_bundle is not None:
+            try:
+                bundle_block = evidence_bundle.to_prompt_block()
+                user_content = f"{bundle_block}\n\nPatient Question: {user_query}"
+            except Exception:
+                context_addendum = self._build_context_addendum(context, intent)
+                user_content = f"{context_addendum}\n\n{user_query}" if context_addendum else user_query
+        else:
+            context_addendum = self._build_context_addendum(context, intent)
+            user_content = f"{context_addendum}\n\n{user_query}" if context_addendum else user_query
+
         messages.append({"role": "user", "content": user_content})
         return messages
 
@@ -456,15 +494,21 @@ Whenever appropriate, structure responses using these exact section headers:
     # Smart context-aware fallback (no hardcoded templates)
     # =========================================================================
 
-    def _smart_context_fallback(self, context: BudgetedContext, user_query: str) -> str:
+    def _smart_context_fallback(
+        self,
+        context: BudgetedContext,
+        user_query: str,
+        evidence_bundle: Optional[Any] = None,
+    ) -> str:
         """
-        Synthesizes a rich, personalized clinical response directly from the budgeted context blocks.
-        Ensures high accuracy, key clinical elements, and citation formatting even when offline.
+        Evidence-Based fallback renderer.
+        When an EvidenceBundle is available, synthesizes a structured PHIS response
+        directly from the collected evidence — no hardcoded keyword matching.
+        Falls back to snapshot-only rendering if no bundle is provided.
         """
-        lines = []
-        q_lower = user_query.lower()
+        lines: List[str] = []
 
-        # Check emergency patterns
+        # Emergency guard always runs first
         emergency_patterns = re.compile(
             r"\b(chest\s+pain|can['\u2019]?t\s+breath|cannot\s+breath|difficulty\s+breath|stroke|facial\s+droop|severe\s+bleed|unconscious|seizure|overdose|suicid)\b",
             re.IGNORECASE
@@ -472,82 +516,80 @@ Whenever appropriate, structure responses using these exact section headers:
         if emergency_patterns.search(user_query):
             lines.append("🚨 **EMERGENCY WARNING: Call 112 / 911 immediately. This is an immediate medical emergency. Do not wait.**\n")
 
+        # ── Bundle-driven rendering ────────────────────────────────────────────
+        if evidence_bundle is not None:
+            try:
+                from healthbot_v4.apps.brain.evidence.evidence_bundle import SourceStatus
+
+                lines.append(f"🩺 **Executive Summary**")
+                lines.append(f"Based on a review of your complete health ecosystem, here is what I found regarding: **\"{user_query.strip()}\"**\n")
+
+                # Sources reviewed
+                lines.append("✅ **Sources Reviewed**")
+                for src in evidence_bundle.sources:
+                    icon = "✓" if src.status == SourceStatus.available else "⚠"
+                    count = f" — {src.records_count} records" if src.records_count > 0 else ""
+                    reason = f" ({src.missing_reason})" if src.missing_reason and src.status != SourceStatus.available else ""
+                    lines.append(f"{icon} {src.name}{count}{reason}")
+
+                # Key findings
+                if evidence_bundle.findings:
+                    lines.append("\n📊 **Key Findings**")
+                    for f in evidence_bundle.findings:
+                        conf = f"{f.confidence_pct * 100:.0f}%" if f.confidence_pct else f.confidence.value
+                        val = f.value or "No data recorded"
+                        abnormal_tag = " ⚠ *Abnormal*" if f.is_abnormal else ""
+                        lines.append(
+                            f"- **{f.label}:** {val}{abnormal_tag}  \n"
+                            f"  *[Source: {f.source_name} | {f.timestamp_label} | Confidence: {conf}]*"
+                        )
+
+                # Contradictions
+                if evidence_bundle.conflicts:
+                    lines.append("\n🔄 **Cross-Source Insights**")
+                    for c in evidence_bundle.conflicts:
+                        lines.append(f"⚡ **{c.metric}:** {c.source_a} shows **{c.value_a}** but {c.source_b} shows **{c.value_b}**.")
+                        if c.possible_reasons:
+                            lines.append(f"   Possible reasons: {'; '.join(c.possible_reasons)}")
+                        lines.append(f"   *{c.recommendation}*")
+
+                # Clinical reasoning
+                available_names = [s.name for s in evidence_bundle.sources if s.status == SourceStatus.available]
+                missing_names = [s.name for s in evidence_bundle.sources if s.status != SourceStatus.available]
+                lines.append("\n🧠 **Clinical Reasoning**")
+                if available_names:
+                    lines.append(f"I reviewed data from: {', '.join(available_names)}.")
+                if missing_names:
+                    lines.append(f"The following sources had no data available: {', '.join(missing_names)}.")
+                lines.append(f"Overall evidence confidence: **{int(evidence_bundle.overall_confidence * 100)}%** ({evidence_bundle.overall_confidence_label.value}).")
+
+                # Missing information
+                if evidence_bundle.missing_data:
+                    lines.append("\n⚠ **Missing Information**")
+                    lines.append("Confidence could be improved with:")
+                    for gap in evidence_bundle.missing_data:
+                        lines.append(f"• {gap}")
+
+                lines.append("\n> 💡 *VitalHealth Personal Health Assistant | Consult your physician for medical advice.*")
+                return "\n".join(lines)
+
+            except Exception:
+                pass  # fall through to snapshot-based rendering below
+
+        # ── Snapshot-only fallback (no bundle available) ──────────────────────
         snapshot = context.clinical_snapshot_block or ""
         medications = self._extract_field(snapshot, ["Active Regimen:", "Active Medications:"])
-
-        lines.append("### 🩺 VitalHealth Personal Clinical Guidance & Assessment\n")
-        lines.append(f"Hello, here is your personalized health guidance regarding **\"{user_query.strip()}\"** based on clinical guidelines and baseline target indicators:\n")
-
-        # 1. Specific Intent Matching with priority ordering
-
-        if any(k in q_lower for k in ["ibuprofen", "nsaid", "advil", "apixaban", "omeprazole", "gerd", "ckd", "knee"]):
-            lines.append("- **Medication Precaution & Mechanism:** Avoid NSAIDs (e.g. Ibuprofen/Advil) because they inhibit prostaglandins, decrease renal blood flow, constrict afferent arterioles, cause eGFR decline, and impair CKD renal protection. They also increase Apixaban bleeding risk and interact with GERD Omeprazole risk.")
-
-        if any(k in q_lower for k in ["missed", "double", "metformin"]):
-            lines.append("- **Missed Dose Rule:** Never double dose or take extra pills to make up for a missed tablet due to gastrointestinal distress risk; take next scheduled dose as planned.")
-
-        if any(k in q_lower for k in ["virus", "bacterial", "infection", "antibiotic"]):
-            lines.append("- **Infection Mechanics:** Viruses require host cells to replicate. Antibiotics do not treat viruses; symptomatic treatment and hydration are indicated per clinical guidelines.")
-
-        if any(k in q_lower for k in ["pressure behind my eyes", "eye", "dizziness", "dizzy"]):
-            lines.append("- **Symptom Evaluation:** Check blood pressure regularly, monitor ocular pressure and hydration levels, and watch for red flags.")
-
-        if any(k in q_lower for k in ["heart is pounding", "trembling", "panic"]):
-            lines.append("- **Anxiety Triage:** Differentiate anxiety panic surge from cardiac emergency. Practice slow breathing exercise, check for chest pain/radiation, and follow reassurance guidance.")
-
-        if any(k in q_lower for k in ["mango", "watermelon", "fruit", "after dinner"]):
-            lines.append("- **Glycemic Control:** Fruits have high glycemic index. Practice portion control, pair with protein/fiber, and monitor postprandial glucose levels.")
-
-        if any(k in q_lower for k in ["bench press", "max-effort", "weightlifting"]):
-            lines.append("- **Cardiovascular Safety:** Valsalva maneuver spikes blood pressure during heavy max lifting. Aerobic cardio preferred at moderate intensity for lowering blood pressure.")
-
-        if any(k in q_lower for k in ["sleep", "brain health", "memory", "older adults"]):
-            lines.append("- **Sleep & Neurological Health:** Deep sleep enables glymphatic clearance of amyloid-beta clearance, synaptic consolidation, and proper sleep hygiene in older adults.")
-
-        if any(k in q_lower for k in ["overwhelmed", "work stress", "can't sleep", "4 hours"]):
-            lines.append("- **Mental Well-Being:** Provide empathetic support, practice sleep hygiene, enforce caffeine restriction, apply CBT-I concepts, and request professional referral if needed.")
-
-        if any(k in q_lower for k in ["lab report", "hba1c is 7.4%", "fasting glucose is 142"]):
-            lines.append("- **Lab Parameters:** HbA1c 7.4% indicates elevated glycemic control; Fasting Glucose 142 mg/dL requires ADA guideline targets review and regimen review.")
-
-        if any(k in q_lower for k in ["mammogram", "dexa"]):
-            lines.append("- **Screening Schedule:** Annual mammogram surveillance and DEXA scan for aromatase inhibitor bone health form part of your oncology routine care.")
-
-        if any(k in q_lower for k in ["semaglutide", "nausea"]):
-            lines.append("- **Tolerability:** Manage nausea with smaller frequent meals, avoid fatty spicy foods, stay hydrated, and eat slowly.")
-
-        if any(k in q_lower for k in ["digital twin", "biogears", "resting heart rate"]):
-            lines.append("- **Digital Twin Physiology:** Heart rate 42 bpm athletic sinus bradycardia, Cardiovascular score 99/100, MAP 81.3 mmHg, and optimal perfusion indicate robust athletic state.")
-
-        if any(k in q_lower for k in ["numbers on my lab scan", "lab scan"]):
-            lines.append("- **Lab Diagnostics:** eGFR 48 mL/min, Serum Creatinine 1.6 mg/dL, BUN 28, indicating Stage 3a CKD stability.")
-
-        if any(k in q_lower for k in ["5k run", "run tomorrow"]):
-            lines.append("- **Pre-Exercise Fueling:** Consume 15-30g complex carbs before running, monitor blood glucose, and evaluate insulin dose adjustment consideration.")
-
-        if any(k in q_lower for k in ["mother", "helen", "forgetting", "pill"]):
-            lines.append("- **Caregiver Safety:** Use a pill organizer box with AM/PM slots, blister packs, caregiver log app, and do not give duplicate dose if unsure.")
-
-        if any(k in q_lower for k in ["trajectory", "past 6 months"]):
-            lines.append("- **Longitudinal Comparison:** Evaluated longitudinal glycemic trend over 6 months against baseline 7.4% to assess lifestyle intervention impact.")
-
-        if any(k in q_lower for k in ["15% body weight", "on track"]):
-            lines.append("- **Goal Milestones:** Support Semaglutide adherence, maintain -500 kcal caloric deficit, keep weekly weight logging, and monitor NAFLD improvement.")
-
-        if any(k in q_lower for k in ["cardiology appointment", "questions should i bring"]):
-            lines.append("- **Appointment Checklist:** Bring questions regarding EF 35% stability, daily weight log review, Entresto dose titration, and BNP 450 discussion.")
-
-        # Default fallback items if no specific keywords matched
-        if len(lines) <= 2:
-            lines.append("- **[BioGears Digital Twin Simulation]:** Heart Rate 72 bpm, MAP 93 mmHg, Blood Pressure 120/80 mmHg (Normal physiological baseline).")
-            lines.append("- **[Uploaded Lab Reports]:** No relevant lab reports on file for this specific query.")
-            lines.append("- **Continuous Care:** Follow your prescribed care plan and maintain consistent hydration and exercise.")
-
-        lines.append("\n#### 📋 VitalHealth Clinical Summary & Action Plan")
-        lines.append("- Maintain regular monitoring and log symptoms in your VitalHealth timeline.")
-        lines.append("- **Health Brain Citation / Snapshot ID:** `VH-SNAP-2026-0806`")
-        lines.append("\n> 💡 *Please consult your doctor or healthcare provider for personalized medical advice.*")
-
+        lines.append("🩺 **Executive Summary**")
+        lines.append(f"Here is your personalized health guidance regarding **\"{user_query.strip()}\"** based on your current clinical profile.\n")
+        lines.append("📊 **Key Findings**")
+        if medications and medications != "None":
+            lines.append(f"- **Active Medications:** {medications}  \n  *[Source: Clinical Profile | Current]*")
+        lines.append("- **[BioGears Digital Twin]:** Normal physiological baseline.  \n  *[Source: BioGears Simulation | Latest]*")
+        lines.append("- **[Lab Reports]:** No lab reports on file for this query.  \n  *[Source: Documents Tab | Not uploaded]*")
+        lines.append("\n⚠ **Missing Information**")
+        lines.append("• Upload lab reports in the Documents tab to improve response accuracy.")
+        lines.append("• Log vitals regularly in the Vitals tab.")
+        lines.append("\n> 💡 *VitalHealth Personal Health Assistant | Consult your physician for medical advice.*")
         return "\n".join(lines)
 
     # =========================================================================
@@ -705,7 +747,16 @@ Whenever appropriate, structure responses using these exact section headers:
                             return val
         return ""
 
-    def _collect_sources(self, context: BudgetedContext) -> List[str]:
+    def _collect_sources(self, context: BudgetedContext, evidence_bundle: Optional[Any] = None) -> List[str]:
+        if evidence_bundle is not None:
+            try:
+                return [
+                    f"{s.name} ({s.status.value})"
+                    for s in evidence_bundle.sources
+                ]
+            except Exception:
+                pass
+        # Fallback to context-derived sources
         sources = ["ClinicalSnapshot"]
         if context.master_summary_block:
             sources.append("MasterSummary")
