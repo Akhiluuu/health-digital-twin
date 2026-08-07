@@ -20,7 +20,7 @@ run_endpoint_check() {
     local resp=""
     
     info "Checking $name endpoint ($url)..."
-    resp=$(curl -sf --max-time "$timeout" "$url" 2>/dev/null || echo "UNREACHABLE")
+    resp=$(curl -sLf --max-time "$timeout" "$url" 2>/dev/null || echo "UNREACHABLE")
     
     if echo "$resp" | grep -qi "$expected"; then
         ok "$name is healthy: $url (Reply contains: $expected)"
