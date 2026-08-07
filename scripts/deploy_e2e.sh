@@ -63,6 +63,11 @@ echo "✅ Pre-deployment test suite passed (100%)!"
 
 # 5. Launch FastAPI Gateway Server
 echo "🌐 [5/5] Launching PHOS FastAPI Server Gateway on Port 8000..."
+echo "Stopping any existing server process on port 8000..."
+pkill -9 -f "uvicorn" 2>/dev/null || true
+fuser -k 8000/tcp 2>/dev/null || true
+sleep 2
+
 echo "==========================================================================="
 echo "🟢 VitalHealth PHOS Server is ready!"
 echo "   • Interactive Swagger Docs: http://0.0.0.0:8000/docs"
