@@ -681,121 +681,78 @@ You are a trusted healthcare companion helping users understand, manage, monitor
         if schema == "ACUTE_SYMPTOM" or target_intent in ["SYMPTOMS", "ACUTE_SYMPTOM"] or any(k in user_query.lower() for k in ["active symptom", "my symptoms", "symptoms i have"]):
             explanation = self._get_fallback_explanation(user_query, target_intent)
             return (
-                f"### 🩺 Active Symptoms Evaluation & Relief\n{explanation}\n\n"
-                "### 🩹 Targeted Evidence-Based Remedies & Management\n"
-                "- **Hydration & Electrolytes:** Maintain fluid intake (water, herbal tea, or electrolyte solution) to aid recovery.\n"
-                "- **Targeted Rest:** Rest comfortably and avoid physical strain to allow body healing.\n"
-                "- **Symptom Journaling:** Track severity and duration in your VitalHealth Symptom Journal.\n"
-                "- **Comfort Measures:** For mild discomfort, discuss appropriate OTC options with a pharmacist or physician.\n\n"
-                "### ⚠️ Red Flag Warning Signs\n"
-                "- Seek immediate clinical care if experiencing severe pain, persistent high fever, breathing difficulty, or sudden neurological deficits.\n\n"
+                f"{explanation}\n\n"
+                "• **Comfort & Rest:** Maintain fluid intake, rest comfortably, and track symptom progression in your VitalHealth Journal.\n"
+                "• **Clinical Alert:** Seek immediate medical evaluation if severe pain, persistent high fever, breathing difficulty, or sudden weakness develops.\n\n"
                 "> 💡 *VitalHealth Personal Health Assistant | Consult your physician for medical advice.*"
             )
 
         # ── 2. Health Education / Brief QA Fallback ────────────────────────────
         if schema in ["HEALTH_EDUCATION", "BRIEF_QA"]:
             explanation = self._get_fallback_explanation(user_query, target_intent)
-            notes = self._clinical_knowledge_supplement(user_query) or self._default_fallback_recommendations(user_query, target_intent)
-            return f"### 💡 Overview & Insights\n{explanation}\n\n### ✅ Key Takeaways & Recommendations\n" + "\n".join(notes) + "\n\n> 💡 *VitalHealth Personal Health Assistant | Consult your physician for medical advice.*"
+            return f"{explanation}\n\n> 💡 *VitalHealth Personal Health Assistant | Consult your physician for medical advice.*"
 
         # ── 3. Pharmacology & Medication Fallback ─────────────────────────────
         if schema in ["PHARMACOLOGY_SAFETY", "PRESCRIPTION_AUDIT"]:
             explanation = self._get_fallback_explanation(user_query, target_intent)
             return (
-                f"### 💊 Medication Safety Review\n{explanation}\n\n"
-                "### ⏱️ Key Precautions & Administration\n"
-                "- **Regimen Adherence:** Take medications exactly at prescribed times without skipping or doubling doses.\n"
-                "- **Food Interactions:** Verify whether your prescription should be taken with meals or on an empty stomach.\n"
-                "- **Physician Consultation:** Always consult your prescribing physician before stopping or altering dosages.\n\n"
+                f"{explanation}\n\n"
+                "• **Dosing Adherence:** Take medications consistently at prescribed times without skipping or altering dosages.\n"
+                "• **Safety Caution:** Discuss potential drug interactions or side-effect concerns with your prescribing physician.\n\n"
                 "> 💡 *VitalHealth Personal Health Assistant | Consult your physician for medical advice.*"
             )
 
         # ── 4. Mental Health & Wellbeing Fallback ─────────────────────────────
         if schema == "MENTAL_HEALTH_WELLBEING":
             return (
-                "### 🧠 Mindful Wellbeing & Support\n"
                 "Your emotional wellbeing and mental health are deeply connected to physical vitality and autonomic balance. "
                 "Taking intentional moments to ground yourself helps clear stress hormones like cortisol and restores parasympathetic focus.\n\n"
-                "### 🌿 Recommended Grounding Exercises\n"
-                "- **4-7-8 Breathing Technique:** Inhale through your nose for 4s, hold breath for 7s, exhale slowly through your mouth for 8s. Repeat 4 cycles.\n"
-                "- **Sleep Hygiene:** Maintain a consistent sleep-wake schedule and restrict blue light exposure 60 minutes before bed.\n"
-                "- **Helpline Support:** If you feel overwhelmed, reach out to a professional counselor or local mental health helpline immediately.\n\n"
+                "• **4-7-8 Breathing:** Inhale through your nose for 4s, hold for 7s, and exhale slowly through your mouth for 8s.\n"
+                "• **Sleep Hygiene:** Maintain a consistent sleep-wake schedule and limit screen time before bed.\n\n"
                 "> 💡 *VitalHealth Personal Health Assistant | Consult your physician for medical advice.*"
             )
 
         # ── 5. Nutrition & Dietetics Fallback ─────────────────────────────────
         if schema == "NUTRITION_DIETETICS":
             explanation = self._get_fallback_explanation(user_query, target_intent)
-            return (
-                f"### 🍏 Dietary & Nutritional Guidance\n{explanation}\n\n"
-                "### 🥗 Actionable Nutrition Habits\n"
-                "- **Balanced Meals:** Focus on whole foods, lean proteins, fiber-rich vegetables, and healthy fats.\n"
-                "- **Hydration Goal:** Aim for 2.5–3.0 liters of water daily to support metabolic clearance and cellular function.\n"
-                "- **Dietary Precautions:** Limit ultra-processed sodium, refined sugars, and trans fats to optimize vascular health.\n\n"
-                "> 💡 *VitalHealth Personal Health Assistant | Consult your physician for medical advice.*"
-            )
+            return f"{explanation}\n\n> 💡 *VitalHealth Personal Health Assistant | Consult your physician for medical advice.*"
 
         # ── 6. Exercise & Physiology Fallback ────────────────────────────────
         if schema == "EXERCISE_PHYSIOLOGY":
             explanation = self._get_fallback_explanation(user_query, target_intent)
             return (
-                f"### 🏋️ Exercise & Cardiovascular Physiology\n{explanation}\n\n"
-                "### ⏱️ Training & Recovery Protocol\n"
-                "- **Cardiovascular Target:** Aim for 150+ minutes of moderate-intensity aerobic exercise per week.\n"
-                "- **Heart Rate Zone:** Maintain Zone 2 aerobic training (60–70% HR max) to build mitochondrial density.\n"
-                "- **Active Recovery:** Ensure adequate rest days and post-workout hydration to allow muscle fiber repair.\n\n"
+                f"{explanation}\n\n"
+                "• **Activity Target:** Aim for 150+ minutes of moderate aerobic movement weekly with proper hydration and recovery.\n\n"
                 "> 💡 *VitalHealth Personal Health Assistant | Consult your physician for medical advice.*"
             )
 
         # ── 7. Injury & First Aid Fallback ────────────────────────────────────
         if schema == "INJURY_FIRST_AID":
             return (
-                "### 🩹 First Aid & Injury Care\n"
-                "For acute musculoskeletal strains or mild soft-tissue injuries, immediate conservative management prevents further edema and tissue stress.\n\n"
-                "### 🧊 R.I.C.E. Protocol & Measures\n"
-                "- **Rest:** Protect the injured area from weight-bearing or strain.\n"
-                "- **Ice:** Apply cold packs wrapped in a cloth for 15–20 minutes every 2 hours.\n"
-                "- **Compression:** Use a gentle elastic bandage to support the joint without restricting blood flow.\n"
-                "- **Elevation:** Prop the injured limb above heart level when resting.\n"
-                "🚨 **Seek immediate medical attention if:** You experience deformity, severe numbness, inability to bear weight, or intense unrelenting pain.\n\n"
+                "For acute musculoskeletal strains or mild soft-tissue injuries, immediate conservative management prevents swelling and stress.\n\n"
+                "• **R.I.C.E. Protocol:** Rest the limb, apply cold ice packs for 15–20 minutes, apply gentle compression, and elevate above heart level.\n"
+                "🚨 **Seek immediate medical attention if:** You experience deformity, numbness, inability to bear weight, or intense pain.\n\n"
                 "> 💡 *VitalHealth Personal Health Assistant | Consult your physician for medical advice.*"
             )
 
         # ── 8. Pediatric & Children's Health Fallback ──────────────────────────
         if schema == "PEDIATRIC_CARE":
             return (
-                "### 👶 Pediatric Care & Guidance\n"
-                "Pediatric care requires careful monitoring of hydration, behavior, and age-specific vital signs. Never administer adult medications or unverified OTC dosages to children.\n\n"
-                "### 🍼 Key Comfort & Monitoring Steps\n"
-                "- **Fluid Intake:** Offer frequent small sips of oral rehydration solution, water, or electrolyte fluids.\n"
-                "- **Fever Management:** Monitor temperature regularly; consult your pediatrician for weight-matched antipyretic dosing.\n"
-                "🚨 **Urgent Pediatric Warning Signs:** Seek emergency care if child displays lethargy, rapid/labored breathing, persistent vomiting, or stiff neck.\n\n"
+                "Pediatric care requires careful monitoring of hydration, behavior, and age-adjusted vitals. Never administer unverified adult dosages to children.\n\n"
+                "• **Hydration & Comfort:** Offer frequent small sips of oral rehydration fluids or water and monitor temperature.\n"
+                "🚨 **Urgent Warning Signs:** Seek emergency care if child displays lethargy, rapid/labored breathing, or persistent vomiting.\n\n"
                 "> 💡 *VitalHealth Personal Health Assistant | Consult your physician for medical advice.*"
             )
 
         # ── 9. Dermatology & Skin Care Fallback ──────────────────────────────
         if schema == "DERMATOLOGY":
             explanation = self._get_fallback_explanation(user_query, target_intent)
-            return (
-                f"### 🧴 Dermatology & Skin Health Review\n{explanation}\n\n"
-                "### 🧼 Care Guidelines & ABCDE Warning Check\n"
-                "- **Gentle Cleansing:** Cleanse affected skin with fragrance-free, mild cleansers and lukewarm water.\n"
-                "- **Barrier Protection:** Apply hypoallergenic moisturizers to maintain skin barrier hydration.\n"
-                "- **Lesion Monitoring:** Check moles for Asymmetry, Border irregularity, Color variation, Diameter >6mm, or Evolving changes.\n\n"
-                "> 💡 *VitalHealth Personal Health Assistant | Consult your physician for medical advice.*"
-            )
+            return f"{explanation}\n\n> 💡 *VitalHealth Personal Health Assistant | Consult your physician for medical advice.*"
 
         # ── 10. Doctor Visit Preparation Fallback ─────────────────────────────
         if schema == "DOCTOR_PREPARATION":
             explanation = self._get_fallback_explanation(user_query, target_intent)
-            return (
-                f"### 📋 Consultation Preparation Summary\n{explanation}\n\n"
-                "### ❓ Questions to Ask Your Doctor\n"
-                "1. *\"What are the primary underlying causes of my current symptoms or lab findings?\"*\n"
-                "2. *\"Are there any dietary, exercise, or lifestyle modifications recommended for my profile?\"*\n"
-                "3. *\"What specific monitoring or follow-up tests should we schedule next?\"*\n\n"
-                "> 💡 *VitalHealth Personal Health Assistant | Consult your physician for medical advice.*"
-            )
+            return f"{explanation}\n\n> 💡 *VitalHealth Personal Health Assistant | Consult your physician for medical advice.*"
 
         # ── Bundle-driven rendering (Only for Deep Audits & Full Summaries) ────
         if evidence_bundle is not None and schema in ["DEEP_CLINICAL_AUDIT", "HEALTH_SUMMARY", "DIGITAL_TWIN_SIMULATION"]:
@@ -1242,12 +1199,6 @@ You are a trusted healthcare companion helping users understand, manage, monitor
         disclaimer = "> 💡 *Please consult your doctor for personalized medical advice.*"
         if "consult your doctor" not in response_text.lower() and "healthcare provider" not in response_text.lower():
             response_text += f"\n\n{disclaimer}"
-
-        # Generate clean interactive follow-up suggestion chips if none present
-        if "Quick Follow-ups" not in response_text and "Suggested Follow-ups" not in response_text:
-            chips = self._generate_suggestion_chips(user_query)
-            if chips:
-                response_text += f"\n\n### 💡 Quick Follow-ups\n" + "\n".join([f"- `{c}`" for c in chips])
 
         return response_text.strip()
 
