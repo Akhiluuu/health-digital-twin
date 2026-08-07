@@ -627,7 +627,7 @@ class AIOrchestrator(HealthBrainSubsystem):
         resp_text = str(reasoning_res.get("response", ""))
         raw_sources = reasoning_res.get("sources_cited", [])
         if isinstance(raw_sources, list):
-            sources_list: List[str] = [str(s) for s in raw_sources]
+            sources_list: List[str] = [s if isinstance(s, str) else str(s) for s in raw_sources]
         elif isinstance(raw_sources, str):
             sources_list = [raw_sources]
         else:
