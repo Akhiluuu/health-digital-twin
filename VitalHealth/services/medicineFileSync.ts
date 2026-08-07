@@ -1,13 +1,15 @@
+import { Platform } from "react-native";
 import * as FileSystem from "expo-file-system/legacy";
 import { getMedicines } from "../database/medicineDB";
 
 import { log } from "../utils/logger";
 
-const FILE_PATH = FileSystem.documentDirectory + "medicineData.json";
+const FILE_PATH = (FileSystem.documentDirectory || "") + "medicineData.json";
 
 ///////////////////////////////////////////////////////////
 
 export const syncMedicineFile = async () => {
+  if (Platform.OS === "web") return;
   try {
     const data = getMedicines();
 
@@ -25,6 +27,7 @@ export const syncMedicineFile = async () => {
 ///////////////////////////////////////////////////////////
 
 export const readMedicineFile = async () => {
+  if (Platform.OS === "web") return [];
   try {
     const exists = await FileSystem.getInfoAsync(FILE_PATH);
 

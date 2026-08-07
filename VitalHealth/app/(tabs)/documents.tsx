@@ -389,8 +389,13 @@ export default function DocumentsScreen() {
   // ── Bootstrap ──────────────────────────────────────────────────────────────
 
   const ensureDir = useCallback(async () => {
-    const info = await FileSystem.getInfoAsync(DOCS_DIR);
-    if (!info.exists) await FileSystem.makeDirectoryAsync(DOCS_DIR, { intermediates: true });
+    if (Platform.OS === "web") return;
+    try {
+      const info = await FileSystem.getInfoAsync(DOCS_DIR);
+      if (!info.exists) await FileSystem.makeDirectoryAsync(DOCS_DIR, { intermediates: true });
+    } catch (e) {
+      console.log("Web FileSystem bypass:", e);
+    }
   }, []);
 
   const loadDocuments = useCallback(async () => {
