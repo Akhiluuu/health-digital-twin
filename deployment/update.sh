@@ -59,11 +59,17 @@ pip install --upgrade pip wheel "setuptools<82" -q
 pip install -r "$PROJECT_DIR/healthbot/requirements.txt" -q
 deactivate
 
-# 4. Restart services
+# 4. Restart services & sync Nginx configuration
 info "Restarting application services..."
 sudo systemctl restart digitaltwin
 if sudo systemctl is-active --quiet healthbot; then
     sudo systemctl restart healthbot
+fi
+
+if [[ -f "$DEPLOY_DIR/templates/nginx.conf" ]]; then
+    info "Refreshing Nginx site configuration..."
+    sudo sed -e "s|{{PROJECT_DIR}}|${PROJECT_DIR}|g" "$DEPLOY_DIR/templates/nginx.conf" | sudo tee /etc/nginx/sites-available/digitaltwin > /dev/null
+    sudo systemctl reload nginx || sudo systemctl restart nginx
 fi
 
 # 5. Run post-update health validation
