@@ -110,6 +110,7 @@ type Message = {
   sender: "user" | "ai" | "system";
   timestamp: Date;
   evidenceBundle?: EvidenceBundleMeta;
+  followups?: string[];
 };
 
 type Doc = {
@@ -126,6 +127,7 @@ type SerializedMessage = {
   sender: "user" | "ai" | "system";
   timestamp: number;
   evidenceBundle?: EvidenceBundleMeta;
+  followups?: string[];
 };
 
 type ChatSession = {
@@ -420,8 +422,9 @@ function VoiceIndicator({ visible, partialText }: { visible: boolean; partialTex
 
 // ─── Rich Text Renderer ───────────────────────────────────────────────────────
 
-function RichText({ text, style }: { text: string; style?: any }) {
-  // 1. First parse standard markdown bold **text** and italic *text*
+// ─── Rich Text Renderer ───────────────────────────────────────────────────────
+
+function parseInlineContent(text: string, style?: any) {
   const parts: { text: string; bold?: boolean; italic?: boolean }[] = [];
   const mdRegex = /\*\*(.+?)\*\*|\*(.+?)\*/gs;
   let lastIndex = 0;
@@ -442,14 +445,13 @@ function RichText({ text, style }: { text: string; style?: any }) {
     parts.push({ text: text.slice(lastIndex) });
   }
 
-  // 2. Second pass: for plain text parts, automatically bold numbers and alert words
   const autoBoldRegex = /\b(?:Warning|Danger|High Risk|Alert|Normal|Elevated|Critical|Low|High|Optimal|Caution|Anomalies|Anomaly|Safe|Unsafe|Risk)\b|\b\d+(?:\.\d+)?(?:[/-]\d+(?:\.\d+)?)?(?:\s*(?:%|bpm|mg\/dL|kg|cm|mmHg|breaths\/min|seconds|hours|minutes|mmol\/L|mL|g|h|min|s|bpm))?\b/gi;
 
   const finalElements: React.ReactNode[] = [];
   parts.forEach((part, partIdx) => {
     if (part.bold) {
       finalElements.push(
-        <Text key={`b-${partIdx}`} style={[style, { fontWeight: "900" }]}>
+        <Text key={`b-${partIdx}`} style={[style, { fontWeight: "800" }]}>
           {part.text}
         </Text>
       );
@@ -476,7 +478,7 @@ function RichText({ text, style }: { text: string; style?: any }) {
           );
         }
         finalElements.push(
-          <Text key={`ab-${partIdx}-${subIdx++}`} style={[style, { fontWeight: "900" }]}>
+          <Text key={`ab-${partIdx}-${subIdx++}`} style={[style, { fontWeight: "800" }]}>
             {plainMatch[0]}
           </Text>
         );
@@ -494,6 +496,184 @@ function RichText({ text, style }: { text: string; style?: any }) {
 
   return <Text style={style}>{finalElements}</Text>;
 }
+
+function RichText({ text, style }: { text: string; style?: any }) {
+  if (!text) return null;
+
+  // Clean any leading/trailing whitespace & split into lines
+  const lines = text.split("\n");
+  const blocks: React.ReactNode[] = [];
+
+  lines.forEach((line, lineIdx) => {
+    const trimmed = line.trim();
+    if (!trimmed) {
+      blocks.push(<View key={`sp-${lineIdx}`} style={{ height: 4 }} />);
+      return;
+    }
+
+    // 1. Header Line (starts with #, ##, ###, #### or similar)
+    if (/^#{1,6}\s+/.test(trimmed)) {
+      const headerText = trimmed.replace(/^#{1,6}\s+/, "");
+      blocks.push(
+        <Text
+          key={`h-${lineIdx}`}
+          style={[
+            style,
+            {
+              fontSize: 15,
+              fontWeight: "800",
+              marginTop: 10,
+              marginBottom: 4,
+              letterSpacing: -0.2,
+              opacity: 0.95,
+            },
+          ]}
+        >
+          {headerText}
+        </Text>
+      );
+      return;
+    }
+
+    // 2. Bullet Line (starts with •, -, *, 1., 2.)
+    if (/^(?:[•\-\*]|\d+\.)\s+/.test(trimmed)) {
+      const bulletText = trimmed.replace(/^(?:[•\-\*]|\d+\.)\s+/, "");
+      const accentColor = style?.color || "#0284c7";
+      blocks.push(
+        <View
+          key={`b-${lineIdx}`}
+          style={{
+            flexDirection: "row",
+            alignItems: "flex-start",
+            marginVertical: 2.5,
+            paddingLeft: 2,
+          }}
+        >
+          <View
+            style={{
+              width: 5,
+              height: 5,
+              borderRadius: 2.5,
+              backgroundColor: accentColor,
+              marginTop: 7,
+              marginRight: 8,
+              opacity: 0.8,
+            }}
+          />
+          <View style={{ flex: 1 }}>{parseInlineContent(bulletText, style)}</View>
+        </View>
+      );
+      return;
+    }
+
+    // 3. Blockquote / Disclaimer Line (starts with >)
+    if (trimmed.startsWith(">")) {
+      const quoteText = trimmed.replace(/^>\s*/, "");
+      blocks.push(
+        <View
+          key={`q-${lineIdx}`}
+          style={{
+            backgroundColor: "rgba(2, 132, 199, 0.07)",
+            borderLeftWidth: 3,
+            borderLeftColor: "#0284c7",
+            paddingHorizontal: 10,
+            paddingVertical: 6,
+            borderRadius: 6,
+            marginVertical: 6,
+          }}
+        >
+          {parseInlineContent(quoteText, [style, { fontSize: 12, fontStyle: "italic", opacity: 0.9 }])}
+        </View>
+      );
+      return;
+    }
+
+    // 4. Standard Paragraph Line
+    blocks.push(
+      <View key={`p-${lineIdx}`} style={{ marginVertical: 1.5 }}>
+        {parseInlineContent(trimmed, style)}
+      </View>
+    );
+  });
+
+// ─── Evidence Bundle Collapsible Card ─────────────────────────────────────────
+
+function EvidenceCard({ bundle, c, theme }: { bundle: EvidenceBundleMeta; c: any; theme: string }) {
+  const [expanded, setExpanded] = useState(false);
+  if (!bundle) return null;
+
+  const confidencePct = bundle.overall_confidence !== undefined ? Math.round(bundle.overall_confidence * 100) : null;
+  const isHighConf = (bundle.overall_confidence ?? 1.0) >= 0.8;
+  const badgeColor = isHighConf ? "#10b981" : "#f59e0b";
+  const badgeBg = isHighConf ? "#10b98118" : "#f59e0b18";
+
+  return (
+    <View style={{ backgroundColor: theme === 'dark' ? '#0f172a' : '#f8fafc', borderRadius: 12, paddingHorizontal: 10, paddingVertical: 8, marginBottom: 8, borderWidth: 1, borderColor: c.border }}>
+      <TouchableOpacity 
+        onPress={() => setExpanded(!expanded)} 
+        activeOpacity={0.7}
+        style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}
+      >
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+          <Ionicons name="shield-checkmark" size={14} color="#10b981" />
+          <Text style={{ fontSize: 11, fontWeight: "700", color: c.text }}>Evidence Intelligence</Text>
+          {confidencePct !== null && (
+            <View style={{ backgroundColor: badgeBg, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 }}>
+              <Text style={{ fontSize: 10, fontWeight: "700", color: badgeColor }}>
+                {confidencePct}% Confidence
+              </Text>
+            </View>
+          )}
+        </View>
+        <Ionicons name={expanded ? "chevron-up" : "chevron-down"} size={14} color={c.sub} />
+      </TouchableOpacity>
+
+      {expanded && (
+        <View style={{ marginTop: 8, paddingTop: 8, borderTopWidth: 1, borderTopColor: c.border }}>
+          {bundle.intent && (
+            <Text style={{ fontSize: 10, fontWeight: "600", color: c.sub, marginBottom: 4 }}>
+              INTENT: {bundle.intent}
+            </Text>
+          )}
+          {bundle.sources_reviewed && bundle.sources_reviewed.length > 0 && (
+            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 4 }}>
+              {bundle.sources_reviewed.map((src, sIdx) => (
+                <View key={sIdx} style={{ flexDirection: "row", alignItems: "center", gap: 3, backgroundColor: src.status === 'available' ? '#10b98115' : '#ef444415', paddingHorizontal: 6, paddingVertical: 3, borderRadius: 6 }}>
+                  <Ionicons name={src.status === 'available' ? 'checkmark-circle' : 'alert-circle'} size={10} color={src.status === 'available' ? '#10b981' : '#ef4444'} />
+                  <Text style={{ fontSize: 10, color: src.status === 'available' ? '#10b981' : '#ef4444', fontWeight: "600" }}>{src.name}</Text>
+                </View>
+              ))}
+            </View>
+          )}
+        </View>
+      )}
+    </View>
+  );
+}
+
+const getQuickSuggestions = (text: string): string[] => {
+  const t = text.toLowerCase();
+  const chips: string[] = [];
+  if (t.includes("hba1c") || t.includes("glucose") || t.includes("blood sugar")) {
+    chips.push("What should my target HbA1c be?", "How does diet affect glucose?");
+  }
+  if (t.includes("bp") || t.includes("blood pressure") || t.includes("hypertension")) {
+    chips.push("What are normal BP ranges?", "How can I lower my blood pressure?");
+  }
+  if (t.includes("medication") || t.includes("metformin") || t.includes("dose")) {
+    chips.push("What are common side effects?", "When should I take this?");
+  }
+  if (t.includes("water") || t.includes("hydrat")) {
+    chips.push("How much water do I need daily?", "Signs of dehydration?");
+  }
+  if (t.includes("symptom") || t.includes("pain")) {
+    chips.push("When to see a doctor?", "What home remedies help?");
+  }
+  if (chips.length === 0) {
+    chips.push("Tell me more about this", "Recommended next steps?", "Should I discuss with doctor?");
+  }
+  return chips.slice(0, 3);
+};
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
@@ -1007,147 +1187,6 @@ export default function AIHealthScreen() {
 
           <Text style={[styles.welcomeTime, { color: c.sub }]}>{fmtTime(item.timestamp.getTime())}</Text>
         </View>
-// ─── Evidence Bundle Collapsible Card ─────────────────────────────────────────
-
-function EvidenceCard({ bundle, c, theme }: { bundle: EvidenceBundleMeta; c: any; theme: string }) {
-  const [expanded, setExpanded] = useState(false);
-  if (!bundle) return null;
-
-  const confidencePct = bundle.overall_confidence !== undefined ? Math.round(bundle.overall_confidence * 100) : null;
-  const isHighConf = (bundle.overall_confidence ?? 1.0) >= 0.8;
-  const badgeColor = isHighConf ? "#10b981" : "#f59e0b";
-  const badgeBg = isHighConf ? "#10b98118" : "#f59e0b18";
-
-  return (
-    <View style={{ backgroundColor: theme === 'dark' ? '#0f172a' : '#f8fafc', borderRadius: 12, paddingHorizontal: 10, paddingVertical: 8, marginBottom: 8, borderWidth: 1, borderColor: c.border }}>
-      <TouchableOpacity 
-        onPress={() => setExpanded(!expanded)} 
-        activeOpacity={0.7}
-        style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}
-      >
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-          <Ionicons name="shield-checkmark" size={14} color="#10b981" />
-          <Text style={{ fontSize: 11, fontWeight: "700", color: c.text }}>Evidence Intelligence</Text>
-          {confidencePct !== null && (
-            <View style={{ backgroundColor: badgeBg, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 }}>
-              <Text style={{ fontSize: 10, fontWeight: "700", color: badgeColor }}>
-                {confidencePct}% Confidence
-              </Text>
-            </View>
-          )}
-        </View>
-        <Ionicons name={expanded ? "chevron-up" : "chevron-down"} size={14} color={c.sub} />
-      </TouchableOpacity>
-
-      {expanded && (
-        <View style={{ marginTop: 8, paddingTop: 8, borderTopWidth: 1, borderTopColor: c.border }}>
-          {bundle.intent && (
-            <Text style={{ fontSize: 10, fontWeight: "600", color: c.sub, marginBottom: 4 }}>
-              INTENT: {bundle.intent}
-            </Text>
-          )}
-          {bundle.sources_reviewed && bundle.sources_reviewed.length > 0 && (
-            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 4 }}>
-              {bundle.sources_reviewed.map((src, sIdx) => (
-                <View key={sIdx} style={{ flexDirection: "row", alignItems: "center", gap: 3, backgroundColor: src.status === 'available' ? '#10b98115' : '#ef444415', paddingHorizontal: 6, paddingVertical: 3, borderRadius: 6 }}>
-                  <Ionicons name={src.status === 'available' ? 'checkmark-circle' : 'alert-circle'} size={10} color={src.status === 'available' ? '#10b981' : '#ef4444'} />
-                  <Text style={{ fontSize: 10, color: src.status === 'available' ? '#10b981' : '#ef4444', fontWeight: "600" }}>{src.name}</Text>
-                </View>
-              ))}
-            </View>
-          )}
-        </View>
-      )}
-    </View>
-  );
-}
-
-const getQuickSuggestions = (text: string): string[] => {
-  const t = text.toLowerCase();
-  const chips: string[] = [];
-  if (t.includes("hba1c") || t.includes("glucose") || t.includes("blood sugar")) {
-    chips.push("What should my target HbA1c be?", "How does diet affect glucose?");
-  }
-  if (t.includes("bp") || t.includes("blood pressure") || t.includes("hypertension")) {
-    chips.push("What are normal BP ranges?", "How can I lower my blood pressure?");
-  }
-  if (t.includes("medication") || t.includes("metformin") || t.includes("dose")) {
-    chips.push("What are common side effects?", "When should I take this?");
-  }
-  if (t.includes("water") || t.includes("hydrat")) {
-    chips.push("How much water do I need daily?", "Signs of dehydration?");
-  }
-  if (t.includes("symptom") || t.includes("pain")) {
-    chips.push("When to see a doctor?", "What home remedies help?");
-  }
-  if (chips.length === 0) {
-    chips.push("Tell me more about this", "Recommended next steps?", "Should I discuss with doctor?");
-  }
-  return chips.slice(0, 3);
-};
-
-  const renderMessage = ({ item, index }: { item: Message; index: number }) => {
-    const isUser   = item.sender === "user";
-    const isSystem = item.sender === "system";
-    const isWelcome = item.id === "welcome" && !isUser;
-
-    if (isSystem) return (
-      <View style={styles.sysRow}>
-        <View style={[styles.sysPill, { backgroundColor: c.card, borderColor: c.border }]}>
-          <Text style={[styles.sysTxt, { color: c.sub }]}>{item.text}</Text>
-        </View>
-      </View>
-    );
-
-    // ── Premium Welcome Card ──────────────────────────────────────────────────
-    if (isWelcome) {
-      const displayText = item.text === "__welcome__"
-        ? "Good to see you. I'm your **personal health assistant**.\n\nAsk me about your symptoms, medications, or lab results — I'll give you a clear, honest answer."
-        : item.text;
-      return (
-        <View style={[styles.welcomeCard, { backgroundColor: c.card, borderColor: c.border }]}>
-          {/* Header row */}
-          <View style={styles.welcomeHeader}>
-            <View style={[styles.welcomeAvatar, { backgroundColor: theme === 'dark' ? '#1a2e5a' : '#eff6ff', borderColor: theme === 'dark' ? '#2a4070' : '#bfdbfe' }]}>
-              <Ionicons name="medkit" size={26} color={c.accent} />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={[styles.welcomeName, { color: c.text }]}>Personal Health Assistant</Text>
-              <View style={styles.welcomeBadgeRow}>
-                <View style={[styles.welcomeBadge, { backgroundColor: connected ? '#10b98120' : '#ef444420' }]}>
-                  <View style={[styles.welcomeBadgeDot, { backgroundColor: connected ? '#10b981' : '#ef4444' }]} />
-                  <Text style={[styles.welcomeBadgeTxt, { color: connected ? '#10b981' : '#ef4444' }]}>
-                    {connected ? 'Online' : 'Connecting…'}
-                  </Text>
-                </View>
-                <Text style={[styles.welcomeRole, { color: c.sub }]}>AI Health Assistant</Text>
-              </View>
-            </View>
-          </View>
-
-          {/* Divider */}
-          <View style={[styles.welcomeDivider, { backgroundColor: c.border }]} />
-
-          {/* Greeting text */}
-          <RichText text={displayText} style={[styles.welcomeText, { color: c.text }]} />
-
-          {/* Suggestion chips */}
-          <Text style={[styles.welcomeChipLabel, { color: c.sub }]}>Suggested questions</Text>
-          <View style={styles.welcomeChips}>
-            {SUGGESTIONS.map(({ label, icon, query }) => (
-              <TouchableOpacity
-                key={label}
-                style={[styles.welcomeChip, { backgroundColor: theme === 'dark' ? '#0b1329' : '#f1f5f9', borderColor: c.border }]}
-                onPress={() => doSend(query)}
-              >
-                <Ionicons name={icon} size={12} color={c.accent} />
-                <Text style={[styles.welcomeChipTxt, { color: c.accent }]}>{label}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-
-          <Text style={[styles.welcomeTime, { color: c.sub }]}>{fmtTime(item.timestamp.getTime())}</Text>
-        </View>
       );
     }
 
@@ -1216,6 +1255,39 @@ const getQuickSuggestions = (text: string): string[] => {
                   <Text style={{ color: "#8b5cf6", fontSize: 11, fontWeight: "700" }}>Documents</Text>
                 </TouchableOpacity>
               ) : null}
+            </View>
+          )}
+
+          {/* Clickable Follow-up Questions Pill Bar */}
+          {!isUser && (
+            <View style={{ marginTop: 10, paddingTop: 8, borderTopWidth: 1, borderTopColor: theme === 'dark' ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)' }}>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 4, marginBottom: 6 }}>
+                <Ionicons name="sparkles" size={11} color={c.accent} />
+                <Text style={{ fontSize: 10, fontWeight: "700", color: c.sub, letterSpacing: 0.5, textTransform: "uppercase" }}>Suggested Follow-ups</Text>
+              </View>
+              <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
+                {(item.followups && item.followups.length > 0 ? item.followups : getQuickSuggestions(item.text)).map((fText, fIdx) => (
+                  <TouchableOpacity
+                    key={fIdx}
+                    onPress={() => doSend(fText)}
+                    activeOpacity={0.7}
+                    style={{
+                      backgroundColor: theme === 'dark' ? '#1e293b' : '#f1f5f9',
+                      borderColor: theme === 'dark' ? '#334155' : '#cbd5e1',
+                      borderWidth: 1,
+                      paddingHorizontal: 10,
+                      paddingVertical: 5,
+                      borderRadius: 14,
+                      flexDirection: "row",
+                      alignItems: "center",
+                      gap: 4,
+                    }}
+                  >
+                    <Ionicons name="help-circle-outline" size={12} color={c.accent} />
+                    <Text style={{ fontSize: 11, fontWeight: "600", color: c.text }}>{fText}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
             </View>
           )}
 
