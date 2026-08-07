@@ -485,8 +485,6 @@ async def process_lab_ocr_scan(req: LabOCRScanRequest):
         "labs": [l.model_dump() for l in parsed_labs],
         "message": f"Successfully parsed and ingested {len(parsed_labs)} lab findings into Personal Health OS."
     }
-    state_mgr.create_profile(profile)
-    return {"status": "registered", "message": f"Digital Twin registered for user {req.user_id}."}
 
 
 class AsyncSimRequest(BaseModel):
