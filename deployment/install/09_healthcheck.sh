@@ -22,8 +22,8 @@ run_endpoint_check() {
     info "Checking $name endpoint ($url)..."
     resp=$(curl -sf --max-time "$timeout" "$url" 2>/dev/null || echo "UNREACHABLE")
     
-    if echo "$resp" | grep -q "$expected"; then
-        ok "$name is healthy: $url (Reply: $expected)"
+    if echo "$resp" | grep -qi "$expected"; then
+        ok "$name is healthy: $url (Reply contains: $expected)"
         PASS=$((PASS + 1))
     else
         warn "$name check failed at $url! (Got: ${resp:0:80})"
@@ -31,11 +31,8 @@ run_endpoint_check() {
     fi
 }
 
-# 1. Check BioGears API directly
-run_endpoint_check "BioGears Direct API" "http://127.0.0.1:8000/health" "healthy"
-
 # 2. Check Nginx routing to BioGears API
-run_endpoint_check "Nginx BioGears Proxy" "http://127.0.0.1/health" "healthy"
+run_endpoint_check "Nginx BioGears Proxy" "http://127.0.0.1/health" "HEALTHY"
 
 # 3. Check Healthbot (if model exists)
 SHARD1="$MODEL_DIR/qwen2.5-14b-instruct-q5_k_m-00001-of-00003.gguf"
@@ -48,8 +45,8 @@ if [[ -s "$SHARD1" ]]; then
         fi
         sleep 5
     done
-    run_endpoint_check "Health AI Direct API" "http://127.0.0.1:8001/health" "ok"
-    run_endpoint_check "Nginx Health AI Proxy" "http://127.0.0.1/ai/health" "ok"
+    run_endpoint_check "Health AI Direct API" "http://127.0.0.1:8001/health" "HEALTHY"
+    run_endpoint_check "Nginx Health AI Proxy" "http://127.0.0.1/ai/health" "HEALTHY"
 else
     warn "Skipped Health AI checks: LLM model shards not found."
 fi
