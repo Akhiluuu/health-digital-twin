@@ -55,8 +55,9 @@ fi
 
 # 4. Verify Master Test Suite
 echo "🧪 [4/5] Executing pre-deployment test suite..."
+pip install pytest pytest-asyncio --quiet
 export PYTHONPATH=.
-venv/bin/pytest healthbot_v4/tests/brain/test_phos_engine.py healthbot_v4/tests/api/test_v6_api_endpoints.py healthbot_v4/tests/brain/test_persistent_graph_sync.py --quiet
+python -m pytest healthbot_v4/tests/brain/test_phos_engine.py healthbot_v4/tests/api/test_v6_api_endpoints.py healthbot_v4/tests/brain/test_persistent_graph_sync.py --quiet
 
 echo "✅ Pre-deployment test suite passed (100%)!"
 
