@@ -99,7 +99,7 @@ class UIComponentSelector:
                 title="💡 Medical Knowledge & Physiological Insights",
                 payload={
                     "mode": "EDUCATIONAL_TAKEOUT",
-                    "topic": strategy.target_intent or "GENERAL_HEALTH",
+                    "topic": getattr(strategy, "target_intent", None) or "GENERAL_HEALTH",
                     "takeaway": "Understanding physiological mechanisms helps empower proactive health management.",
                 }
             ))
