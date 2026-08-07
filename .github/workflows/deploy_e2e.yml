@@ -1,0 +1,52 @@
+name: 🚀 VitalHealth PHOS Engine — CI/CD Production Deployment
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  test-and-eval:
+    name: 🧪 Pre-Deployment Acceptance Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 📦 Checkout Codebase
+        uses: actions/checkout@v4
+
+      - name: 🐍 Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: ⚙️ Install Core Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest
+
+      - name: 🧪 Execute Unit & API Endpoint Test Suite
+        run: |
+          PYTHONPATH=. pytest healthbot_v4/tests/ --quiet
+
+      - name: 🏥 Execute VitalHealth Clinical Acceptance Gate
+        run: |
+          bash ./scripts/run_production_gate.sh
+
+  deploy-to-e2e:
+    name: 🌐 Production Server Deployment (E2E Networks)
+    needs: test-and-eval
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 🚀 Trigger Remote Deployment via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.E2E_SERVER_IP || '151.185.45.137' }}
+          username: ${{ secrets.E2E_SERVER_USER || 'cave' }}
+          key: ${{ secrets.E2E_SSH_PRIVATE_KEY }}
+          script: |
+            cd /home/cave/health-digital-twin
+            git pull origin main
+            ./scripts/deploy_e2e.sh

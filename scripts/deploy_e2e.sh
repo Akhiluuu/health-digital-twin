@@ -75,6 +75,8 @@ echo "✅ Pre-deployment test suite passed (100%)!"
 # 5. Launch FastAPI Gateway Server
 echo "🌐 [5/5] Launching PHOS FastAPI Server Gateway on Port 8000..."
 echo "Stopping any existing server process on port 8000..."
+sudo systemctl stop digitaltwin.service 2>/dev/null || systemctl stop digitaltwin.service 2>/dev/null || true
+sudo systemctl stop vitalhealth.service 2>/dev/null || true
 if command -v docker >/dev/null 2>&1; then
     docker compose down 2>/dev/null || true
 fi
