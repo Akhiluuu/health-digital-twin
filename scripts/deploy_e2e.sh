@@ -23,8 +23,9 @@ command -v python3 >/dev/null 2>&1 || { echo "❌ Python3 is required. Run: sudo
 command -v curl >/dev/null 2>&1 || { echo "❌ curl is required."; exit 1; }
 
 if [ -d ".git" ]; then
-    echo "📥 Pulling latest codebase from GitHub origin/main..."
-    git pull origin main || echo "⚠️ Git pull notice: continuing with current local workspace."
+    echo "📥 Syncing codebase with GitHub origin/main..."
+    git fetch origin main
+    git reset --hard origin/main
 fi
 
 # 2. Virtual Environment Setup
@@ -69,8 +70,12 @@ echo "✅ Pre-deployment test suite passed (100%)!"
 # 5. Launch FastAPI Gateway Server
 echo "🌐 [5/5] Launching PHOS FastAPI Server Gateway on Port 8000..."
 echo "Stopping any existing server process on port 8000..."
-pkill -9 -f "uvicorn" 2>/dev/null || true
-fuser -k 8000/tcp 2>/dev/null || true
+PIDS=$(lsof -t -i:8000 2>/dev/null || pgrep -f "uvicorn" || true)
+if [ -n "$PIDS" ]; then
+    echo "Killing existing process(es): $PIDS"
+    kill -9 $PIDS 2>/dev/null || true
+    pkill -9 -f "uvicorn" 2>/dev/null || true
+fi
 sleep 2
 
 echo "==========================================================================="
