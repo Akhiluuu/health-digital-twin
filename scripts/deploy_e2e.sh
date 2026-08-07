@@ -60,6 +60,7 @@ REDIS_URL="redis://localhost:6379/0"
 ENABLE_REDIS_CACHE=True
 QDRANT_URL="http://localhost:6333"
 QWEN_MODEL_PATH="models/qwen2.5-14b-instruct-q5_k_m-00001-of-00003.gguf"
+OLLAMA_MODEL="qwen2.5:14b"
 EOF
     echo "✅ .env configuration generated."
 fi
