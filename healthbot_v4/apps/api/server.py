@@ -48,6 +48,14 @@ async def lifespan(app: FastAPI):
     brain.register_subsystem(JourneyInsightsEngine())
     await brain.initialize_all()
     await phos_orchestrator.initialize()
+
+    # Async non-blocking model warm-up and RAM pinning
+    import asyncio
+    from healthbot_v4.apps.brain.reasoning.qwen_engine import QwenInferenceEngine
+    qwen_warmup = QwenInferenceEngine()
+    asyncio.create_task(qwen_warmup.initialize())
+    logger.info("🔥 Triggered background Qwen LLM inference warm-up task")
+
     yield
     logger.info("Shutting down Health Brain FastAPI Gateway...")
     await brain.shutdown_all()

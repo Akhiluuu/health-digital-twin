@@ -116,6 +116,30 @@ class UIComponentSelector:
                 }
             ))
 
+        # 2f. Proactive Medication Side-Effect Interceptor
+        if persona and hasattr(persona, "logged_symptoms") and hasattr(persona, "active_medications"):
+            if persona.logged_symptoms and persona.active_medications:
+                meds_lower = [m.lower() for m in persona.active_medications]
+                syms_lower = [s.lower() for s in persona.logged_symptoms]
+                
+                side_effect_matches = []
+                if any("cough" in s for s in syms_lower) and any(d in m for d in ["lisinopril", "enalapril", "ramipril", "ace"] for m in meds_lower):
+                    side_effect_matches.append({"symptom": "Dry Cough", "drug": "Lisinopril (ACE Inhibitor)", "mechanism": "ACE inhibitor-induced bradykinin accumulation."})
+                if any(kw in s for kw in ["muscle", "myalgia", "cramp", "sore"] for s in syms_lower) and any(d in m for d in ["statin", "atorvastatin", "rosuvastatin", "simvastatin"] for m in meds_lower):
+                    side_effect_matches.append({"symptom": "Muscle Aches / Pain", "drug": "Statin Regimen", "mechanism": "Statin-associated muscle symptoms (SAMS)."})
+                if any(kw in s for kw in ["dizzi", "lighthead", "giddy"] for s in syms_lower) and any(d in m for d in ["amlodipine", "metoprolol", "losartan", "atenolol"] for m in meds_lower):
+                    side_effect_matches.append({"symptom": "Dizziness / Lightheadedness", "drug": "Antihypertensive Regimen", "mechanism": "Transient orthostatic blood pressure lowering."})
+
+                if side_effect_matches:
+                    widgets.append(UIWidget(
+                        widget_type="medication_side_effect_alert",
+                        title="⚠️ Proactive Clinical Alert: Potential Drug Side-Effect Correlation",
+                        payload={
+                            "matches": side_effect_matches,
+                            "recommendation": "Discuss this potential symptom-medication correlation with your prescribing physician before altering your regimen.",
+                        }
+                    ))
+
         # 3. BioGears Simulation Digital Twin Card (ONLY for explicit simulation requests)
         if strategy.include_biogears_card and strategy.formatting_schema == "DIGITAL_TWIN_SIMULATION":
             widgets.append(UIWidget(
