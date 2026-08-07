@@ -90,3 +90,4 @@ firebase-adminsdk*.json
 /models/*.gguf
 /models/
 app-release.apk
+*.apk

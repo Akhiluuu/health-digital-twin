@@ -174,7 +174,8 @@ class AIOrchestrator(HealthBrainSubsystem):
         logger.info("🔥 Performing AI Reasoning Model Warm-Up...")
         try:
             sample_query = "Heart rate status review"
-            dummy_res = self.qwen_engine.generate_reasoning_response(
+            dummy_res = await asyncio.to_thread(
+                self.qwen_engine.generate_reasoning_response,
                 self.context_budgeter.assemble_context(
                     self.state_mgr.get_or_create_state("usr_warmup"),
                     self.snapshot_engine.generate_snapshot(self.state_mgr.get_or_create_state("usr_warmup")),
