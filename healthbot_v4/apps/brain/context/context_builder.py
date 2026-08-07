@@ -52,12 +52,16 @@ class ContextBudgeter(HealthBrainSubsystem):
         rag_context: str = "",
         sim_context: str = "",
     ) -> BudgetedContext:
+        recent_syms = getattr(patient_state, "recent_symptoms", [])
+        symptom_str = ", ".join([f"{s.get('name', '')} ({s.get('severity', 'Moderate')})" if isinstance(s, dict) else str(s) for s in recent_syms[:3]]) if recent_syms else "None recently logged"
+
         snapshot_block = (
             f"=== CURRENT CLINICAL SNAPSHOT ({snapshot.patient_id}) ===\n"
             f"Patient Profile: {snapshot.profile_summary}\n"
             f"Health Score: {snapshot.current_health_score:.0f}/100\n"
             f"Active Conditions: {', '.join(snapshot.active_conditions)}\n"
             f"Active Regimen: {', '.join(snapshot.active_medications)}\n"
+            f"Recent Logged Symptoms: {symptom_str}\n"
             f"Latest Labs: {snapshot.latest_labs_summary}\n"
             f"Active Risks: {snapshot.active_risks_summary}\n"
             f"Outstanding Action Items: {'; '.join(snapshot.outstanding_action_items)}"

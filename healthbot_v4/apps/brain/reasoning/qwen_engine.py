@@ -229,6 +229,7 @@ class QwenInferenceEngine(HealthBrainSubsystem):
         health_score    = self._extract_field(context.clinical_snapshot_block, ["Health Score:"])
         conditions      = self._extract_field(context.clinical_snapshot_block, ["Active Conditions:"])
         medications     = self._extract_field(context.clinical_snapshot_block, ["Active Regimen:", "Active Medications:"])
+        recent_syms     = self._extract_field(context.clinical_snapshot_block, ["Recent Logged Symptoms:"])
         labs            = self._extract_field(context.clinical_snapshot_block, ["Latest Labs:"])
         risks           = context.active_risks_block.replace("ACTIVE CLINICAL RISKS:", "").strip() if context.active_risks_block else "None identified"
         if any(artifact in risks.lower() for artifact in ["user query", "query processed", "processed (", "chat consultation"]):
@@ -253,6 +254,7 @@ class QwenInferenceEngine(HealthBrainSubsystem):
 - **Health Score:** {health_score or "Calculated from vitals"}
 - **Active Conditions:** {conditions or (", ".join(persona.chronic_conditions) if persona and persona.chronic_conditions else "None documented")}
 - **Active Medications:** {medications or (", ".join(persona.active_medications) if persona and persona.active_medications else "None documented")}
+- **Recent Logged Symptoms:** {recent_syms or "None recently logged"}
 - **Recent Labs:** {labs or "None on record"}
 - **Active Clinical Risks:** {risks}"""
             if vitals_line:
@@ -896,20 +898,33 @@ You are a trusted healthcare companion helping users understand, manage, monitor
 
         # ── Sleek Dynamic Default / Snapshot Fallback ─────────────────────────
         snapshot = context.clinical_snapshot_block or ""
+        conditions = self._extract_field(snapshot, ["Active Conditions:"])
         medications = self._extract_field(snapshot, ["Active Regimen:", "Active Medications:"])
+        labs = self._extract_field(snapshot, ["Latest Labs:"])
+        recent_syms = self._extract_field(snapshot, ["Recent Logged Symptoms:"])
         risks = self._extract_field(snapshot, ["Active Risks:", "Active Clinical Risks:"])
-        
-        explanation = self._get_fallback_explanation(user_query, target_intent)
-        lines.append(f"### 💡 Clinical Assessment & Guidance\n{explanation}\n")
 
-        # Include profile highlights if available
+        persona = getattr(strategy, "persona", None) if strategy else None
+        greeting = f"Hello {persona.first_name}, " if (persona and persona.first_name and persona.first_name.lower() not in ("friend", "user", "anonymous")) else ""
+
+        explanation = self._get_fallback_explanation(user_query, target_intent)
+        lines.append(f"### 💡 Clinical Assessment & Guidance\n{greeting}{explanation}\n")
+
+        # Include 360-degree profile highlights if available
         profile_notes = []
+        if conditions and conditions != "None":
+            profile_notes.append(f"- **Active Conditions:** {conditions}")
         if medications and medications != "None":
             profile_notes.append(f"- **Active Regimen:** {medications}")
+        if recent_syms and recent_syms != "None recently logged":
+            profile_notes.append(f"- **Recent Logged Symptoms:** {recent_syms}")
+        if labs and labs != "None on record":
+            profile_notes.append(f"- **Recent Lab Flags:** {labs}")
         if risks and "none" not in risks.lower():
-            profile_notes.append(f"- **Active Risks / Logged Symptoms:** {risks}")
+            profile_notes.append(f"- **Clinical Risk Flags:** {risks}")
+            
         if profile_notes:
-            lines.append("📌 **Relevant Health Profile Highlights**")
+            lines.append("📌 **Personalized Health Profile Context**")
             lines.extend(profile_notes)
             lines.append("")
 
