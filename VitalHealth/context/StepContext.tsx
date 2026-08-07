@@ -866,11 +866,9 @@ export const StepProvider: React.FC<{
           }
         }
 
-        // Auto-start gate: only restore tracking if savedTracking was explicitly '1'
-        // AND permission was not revoked above (checked via savedTracking flag).
-        if (!savedTracking && m[userKeys.isTracking] === '1') {
+        // Auto-start gate: restore tracking if savedTracking was '1' OR if physical activity permission is granted
+        if (!savedTracking) {
           try {
-            const settings = await notifee.getNotificationSettings();
             let physicalOk = false;
             if (Platform.OS === 'android') {
               physicalOk = await PermissionsAndroid.check(
@@ -880,7 +878,7 @@ export const StepProvider: React.FC<{
               const pedoPerm = await Pedometer.getPermissionsAsync();
               physicalOk = pedoPerm.granted;
             }
-            if (settings.authorizationStatus >= 1 && physicalOk) {
+            if (physicalOk) {
               savedTracking = true;
               await AsyncStorage.setItem(userKeys.isTracking, '1').catch(() => {});
             }
