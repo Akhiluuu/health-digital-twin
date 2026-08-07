@@ -11,9 +11,10 @@ section "Step: Updating Application and Services"
 
 # 1. Run full backup before modifying code
 info "Executing pre-update system backup..."
-BACKUP_PATH=$("$DEPLOY_DIR/backup.sh" | tail -n 1)
+BACKUP_OUTPUT=$("$DEPLOY_DIR/backup.sh")
+BACKUP_PATH=$(echo "$BACKUP_OUTPUT" | grep "Archive Location:" | sed 's/.*Archive Location:\s*//' | tr -d ' ')
 
-if [[ ! -f "$BACKUP_PATH" ]]; then
+if [[ -z "$BACKUP_PATH" || ! -f "$BACKUP_PATH" ]]; then
     fail "Pre-update backup failed. Update aborted to prevent data loss."
 fi
 
