@@ -12,6 +12,7 @@ import {
   getCentralHeartRateBaseUrl,
   BASE_URL_KEY,
   HEARTRATE_URL_KEY,
+  fetchWithRetry,
 } from "../constants/Config";
 
 /** Ensure BioGears URL correctly targets port 8000 on the production/staging server */
@@ -338,7 +339,7 @@ async function apiFetch<T>(path: string, options?: RequestInit, timeoutMs = 3000
   try {
     const isFallback = apiKey === FALLBACK_API_KEY;
     log(`[BioGears] API REQUEST: ${options?.method || 'GET'} ${url} | Key: ${isFallback ? 'Default Fallback' : 'Custom Key (' + apiKey.slice(0, 4) + '...' + apiKey.slice(-4) + ')'}`);
-    const res = await fetch(url, {
+    const res = await fetchWithRetry(url, {
       headers: {
         'Content-Type': 'application/json',
         ...(apiKey ? { 'X-API-Key': apiKey } : {}),

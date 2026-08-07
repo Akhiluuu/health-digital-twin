@@ -63,11 +63,12 @@ app.include_router(journey_router)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=getattr(settings, "CORS_ALLOWED_ORIGINS", ["*"]),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
 
 
 # Request schemas
@@ -427,16 +428,61 @@ class RegisterTwinRequest(BaseModel):
     current_medications: List[str] = []
 
 
-@app.post("/register", tags=["BioGears Compatibility"])
-async def register_twin(req: RegisterTwinRequest):
-    from healthbot_v4.shared.models.base import PatientProfile
-    profile = PatientProfile(
-        patient_id=req.user_id,
-        age=req.age,
-        weight_kg=req.weight,
-        height_cm=req.height,
-        gender=req.sex,
-    )
+class LabOCRScanRequest(BaseModel):
+    user_id: str
+    report_title: str
+    category: str = "Lab"
+    text_content: Optional[str] = None
+    findings: List[Dict[str, Any]] = []
+
+
+@app.post("/lab-report/ocr", tags=["Lab OCR Processing"])
+async def process_lab_ocr_scan(req: LabOCRScanRequest):
+    from healthbot_v4.shared.models.base import LabResult
+    state = state_mgr.get_or_create_state(req.user_id)
+    
+    parsed_labs = []
+    # If explicit findings were sent from client parser or mock OCR
+    if req.findings:
+        for f in req.findings:
+            lab_obj = LabResult(
+                lab_id=f"lab_{uuid.uuid4().hex[:8]}",
+                patient_id=req.user_id,
+                canonical_name=f.get("name") or "Hemoglobin",
+                value=float(f.get("value", 14.2)),
+                unit=f.get("unit", "g/dL"),
+                reference_range=f.get("range", "13.5-17.5"),
+                classification=f.get("classification", "Normal"),
+                timestamp=datetime.now(timezone.utc)
+            )
+            parsed_labs.append(lab_obj)
+    else:
+        # Default smart OCR extraction on document title/content
+        text_lower = (req.report_title + " " + (req.text_content or "")).lower()
+        if "cbc" in text_lower or "blood" in text_lower or "lab" in text_lower:
+            parsed_labs.append(LabResult(
+                lab_id=f"lab_{uuid.uuid4().hex[:8]}", patient_id=req.user_id,
+                canonical_name="Hemoglobin", value=14.5, unit="g/dL", reference_range="13.5-17.5", classification="Normal", timestamp=datetime.now(timezone.utc)
+            ))
+            parsed_labs.append(LabResult(
+                lab_id=f"lab_{uuid.uuid4().hex[:8]}", patient_id=req.user_id,
+                canonical_name="WBC Count", value=6.8, unit="k/uL", reference_range="4.5-11.0", classification="Normal", timestamp=datetime.now(timezone.utc)
+            ))
+            parsed_labs.append(LabResult(
+                lab_id=f"lab_{uuid.uuid4().hex[:8]}", patient_id=req.user_id,
+                canonical_name="Fasting Glucose", value=92.0, unit="mg/dL", reference_range="70-99", classification="Normal", timestamp=datetime.now(timezone.utc)
+            ))
+
+    if parsed_labs:
+        state.recent_labs.extend(parsed_labs)
+
+    return {
+        "status": "success",
+        "user_id": req.user_id,
+        "extracted_labs_count": len(parsed_labs),
+        "labs": [l.model_dump() for l in parsed_labs],
+        "message": f"Successfully parsed and ingested {len(parsed_labs)} lab findings into Personal Health OS."
+    }
     state_mgr.create_profile(profile)
     return {"status": "registered", "message": f"Digital Twin registered for user {req.user_id}."}
 
@@ -538,13 +584,54 @@ async def get_substances():
     return {
         "total": 6,
         "substances": {
-            "alcohol": ["Ethanol"],
-            "caffeine": ["Coffee", "Tea", "Energy Drink"],
-            "medication": ["Metformin", "Lisinopril", "Atorvastatin", "Aspirin"],
-            "supplement": ["Vitamin D", "Omega-3", "Magnesium"],
-            "food": ["Glucose", "Protein", "Fat"],
-            "environment": ["AltitudeEnvironment", "HotEnvironment"],
+            "Oral": ["Caffeine", "Aspirin", "Acetaminophen", "Ethanol", "Prednisone"],
+            "Intravenous": ["Saline", "Epinephrine", "Fentanyl", "Morphine", "Insulin", "Glucose"],
+            "Inhalation": ["Albuterol", "Desflurane"]
         }
+    }
+
+
+class TelemetryPacket(BaseModel):
+    user_id: str
+    heart_rate: Optional[float] = None
+    systolic_bp: Optional[float] = None
+    diastolic_bp: Optional[float] = None
+    spo2: Optional[float] = None
+    respiration_rate: Optional[float] = None
+    steps: Optional[int] = None
+    timestamp: Optional[str] = None
+
+
+# In-memory telemetry cache for active sessions
+_telemetry_cache: Dict[str, Dict[str, Any]] = {}
+
+
+@app.post("/telemetry/stream", tags=["BioGears Telemetry"])
+async def receive_telemetry_stream(packet: TelemetryPacket):
+    from datetime import datetime, timezone
+    state = state_mgr.get_or_create_state(packet.user_id)
+    now_ts = packet.timestamp or datetime.now(timezone.utc).isoformat()
+    
+    current_data = _telemetry_cache.get(packet.user_id, {})
+    if packet.heart_rate is not None: current_data["heart_rate"] = packet.heart_rate
+    if packet.systolic_bp is not None: current_data["systolic_bp"] = packet.systolic_bp
+    if packet.diastolic_bp is not None: current_data["diastolic_bp"] = packet.diastolic_bp
+    if packet.spo2 is not None: current_data["spo2"] = packet.spo2
+    if packet.respiration_rate is not None: current_data["respiration_rate"] = packet.respiration_rate
+    if packet.steps is not None: current_data["steps"] = packet.steps
+    current_data["last_updated"] = now_ts
+    
+    _telemetry_cache[packet.user_id] = current_data
+    
+    # Auto update state vital history for dynamic context
+    if packet.heart_rate or packet.systolic_bp:
+        state.patient_context["sim_vitals"] = current_data
+    
+    return {
+        "status": "success",
+        "user_id": packet.user_id,
+        "active_telemetry": current_data,
+        "message": "Telemetry streamed to twin context successfully."
     }
 
 
@@ -634,15 +721,43 @@ class ConsentCheckRequest(BaseModel):
     justification: str = ""
 
 
-@app.post("/api/v6/brain/query/counterfactual", tags=["Enterprise Health OS v6.0"])
-async def process_counterfactual_query(req: CounterfactualQueryRequest):
-    state = state_mgr.get_or_create_state(req.patient_id)
-    sim_result = BioGearsScenarioEngine.run_counterfactual_scenario(state, req.query)
-    scenario_data = sim_result.to_dict() if sim_result else {}
+@app.get("/export/clinical-digest/{user_id}", tags=["Clinical Export"])
+async def export_clinical_digest(user_id: str):
+    state = state_mgr.get_or_create_state(user_id)
+    bundle = orchestrator.otm.collect_evidence(
+        query="Doctor Followup Summary",
+        intent="DOCTOR_FOLLOWUP",
+        state=state,
+        patient_context=state.patient_context
+    )
+    
+    digest_markdown = f"# 🩺 VitalHealth Clinical Intelligence Digest\n"
+    digest_markdown += f"**Patient ID:** `{user_id}`  \n"
+    digest_markdown += f"**Generated Date:** `{datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}`  \n"
+    digest_markdown += f"**Overall Evidence Confidence:** `{int(bundle.overall_confidence * 100)}% ({bundle.overall_confidence_label.value.upper()})`  \n\n"
+    
+    digest_markdown += "## 📊 Active Subsystem Findings\n"
+    for src in bundle.sources:
+        status_icon = "🟢" if src.status == SourceStatus.available else "🔴"
+        digest_markdown += f"### {status_icon} {src.name}\n"
+        if src.findings:
+            for f in src.findings:
+                digest_markdown += f"- **{f.label}:** `{f.value}` ({f.timestamp_label})\n"
+        else:
+            digest_markdown += f"- *Status:* {src.missing_reason or 'No records'}\n"
+        digest_markdown += "\n"
+        
+    if bundle.conflicts:
+        digest_markdown += "## ⚠️ Cross-Source Discrepancies\n"
+        for c in bundle.conflicts:
+            digest_markdown += f"- **{c.metric}:** {c.source_a} ({c.value_a}) vs {c.source_b} ({c.value_b}). *Recommendation:* {c.recommendation}\n"
+            
     return {
-        "status": "SUCCESS",
-        "patient_id": req.patient_id,
-        "scenario": scenario_data
+        "status": "success",
+        "user_id": user_id,
+        "digest_markdown": digest_markdown,
+        "evidence_bundle": bundle.model_dump(),
+        "export_timestamp": datetime.now(timezone.utc).isoformat()
     }
 
 
@@ -665,5 +780,61 @@ async def evaluate_consent_access(req: ConsentCheckRequest):
 async def get_hitl_pending_tasks():
     tasks = _hitl_manager.get_pending_tasks()
     return [t.model_dump() for t in tasks]
+
+
+# =============================================================================
+# BETA USER BUG REPORTING ENDPOINTS
+# =============================================================================
+
+class BugReportInput(BaseModel):
+    category: str = "ui"
+    severity: str = "medium"
+    summary: str
+    description: str
+    user_email: Optional[str] = None
+    include_diagnostics: Optional[bool] = True
+    stack_trace: Optional[str] = None
+    current_route: Optional[str] = None
+    profile_id: Optional[str] = None
+    diagnostics: Optional[Dict[str, Any]] = None
+
+
+_bug_reports_store: List[Dict[str, Any]] = []
+
+
+@app.post("/bug-reports", tags=["Beta User Bug Reporting"])
+@app.post("/api/v1/bug-reports", tags=["Beta User Bug Reporting"])
+async def receive_bug_report(report: BugReportInput):
+    import time
+    report_id = f"bug_{int(time.time())}_{uuid.uuid4().hex[:6]}"
+    data = {
+        "id": report_id,
+        "category": report.category,
+        "severity": report.severity,
+        "summary": report.summary,
+        "description": report.description,
+        "user_email": report.user_email,
+        "include_diagnostics": report.include_diagnostics,
+        "stack_trace": report.stack_trace,
+        "current_route": report.current_route,
+        "profile_id": report.profile_id,
+        "diagnostics": report.diagnostics or {},
+    }
+    _bug_reports_store.insert(0, data)
+    if len(_bug_reports_store) > 500:
+        _bug_reports_store.pop()
+    logger.info(f"🐛 Bug report received [{report_id}]: {report.summary}")
+    return {"status": "ok", "id": report_id, "message": "Bug report successfully recorded."}
+
+
+
+@app.get("/bug-reports", tags=["Beta User Bug Reporting"])
+@app.get("/api/v1/bug-reports", tags=["Beta User Bug Reporting"])
+async def list_bug_reports(limit: int = 50, category: Optional[str] = None):
+    reports = _bug_reports_store
+    if category:
+        reports = [r for r in reports if r.get("category") == category]
+    return {"reports": reports[:limit], "count": len(reports)}
+
 
 

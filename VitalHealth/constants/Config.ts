@@ -94,3 +94,31 @@ export async function getCentralAiBaseUrl(): Promise<string> {
   const cleanBase = base.replace(/:8000\/?$/, "").replace(/\/ai\/?$/, "");
   return `${cleanBase}/ai`;
 }
+
+/**
+ * Network-resilient fetch wrapper with exponential backoff retry logic.
+ */
+export async function fetchWithRetry(
+  url: string,
+  options: RequestInit = {},
+  maxRetries: number = 2,
+  backoffMs: number = 500
+): Promise<Response> {
+  let attempt = 0;
+  while (true) {
+    try {
+      const response = await fetch(url, options);
+      if (response.ok || response.status < 500 || attempt >= maxRetries) {
+        return response;
+      }
+    } catch (err) {
+      if (attempt >= maxRetries) {
+        throw err;
+      }
+    }
+    attempt++;
+    const delay = backoffMs * Math.pow(2, attempt - 1);
+    await new Promise((resolve) => setTimeout(resolve, delay));
+  }
+}
+

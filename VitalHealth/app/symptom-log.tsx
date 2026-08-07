@@ -16,6 +16,7 @@ import {
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { useTheme } from "../context/ThemeContext";
+import { useSymptoms } from "../context/SymptomContext";
 
 const { width } = Dimensions.get("window");
 const CARD_WIDTH = (width - 48) / 2;
@@ -62,6 +63,7 @@ const symptoms: SymptomItem[] = [
 export default function SymptomLogScreen() {
   const router = useRouter();
   const { theme } = useTheme();
+  const { logCustomSymptom } = useSymptoms();
 
   const [showModal, setShowModal] = useState(false);
   const [symptomName, setSymptomName] = useState("");

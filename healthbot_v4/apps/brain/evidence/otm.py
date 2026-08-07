@@ -259,6 +259,7 @@ class OrchestratorToolManager:
     def _collect_telemetry(self, pc: Dict) -> EvidenceSource:
         fit_a = pc.get("fitness_activity") or {}
         hyd_a = pc.get("hydration") or {}
+        telemetry_cache = pc.get("telemetry_cache") or {}
         findings: List[EvidenceFinding] = []
 
         for key, label, unit in [
@@ -266,12 +267,13 @@ class OrchestratorToolManager:
             ("calories", "Calories Burned", "kcal"),
             ("distance_km", "Distance", "km"),
         ]:
-            v = fit_a.get(key) if isinstance(fit_a, dict) else None
+            v = fit_a.get(key) if isinstance(fit_a, dict) else telemetry_cache.get(key)
             if v:
                 findings.append(EvidenceFinding(
                     finding_id=_fid(), label=label, value=f"{v} {unit}",
                     source_name="Telemetry Engine", source_type="telemetry",
-                    timestamp_label="Today", confidence=ConfidenceLevel.high,
+                    timestamp_label="Live Stream" if key in telemetry_cache else "Today",
+                    confidence=ConfidenceLevel.high,
                 ))
 
         water = (hyd_a.get("water_intake_ml") if isinstance(hyd_a, dict) else None)

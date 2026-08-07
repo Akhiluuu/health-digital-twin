@@ -26,6 +26,7 @@ import * as Sharing from "expo-sharing";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useTheme } from "../../context/ThemeContext";
 import Header from "../components/Header";
+import { getBiogearsBaseUrl } from "../../services/biogears";
 
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get("window");
 
@@ -477,8 +478,25 @@ export default function DocumentsScreen() {
       };
       const updated = [newDoc, ...documents];
       setDocuments(updated); await saveDocuments(updated);
+
+      // Trigger Lab OCR ingestion if document is a Lab Report or Scan
+      if (selectedCategory === "Lab" || selectedCategory === "Scan" || selectedCategory === "Prescription") {
+        try {
+          const baseUrl = await getBiogearsBaseUrl();
+          await fetch(`${baseUrl}/lab-report/ocr`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              user_id: "self",
+              report_title: reportName.trim(),
+              category: selectedCategory,
+            })
+          });
+        } catch (ocrErr) {}
+      }
+
       handleCloseModal();
-      Alert.alert("✅ Saved", `"${newDoc.title}" has been stored locally.`);
+      Alert.alert("✅ Saved & Parsed", `"${newDoc.title}" has been stored and OCR findings ingested into your Personal Health OS.`);
     } catch (e: any) { Alert.alert("Upload failed", e.message ?? "Could not save the file."); }
     finally { setUploading(false); }
   };

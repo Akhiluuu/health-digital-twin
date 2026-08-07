@@ -18,6 +18,10 @@ import { useIsFocused } from '@react-navigation/native';
 import Svg, { Path } from 'react-native-svg';
 
 
+import * as FileSystem from 'expo-file-system/legacy';
+import * as Sharing from 'expo-sharing';
+import { getBiogearsBaseUrl } from '../../services/biogears';
+
 import { useBiogearsTwin } from '../../context/BiogearsTwinContext';
 import { useTheme } from '../../context/ThemeContext';
 import { useFamily } from '../../context/FamilyContext';
@@ -988,6 +992,32 @@ export default function TwinScreen() {
     );
   };
 
+  const handleExportDoctorDigest = async () => {
+    try {
+      const baseUrl = await getBiogearsBaseUrl();
+      const res = await fetch(`${baseUrl}/export/clinical-digest/${twinUserId || "self"}`);
+      if (!res.ok) throw new Error(`Export failed: ${res.status}`);
+      const data = await res.json();
+      Alert.alert(
+        "📄 Clinical Digest Exported",
+        "Clinical summary generated! You can copy or share this digest with your healthcare provider.",
+        [
+          { text: "OK" },
+          { text: "Share Digest", onPress: async () => {
+            const canShare = await Sharing.isAvailableAsync();
+            if (canShare) {
+              const fileUri = `${DOCS_DIR}Clinical_Digest_${Date.now()}.md`;
+              await FileSystem.writeAsStringAsync(fileUri, data.digest_markdown);
+              await Sharing.shareAsync(fileUri, { mimeType: "text/markdown", dialogTitle: "Doctor Summary Digest" });
+            }
+          }}
+        ]
+      );
+    } catch (err: any) {
+      Alert.alert("Export Error", err.message || "Failed to generate doctor digest.");
+    }
+  };
+
   // ────────────────────────────────────────────────────────────────────────────
   // TAB CONTENT
   // ────────────────────────────────────────────────────────────────────────────
@@ -1734,6 +1764,35 @@ export default function TwinScreen() {
 
         {/* Quick Add row */}
         <QuickAddRow addEventAndSimulate={addEventAndSimulate} twinStatus={twinStatus} />
+
+        {/* Doctor Summary Export Digest Action Bar */}
+        <TouchableOpacity
+          style={{
+            backgroundColor: "#2563eb18",
+            borderColor: "#2563eb40",
+            borderWidth: 1,
+            borderRadius: 12,
+            padding: 12,
+            marginTop: 12,
+            marginBottom: 4,
+            flexDirection: "row",
+            alignItems: "center",
+            justifyContent: "space-between"
+          }}
+          onPress={handleExportDoctorDigest}
+          activeOpacity={0.85}
+        >
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+            <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: "#2563eb25", alignItems: "center", justifyContent: "center" }}>
+              <Ionicons name="document-text" size={20} color="#2563eb" />
+            </View>
+            <View>
+              <Text style={{ fontSize: 14, fontWeight: "700", color: c.text }}>Export Doctor Summary</Text>
+              <Text style={{ fontSize: 11, color: c.sub }}>Generate shareable FHIR/Markdown evidence digest</Text>
+            </View>
+          </View>
+          <Ionicons name="chevron-forward" size={18} color="#2563eb" />
+        </TouchableOpacity>
 
         {/* Saved Routines (Moved here for immediate access on Clinical Twin page) */}
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 15, marginBottom: 8, paddingHorizontal: 4 }}>

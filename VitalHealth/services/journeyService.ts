@@ -4,6 +4,7 @@
 // Graceful offline fallback to cached data via AsyncStorage.
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { getCentralBiogearsBaseUrl } from '../constants/Config';
 
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
@@ -150,13 +151,16 @@ export interface DoctorView {
 
 // ─── API Configuration ────────────────────────────────────────────────────────
 
-function getBaseUrl(): string {
-  // Reads from environment, falls back to local dev server
-  return (process.env.EXPO_PUBLIC_BRAIN_API_URL || 'http://10.0.2.2:8000');
+async function getBaseUrl(): Promise<string> {
+  if (process.env.EXPO_PUBLIC_BRAIN_API_URL) {
+    return process.env.EXPO_PUBLIC_BRAIN_API_URL;
+  }
+  return await getCentralBiogearsBaseUrl();
 }
 
-function journeyUrl(patientId: string, path: string = ''): string {
-  return `${getBaseUrl()}/api/v5/journey/${encodeURIComponent(patientId)}${path}`;
+async function journeyUrl(patientId: string, path: string = ''): Promise<string> {
+  const base = await getBaseUrl();
+  return `${base}/api/v5/journey/${encodeURIComponent(patientId)}${path}`;
 }
 
 // ─── Cache Helpers ────────────────────────────────────────────────────────────
@@ -206,8 +210,9 @@ async function fetchWithCache<T>(
  * Answers all 6 core questions in a single call.
  */
 export async function getJourneySnapshot(patientId: string): Promise<JourneySnapshot> {
+  const url = await journeyUrl(patientId, '/snapshot');
   return fetchWithCache<JourneySnapshot>(
-    journeyUrl(patientId, '/snapshot'),
+    url,
     `journey_snapshot_${patientId}`,
   );
 }
@@ -216,8 +221,9 @@ export async function getJourneySnapshot(patientId: string): Promise<JourneySnap
  * Get the full journey with all events, goals, milestones, insights, and progress.
  */
 export async function getFullJourney(patientId: string): Promise<any> {
+  const url = await journeyUrl(patientId);
   return fetchWithCache<any>(
-    journeyUrl(patientId),
+    url,
     `journey_full_${patientId}`,
   );
 }
@@ -235,7 +241,8 @@ export async function getJourneyTimeline(
   if (filterType) params.append('filter_type', filterType);
   if (search) params.append('search', search);
   params.append('limit', String(limit));
-  const url = `${journeyUrl(patientId, '/timeline')}?${params.toString()}`;
+  const baseUrl = await journeyUrl(patientId, '/timeline');
+  const url = `${baseUrl}?${params.toString()}`;
   return fetchWithCache(url, `journey_timeline_${patientId}_${filterType || 'all'}`);
 }
 
@@ -245,8 +252,9 @@ export async function getJourneyTimeline(
 export async function getJourneyMilestones(
   patientId: string,
 ): Promise<{ milestones: HealthMilestone[]; count: number }> {
+  const url = await journeyUrl(patientId, '/milestones');
   return fetchWithCache(
-    journeyUrl(patientId, '/milestones'),
+    url,
     `journey_milestones_${patientId}`,
   );
 }
@@ -257,8 +265,9 @@ export async function getJourneyMilestones(
 export async function getJourneyGoals(
   patientId: string,
 ): Promise<{ goals: HealthGoal[]; active_count: number; completed_count: number }> {
+  const url = await journeyUrl(patientId, '/goals');
   return fetchWithCache(
-    journeyUrl(patientId, '/goals'),
+    url,
     `journey_goals_${patientId}`,
   );
 }
@@ -279,7 +288,8 @@ export async function createJourneyGoal(
     recommendations?: string[];
   },
 ): Promise<{ status: string; goal: HealthGoal }> {
-  const response = await fetch(journeyUrl(patientId, '/goals'), {
+  const url = await journeyUrl(patientId, '/goals');
+  const response = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(goal),
@@ -294,8 +304,9 @@ export async function createJourneyGoal(
 export async function getJourneyProgress(
   patientId: string,
 ): Promise<JourneyProgressReport> {
+  const url = await journeyUrl(patientId, '/progress');
   return fetchWithCache(
-    journeyUrl(patientId, '/progress'),
+    url,
     `journey_progress_${patientId}`,
   );
 }
@@ -306,8 +317,9 @@ export async function getJourneyProgress(
 export async function getJourneyBriefing(
   patientId: string,
 ): Promise<DailyBriefingV2> {
+  const url = await journeyUrl(patientId, '/briefing');
   return fetchWithCache(
-    journeyUrl(patientId, '/briefing'),
+    url,
     `journey_briefing_${patientId}`,
   );
 }
@@ -318,8 +330,9 @@ export async function getJourneyBriefing(
 export async function getJourneyInsights(
   patientId: string,
 ): Promise<{ insights: JourneyInsight[]; count: number }> {
+  const url = await journeyUrl(patientId, '/insights');
   return fetchWithCache(
-    journeyUrl(patientId, '/insights'),
+    url,
     `journey_insights_${patientId}`,
   );
 }
@@ -328,8 +341,9 @@ export async function getJourneyInsights(
  * Get the clinician-optimized doctor view with SOAP summary.
  */
 export async function getDoctorView(patientId: string): Promise<DoctorView> {
+  const url = await journeyUrl(patientId, '/doctor-view');
   return fetchWithCache(
-    journeyUrl(patientId, '/doctor-view'),
+    url,
     `journey_doctor_view_${patientId}`,
   );
 }
@@ -350,3 +364,4 @@ export async function invalidateJourneyCache(patientId: string): Promise<void> {
   ];
   await AsyncStorage.multiRemove(keys);
 }
+

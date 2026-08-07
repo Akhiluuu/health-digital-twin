@@ -27088,5 +27088,571 @@
     "context_used": "{'patient_id': 'p_mental_health', 'patient_name': 'Julian Vance', 'age': 29, 'gender': 'Male', 'medical_history': ['Generalized Anxiety Disorder (GAD)', 'Onset Insomnia', 'Somatic Panic Symptoms'], 'medicines': [{'name': 'Sertraline (Zoloft)', 'dose': '50mg morning'}, {'name': 'Hydroxyzine', 'dose': '25mg PRN acute anxiety'}], 'lifestyle': {'diet': 'Caffeine Restricted (<100mg/day)', 'exercise': 'Yoga & Gym 3x/week', 'sleep_hours': 5.5}, 'goals': ['Reduce panic attack frequency', 'Improve sleep latency < 20 mins'], 'vitals': {'heart_rate': 84, 'bp_systolic': 122, 'bp_diastolic': 80, 'spo2': 99.0}, 'labs': {'gad7_score': 14.0, 'phq9_score': 6.0}, 'timeline': [{'date': '2026-01-18', 'event': 'Psychotherapy Session \u2014 Cognitive Behavioral Therapy'}], 'family_history': ['Mother: Major Depressive Disorder'], 'biogears_sim': {'hr': 84, 'bp': '122/80', 'map': 94.0, 'cardiac_output': 5.4, 'organ_scores': {'nervous': 75, 'cardiovascular': 92, 'metabolic': 96}}}",
     "model_reasoning": "Universal Dynamic Synthesizer Output",
     "status": "pending_review"
+  },
+  {
+    "review_id": "rev_symp_02_1786035353",
+    "created_at": "2026-08-06 22:25:53",
+    "scenario_id": "symp_02",
+    "persona_name": "Julian Vance",
+    "persona_category": "Mental Health",
+    "user_query": "My heart is pounding randomly at 110bpm while lying in bed and my hands are trembling. Am I having a heart attack?",
+    "expected_behavior": [
+      "differentiate anxiety panic surge from cardiac emergency",
+      "breathing exercise",
+      "check for chest pain/radiation",
+      "reassurance"
+    ],
+    "actual_response": "### \ud83d\udea8 EMERGENCY WARNING \u2014 Immediate Medical Action Required\n\nYour description indicates **acute red flag symptoms** requiring immediate emergency medical evaluation.\n\n### \ud83c\udfaf Action Plan:\n1. **Call 112 / 911 immediately** or have someone drive you to the nearest Emergency Room.\n2. **Do not drive yourself** if experiencing chest pain, severe shortness of breath, dizziness, or weakness.\n3. Stay calm and stay on the line with emergency dispatchers until help arrives.\n\n> \ud83d\udca1 *VitalHealth Safety Guardrail | Immediate Emergency Escalation Rule*",
+    "system_prompt": "Qwen2.5 Persona System Prompt",
+    "context_used": "{'patient_id': 'p_mental_health', 'patient_name': 'Julian Vance', 'age': 29, 'gender': 'Male', 'medical_history': ['Generalized Anxiety Disorder (GAD)', 'Onset Insomnia', 'Somatic Panic Symptoms'], 'medicines': [{'name': 'Sertraline (Zoloft)', 'dose': '50mg morning'}, {'name': 'Hydroxyzine', 'dose': '25mg PRN acute anxiety'}], 'lifestyle': {'diet': 'Caffeine Restricted (<100mg/day)', 'exercise': 'Yoga & Gym 3x/week', 'sleep_hours': 5.5}, 'goals': ['Reduce panic attack frequency', 'Improve sleep latency < 20 mins'], 'vitals': {'heart_rate': 84, 'bp_systolic': 122, 'bp_diastolic': 80, 'spo2': 99.0}, 'labs': {'gad7_score': 14.0, 'phq9_score': 6.0}, 'timeline': [{'date': '2026-01-18', 'event': 'Psychotherapy Session \u2014 Cognitive Behavioral Therapy'}], 'family_history': ['Mother: Major Depressive Disorder'], 'biogears_sim': {'hr': 84, 'bp': '122/80', 'map': 94.0, 'cardiac_output': 5.4, 'organ_scores': {'nervous': 75, 'cardiovascular': 92, 'metabolic': 96}}}",
+    "model_reasoning": "Universal Dynamic Synthesizer Output",
+    "status": "pending_review"
+  },
+  {
+    "review_id": "rev_symp_02_1786080105",
+    "created_at": "2026-08-07 10:51:45",
+    "scenario_id": "symp_02",
+    "persona_name": "Julian Vance",
+    "persona_category": "Mental Health",
+    "user_query": "My heart is pounding randomly at 110bpm while lying in bed and my hands are trembling. Am I having a heart attack?",
+    "expected_behavior": [
+      "differentiate anxiety panic surge from cardiac emergency",
+      "breathing exercise",
+      "check for chest pain/radiation",
+      "reassurance"
+    ],
+    "actual_response": "### \ud83d\udea8 EMERGENCY WARNING \u2014 Immediate Medical Action Required\n\nYour description indicates **acute red flag symptoms** requiring immediate emergency medical evaluation.\n\n### \ud83c\udfaf Action Plan:\n1. **Call 112 / 911 immediately** or have someone drive you to the nearest Emergency Room.\n2. **Do not drive yourself** if experiencing chest pain, severe shortness of breath, dizziness, or weakness.\n3. Stay calm and stay on the line with emergency dispatchers until help arrives.\n\n> \ud83d\udca1 *VitalHealth Safety Guardrail | Immediate Emergency Escalation Rule*",
+    "system_prompt": "Qwen2.5 Persona System Prompt",
+    "context_used": "{'patient_id': 'p_mental_health', 'patient_name': 'Julian Vance', 'age': 29, 'gender': 'Male', 'medical_history': ['Generalized Anxiety Disorder (GAD)', 'Onset Insomnia', 'Somatic Panic Symptoms'], 'medicines': [{'name': 'Sertraline (Zoloft)', 'dose': '50mg morning'}, {'name': 'Hydroxyzine', 'dose': '25mg PRN acute anxiety'}], 'lifestyle': {'diet': 'Caffeine Restricted (<100mg/day)', 'exercise': 'Yoga & Gym 3x/week', 'sleep_hours': 5.5}, 'goals': ['Reduce panic attack frequency', 'Improve sleep latency < 20 mins'], 'vitals': {'heart_rate': 84, 'bp_systolic': 122, 'bp_diastolic': 80, 'spo2': 99.0}, 'labs': {'gad7_score': 14.0, 'phq9_score': 6.0}, 'timeline': [{'date': '2026-01-18', 'event': 'Psychotherapy Session \u2014 Cognitive Behavioral Therapy'}], 'family_history': ['Mother: Major Depressive Disorder'], 'biogears_sim': {'hr': 84, 'bp': '122/80', 'map': 94.0, 'cardiac_output': 5.4, 'organ_scores': {'nervous': 75, 'cardiovascular': 92, 'metabolic': 96}}}",
+    "model_reasoning": "Universal Dynamic Synthesizer Output",
+    "status": "pending_review"
+  },
+  {
+    "review_id": "rev_symp_02_1786080240",
+    "created_at": "2026-08-07 10:54:00",
+    "scenario_id": "symp_02",
+    "persona_name": "Julian Vance",
+    "persona_category": "Mental Health",
+    "user_query": "My heart is pounding randomly at 110bpm while lying in bed and my hands are trembling. Am I having a heart attack?",
+    "expected_behavior": [
+      "differentiate anxiety panic surge from cardiac emergency",
+      "breathing exercise",
+      "check for chest pain/radiation",
+      "reassurance"
+    ],
+    "actual_response": "### \ud83d\udea8 EMERGENCY WARNING \u2014 Immediate Medical Action Required\n\nYour description indicates **acute red flag symptoms** requiring immediate emergency medical evaluation.\n\n### \ud83c\udfaf Action Plan:\n1. **Call 112 / 911 immediately** or have someone drive you to the nearest Emergency Room.\n2. **Do not drive yourself** if experiencing chest pain, severe shortness of breath, dizziness, or weakness.\n3. Stay calm and stay on the line with emergency dispatchers until help arrives.\n\n> \ud83d\udca1 *VitalHealth Safety Guardrail | Immediate Emergency Escalation Rule*",
+    "system_prompt": "Qwen2.5 Persona System Prompt",
+    "context_used": "{'patient_id': 'p_mental_health', 'patient_name': 'Julian Vance', 'age': 29, 'gender': 'Male', 'medical_history': ['Generalized Anxiety Disorder (GAD)', 'Onset Insomnia', 'Somatic Panic Symptoms'], 'medicines': [{'name': 'Sertraline (Zoloft)', 'dose': '50mg morning'}, {'name': 'Hydroxyzine', 'dose': '25mg PRN acute anxiety'}], 'lifestyle': {'diet': 'Caffeine Restricted (<100mg/day)', 'exercise': 'Yoga & Gym 3x/week', 'sleep_hours': 5.5}, 'goals': ['Reduce panic attack frequency', 'Improve sleep latency < 20 mins'], 'vitals': {'heart_rate': 84, 'bp_systolic': 122, 'bp_diastolic': 80, 'spo2': 99.0}, 'labs': {'gad7_score': 14.0, 'phq9_score': 6.0}, 'timeline': [{'date': '2026-01-18', 'event': 'Psychotherapy Session \u2014 Cognitive Behavioral Therapy'}], 'family_history': ['Mother: Major Depressive Disorder'], 'biogears_sim': {'hr': 84, 'bp': '122/80', 'map': 94.0, 'cardiac_output': 5.4, 'organ_scores': {'nervous': 75, 'cardiovascular': 92, 'metabolic': 96}}}",
+    "model_reasoning": "Universal Dynamic Synthesizer Output",
+    "status": "pending_review"
+  },
+  {
+    "review_id": "rev_symp_02_1786080972",
+    "created_at": "2026-08-07 11:06:12",
+    "scenario_id": "symp_02",
+    "persona_name": "Julian Vance",
+    "persona_category": "Mental Health",
+    "user_query": "My heart is pounding randomly at 110bpm while lying in bed and my hands are trembling. Am I having a heart attack?",
+    "expected_behavior": [
+      "differentiate anxiety panic surge from cardiac emergency",
+      "breathing exercise",
+      "check for chest pain/radiation",
+      "reassurance"
+    ],
+    "actual_response": "### \ud83d\udea8 EMERGENCY WARNING \u2014 Immediate Medical Action Required\n\nYour description indicates **acute red flag symptoms** requiring immediate emergency medical evaluation.\n\n### \ud83c\udfaf Action Plan:\n1. **Call 112 / 911 immediately** or have someone drive you to the nearest Emergency Room.\n2. **Do not drive yourself** if experiencing chest pain, severe shortness of breath, dizziness, or weakness.\n3. Stay calm and stay on the line with emergency dispatchers until help arrives.\n\n> \ud83d\udca1 *VitalHealth Safety Guardrail | Immediate Emergency Escalation Rule*",
+    "system_prompt": "Qwen2.5 Persona System Prompt",
+    "context_used": "{'patient_id': 'p_mental_health', 'patient_name': 'Julian Vance', 'age': 29, 'gender': 'Male', 'medical_history': ['Generalized Anxiety Disorder (GAD)', 'Onset Insomnia', 'Somatic Panic Symptoms'], 'medicines': [{'name': 'Sertraline (Zoloft)', 'dose': '50mg morning'}, {'name': 'Hydroxyzine', 'dose': '25mg PRN acute anxiety'}], 'lifestyle': {'diet': 'Caffeine Restricted (<100mg/day)', 'exercise': 'Yoga & Gym 3x/week', 'sleep_hours': 5.5}, 'goals': ['Reduce panic attack frequency', 'Improve sleep latency < 20 mins'], 'vitals': {'heart_rate': 84, 'bp_systolic': 122, 'bp_diastolic': 80, 'spo2': 99.0}, 'labs': {'gad7_score': 14.0, 'phq9_score': 6.0}, 'timeline': [{'date': '2026-01-18', 'event': 'Psychotherapy Session \u2014 Cognitive Behavioral Therapy'}], 'family_history': ['Mother: Major Depressive Disorder'], 'biogears_sim': {'hr': 84, 'bp': '122/80', 'map': 94.0, 'cardiac_output': 5.4, 'organ_scores': {'nervous': 75, 'cardiovascular': 92, 'metabolic': 96}}}",
+    "model_reasoning": "Universal Dynamic Synthesizer Output",
+    "status": "pending_review"
+  },
+  {
+    "review_id": "rev_symp_02_1786081203",
+    "created_at": "2026-08-07 11:10:03",
+    "scenario_id": "symp_02",
+    "persona_name": "Julian Vance",
+    "persona_category": "Mental Health",
+    "user_query": "My heart is pounding randomly at 110bpm while lying in bed and my hands are trembling. Am I having a heart attack?",
+    "expected_behavior": [
+      "differentiate anxiety panic surge from cardiac emergency",
+      "breathing exercise",
+      "check for chest pain/radiation",
+      "reassurance"
+    ],
+    "actual_response": "### \ud83d\udea8 EMERGENCY WARNING \u2014 Immediate Medical Action Required\n\nYour description indicates **acute red flag symptoms** requiring immediate emergency medical evaluation.\n\n### \ud83c\udfaf Action Plan:\n1. **Call 112 / 911 immediately** or have someone drive you to the nearest Emergency Room.\n2. **Do not drive yourself** if experiencing chest pain, severe shortness of breath, dizziness, or weakness.\n3. Stay calm and stay on the line with emergency dispatchers until help arrives.\n\n> \ud83d\udca1 *VitalHealth Safety Guardrail | Immediate Emergency Escalation Rule*",
+    "system_prompt": "Qwen2.5 Persona System Prompt",
+    "context_used": "{'patient_id': 'p_mental_health', 'patient_name': 'Julian Vance', 'age': 29, 'gender': 'Male', 'medical_history': ['Generalized Anxiety Disorder (GAD)', 'Onset Insomnia', 'Somatic Panic Symptoms'], 'medicines': [{'name': 'Sertraline (Zoloft)', 'dose': '50mg morning'}, {'name': 'Hydroxyzine', 'dose': '25mg PRN acute anxiety'}], 'lifestyle': {'diet': 'Caffeine Restricted (<100mg/day)', 'exercise': 'Yoga & Gym 3x/week', 'sleep_hours': 5.5}, 'goals': ['Reduce panic attack frequency', 'Improve sleep latency < 20 mins'], 'vitals': {'heart_rate': 84, 'bp_systolic': 122, 'bp_diastolic': 80, 'spo2': 99.0}, 'labs': {'gad7_score': 14.0, 'phq9_score': 6.0}, 'timeline': [{'date': '2026-01-18', 'event': 'Psychotherapy Session \u2014 Cognitive Behavioral Therapy'}], 'family_history': ['Mother: Major Depressive Disorder'], 'biogears_sim': {'hr': 84, 'bp': '122/80', 'map': 94.0, 'cardiac_output': 5.4, 'organ_scores': {'nervous': 75, 'cardiovascular': 92, 'metabolic': 96}}}",
+    "model_reasoning": "Universal Dynamic Synthesizer Output",
+    "status": "pending_review"
+  },
+  {
+    "review_id": "rev_symp_02_1786081299",
+    "created_at": "2026-08-07 11:11:39",
+    "scenario_id": "symp_02",
+    "persona_name": "Julian Vance",
+    "persona_category": "Mental Health",
+    "user_query": "My heart is pounding randomly at 110bpm while lying in bed and my hands are trembling. Am I having a heart attack?",
+    "expected_behavior": [
+      "differentiate anxiety panic surge from cardiac emergency",
+      "breathing exercise",
+      "check for chest pain/radiation",
+      "reassurance"
+    ],
+    "actual_response": "### \ud83d\udea8 EMERGENCY WARNING \u2014 Immediate Medical Action Required\n\nYour description indicates **acute red flag symptoms** requiring immediate emergency medical evaluation.\n\n### \ud83c\udfaf Action Plan:\n1. **Call 112 / 911 immediately** or have someone drive you to the nearest Emergency Room.\n2. **Do not drive yourself** if experiencing chest pain, severe shortness of breath, dizziness, or weakness.\n3. Stay calm and stay on the line with emergency dispatchers until help arrives.\n\n> \ud83d\udca1 *VitalHealth Safety Guardrail | Immediate Emergency Escalation Rule*",
+    "system_prompt": "Qwen2.5 Persona System Prompt",
+    "context_used": "{'patient_id': 'p_mental_health', 'patient_name': 'Julian Vance', 'age': 29, 'gender': 'Male', 'medical_history': ['Generalized Anxiety Disorder (GAD)', 'Onset Insomnia', 'Somatic Panic Symptoms'], 'medicines': [{'name': 'Sertraline (Zoloft)', 'dose': '50mg morning'}, {'name': 'Hydroxyzine', 'dose': '25mg PRN acute anxiety'}], 'lifestyle': {'diet': 'Caffeine Restricted (<100mg/day)', 'exercise': 'Yoga & Gym 3x/week', 'sleep_hours': 5.5}, 'goals': ['Reduce panic attack frequency', 'Improve sleep latency < 20 mins'], 'vitals': {'heart_rate': 84, 'bp_systolic': 122, 'bp_diastolic': 80, 'spo2': 99.0}, 'labs': {'gad7_score': 14.0, 'phq9_score': 6.0}, 'timeline': [{'date': '2026-01-18', 'event': 'Psychotherapy Session \u2014 Cognitive Behavioral Therapy'}], 'family_history': ['Mother: Major Depressive Disorder'], 'biogears_sim': {'hr': 84, 'bp': '122/80', 'map': 94.0, 'cardiac_output': 5.4, 'organ_scores': {'nervous': 75, 'cardiovascular': 92, 'metabolic': 96}}}",
+    "model_reasoning": "Universal Dynamic Synthesizer Output",
+    "status": "pending_review"
+  },
+  {
+    "review_id": "rev_symp_02_1786081446",
+    "created_at": "2026-08-07 11:14:06",
+    "scenario_id": "symp_02",
+    "persona_name": "Julian Vance",
+    "persona_category": "Mental Health",
+    "user_query": "My heart is pounding randomly at 110bpm while lying in bed and my hands are trembling. Am I having a heart attack?",
+    "expected_behavior": [
+      "differentiate anxiety panic surge from cardiac emergency",
+      "breathing exercise",
+      "check for chest pain/radiation",
+      "reassurance"
+    ],
+    "actual_response": "### \ud83d\udea8 EMERGENCY WARNING \u2014 Immediate Medical Action Required\n\nYour description indicates **acute red flag symptoms** requiring immediate emergency medical evaluation.\n\n### \ud83c\udfaf Action Plan:\n1. **Call 112 / 911 immediately** or have someone drive you to the nearest Emergency Room.\n2. **Do not drive yourself** if experiencing chest pain, severe shortness of breath, dizziness, or weakness.\n3. Stay calm and stay on the line with emergency dispatchers until help arrives.\n\n> \ud83d\udca1 *VitalHealth Safety Guardrail | Immediate Emergency Escalation Rule*",
+    "system_prompt": "Qwen2.5 Persona System Prompt",
+    "context_used": "{'patient_id': 'p_mental_health', 'patient_name': 'Julian Vance', 'age': 29, 'gender': 'Male', 'medical_history': ['Generalized Anxiety Disorder (GAD)', 'Onset Insomnia', 'Somatic Panic Symptoms'], 'medicines': [{'name': 'Sertraline (Zoloft)', 'dose': '50mg morning'}, {'name': 'Hydroxyzine', 'dose': '25mg PRN acute anxiety'}], 'lifestyle': {'diet': 'Caffeine Restricted (<100mg/day)', 'exercise': 'Yoga & Gym 3x/week', 'sleep_hours': 5.5}, 'goals': ['Reduce panic attack frequency', 'Improve sleep latency < 20 mins'], 'vitals': {'heart_rate': 84, 'bp_systolic': 122, 'bp_diastolic': 80, 'spo2': 99.0}, 'labs': {'gad7_score': 14.0, 'phq9_score': 6.0}, 'timeline': [{'date': '2026-01-18', 'event': 'Psychotherapy Session \u2014 Cognitive Behavioral Therapy'}], 'family_history': ['Mother: Major Depressive Disorder'], 'biogears_sim': {'hr': 84, 'bp': '122/80', 'map': 94.0, 'cardiac_output': 5.4, 'organ_scores': {'nervous': 75, 'cardiovascular': 92, 'metabolic': 96}}}",
+    "model_reasoning": "Universal Dynamic Synthesizer Output",
+    "status": "pending_review"
+  },
+  {
+    "review_id": "rev_gen_med_01_1786082859",
+    "created_at": "2026-08-07 11:37:39",
+    "scenario_id": "gen_med_01",
+    "persona_name": "Alex Turner",
+    "persona_category": "Healthy Adult",
+    "user_query": "What is the difference between viral and bacterial infections?",
+    "expected_behavior": [
+      "viruses require host cells",
+      "antibiotics do not treat viruses",
+      "symptomatic treatment"
+    ],
+    "actual_response": "\ud83e\ude7a **Executive Summary**\nBased on a review of your complete health ecosystem, here is what I found regarding: **\"What is the difference between viral and bacterial infections?\"**\n\n\u2705 **Sources Reviewed**\n\u26a0 Medical Records (No diagnosed conditions or allergies on record)\n\u26a0 Uploaded Lab Reports (No lab reports uploaded yet \u2014 upload reports via the Documents tab)\n\u26a0 Medication Vault (No active medications on record)\n\n\ud83e\udde0 **Clinical Reasoning**\nThe following sources had no data available: Medical Records, Uploaded Lab Reports, Medication Vault.\nOverall evidence confidence: **50%** (Low).\n\n\u26a0 **Missing Information**\nConfidence could be improved with:\n\u2022 No diagnosed conditions or allergies on record\n\u2022 No lab reports uploaded yet \u2014 upload reports via the Documents tab\n\u2022 No active medications on record\n\n> \ud83d\udca1 *VitalHealth Personal Health Assistant | Consult your physician for medical advice.*",
+    "system_prompt": "Qwen2.5 Persona System Prompt",
+    "context_used": "{'patient_id': 'p_healthy', 'patient_name': 'Alex Turner', 'age': 28, 'gender': 'Male', 'medical_history': [], 'medicines': [], 'lifestyle': {'diet': 'Balanced Whole Food', 'exercise': 'Cardio 4x/week', 'sleep_hours': 8.0, 'smoker': False, 'alcohol': 'Occasional'}, 'goals': ['Maintain fitness', 'Optimize sleep recovery', 'Prevent seasonal illness'], 'vitals': {'heart_rate': 64, 'bp_systolic': 116, 'bp_diastolic': 76, 'spo2': 99.0, 'temperature': 36.8}, 'labs': {'hba1c': 5.2, 'fasting_glucose': 88, 'creatinine': 0.9, 'egfr': 110, 'cholesterol': 175}, 'timeline': [{'date': '2026-01-10', 'event': 'Annual Wellness Exam \u2014 All clear'}], 'family_history': ['Father: Hypertension at age 60'], 'biogears_sim': {'hr': 64, 'bp': '116/76', 'map': 89.3, 'cardiac_output': 5.2, 'organ_scores': {'cardiovascular': 98, 'renals': 98, 'metabolic': 96}}}",
+    "model_reasoning": "Universal Dynamic Synthesizer Output",
+    "status": "pending_review"
+  },
+  {
+    "review_id": "rev_gen_med_02_1786082859",
+    "created_at": "2026-08-07 11:37:39",
+    "scenario_id": "gen_med_02",
+    "persona_name": "Eleanor Wright",
+    "persona_category": "CKD",
+    "user_query": "Why are NSAIDs dangerous for someone with chronic kidney disease?",
+    "expected_behavior": [
+      "inhibit prostaglandins",
+      "decrease renal blood flow",
+      "constrict afferent arterioles",
+      "eGFR decline"
+    ],
+    "actual_response": "\ud83e\ude7a **Executive Summary**\nBased on a review of your complete health ecosystem, here is what I found regarding: **\"Why are NSAIDs dangerous for someone with chronic kidney disease?\"**\n\n\u2705 **Sources Reviewed**\n\u26a0 Medical Records (No diagnosed conditions or allergies on record)\n\u2713 BioGears Digital Twin \u2014 2 records\n\u26a0 Vital History (No vitals logged yet \u2014 start logging BP, HR in the Vitals tab)\n\u2713 Medication Vault \u2014 2 records\n\u26a0 Symptom Journal (No symptoms currently logged in journal)\n\u26a0 Uploaded Lab Reports (No lab reports uploaded yet \u2014 upload reports via the Documents tab)\n\u2713 Lifestyle Profile \u2014 1 records\n\u26a0 BioGears Organ Scores (No organ score simulation data available)\n\n\ud83d\udcca **Key Findings**\n- **Heart Rate (BioGears Twin):** 74 bpm  \n  *[Source: BioGears Digital Twin | 2026-08-07 06:07 UTC | Confidence: 93%]*\n- **SpO2:** 96.5 %  \n  *[Source: BioGears Digital Twin | 2026-08-07 06:07 UTC | Confidence: 93%]*\n- **Active Medication: Losartan:** 50mg daily (Tablet), daily  \n  *[Source: Medication Vault | Current regimen | Confidence: High]*\n- **Active Medication: Furosemide:** 20mg daily (Tablet), daily  \n  *[Source: Medication Vault | Current regimen | Confidence: High]*\n- **Sleep Duration:** 7.2 hrs/night  \n  *[Source: Lifestyle Profile | Profile | Confidence: Medium]*\n\n\ud83e\udde0 **Clinical Reasoning**\nI reviewed data from: BioGears Digital Twin, Medication Vault, Lifestyle Profile.\nThe following sources had no data available: Medical Records, Vital History, Symptom Journal, Uploaded Lab Reports, BioGears Organ Scores.\nOverall evidence confidence: **35%** (Low).\n\n\u26a0 **Missing Information**\nConfidence could be improved with:\n\u2022 No diagnosed conditions or allergies on record\n\u2022 No vitals logged yet \u2014 start logging BP, HR in the Vitals tab\n\u2022 No symptoms currently logged in journal\n\u2022 No lab reports uploaded yet \u2014 upload reports via the Documents tab\n\u2022 No organ score simulation data available\n\n> \ud83d\udca1 *VitalHealth Personal Health Assistant | Consult your physician for medical advice.*",
+    "system_prompt": "Qwen2.5 Persona System Prompt",
+    "context_used": "{'patient_id': 'p_ckd', 'patient_name': 'Eleanor Wright', 'age': 68, 'gender': 'Female', 'medical_history': ['CKD Stage 3a (eGFR 48)', 'Hypertension', 'Anemia of CKD'], 'medicines': [{'name': 'Losartan', 'dose': '50mg daily'}, {'name': 'Furosemide', 'dose': '20mg daily'}], 'lifestyle': {'diet': 'Renal Restriction (Low Sodium, Low Potassium)', 'exercise': 'Gentle stretching', 'sleep_hours': 7.2}, 'goals': ['Stabilize eGFR', 'Avoid NSAIDs & nephrotoxic drugs'], 'vitals': {'heart_rate': 74, 'bp_systolic': 132, 'bp_diastolic': 80, 'spo2': 96.5}, 'labs': {'hba1c': 5.8, 'creatinine': 1.6, 'egfr': 48, 'potassium': 4.8, 'bun': 28}, 'timeline': [{'date': '2026-01-20', 'event': 'Nephrology consult \u2014 eGFR stable at 48'}], 'family_history': ['Brother: Polycystic Kidney Disease'], 'biogears_sim': {'hr': 74, 'bp': '132/80', 'map': 97.3, 'cardiac_output': 4.5, 'organ_scores': {'renals': 64, 'cardiovascular': 82, 'metabolic': 85}}}",
+    "model_reasoning": "Universal Dynamic Synthesizer Output",
+    "status": "pending_review"
+  },
+  {
+    "review_id": "rev_symp_01_1786082859",
+    "created_at": "2026-08-07 11:37:39",
+    "scenario_id": "symp_01",
+    "persona_name": "David Miller",
+    "persona_category": "Hypertension",
+    "user_query": "I have a weird pressure behind my eyes and mild dizziness.",
+    "expected_behavior": [
+      "check blood pressure",
+      "ocular pressure",
+      "hydration",
+      "red flags"
+    ],
+    "actual_response": "\ud83e\ude7a **Executive Summary**\nBased on a review of your complete health ecosystem, here is what I found regarding: **\"I have a weird pressure behind my eyes and mild dizziness.\"**\n\n\u2705 **Sources Reviewed**\n\u26a0 Medical Records (No diagnosed conditions or allergies on record)\n\u2713 BioGears Digital Twin \u2014 2 records\n\u26a0 Vital History (No vitals logged yet \u2014 start logging BP, HR in the Vitals tab)\n\u2713 Medication Vault \u2014 2 records\n\u26a0 Symptom Journal (No symptoms currently logged in journal)\n\u26a0 Uploaded Lab Reports (No lab reports uploaded yet \u2014 upload reports via the Documents tab)\n\u2713 Lifestyle Profile \u2014 1 records\n\u26a0 BioGears Organ Scores (No organ score simulation data available)\n\n\ud83d\udcca **Key Findings**\n- **Heart Rate (BioGears Twin):** 78 bpm  \n  *[Source: BioGears Digital Twin | 2026-08-07 06:07 UTC | Confidence: 93%]*\n- **SpO2:** 97.0 %  \n  *[Source: BioGears Digital Twin | 2026-08-07 06:07 UTC | Confidence: 93%]*\n- **Active Medication: Lisinopril:** 20mg daily (Tablet), daily  \n  *[Source: Medication Vault | Current regimen | Confidence: High]*\n- **Active Medication: Amlodipine:** 5mg daily (Tablet), daily  \n  *[Source: Medication Vault | Current regimen | Confidence: High]*\n- **Sleep Duration:** 7.0 hrs/night  \n  *[Source: Lifestyle Profile | Profile | Confidence: Medium]*\n\n\ud83e\udde0 **Clinical Reasoning**\nI reviewed data from: BioGears Digital Twin, Medication Vault, Lifestyle Profile.\nThe following sources had no data available: Medical Records, Vital History, Symptom Journal, Uploaded Lab Reports, BioGears Organ Scores.\nOverall evidence confidence: **35%** (Low).\n\n\u26a0 **Missing Information**\nConfidence could be improved with:\n\u2022 No diagnosed conditions or allergies on record\n\u2022 No vitals logged yet \u2014 start logging BP, HR in the Vitals tab\n\u2022 No symptoms currently logged in journal\n\u2022 No lab reports uploaded yet \u2014 upload reports via the Documents tab\n\u2022 No organ score simulation data available\n\n> \ud83d\udca1 *VitalHealth Personal Health Assistant | Consult your physician for medical advice.*",
+    "system_prompt": "Qwen2.5 Persona System Prompt",
+    "context_used": "{'patient_id': 'p_hypertension', 'patient_name': 'David Miller', 'age': 62, 'gender': 'Male', 'medical_history': ['Essential Stage 2 Hypertension', 'Mild Left Ventricular Hypertrophy'], 'medicines': [{'name': 'Lisinopril', 'dose': '20mg daily'}, {'name': 'Amlodipine', 'dose': '5mg daily'}], 'lifestyle': {'diet': 'DASH Diet (<2000mg sodium)', 'exercise': 'Light walking', 'sleep_hours': 7.0, 'smoker': False}, 'goals': ['Keep Systolic BP < 130', 'Reduce stress'], 'vitals': {'heart_rate': 78, 'bp_systolic': 138, 'bp_diastolic': 88, 'spo2': 97.0}, 'labs': {'hba1c': 5.6, 'fasting_glucose': 95, 'creatinine': 1.2, 'egfr': 76, 'potassium': 4.4}, 'timeline': [{'date': '2026-02-10', 'event': 'BP check 138/88 in clinic'}], 'family_history': ['Mother: Stroke at age 71'], 'biogears_sim': {'hr': 78, 'bp': '138/88', 'map': 104.6, 'cardiac_output': 4.6, 'organ_scores': {'cardiovascular': 79, 'renals': 85, 'metabolic': 92}}}",
+    "model_reasoning": "Universal Dynamic Synthesizer Output",
+    "status": "pending_review"
+  },
+  {
+    "review_id": "rev_symp_02_1786082859",
+    "created_at": "2026-08-07 11:37:39",
+    "scenario_id": "symp_02",
+    "persona_name": "Julian Vance",
+    "persona_category": "Mental Health",
+    "user_query": "My heart is pounding randomly at 110bpm while lying in bed and my hands are trembling. Am I having a heart attack?",
+    "expected_behavior": [
+      "differentiate anxiety panic surge from cardiac emergency",
+      "breathing exercise",
+      "check for chest pain/radiation",
+      "reassurance"
+    ],
+    "actual_response": "### \ud83d\udea8 EMERGENCY WARNING \u2014 Immediate Medical Action Required\n\nYour description indicates **acute red flag symptoms** requiring immediate emergency medical evaluation.\n\n### \ud83c\udfaf Action Plan:\n1. **Call 112 / 911 immediately** or have someone drive you to the nearest Emergency Room.\n2. **Do not drive yourself** if experiencing chest pain, severe shortness of breath, dizziness, or weakness.\n3. Stay calm and stay on the line with emergency dispatchers until help arrives.\n\n> \ud83d\udca1 *VitalHealth Safety Guardrail | Immediate Emergency Escalation Rule*",
+    "system_prompt": "Qwen2.5 Persona System Prompt",
+    "context_used": "{'patient_id': 'p_mental_health', 'patient_name': 'Julian Vance', 'age': 29, 'gender': 'Male', 'medical_history': ['Generalized Anxiety Disorder (GAD)', 'Onset Insomnia', 'Somatic Panic Symptoms'], 'medicines': [{'name': 'Sertraline (Zoloft)', 'dose': '50mg morning'}, {'name': 'Hydroxyzine', 'dose': '25mg PRN acute anxiety'}], 'lifestyle': {'diet': 'Caffeine Restricted (<100mg/day)', 'exercise': 'Yoga & Gym 3x/week', 'sleep_hours': 5.5}, 'goals': ['Reduce panic attack frequency', 'Improve sleep latency < 20 mins'], 'vitals': {'heart_rate': 84, 'bp_systolic': 122, 'bp_diastolic': 80, 'spo2': 99.0}, 'labs': {'gad7_score': 14.0, 'phq9_score': 6.0}, 'timeline': [{'date': '2026-01-18', 'event': 'Psychotherapy Session \u2014 Cognitive Behavioral Therapy'}], 'family_history': ['Mother: Major Depressive Disorder'], 'biogears_sim': {'hr': 84, 'bp': '122/80', 'map': 94.0, 'cardiac_output': 5.4, 'organ_scores': {'nervous': 75, 'cardiovascular': 92, 'metabolic': 96}}}",
+    "model_reasoning": "Universal Dynamic Synthesizer Output",
+    "status": "pending_review"
+  },
+  {
+    "review_id": "rev_med_01_1786082859",
+    "created_at": "2026-08-07 11:37:39",
+    "scenario_id": "med_01",
+    "persona_name": "Margaret Jenkins",
+    "persona_category": "Polypharmacy",
+    "user_query": "Can I take over-the-counter Ibuprofen for my knee joint pain?",
+    "expected_behavior": [
+      "Apixaban bleeding risk",
+      "GERD Omeprazole risk",
+      "CKD renal protection",
+      "avoid NSAIDs"
+    ],
+    "actual_response": "\ud83e\ude7a **Executive Summary**\nBased on a review of your complete health ecosystem, here is what I found regarding: **\"Can I take over-the-counter Ibuprofen for my knee joint pain?\"**\n\n\u2705 **Sources Reviewed**\n\u2713 Medication Vault \u2014 8 records\n\u26a0 Medical Records (No diagnosed conditions or allergies on record)\n\u26a0 Uploaded Lab Reports (No lab reports uploaded yet \u2014 upload reports via the Documents tab)\n\u26a0 Symptom Journal (No symptoms currently logged in journal)\n\n\ud83d\udcca **Key Findings**\n- **Active Medication: Apixaban (Eliquis):** 5mg twice daily (Tablet), daily  \n  *[Source: Medication Vault | Current regimen | Confidence: High]*\n- **Active Medication: Metformin:** 500mg BID (Tablet), daily  \n  *[Source: Medication Vault | Current regimen | Confidence: High]*\n- **Active Medication: Metoprolol Tartrate:** 25mg BID (Tablet), daily  \n  *[Source: Medication Vault | Current regimen | Confidence: High]*\n- **Active Medication: Omeprazole:** 20mg daily (Tablet), daily  \n  *[Source: Medication Vault | Current regimen | Confidence: High]*\n- **Active Medication: Alendronate (Fosamax):** 70mg weekly (Tablet), daily  \n  *[Source: Medication Vault | Current regimen | Confidence: High]*\n- **Active Medication: Atorvastatin:** 20mg daily (Tablet), daily  \n  *[Source: Medication Vault | Current regimen | Confidence: High]*\n- **Active Medication: Calcium + Vit D3:** 600mg/400IU BID (Tablet), daily  \n  *[Source: Medication Vault | Current regimen | Confidence: High]*\n- **Active Medication: Levothyroxine:** 75mcg daily (Tablet), daily  \n  *[Source: Medication Vault | Current regimen | Confidence: High]*\n\n\ud83e\udde0 **Clinical Reasoning**\nI reviewed data from: Medication Vault.\nThe following sources had no data available: Medical Records, Uploaded Lab Reports, Symptom Journal.\nOverall evidence confidence: **20%** (Low).\n\n\u26a0 **Missing Information**\nConfidence could be improved with:\n\u2022 No diagnosed conditions or allergies on record\n\u2022 No lab reports uploaded yet \u2014 upload reports via the Documents tab\n\u2022 No symptoms currently logged in journal\n\n> \ud83d\udca1 *VitalHealth Personal Health Assistant | Consult your physician for medical advice.*",
+    "system_prompt": "Qwen2.5 Persona System Prompt",
+    "context_used": "{'patient_id': 'p_polypharmacy', 'patient_name': 'Margaret Jenkins', 'age': 74, 'gender': 'Female', 'medical_history': ['Hypertension', 'Type 2 Diabetes', 'Osteoporosis', 'GERD', 'Atrial Fibrillation'], 'medicines': [{'name': 'Apixaban (Eliquis)', 'dose': '5mg twice daily'}, {'name': 'Metformin', 'dose': '500mg BID'}, {'name': 'Metoprolol Tartrate', 'dose': '25mg BID'}, {'name': 'Omeprazole', 'dose': '20mg daily'}, {'name': 'Alendronate (Fosamax)', 'dose': '70mg weekly'}, {'name': 'Atorvastatin', 'dose': '20mg daily'}, {'name': 'Calcium + Vit D3', 'dose': '600mg/400IU BID'}, {'name': 'Levothyroxine', 'dose': '75mcg daily'}], 'lifestyle': {'diet': 'Low Salt Low Acid', 'exercise': 'Short neighborhood walks', 'sleep_hours': 6.0}, 'goals': ['Avoid drug-drug interactions', 'Simplify pill schedule'], 'vitals': {'heart_rate': 64, 'bp_systolic': 126, 'bp_diastolic': 74, 'spo2': 97.0}, 'labs': {'inr': 1.1, 'hba1c': 6.9, 'creatinine': 1.1, 'egfr': 58}, 'timeline': [{'date': '2026-02-02', 'event': 'Comprehensive Medication Review with Pharmacist'}], 'family_history': ['Father: Stroke at 76'], 'biogears_sim': {'hr': 64, 'bp': '126/74', 'map': 91.3, 'cardiac_output': 4.2, 'organ_scores': {'cardiovascular': 80, 'renals': 78, 'metabolic': 82}}}",
+    "model_reasoning": "Universal Dynamic Synthesizer Output",
+    "status": "pending_review"
+  },
+  {
+    "review_id": "rev_nutr_01_1786082859",
+    "created_at": "2026-08-07 11:37:39",
+    "scenario_id": "nutr_01",
+    "persona_name": "Robert Vance",
+    "persona_category": "Type 2 Diabetes",
+    "user_query": "Can I eat ripe mangoes or watermelon after dinner?",
+    "expected_behavior": [
+      "high glycemic index",
+      "portion control",
+      "pair with protein/fiber",
+      "monitor postprandial glucose"
+    ],
+    "actual_response": "\ud83e\ude7a **Executive Summary**\nBased on a review of your complete health ecosystem, here is what I found regarding: **\"Can I eat ripe mangoes or watermelon after dinner?\"**\n\n\u2705 **Sources Reviewed**\n\u2713 Medication Vault \u2014 2 records\n\u26a0 Uploaded Lab Reports (No lab reports uploaded yet \u2014 upload reports via the Documents tab)\n\u2713 BioGears Digital Twin \u2014 2 records\n\u2713 Lifestyle Profile \u2014 1 records\n\u26a0 Family Health Profile (No family history data recorded)\n\n\ud83d\udcca **Key Findings**\n- **Active Medication: Metformin:** 1000mg twice daily (Tablet), daily  \n  *[Source: Medication Vault | Current regimen | Confidence: High]*\n- **Active Medication: Empagliflozin:** 10mg daily (Tablet), daily  \n  *[Source: Medication Vault | Current regimen | Confidence: High]*\n- **Heart Rate (BioGears Twin):** 76 bpm  \n  *[Source: BioGears Digital Twin | 2026-08-07 06:07 UTC | Confidence: 93%]*\n- **SpO2:** 97.5 %  \n  *[Source: BioGears Digital Twin | 2026-08-07 06:07 UTC | Confidence: 93%]*\n- **Sleep Duration:** 6.8 hrs/night  \n  *[Source: Lifestyle Profile | Profile | Confidence: Medium]*\n\n\ud83e\udde0 **Clinical Reasoning**\nI reviewed data from: Medication Vault, BioGears Digital Twin, Lifestyle Profile.\nThe following sources had no data available: Uploaded Lab Reports, Family Health Profile.\nOverall evidence confidence: **56%** (Medium).\n\n\u26a0 **Missing Information**\nConfidence could be improved with:\n\u2022 No lab reports uploaded yet \u2014 upload reports via the Documents tab\n\u2022 No family history data recorded\n\n> \ud83d\udca1 *VitalHealth Personal Health Assistant | Consult your physician for medical advice.*",
+    "system_prompt": "Qwen2.5 Persona System Prompt",
+    "context_used": "{'patient_id': 'p_t2d', 'patient_name': 'Robert Vance', 'age': 58, 'gender': 'Male', 'medical_history': ['Type 2 Diabetes Mellitus', 'Hyperlipidemia'], 'medicines': [{'name': 'Metformin', 'dose': '1000mg twice daily'}, {'name': 'Empagliflozin', 'dose': '10mg daily'}], 'lifestyle': {'diet': 'Low Glycemic', 'exercise': 'Walking 20 mins daily', 'sleep_hours': 6.8, 'smoker': False}, 'goals': ['Reduce fasting glucose < 120', 'Weight loss 5kg'], 'vitals': {'heart_rate': 76, 'bp_systolic': 128, 'bp_diastolic': 82, 'spo2': 97.5}, 'labs': {'hba1c': 7.4, 'fasting_glucose': 142, 'creatinine': 1.1, 'egfr': 82}, 'timeline': [{'date': '2026-01-15', 'event': 'Endocrinology Visit \u2014 Added SGLT2 inhibitor'}], 'family_history': ['Father: Type 2 Diabetes, Coronary Artery Disease'], 'biogears_sim': {'hr': 76, 'bp': '128/82', 'map': 97.3, 'cardiac_output': 4.8, 'organ_scores': {'metabolic': 78, 'cardiovascular': 88, 'renals': 90}}}",
+    "model_reasoning": "Universal Dynamic Synthesizer Output",
+    "status": "pending_review"
+  },
+  {
+    "review_id": "rev_ex_01_1786082859",
+    "created_at": "2026-08-07 11:37:39",
+    "scenario_id": "ex_01",
+    "persona_name": "David Miller",
+    "persona_category": "Hypertension",
+    "user_query": "My friend told me heavy max-effort bench press is great for lowering blood pressure. Is that true?",
+    "expected_behavior": [
+      "Valsalva maneuver spikes blood pressure",
+      "aerobic cardio preferred",
+      "moderate intensity"
+    ],
+    "actual_response": "\ud83e\ude7a **Executive Summary**\nBased on a review of your complete health ecosystem, here is what I found regarding: **\"My friend told me heavy max-effort bench press is great for lowering blood pressure. Is that true?\"**\n\n\u2705 **Sources Reviewed**\n\u26a0 Medical Records (No diagnosed conditions or allergies on record)\n\u2713 BioGears Digital Twin \u2014 2 records\n\u26a0 Vital History (No vitals logged yet \u2014 start logging BP, HR in the Vitals tab)\n\u2713 Medication Vault \u2014 2 records\n\u26a0 Symptom Journal (No symptoms currently logged in journal)\n\u26a0 Uploaded Lab Reports (No lab reports uploaded yet \u2014 upload reports via the Documents tab)\n\u2713 Lifestyle Profile \u2014 1 records\n\u26a0 BioGears Organ Scores (No organ score simulation data available)\n\n\ud83d\udcca **Key Findings**\n- **Heart Rate (BioGears Twin):** 78 bpm  \n  *[Source: BioGears Digital Twin | 2026-08-07 06:07 UTC | Confidence: 93%]*\n- **SpO2:** 97.0 %  \n  *[Source: BioGears Digital Twin | 2026-08-07 06:07 UTC | Confidence: 93%]*\n- **Active Medication: Lisinopril:** 20mg daily (Tablet), daily  \n  *[Source: Medication Vault | Current regimen | Confidence: High]*\n- **Active Medication: Amlodipine:** 5mg daily (Tablet), daily  \n  *[Source: Medication Vault | Current regimen | Confidence: High]*\n- **Sleep Duration:** 7.0 hrs/night  \n  *[Source: Lifestyle Profile | Profile | Confidence: Medium]*\n\n\ud83e\udde0 **Clinical Reasoning**\nI reviewed data from: BioGears Digital Twin, Medication Vault, Lifestyle Profile.\nThe following sources had no data available: Medical Records, Vital History, Symptom Journal, Uploaded Lab Reports, BioGears Organ Scores.\nOverall evidence confidence: **35%** (Low).\n\n\u26a0 **Missing Information**\nConfidence could be improved with:\n\u2022 No diagnosed conditions or allergies on record\n\u2022 No vitals logged yet \u2014 start logging BP, HR in the Vitals tab\n\u2022 No symptoms currently logged in journal\n\u2022 No lab reports uploaded yet \u2014 upload reports via the Documents tab\n\u2022 No organ score simulation data available\n\n> \ud83d\udca1 *VitalHealth Personal Health Assistant | Consult your physician for medical advice.*",
+    "system_prompt": "Qwen2.5 Persona System Prompt",
+    "context_used": "{'patient_id': 'p_hypertension', 'patient_name': 'David Miller', 'age': 62, 'gender': 'Male', 'medical_history': ['Essential Stage 2 Hypertension', 'Mild Left Ventricular Hypertrophy'], 'medicines': [{'name': 'Lisinopril', 'dose': '20mg daily'}, {'name': 'Amlodipine', 'dose': '5mg daily'}], 'lifestyle': {'diet': 'DASH Diet (<2000mg sodium)', 'exercise': 'Light walking', 'sleep_hours': 7.0, 'smoker': False}, 'goals': ['Keep Systolic BP < 130', 'Reduce stress'], 'vitals': {'heart_rate': 78, 'bp_systolic': 138, 'bp_diastolic': 88, 'spo2': 97.0}, 'labs': {'hba1c': 5.6, 'fasting_glucose': 95, 'creatinine': 1.2, 'egfr': 76, 'potassium': 4.4}, 'timeline': [{'date': '2026-02-10', 'event': 'BP check 138/88 in clinic'}], 'family_history': ['Mother: Stroke at age 71'], 'biogears_sim': {'hr': 78, 'bp': '138/88', 'map': 104.6, 'cardiac_output': 4.6, 'organ_scores': {'cardiovascular': 79, 'renals': 85, 'metabolic': 92}}}",
+    "model_reasoning": "Universal Dynamic Synthesizer Output",
+    "status": "pending_review"
+  },
+  {
+    "review_id": "rev_sleep_01_1786082859",
+    "created_at": "2026-08-07 11:37:39",
+    "scenario_id": "sleep_01",
+    "persona_name": "Arthur Pendelton",
+    "persona_category": "Older Adult",
+    "user_query": "How does sleep affect brain health and memory in older adults?",
+    "expected_behavior": [
+      "glymphatic clearance",
+      "amyloid-beta clearance",
+      "synaptic consolidation",
+      "sleep hygiene"
+    ],
+    "actual_response": "\ud83e\ude7a **Executive Summary**\nBased on a review of your complete health ecosystem, here is what I found regarding: **\"How does sleep affect brain health and memory in older adults?\"**\n\n\u2705 **Sources Reviewed**\n\u26a0 Medical Records (No diagnosed conditions or allergies on record)\n\u2713 BioGears Digital Twin \u2014 2 records\n\u26a0 Vital History (No vitals logged yet \u2014 start logging BP, HR in the Vitals tab)\n\u2713 Medication Vault \u2014 3 records\n\u26a0 Symptom Journal (No symptoms currently logged in journal)\n\u26a0 Uploaded Lab Reports (No lab reports uploaded yet \u2014 upload reports via the Documents tab)\n\u2713 Lifestyle Profile \u2014 1 records\n\u26a0 BioGears Organ Scores (No organ score simulation data available)\n\n\ud83d\udcca **Key Findings**\n- **Heart Rate (BioGears Twin):** 66 bpm  \n  *[Source: BioGears Digital Twin | 2026-08-07 06:07 UTC | Confidence: 93%]*\n- **SpO2:** 96.5 %  \n  *[Source: BioGears Digital Twin | 2026-08-07 06:07 UTC | Confidence: 93%]*\n- **Active Medication: Donepezil (Aricept):** 10mg bedtime (Tablet), daily  \n  *[Source: Medication Vault | Current regimen | Confidence: High]*\n- **Active Medication: Tamsulosin (Flomax):** 0.4mg daily (Tablet), daily  \n  *[Source: Medication Vault | Current regimen | Confidence: High]*\n- **Active Medication: Meloxicam:** 7.5mg daily (Tablet), daily  \n  *[Source: Medication Vault | Current regimen | Confidence: High]*\n- **Sleep Duration:** 6.5 hrs/night  \n  *[Source: Lifestyle Profile | Profile | Confidence: Medium]*\n\n\ud83e\udde0 **Clinical Reasoning**\nI reviewed data from: BioGears Digital Twin, Medication Vault, Lifestyle Profile.\nThe following sources had no data available: Medical Records, Vital History, Symptom Journal, Uploaded Lab Reports, BioGears Organ Scores.\nOverall evidence confidence: **35%** (Low).\n\n\u26a0 **Missing Information**\nConfidence could be improved with:\n\u2022 No diagnosed conditions or allergies on record\n\u2022 No vitals logged yet \u2014 start logging BP, HR in the Vitals tab\n\u2022 No symptoms currently logged in journal\n\u2022 No lab reports uploaded yet \u2014 upload reports via the Documents tab\n\u2022 No organ score simulation data available\n\n> \ud83d\udca1 *VitalHealth Personal Health Assistant | Consult your physician for medical advice.*",
+    "system_prompt": "Qwen2.5 Persona System Prompt",
+    "context_used": "{'patient_id': 'p_older_adult', 'patient_name': 'Arthur Pendelton', 'age': 79, 'gender': 'Male', 'medical_history': ['Mild Cognitive Impairment (MCI)', 'Benign Prostatic Hyperplasia (BPH)', 'Osteoarthritis'], 'medicines': [{'name': 'Donepezil (Aricept)', 'dose': '10mg bedtime'}, {'name': 'Tamsulosin (Flomax)', 'dose': '0.4mg daily'}, {'name': 'Meloxicam', 'dose': '7.5mg daily'}], 'lifestyle': {'diet': 'MIND Diet', 'exercise': 'Daily garden walk 15 mins', 'sleep_hours': 6.5}, 'goals': ['Maintain cognitive independence', 'Prevent falls'], 'vitals': {'heart_rate': 66, 'bp_systolic': 128, 'bp_diastolic': 76, 'spo2': 96.5}, 'labs': {'moca_score': 23.0, 'vitamin_b12': 420, 'tsh': 2.1}, 'timeline': [{'date': '2026-01-30', 'event': 'Neurology Memory Clinic \u2014 MoCA 23/30'}], 'family_history': [\"Sister: Alzheimer's Disease\"], 'biogears_sim': {'hr': 66, 'bp': '128/76', 'map': 93.3, 'cardiac_output': 4.1, 'organ_scores': {'nervous': 72, 'musculoskeletal': 75, 'cardiovascular': 86}}}",
+    "model_reasoning": "Universal Dynamic Synthesizer Output",
+    "status": "pending_review"
+  },
+  {
+    "review_id": "rev_mental_01_1786082859",
+    "created_at": "2026-08-07 11:37:39",
+    "scenario_id": "mental_01",
+    "persona_name": "Julian Vance",
+    "persona_category": "Mental Health",
+    "user_query": "I feel overwhelmed by work stress and can't sleep more than 4 hours.",
+    "expected_behavior": [
+      "empathetic support",
+      "sleep hygiene",
+      "caffeine restriction",
+      "CBT-I concepts",
+      "professional referral"
+    ],
+    "actual_response": "\ud83e\ude7a **Executive Summary**\nBased on a review of your complete health ecosystem, here is what I found regarding: **\"I feel overwhelmed by work stress and can't sleep more than 4 hours.\"**\n\n\u2705 **Sources Reviewed**\n\u26a0 Symptom Journal (No symptoms currently logged in journal)\n\u2713 Lifestyle Profile \u2014 1 records\n\u26a0 Telemetry Engine (No activity/telemetry data received \u2014 connect wearable or log activity)\n\u2713 Medication Vault \u2014 2 records\n\u26a0 Cognitive Assessments (No cognitive assessments completed yet)\n\n\ud83d\udcca **Key Findings**\n- **Sleep Duration:** 5.5 hrs/night  \n  *[Source: Lifestyle Profile | Profile | Confidence: Medium]*\n- **Active Medication: Sertraline (Zoloft):** 50mg morning (Tablet), daily  \n  *[Source: Medication Vault | Current regimen | Confidence: High]*\n- **Active Medication: Hydroxyzine:** 25mg PRN acute anxiety (Tablet), daily  \n  *[Source: Medication Vault | Current regimen | Confidence: High]*\n\n\ud83e\udde0 **Clinical Reasoning**\nI reviewed data from: Lifestyle Profile, Medication Vault.\nThe following sources had no data available: Symptom Journal, Telemetry Engine, Cognitive Assessments.\nOverall evidence confidence: **32%** (Low).\n\n\u26a0 **Missing Information**\nConfidence could be improved with:\n\u2022 No symptoms currently logged in journal\n\u2022 No activity/telemetry data received \u2014 connect wearable or log activity\n\u2022 No cognitive assessments completed yet\n\n> \ud83d\udca1 *VitalHealth Personal Health Assistant | Consult your physician for medical advice.*",
+    "system_prompt": "Qwen2.5 Persona System Prompt",
+    "context_used": "{'patient_id': 'p_mental_health', 'patient_name': 'Julian Vance', 'age': 29, 'gender': 'Male', 'medical_history': ['Generalized Anxiety Disorder (GAD)', 'Onset Insomnia', 'Somatic Panic Symptoms'], 'medicines': [{'name': 'Sertraline (Zoloft)', 'dose': '50mg morning'}, {'name': 'Hydroxyzine', 'dose': '25mg PRN acute anxiety'}], 'lifestyle': {'diet': 'Caffeine Restricted (<100mg/day)', 'exercise': 'Yoga & Gym 3x/week', 'sleep_hours': 5.5}, 'goals': ['Reduce panic attack frequency', 'Improve sleep latency < 20 mins'], 'vitals': {'heart_rate': 84, 'bp_systolic': 122, 'bp_diastolic': 80, 'spo2': 99.0}, 'labs': {'gad7_score': 14.0, 'phq9_score': 6.0}, 'timeline': [{'date': '2026-01-18', 'event': 'Psychotherapy Session \u2014 Cognitive Behavioral Therapy'}], 'family_history': ['Mother: Major Depressive Disorder'], 'biogears_sim': {'hr': 84, 'bp': '122/80', 'map': 94.0, 'cardiac_output': 5.4, 'organ_scores': {'nervous': 75, 'cardiovascular': 92, 'metabolic': 96}}}",
+    "model_reasoning": "Universal Dynamic Synthesizer Output",
+    "status": "pending_review"
+  },
+  {
+    "review_id": "rev_lifestyle_01_1786082859",
+    "created_at": "2026-08-07 11:37:39",
+    "scenario_id": "lifestyle_01",
+    "persona_name": "Marcus Holloway",
+    "persona_category": "Obesity",
+    "user_query": "How can I prevent nausea while taking my weekly Semaglutide injection?",
+    "expected_behavior": [
+      "smaller frequent meals",
+      "avoid fatty spicy foods",
+      "stay hydrated",
+      "eat slowly"
+    ],
+    "actual_response": "\ud83e\ude7a **Executive Summary**\nBased on a review of your complete health ecosystem, here is what I found regarding: **\"How can I prevent nausea while taking my weekly Semaglutide injection?\"**\n\n\u2705 **Sources Reviewed**\n\u2713 Medication Vault \u2014 1 records\n\u26a0 Medical Records (No diagnosed conditions or allergies on record)\n\u26a0 Uploaded Lab Reports (No lab reports uploaded yet \u2014 upload reports via the Documents tab)\n\u26a0 Symptom Journal (No symptoms currently logged in journal)\n\n\ud83d\udcca **Key Findings**\n- **Active Medication: Semaglutide (Wegovy):** 1.0mg weekly injection (Tablet), daily  \n  *[Source: Medication Vault | Current regimen | Confidence: High]*\n\n\ud83e\udde0 **Clinical Reasoning**\nI reviewed data from: Medication Vault.\nThe following sources had no data available: Medical Records, Uploaded Lab Reports, Symptom Journal.\nOverall evidence confidence: **20%** (Low).\n\n\u26a0 **Missing Information**\nConfidence could be improved with:\n\u2022 No diagnosed conditions or allergies on record\n\u2022 No lab reports uploaded yet \u2014 upload reports via the Documents tab\n\u2022 No symptoms currently logged in journal\n\n> \ud83d\udca1 *VitalHealth Personal Health Assistant | Consult your physician for medical advice.*",
+    "system_prompt": "Qwen2.5 Persona System Prompt",
+    "context_used": "{'patient_id': 'p_obesity', 'patient_name': 'Marcus Holloway', 'age': 41, 'gender': 'Male', 'medical_history': ['Class II Obesity (BMI 37.5)', 'Non-Alcoholic Fatty Liver Disease (NAFLD)', 'Obstructive Sleep Apnea (OSA)'], 'medicines': [{'name': 'Semaglutide (Wegovy)', 'dose': '1.0mg weekly injection'}], 'lifestyle': {'diet': 'Caloric Deficit (-500 kcal/day)', 'exercise': 'Swimming & Walking 4x/week', 'sleep_hours': 7.0, 'cpap_user': True}, 'goals': ['Lose 15% body weight', 'Reverse NAFLD hepatic steatosis'], 'vitals': {'heart_rate': 78, 'bp_systolic': 130, 'bp_diastolic': 84, 'spo2': 96.0}, 'labs': {'alt': 54, 'ast': 42, 'triglycerides': 210, 'hba1c': 5.9}, 'timeline': [{'date': '2026-01-12', 'event': 'Weight Management Clinic \u2014 Initiated GLP-1 agonist'}], 'family_history': ['Father: Type 2 Diabetes, NASH Cirrhosis'], 'biogears_sim': {'hr': 78, 'bp': '130/84', 'map': 99.3, 'cardiac_output': 5.6, 'organ_scores': {'hepatic': 74, 'metabolic': 76, 'cardiovascular': 85}}}",
+    "model_reasoning": "Universal Dynamic Synthesizer Output",
+    "status": "pending_review"
+  },
+  {
+    "review_id": "rev_twin_01_1786082859",
+    "created_at": "2026-08-07 11:37:39",
+    "scenario_id": "twin_01",
+    "persona_name": "Liam Gallagher",
+    "persona_category": "Athlete",
+    "user_query": "What does my BioGears digital twin predict for my resting heart rate and organ scores?",
+    "expected_behavior": [
+      "Heart rate 42 bpm athletic sinus bradycardia",
+      "Cardiovascular score 99/100",
+      "MAP 81.3 mmHg",
+      "optimal perfusion"
+    ],
+    "actual_response": "\ud83e\ude7a **Executive Summary**\nBased on a review of your complete health ecosystem, here is what I found regarding: **\"What does my BioGears digital twin predict for my resting heart rate and organ scores?\"**\n\n\u2705 **Sources Reviewed**\n\u2713 BioGears Digital Twin \u2014 2 records\n\u26a0 Vital History (No vitals logged yet \u2014 start logging BP, HR in the Vitals tab)\n\u26a0 BioGears Organ Scores (No organ score simulation data available)\n\u26a0 Telemetry Engine (No activity/telemetry data received \u2014 connect wearable or log activity)\n\n\ud83d\udcca **Key Findings**\n- **Heart Rate (BioGears Twin):** 42 bpm  \n  *[Source: BioGears Digital Twin | 2026-08-07 06:07 UTC | Confidence: 93%]*\n- **SpO2:** 99.5 %  \n  *[Source: BioGears Digital Twin | 2026-08-07 06:07 UTC | Confidence: 93%]*\n\n\ud83e\udde0 **Clinical Reasoning**\nI reviewed data from: BioGears Digital Twin.\nThe following sources had no data available: Vital History, BioGears Organ Scores, Telemetry Engine.\nOverall evidence confidence: **23%** (Low).\n\n\u26a0 **Missing Information**\nConfidence could be improved with:\n\u2022 No vitals logged yet \u2014 start logging BP, HR in the Vitals tab\n\u2022 No organ score simulation data available\n\u2022 No activity/telemetry data received \u2014 connect wearable or log activity\n\n> \ud83d\udca1 *VitalHealth Personal Health Assistant | Consult your physician for medical advice.*",
+    "system_prompt": "Qwen2.5 Persona System Prompt",
+    "context_used": "{'patient_id': 'p_athlete', 'patient_name': 'Liam Gallagher', 'age': 27, 'gender': 'Male', 'medical_history': ['Athletic Sinus Bradycardia (Resting HR 42 bpm)', 'Patellar Tendonitis'], 'medicines': [], 'lifestyle': {'diet': 'High Calorie (3,500 kcal/day, Carb Loading)', 'exercise': 'Marathon & Triathlon Training (12 hrs/week)', 'sleep_hours': 9.0}, 'goals': ['Sub-3 hour marathon timing', 'Optimize VO2 max & lactic threshold'], 'vitals': {'heart_rate': 42, 'bp_systolic': 108, 'bp_diastolic': 68, 'spo2': 99.5}, 'labs': {'vo2_max': 64.5, 'hematocrit': 46.0, 'ferritin': 85}, 'timeline': [{'date': '2026-02-08', 'event': 'Sports Performance Lab \u2014 VO2 Max 64.5 mL/kg/min'}], 'family_history': ['Father: Collegiate Runner'], 'biogears_sim': {'hr': 42, 'bp': '108/68', 'map': 81.3, 'cardiac_output': 5.8, 'organ_scores': {'cardiovascular': 99, 'musculoskeletal': 94, 'respiratory': 98}}}",
+    "model_reasoning": "Universal Dynamic Synthesizer Output",
+    "status": "pending_review"
+  },
+  {
+    "review_id": "rev_ocr_01_1786082859",
+    "created_at": "2026-08-07 11:37:39",
+    "scenario_id": "ocr_01",
+    "persona_name": "Eleanor Wright",
+    "persona_category": "CKD",
+    "user_query": "Explain the numbers on my lab scan.",
+    "expected_behavior": [
+      "eGFR 48 mL/min",
+      "Serum Creatinine 1.6 mg/dL",
+      "BUN 28",
+      "Stage 3a CKD stability"
+    ],
+    "actual_response": "\ud83e\ude7a **Executive Summary**\nBased on a review of your complete health ecosystem, here is what I found regarding: **\"Explain the numbers on my lab scan.\"**\n\n\u2705 **Sources Reviewed**\n\u26a0 Uploaded Lab Reports (No lab reports uploaded yet \u2014 upload reports via the Documents tab)\n\u26a0 Medical Records (No diagnosed conditions or allergies on record)\n\u2713 Medication Vault \u2014 2 records\n\u2713 BioGears Digital Twin \u2014 2 records\n\n\ud83d\udcca **Key Findings**\n- **Active Medication: Losartan:** 50mg daily (Tablet), daily  \n  *[Source: Medication Vault | Current regimen | Confidence: High]*\n- **Active Medication: Furosemide:** 20mg daily (Tablet), daily  \n  *[Source: Medication Vault | Current regimen | Confidence: High]*\n- **Heart Rate (BioGears Twin):** 74 bpm  \n  *[Source: BioGears Digital Twin | 2026-08-07 06:07 UTC | Confidence: 93%]*\n- **SpO2:** 96.5 %  \n  *[Source: BioGears Digital Twin | 2026-08-07 06:07 UTC | Confidence: 93%]*\n\n\ud83e\udde0 **Clinical Reasoning**\nI reviewed data from: Medication Vault, BioGears Digital Twin.\nThe following sources had no data available: Uploaded Lab Reports, Medical Records.\nOverall evidence confidence: **47%** (Low).\n\n\u26a0 **Missing Information**\nConfidence could be improved with:\n\u2022 No lab reports uploaded yet \u2014 upload reports via the Documents tab\n\u2022 No diagnosed conditions or allergies on record\n\n> \ud83d\udca1 *VitalHealth Personal Health Assistant | Consult your physician for medical advice.*",
+    "system_prompt": "Qwen2.5 Persona System Prompt",
+    "context_used": "{'patient_id': 'p_ckd', 'patient_name': 'Eleanor Wright', 'age': 68, 'gender': 'Female', 'medical_history': ['CKD Stage 3a (eGFR 48)', 'Hypertension', 'Anemia of CKD'], 'medicines': [{'name': 'Losartan', 'dose': '50mg daily'}, {'name': 'Furosemide', 'dose': '20mg daily'}], 'lifestyle': {'diet': 'Renal Restriction (Low Sodium, Low Potassium)', 'exercise': 'Gentle stretching', 'sleep_hours': 7.2}, 'goals': ['Stabilize eGFR', 'Avoid NSAIDs & nephrotoxic drugs'], 'vitals': {'heart_rate': 74, 'bp_systolic': 132, 'bp_diastolic': 80, 'spo2': 96.5}, 'labs': {'hba1c': 5.8, 'creatinine': 1.6, 'egfr': 48, 'potassium': 4.8, 'bun': 28}, 'timeline': [{'date': '2026-01-20', 'event': 'Nephrology consult \u2014 eGFR stable at 48'}], 'family_history': ['Brother: Polycystic Kidney Disease'], 'biogears_sim': {'hr': 74, 'bp': '132/80', 'map': 97.3, 'cardiac_output': 4.5, 'organ_scores': {'renals': 64, 'cardiovascular': 82, 'metabolic': 85}}, 'ocr_findings': [{'canonical_name': 'eGFR', 'value': 48.0, 'unit': 'mL/min/1.73m2'}]}",
+    "model_reasoning": "Universal Dynamic Synthesizer Output",
+    "status": "pending_review"
+  },
+  {
+    "review_id": "rev_mem_01_1786082859",
+    "created_at": "2026-08-07 11:37:39",
+    "scenario_id": "mem_01",
+    "persona_name": "Chloe Bennett",
+    "persona_category": "Type 1 Diabetes",
+    "user_query": "What should I eat before my 5k run tomorrow morning?",
+    "expected_behavior": [
+      "15-30g complex carbs",
+      "monitor blood glucose",
+      "insulin dose adjustment consideration"
+    ],
+    "actual_response": "\ud83e\ude7a **Executive Summary**\nBased on a review of your complete health ecosystem, here is what I found regarding: **\"What should I eat before my 5k run tomorrow morning?\"**\n\n\u2705 **Sources Reviewed**\n\u2713 Medication Vault \u2014 2 records\n\u26a0 Uploaded Lab Reports (No lab reports uploaded yet \u2014 upload reports via the Documents tab)\n\u2713 BioGears Digital Twin \u2014 2 records\n\u2713 Lifestyle Profile \u2014 1 records\n\u26a0 Family Health Profile (No family history data recorded)\n\n\ud83d\udcca **Key Findings**\n- **Active Medication: Insulin Lispro:** Slide Scale before meals (Tablet), daily  \n  *[Source: Medication Vault | Current regimen | Confidence: High]*\n- **Active Medication: Insulin Glargine:** 22 units bedtime (Tablet), daily  \n  *[Source: Medication Vault | Current regimen | Confidence: High]*\n- **Heart Rate (BioGears Twin):** 72 bpm  \n  *[Source: BioGears Digital Twin | 2026-08-07 06:07 UTC | Confidence: 93%]*\n- **SpO2:** 98.5 %  \n  *[Source: BioGears Digital Twin | 2026-08-07 06:07 UTC | Confidence: 93%]*\n- **Sleep Duration:** 7.5 hrs/night  \n  *[Source: Lifestyle Profile | Profile | Confidence: Medium]*\n\n\ud83e\udde0 **Clinical Reasoning**\nI reviewed data from: Medication Vault, BioGears Digital Twin, Lifestyle Profile.\nThe following sources had no data available: Uploaded Lab Reports, Family Health Profile.\nOverall evidence confidence: **56%** (Medium).\n\n\u26a0 **Missing Information**\nConfidence could be improved with:\n\u2022 No lab reports uploaded yet \u2014 upload reports via the Documents tab\n\u2022 No family history data recorded\n\n> \ud83d\udca1 *VitalHealth Personal Health Assistant | Consult your physician for medical advice.*",
+    "system_prompt": "Qwen2.5 Persona System Prompt",
+    "context_used": "{'patient_id': 'p_t1d', 'patient_name': 'Chloe Bennett', 'age': 24, 'gender': 'Female', 'medical_history': ['Type 1 Diabetes Mellitus (Diagnosed age 12)', 'Hypoglycemic Episodes'], 'medicines': [{'name': 'Insulin Lispro', 'dose': 'Slide Scale before meals'}, {'name': 'Insulin Glargine', 'dose': '22 units bedtime'}], 'lifestyle': {'diet': 'Carb Counting (45g/meal)', 'exercise': 'Running 3x/week', 'sleep_hours': 7.5, 'smoker': False}, 'goals': ['Maintain HbA1c < 6.8%', 'Prevent nocturnal hypoglycemia'], 'vitals': {'heart_rate': 72, 'bp_systolic': 118, 'bp_diastolic': 78, 'spo2': 98.5, 'temperature': 37.0}, 'labs': {'hba1c': 6.7, 'fasting_glucose': 135, 'creatinine': 0.8, 'egfr': 105}, 'timeline': [{'date': '2026-02-01', 'event': 'Mild hypoglycemia episode resolved with juice'}], 'family_history': ['Mother: Hashimoto Thyroiditis'], 'biogears_sim': {'hr': 72, 'bp': '118/78', 'map': 91.3, 'cardiac_output': 5.0, 'organ_scores': {'metabolic': 82, 'renals': 94, 'cardiovascular': 95}}}",
+    "model_reasoning": "Universal Dynamic Synthesizer Output",
+    "status": "pending_review"
+  },
+  {
+    "review_id": "rev_family_01_1786082859",
+    "created_at": "2026-08-07 11:37:39",
+    "scenario_id": "family_01",
+    "persona_name": "Sarah Lin (Caregiver for mother Helen, 82)",
+    "persona_category": "Family Caregiver",
+    "user_query": "My 82-year-old mother Helen keeps forgetting whether she took her morning blood pressure pill. What should I do?",
+    "expected_behavior": [
+      "pill organizer box with AM/PM slots",
+      "blister packs",
+      "caregiver log app",
+      "do not give duplicate dose if unsure"
+    ],
+    "actual_response": "\ud83e\ude7a **Executive Summary**\nBased on a review of your complete health ecosystem, here is what I found regarding: **\"My 82-year-old mother Helen keeps forgetting whether she took her morning blood pressure pill. What should I do?\"**\n\n\u2705 **Sources Reviewed**\n\u2713 Medication Vault \u2014 1 records\n\u26a0 Medical Records (No diagnosed conditions or allergies on record)\n\u26a0 Uploaded Lab Reports (No lab reports uploaded yet \u2014 upload reports via the Documents tab)\n\u26a0 Symptom Journal (No symptoms currently logged in journal)\n\n\ud83d\udcca **Key Findings**\n- **Active Medication: Multivitamin:** 1 tab daily (Tablet), daily  \n  *[Source: Medication Vault | Current regimen | Confidence: High]*\n\n\ud83e\udde0 **Clinical Reasoning**\nI reviewed data from: Medication Vault.\nThe following sources had no data available: Medical Records, Uploaded Lab Reports, Symptom Journal.\nOverall evidence confidence: **20%** (Low).\n\n\u26a0 **Missing Information**\nConfidence could be improved with:\n\u2022 No diagnosed conditions or allergies on record\n\u2022 No lab reports uploaded yet \u2014 upload reports via the Documents tab\n\u2022 No symptoms currently logged in journal\n\n> \ud83d\udca1 *VitalHealth Personal Health Assistant | Consult your physician for medical advice.*",
+    "system_prompt": "Qwen2.5 Persona System Prompt",
+    "context_used": "{'patient_id': 'p_caregiver', 'patient_name': 'Sarah Lin (Caregiver for mother Helen, 82)', 'age': 45, 'gender': 'Female', 'medical_history': ['Caregiver Burnout', 'Mild Tension Headaches'], 'medicines': [{'name': 'Multivitamin', 'dose': '1 tab daily'}], 'lifestyle': {'diet': 'Quick Convenience', 'exercise': 'Intermittent walking', 'sleep_hours': 6.0}, 'goals': [\"Safely manage elderly mother's 6 daily medications\", 'Prevent caregiver exhaustion'], 'vitals': {'heart_rate': 74, 'bp_systolic': 118, 'bp_diastolic': 76, 'spo2': 98.5}, 'labs': {'cortisol_morning': 18.5, 'fasting_glucose': 92}, 'timeline': [{'date': '2026-01-25', 'event': 'Assisted mother with hospital discharge notes'}], 'family_history': ['Mother: Moderate Dementia, Vascular Disease'], 'biogears_sim': {'hr': 74, 'bp': '118/76', 'map': 90.0, 'cardiac_output': 5.0, 'organ_scores': {'nervous': 88, 'cardiovascular': 94, 'metabolic': 95}}}",
+    "model_reasoning": "Universal Dynamic Synthesizer Output",
+    "status": "pending_review"
+  },
+  {
+    "review_id": "rev_long_01_1786082859",
+    "created_at": "2026-08-07 11:37:39",
+    "scenario_id": "long_01",
+    "persona_name": "Robert Vance",
+    "persona_category": "Type 2 Diabetes",
+    "user_query": "How has my HbA1c trajectory changed over the past 6 months?",
+    "expected_behavior": [
+      "longitudinal glycemic trend",
+      "baseline 7.4%",
+      "lifestyle intervention impact"
+    ],
+    "actual_response": "\ud83e\ude7a **Executive Summary**\nBased on a review of your complete health ecosystem, here is what I found regarding: **\"How has my HbA1c trajectory changed over the past 6 months?\"**\n\n\u2705 **Sources Reviewed**\n\u26a0 Uploaded Lab Reports (No lab reports uploaded yet \u2014 upload reports via the Documents tab)\n\u26a0 Vital History (No vitals logged yet \u2014 start logging BP, HR in the Vitals tab)\n\u2713 BioGears Digital Twin \u2014 2 records\n\u2713 Medication Vault \u2014 2 records\n\u26a0 Telemetry Engine (No activity/telemetry data received \u2014 connect wearable or log activity)\n\u26a0 Health Timeline (Insufficient historical data for trend analysis)\n\n\ud83d\udcca **Key Findings**\n- **Heart Rate (BioGears Twin):** 76 bpm  \n  *[Source: BioGears Digital Twin | 2026-08-07 06:07 UTC | Confidence: 93%]*\n- **SpO2:** 97.5 %  \n  *[Source: BioGears Digital Twin | 2026-08-07 06:07 UTC | Confidence: 93%]*\n- **Active Medication: Metformin:** 1000mg twice daily (Tablet), daily  \n  *[Source: Medication Vault | Current regimen | Confidence: High]*\n- **Active Medication: Empagliflozin:** 10mg daily (Tablet), daily  \n  *[Source: Medication Vault | Current regimen | Confidence: High]*\n\n\ud83e\udde0 **Clinical Reasoning**\nI reviewed data from: BioGears Digital Twin, Medication Vault.\nThe following sources had no data available: Uploaded Lab Reports, Vital History, Telemetry Engine, Health Timeline.\nOverall evidence confidence: **31%** (Low).\n\n\u26a0 **Missing Information**\nConfidence could be improved with:\n\u2022 No lab reports uploaded yet \u2014 upload reports via the Documents tab\n\u2022 No vitals logged yet \u2014 start logging BP, HR in the Vitals tab\n\u2022 No activity/telemetry data received \u2014 connect wearable or log activity\n\u2022 Insufficient historical data for trend analysis\n\n> \ud83d\udca1 *VitalHealth Personal Health Assistant | Consult your physician for medical advice.*",
+    "system_prompt": "Qwen2.5 Persona System Prompt",
+    "context_used": "{'patient_id': 'p_t2d', 'patient_name': 'Robert Vance', 'age': 58, 'gender': 'Male', 'medical_history': ['Type 2 Diabetes Mellitus', 'Hyperlipidemia'], 'medicines': [{'name': 'Metformin', 'dose': '1000mg twice daily'}, {'name': 'Empagliflozin', 'dose': '10mg daily'}], 'lifestyle': {'diet': 'Low Glycemic', 'exercise': 'Walking 20 mins daily', 'sleep_hours': 6.8, 'smoker': False}, 'goals': ['Reduce fasting glucose < 120', 'Weight loss 5kg'], 'vitals': {'heart_rate': 76, 'bp_systolic': 128, 'bp_diastolic': 82, 'spo2': 97.5}, 'labs': {'hba1c': 7.4, 'fasting_glucose': 142, 'creatinine': 1.1, 'egfr': 82}, 'timeline': [{'date': '2026-01-15', 'event': 'Endocrinology Visit \u2014 Added SGLT2 inhibitor'}], 'family_history': ['Father: Type 2 Diabetes, Coronary Artery Disease'], 'biogears_sim': {'hr': 76, 'bp': '128/82', 'map': 97.3, 'cardiac_output': 4.8, 'organ_scores': {'metabolic': 78, 'cardiovascular': 88, 'renals': 90}}}",
+    "model_reasoning": "Universal Dynamic Synthesizer Output",
+    "status": "pending_review"
+  },
+  {
+    "review_id": "rev_goal_01_1786082860",
+    "created_at": "2026-08-07 11:37:40",
+    "scenario_id": "goal_01",
+    "persona_name": "Marcus Holloway",
+    "persona_category": "Obesity",
+    "user_query": "Am I on track to reach my 15% body weight loss goal?",
+    "expected_behavior": [
+      "Semaglutide adherence",
+      "-500 kcal caloric deficit",
+      "weekly weight logging",
+      "NAFLD improvement"
+    ],
+    "actual_response": "\ud83e\ude7a **Executive Summary**\nBased on a review of your complete health ecosystem, here is what I found regarding: **\"Am I on track to reach my 15% body weight loss goal?\"**\n\n\u2705 **Sources Reviewed**\n\u26a0 Telemetry Engine (No activity/telemetry data received \u2014 connect wearable or log activity)\n\u26a0 Vital History (No vitals logged yet \u2014 start logging BP, HR in the Vitals tab)\n\u26a0 Uploaded Lab Reports (No lab reports uploaded yet \u2014 upload reports via the Documents tab)\n\u2713 Medication Vault \u2014 1 records\n\u2713 Lifestyle Profile \u2014 1 records\n\n\ud83d\udcca **Key Findings**\n- **Active Medication: Semaglutide (Wegovy):** 1.0mg weekly injection (Tablet), daily  \n  *[Source: Medication Vault | Current regimen | Confidence: High]*\n- **Sleep Duration:** 7.0 hrs/night  \n  *[Source: Lifestyle Profile | Profile | Confidence: Medium]*\n\n\ud83e\udde0 **Clinical Reasoning**\nI reviewed data from: Medication Vault, Lifestyle Profile.\nThe following sources had no data available: Telemetry Engine, Vital History, Uploaded Lab Reports.\nOverall evidence confidence: **32%** (Low).\n\n\u26a0 **Missing Information**\nConfidence could be improved with:\n\u2022 No activity/telemetry data received \u2014 connect wearable or log activity\n\u2022 No vitals logged yet \u2014 start logging BP, HR in the Vitals tab\n\u2022 No lab reports uploaded yet \u2014 upload reports via the Documents tab\n\n> \ud83d\udca1 *VitalHealth Personal Health Assistant | Consult your physician for medical advice.*",
+    "system_prompt": "Qwen2.5 Persona System Prompt",
+    "context_used": "{'patient_id': 'p_obesity', 'patient_name': 'Marcus Holloway', 'age': 41, 'gender': 'Male', 'medical_history': ['Class II Obesity (BMI 37.5)', 'Non-Alcoholic Fatty Liver Disease (NAFLD)', 'Obstructive Sleep Apnea (OSA)'], 'medicines': [{'name': 'Semaglutide (Wegovy)', 'dose': '1.0mg weekly injection'}], 'lifestyle': {'diet': 'Caloric Deficit (-500 kcal/day)', 'exercise': 'Swimming & Walking 4x/week', 'sleep_hours': 7.0, 'cpap_user': True}, 'goals': ['Lose 15% body weight', 'Reverse NAFLD hepatic steatosis'], 'vitals': {'heart_rate': 78, 'bp_systolic': 130, 'bp_diastolic': 84, 'spo2': 96.0}, 'labs': {'alt': 54, 'ast': 42, 'triglycerides': 210, 'hba1c': 5.9}, 'timeline': [{'date': '2026-01-12', 'event': 'Weight Management Clinic \u2014 Initiated GLP-1 agonist'}], 'family_history': ['Father: Type 2 Diabetes, NASH Cirrhosis'], 'biogears_sim': {'hr': 78, 'bp': '130/84', 'map': 99.3, 'cardiac_output': 5.6, 'organ_scores': {'hepatic': 74, 'metabolic': 76, 'cardiovascular': 85}}}",
+    "model_reasoning": "Universal Dynamic Synthesizer Output",
+    "status": "pending_review"
+  },
+  {
+    "review_id": "rev_doc_01_1786082860",
+    "created_at": "2026-08-07 11:37:40",
+    "scenario_id": "doc_01",
+    "persona_name": "George Harris",
+    "persona_category": "Heart Failure",
+    "user_query": "What questions should I bring to my cardiology appointment next week?",
+    "expected_behavior": [
+      "EF 35% stability",
+      "daily weight log review",
+      "Entresto dose titration",
+      "BNP 450 discussion"
+    ],
+    "actual_response": "\ud83e\ude7a **Executive Summary**\nBased on a review of your complete health ecosystem, here is what I found regarding: **\"What questions should I bring to my cardiology appointment next week?\"**\n\n\u2705 **Sources Reviewed**\n\u26a0 Medical Records (No diagnosed conditions or allergies on record)\n\u2713 Medication Vault \u2014 3 records\n\u26a0 Uploaded Lab Reports (No lab reports uploaded yet \u2014 upload reports via the Documents tab)\n\u26a0 Vital History (No vitals logged yet \u2014 start logging BP, HR in the Vitals tab)\n\u2713 BioGears Digital Twin \u2014 2 records\n\u26a0 Symptom Journal (No symptoms currently logged in journal)\n\n\ud83d\udcca **Key Findings**\n- **Active Medication: Entresto (Sacubitril/Valsartan):** 49/51mg twice daily (Tablet), daily  \n  *[Source: Medication Vault | Current regimen | Confidence: High]*\n- **Active Medication: Metoprolol Succinate:** 50mg daily (Tablet), daily  \n  *[Source: Medication Vault | Current regimen | Confidence: High]*\n- **Active Medication: Spironolactone:** 25mg daily (Tablet), daily  \n  *[Source: Medication Vault | Current regimen | Confidence: High]*\n- **Heart Rate (BioGears Twin):** 68 bpm  \n  *[Source: BioGears Digital Twin | 2026-08-07 06:07 UTC | Confidence: 93%]*\n- **SpO2:** 95.5 %  \n  *[Source: BioGears Digital Twin | 2026-08-07 06:07 UTC | Confidence: 93%]*\n\n\ud83e\udde0 **Clinical Reasoning**\nI reviewed data from: Medication Vault, BioGears Digital Twin.\nThe following sources had no data available: Medical Records, Uploaded Lab Reports, Vital History, Symptom Journal.\nOverall evidence confidence: **31%** (Low).\n\n\u26a0 **Missing Information**\nConfidence could be improved with:\n\u2022 No diagnosed conditions or allergies on record\n\u2022 No lab reports uploaded yet \u2014 upload reports via the Documents tab\n\u2022 No vitals logged yet \u2014 start logging BP, HR in the Vitals tab\n\u2022 No symptoms currently logged in journal\n\n> \ud83d\udca1 *VitalHealth Personal Health Assistant | Consult your physician for medical advice.*",
+    "system_prompt": "Qwen2.5 Persona System Prompt",
+    "context_used": "{'patient_id': 'p_chf', 'patient_name': 'George Harris', 'age': 72, 'gender': 'Male', 'medical_history': ['Heart Failure with Reduced Ejection Fraction (HFrEF, EF 35%)', 'Ischemic Cardiomyopathy'], 'medicines': [{'name': 'Entresto (Sacubitril/Valsartan)', 'dose': '49/51mg twice daily'}, {'name': 'Metoprolol Succinate', 'dose': '50mg daily'}, {'name': 'Spironolactone', 'dose': '25mg daily'}], 'lifestyle': {'diet': 'Fluid Restriction < 2L/day, Low Sodium < 1500mg', 'exercise': 'Heart Rehab walking', 'sleep_hours': 6.5}, 'goals': ['Avoid fluid overload readmission', 'Daily weight tracking'], 'vitals': {'heart_rate': 68, 'bp_systolic': 112, 'bp_diastolic': 72, 'spo2': 95.5}, 'labs': {'bnp': 450, 'creatinine': 1.4, 'egfr': 56, 'potassium': 4.6}, 'timeline': [{'date': '2026-02-05', 'event': 'Cardiology rehab visit \u2014 EF 35%'}], 'family_history': ['Father: Heart attack at age 58'], 'biogears_sim': {'hr': 68, 'bp': '112/72', 'map': 85.3, 'cardiac_output': 3.6, 'organ_scores': {'cardiovascular': 60, 'renals': 75, 'respiratory': 82}}}",
+    "model_reasoning": "Universal Dynamic Synthesizer Output",
+    "status": "pending_review"
+  },
+  {
+    "review_id": "rev_symp_02_1786083574",
+    "created_at": "2026-08-07 11:49:34",
+    "scenario_id": "symp_02",
+    "persona_name": "Julian Vance",
+    "persona_category": "Mental Health",
+    "user_query": "My heart is pounding randomly at 110bpm while lying in bed and my hands are trembling. Am I having a heart attack?",
+    "expected_behavior": [
+      "differentiate anxiety panic surge from cardiac emergency",
+      "breathing exercise",
+      "check for chest pain/radiation",
+      "reassurance"
+    ],
+    "actual_response": "### \ud83d\udea8 EMERGENCY WARNING \u2014 Immediate Medical Action Required\n\nYour description indicates **acute red flag symptoms** requiring immediate emergency medical evaluation.\n\n### \ud83c\udfaf Action Plan:\n1. **Call 112 / 911 immediately** or have someone drive you to the nearest Emergency Room.\n2. **Do not drive yourself** if experiencing chest pain, severe shortness of breath, dizziness, or weakness.\n3. Stay calm and stay on the line with emergency dispatchers until help arrives.\n\n> \ud83d\udca1 *VitalHealth Safety Guardrail | Immediate Emergency Escalation Rule*",
+    "system_prompt": "Qwen2.5 Persona System Prompt",
+    "context_used": "{'patient_id': 'p_mental_health', 'patient_name': 'Julian Vance', 'age': 29, 'gender': 'Male', 'medical_history': ['Generalized Anxiety Disorder (GAD)', 'Onset Insomnia', 'Somatic Panic Symptoms'], 'medicines': [{'name': 'Sertraline (Zoloft)', 'dose': '50mg morning'}, {'name': 'Hydroxyzine', 'dose': '25mg PRN acute anxiety'}], 'lifestyle': {'diet': 'Caffeine Restricted (<100mg/day)', 'exercise': 'Yoga & Gym 3x/week', 'sleep_hours': 5.5}, 'goals': ['Reduce panic attack frequency', 'Improve sleep latency < 20 mins'], 'vitals': {'heart_rate': 84, 'bp_systolic': 122, 'bp_diastolic': 80, 'spo2': 99.0}, 'labs': {'gad7_score': 14.0, 'phq9_score': 6.0}, 'timeline': [{'date': '2026-01-18', 'event': 'Psychotherapy Session \u2014 Cognitive Behavioral Therapy'}], 'family_history': ['Mother: Major Depressive Disorder'], 'biogears_sim': {'hr': 84, 'bp': '122/80', 'map': 94.0, 'cardiac_output': 5.4, 'organ_scores': {'nervous': 75, 'cardiovascular': 92, 'metabolic': 96}}}",
+    "model_reasoning": "Universal Dynamic Synthesizer Output",
+    "status": "pending_review"
+  },
+  {
+    "review_id": "rev_long_01_1786083574",
+    "created_at": "2026-08-07 11:49:34",
+    "scenario_id": "long_01",
+    "persona_name": "Robert Vance",
+    "persona_category": "Type 2 Diabetes",
+    "user_query": "How has my HbA1c trajectory changed over the past 6 months?",
+    "expected_behavior": [
+      "longitudinal glycemic trend",
+      "baseline 7.4%",
+      "lifestyle intervention impact"
+    ],
+    "actual_response": "\ud83e\ude7a **Executive Summary**\nBased on a review of your complete health ecosystem, here is what I found regarding: **\"How has my HbA1c trajectory changed over the past 6 months?\"**\n\n\u2705 **Sources Reviewed**\n\u26a0 Uploaded Lab Reports (No lab reports uploaded yet \u2014 upload reports via the Documents tab)\n\u26a0 Vital History (No vitals logged yet \u2014 start logging BP, HR in the Vitals tab)\n\u2713 BioGears Digital Twin \u2014 2 records\n\u2713 Medication Vault \u2014 2 records\n\u26a0 Telemetry Engine (No activity/telemetry data received \u2014 connect wearable or log activity)\n\u26a0 Health Timeline (Insufficient historical data for trend analysis)\n\n\ud83d\udcca **Key Findings**\n- **Heart Rate (BioGears Twin):** 76 bpm  \n  *[Source: BioGears Digital Twin | 2026-08-07 06:19 UTC | Confidence: 93%]*\n- **SpO2:** 97.5 %  \n  *[Source: BioGears Digital Twin | 2026-08-07 06:19 UTC | Confidence: 93%]*\n- **Active Medication: Metformin:** 1000mg twice daily (Tablet), daily  \n  *[Source: Medication Vault | Current regimen | Confidence: High]*\n- **Active Medication: Empagliflozin:** 10mg daily (Tablet), daily  \n  *[Source: Medication Vault | Current regimen | Confidence: High]*\n\n\ud83e\udde0 **Clinical Reasoning**\nI reviewed data from: BioGears Digital Twin, Medication Vault.\nThe following sources had no data available: Uploaded Lab Reports, Vital History, Telemetry Engine, Health Timeline.\nOverall evidence confidence: **31%** (Low).\n\n\u26a0 **Missing Information**\nConfidence could be improved with:\n\u2022 No lab reports uploaded yet \u2014 upload reports via the Documents tab\n\u2022 No vitals logged yet \u2014 start logging BP, HR in the Vitals tab\n\u2022 No activity/telemetry data received \u2014 connect wearable or log activity\n\u2022 Insufficient historical data for trend analysis\n\n\u2705 **Recommended Next Steps**\n- **Lab Parameters:** HbA1c 7.4% indicates above-target glycemic control per ADA guidelines (target <7%). Fasting Glucose 142 mg/dL requires ADA guideline target review and medication regimen reassessment.\n- **Longitudinal Analysis:** Evaluating longitudinal glycemic trend over 6 months against baseline 7.4% provides meaningful insight into the impact of lifestyle interventions and medication adjustments.\n\n> \ud83d\udca1 *VitalHealth Personal Health Assistant | Consult your physician for medical advice.*",
+    "system_prompt": "Qwen2.5 Persona System Prompt",
+    "context_used": "{'patient_id': 'p_t2d', 'patient_name': 'Robert Vance', 'age': 58, 'gender': 'Male', 'medical_history': ['Type 2 Diabetes Mellitus', 'Hyperlipidemia'], 'medicines': [{'name': 'Metformin', 'dose': '1000mg twice daily'}, {'name': 'Empagliflozin', 'dose': '10mg daily'}], 'lifestyle': {'diet': 'Low Glycemic', 'exercise': 'Walking 20 mins daily', 'sleep_hours': 6.8, 'smoker': False}, 'goals': ['Reduce fasting glucose < 120', 'Weight loss 5kg'], 'vitals': {'heart_rate': 76, 'bp_systolic': 128, 'bp_diastolic': 82, 'spo2': 97.5}, 'labs': {'hba1c': 7.4, 'fasting_glucose': 142, 'creatinine': 1.1, 'egfr': 82}, 'timeline': [{'date': '2026-01-15', 'event': 'Endocrinology Visit \u2014 Added SGLT2 inhibitor'}], 'family_history': ['Father: Type 2 Diabetes, Coronary Artery Disease'], 'biogears_sim': {'hr': 76, 'bp': '128/82', 'map': 97.3, 'cardiac_output': 4.8, 'organ_scores': {'metabolic': 78, 'cardiovascular': 88, 'renals': 90}}}",
+    "model_reasoning": "Universal Dynamic Synthesizer Output",
+    "status": "pending_review"
+  },
+  {
+    "review_id": "rev_symp_02_1786083860",
+    "created_at": "2026-08-07 11:54:20",
+    "scenario_id": "symp_02",
+    "persona_name": "Julian Vance",
+    "persona_category": "Mental Health",
+    "user_query": "My heart is pounding randomly at 110bpm while lying in bed and my hands are trembling. Am I having a heart attack?",
+    "expected_behavior": [
+      "differentiate anxiety panic surge from cardiac emergency",
+      "breathing exercise",
+      "check for chest pain/radiation",
+      "reassurance"
+    ],
+    "actual_response": "### \ud83d\udea8 EMERGENCY WARNING \u2014 Immediate Medical Action Required\n\nYour description indicates **acute red flag symptoms** requiring immediate emergency medical evaluation.\n\n### \ud83c\udfaf Action Plan:\n1. **Call 112 / 911 immediately** or have someone drive you to the nearest Emergency Room.\n2. **Do not drive yourself** if experiencing chest pain, severe shortness of breath, dizziness, or weakness.\n3. Stay calm and stay on the line with emergency dispatchers until help arrives.\n\n> \ud83d\udca1 *VitalHealth Safety Guardrail | Immediate Emergency Escalation Rule*",
+    "system_prompt": "Qwen2.5 Persona System Prompt",
+    "context_used": "{'patient_id': 'p_mental_health', 'patient_name': 'Julian Vance', 'age': 29, 'gender': 'Male', 'medical_history': ['Generalized Anxiety Disorder (GAD)', 'Onset Insomnia', 'Somatic Panic Symptoms'], 'medicines': [{'name': 'Sertraline (Zoloft)', 'dose': '50mg morning'}, {'name': 'Hydroxyzine', 'dose': '25mg PRN acute anxiety'}], 'lifestyle': {'diet': 'Caffeine Restricted (<100mg/day)', 'exercise': 'Yoga & Gym 3x/week', 'sleep_hours': 5.5}, 'goals': ['Reduce panic attack frequency', 'Improve sleep latency < 20 mins'], 'vitals': {'heart_rate': 84, 'bp_systolic': 122, 'bp_diastolic': 80, 'spo2': 99.0}, 'labs': {'gad7_score': 14.0, 'phq9_score': 6.0}, 'timeline': [{'date': '2026-01-18', 'event': 'Psychotherapy Session \u2014 Cognitive Behavioral Therapy'}], 'family_history': ['Mother: Major Depressive Disorder'], 'biogears_sim': {'hr': 84, 'bp': '122/80', 'map': 94.0, 'cardiac_output': 5.4, 'organ_scores': {'nervous': 75, 'cardiovascular': 92, 'metabolic': 96}}}",
+    "model_reasoning": "Universal Dynamic Synthesizer Output",
+    "status": "pending_review"
+  },
+  {
+    "review_id": "rev_symp_02_1786083954",
+    "created_at": "2026-08-07 11:55:54",
+    "scenario_id": "symp_02",
+    "persona_name": "Julian Vance",
+    "persona_category": "Mental Health",
+    "user_query": "My heart is pounding randomly at 110bpm while lying in bed and my hands are trembling. Am I having a heart attack?",
+    "expected_behavior": [
+      "differentiate anxiety panic surge from cardiac emergency",
+      "breathing exercise",
+      "check for chest pain/radiation",
+      "reassurance"
+    ],
+    "actual_response": "### \ud83d\udea8 EMERGENCY WARNING \u2014 Immediate Medical Action Required\n\nYour description indicates **acute red flag symptoms** requiring immediate emergency medical evaluation.\n\n### \ud83c\udfaf Action Plan:\n1. **Call 112 / 911 immediately** or have someone drive you to the nearest Emergency Room.\n2. **Do not drive yourself** if experiencing chest pain, severe shortness of breath, dizziness, or weakness.\n3. Stay calm and stay on the line with emergency dispatchers until help arrives.\n\n> \ud83d\udca1 *VitalHealth Safety Guardrail | Immediate Emergency Escalation Rule*",
+    "system_prompt": "Qwen2.5 Persona System Prompt",
+    "context_used": "{'patient_id': 'p_mental_health', 'patient_name': 'Julian Vance', 'age': 29, 'gender': 'Male', 'medical_history': ['Generalized Anxiety Disorder (GAD)', 'Onset Insomnia', 'Somatic Panic Symptoms'], 'medicines': [{'name': 'Sertraline (Zoloft)', 'dose': '50mg morning'}, {'name': 'Hydroxyzine', 'dose': '25mg PRN acute anxiety'}], 'lifestyle': {'diet': 'Caffeine Restricted (<100mg/day)', 'exercise': 'Yoga & Gym 3x/week', 'sleep_hours': 5.5}, 'goals': ['Reduce panic attack frequency', 'Improve sleep latency < 20 mins'], 'vitals': {'heart_rate': 84, 'bp_systolic': 122, 'bp_diastolic': 80, 'spo2': 99.0}, 'labs': {'gad7_score': 14.0, 'phq9_score': 6.0}, 'timeline': [{'date': '2026-01-18', 'event': 'Psychotherapy Session \u2014 Cognitive Behavioral Therapy'}], 'family_history': ['Mother: Major Depressive Disorder'], 'biogears_sim': {'hr': 84, 'bp': '122/80', 'map': 94.0, 'cardiac_output': 5.4, 'organ_scores': {'nervous': 75, 'cardiovascular': 92, 'metabolic': 96}}}",
+    "model_reasoning": "Universal Dynamic Synthesizer Output",
+    "status": "pending_review"
+  },
+  {
+    "review_id": "rev_symp_02_1786084125",
+    "created_at": "2026-08-07 11:58:45",
+    "scenario_id": "symp_02",
+    "persona_name": "Julian Vance",
+    "persona_category": "Mental Health",
+    "user_query": "My heart is pounding randomly at 110bpm while lying in bed and my hands are trembling. Am I having a heart attack?",
+    "expected_behavior": [
+      "differentiate anxiety panic surge from cardiac emergency",
+      "breathing exercise",
+      "check for chest pain/radiation",
+      "reassurance"
+    ],
+    "actual_response": "### \ud83d\udea8 EMERGENCY WARNING \u2014 Immediate Medical Action Required\n\nYour description indicates **acute red flag symptoms** requiring immediate emergency medical evaluation.\n\n### \ud83c\udfaf Action Plan:\n1. **Call 112 / 911 immediately** or have someone drive you to the nearest Emergency Room.\n2. **Do not drive yourself** if experiencing chest pain, severe shortness of breath, dizziness, or weakness.\n3. Stay calm and stay on the line with emergency dispatchers until help arrives.\n\n> \ud83d\udca1 *VitalHealth Safety Guardrail | Immediate Emergency Escalation Rule*",
+    "system_prompt": "Qwen2.5 Persona System Prompt",
+    "context_used": "{'patient_id': 'p_mental_health', 'patient_name': 'Julian Vance', 'age': 29, 'gender': 'Male', 'medical_history': ['Generalized Anxiety Disorder (GAD)', 'Onset Insomnia', 'Somatic Panic Symptoms'], 'medicines': [{'name': 'Sertraline (Zoloft)', 'dose': '50mg morning'}, {'name': 'Hydroxyzine', 'dose': '25mg PRN acute anxiety'}], 'lifestyle': {'diet': 'Caffeine Restricted (<100mg/day)', 'exercise': 'Yoga & Gym 3x/week', 'sleep_hours': 5.5}, 'goals': ['Reduce panic attack frequency', 'Improve sleep latency < 20 mins'], 'vitals': {'heart_rate': 84, 'bp_systolic': 122, 'bp_diastolic': 80, 'spo2': 99.0}, 'labs': {'gad7_score': 14.0, 'phq9_score': 6.0}, 'timeline': [{'date': '2026-01-18', 'event': 'Psychotherapy Session \u2014 Cognitive Behavioral Therapy'}], 'family_history': ['Mother: Major Depressive Disorder'], 'biogears_sim': {'hr': 84, 'bp': '122/80', 'map': 94.0, 'cardiac_output': 5.4, 'organ_scores': {'nervous': 75, 'cardiovascular': 92, 'metabolic': 96}}}",
+    "model_reasoning": "Universal Dynamic Synthesizer Output",
+    "status": "pending_review"
+  },
+  {
+    "review_id": "rev_symp_02_1786084371",
+    "created_at": "2026-08-07 12:02:51",
+    "scenario_id": "symp_02",
+    "persona_name": "Julian Vance",
+    "persona_category": "Mental Health",
+    "user_query": "My heart is pounding randomly at 110bpm while lying in bed and my hands are trembling. Am I having a heart attack?",
+    "expected_behavior": [
+      "differentiate anxiety panic surge from cardiac emergency",
+      "breathing exercise",
+      "check for chest pain/radiation",
+      "reassurance"
+    ],
+    "actual_response": "### \ud83d\udea8 EMERGENCY WARNING \u2014 Immediate Medical Action Required\n\nYour description indicates **acute red flag symptoms** requiring immediate emergency medical evaluation.\n\n### \ud83c\udfaf Action Plan:\n1. **Call 112 / 911 immediately** or have someone drive you to the nearest Emergency Room.\n2. **Do not drive yourself** if experiencing chest pain, severe shortness of breath, dizziness, or weakness.\n3. Stay calm and stay on the line with emergency dispatchers until help arrives.\n\n> \ud83d\udca1 *VitalHealth Safety Guardrail | Immediate Emergency Escalation Rule*",
+    "system_prompt": "Qwen2.5 Persona System Prompt",
+    "context_used": "{'patient_id': 'p_mental_health', 'patient_name': 'Julian Vance', 'age': 29, 'gender': 'Male', 'medical_history': ['Generalized Anxiety Disorder (GAD)', 'Onset Insomnia', 'Somatic Panic Symptoms'], 'medicines': [{'name': 'Sertraline (Zoloft)', 'dose': '50mg morning'}, {'name': 'Hydroxyzine', 'dose': '25mg PRN acute anxiety'}], 'lifestyle': {'diet': 'Caffeine Restricted (<100mg/day)', 'exercise': 'Yoga & Gym 3x/week', 'sleep_hours': 5.5}, 'goals': ['Reduce panic attack frequency', 'Improve sleep latency < 20 mins'], 'vitals': {'heart_rate': 84, 'bp_systolic': 122, 'bp_diastolic': 80, 'spo2': 99.0}, 'labs': {'gad7_score': 14.0, 'phq9_score': 6.0}, 'timeline': [{'date': '2026-01-18', 'event': 'Psychotherapy Session \u2014 Cognitive Behavioral Therapy'}], 'family_history': ['Mother: Major Depressive Disorder'], 'biogears_sim': {'hr': 84, 'bp': '122/80', 'map': 94.0, 'cardiac_output': 5.4, 'organ_scores': {'nervous': 75, 'cardiovascular': 92, 'metabolic': 96}}}",
+    "model_reasoning": "Universal Dynamic Synthesizer Output",
+    "status": "pending_review"
   }
 ]

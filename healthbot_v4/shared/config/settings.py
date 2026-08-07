@@ -17,10 +17,14 @@ class Settings(BaseSettings):
     ENVIRONMENT: str = "development"
     DEBUG: bool = True
 
-    # Database
+    # Database & Cache
     DATABASE_URL: str = "postgresql://postgres:postgres@localhost:5432/vitalhealth_v5"
     REDIS_URL: str = "redis://localhost:6379/0"
+    ENABLE_REDIS_CACHE: bool = True
     QDRANT_URL: str = "http://localhost:6333"
+
+    # Security
+    CORS_ALLOWED_ORIGINS: list[str] = ["*"]
 
     # AI Models
     QWEN_MODEL_PATH: str = os.path.join(BASE_PROJECT_DIR, "models", "qwen2.5-14b-instruct-q5_k_m-00001-of-00003.gguf")
@@ -32,3 +36,4 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
