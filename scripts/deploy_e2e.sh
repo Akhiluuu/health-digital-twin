@@ -17,10 +17,15 @@ echo "==========================================================================
 
 cd "$ROOT_DIR"
 
-# 1. System Package Verification
-echo "🔍 [1/5] Checking system prerequisites..."
+# 1. System Package & Git Repository Verification
+echo "🔍 [1/5] Checking system prerequisites and updating codebase..."
 command -v python3 >/dev/null 2>&1 || { echo "❌ Python3 is required. Run: sudo apt update && sudo apt install -y python3 python3-venv python3-pip"; exit 1; }
 command -v curl >/dev/null 2>&1 || { echo "❌ curl is required."; exit 1; }
+
+if [ -d ".git" ]; then
+    echo "📥 Pulling latest codebase from GitHub origin/main..."
+    git pull origin main || echo "⚠️ Git pull notice: continuing with current local workspace."
+fi
 
 # 2. Virtual Environment Setup
 echo "📦 [2/5] Initializing Python Virtual Environment..."
