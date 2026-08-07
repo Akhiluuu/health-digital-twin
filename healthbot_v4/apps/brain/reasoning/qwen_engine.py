@@ -511,26 +511,6 @@ You are a trusted healthcare companion helping users understand, manage, monitor
         messages.append({"role": "user", "content": user_content})
         return messages
 
-        # Inject last 8 history turns
-        for turn in (history[-8:] if len(history) > 8 else history):
-            if turn.get("role") in ("user", "assistant") and turn.get("content"):
-                messages.append({"role": turn["role"], "content": turn["content"]})
-
-        # Build user message — evidence bundle takes priority over addendum
-        if evidence_bundle is not None:
-            try:
-                bundle_block = evidence_bundle.to_prompt_block()
-                user_content = f"{bundle_block}\n\nPatient Question: {user_query}"
-            except Exception:
-                context_addendum = self._build_context_addendum(context, intent)
-                user_content = f"{context_addendum}\n\n{user_query}" if context_addendum else user_query
-        else:
-            context_addendum = self._build_context_addendum(context, intent)
-            user_content = f"{context_addendum}\n\n{user_query}" if context_addendum else user_query
-
-        messages.append({"role": "user", "content": user_content})
-        return messages
-
     def _build_context_addendum(self, context: BudgetedContext, intent: str = "GENERAL_HEALTH") -> str:
         """
         Builds XML-tagged inline context appended to the user message.
