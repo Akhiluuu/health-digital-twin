@@ -341,7 +341,9 @@ function InAppViewer({
 // ─── Main Screen ──────────────────────────────────────────────────────────────
 
 export default function DocumentsScreen() {
+  const { theme } = useTheme();
   const { activeProfile } = useFamily();
+  const isDark = theme === "dark";
   const userId = activeProfile ? getTwinId(activeProfile) : "p_healthy";
 
   const colors = isDark
