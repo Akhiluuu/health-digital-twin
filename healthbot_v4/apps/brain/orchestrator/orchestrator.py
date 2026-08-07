@@ -208,10 +208,11 @@ class AIOrchestrator(HealthBrainSubsystem):
 
         # Check for image/document payload
         multimodal_res = None
-        if image_payload or (patient_context and patient_context.get("image_payload")):
-            raw_img = image_payload or (patient_context.get("image_payload") if patient_context else "")
+        raw_img = (image_payload or (patient_context.get("image_payload") if patient_context else "")) or ""
+        if isinstance(raw_img, str) and raw_img.strip():
             multimodal_res = self.multimodal_engine.process_image_payload(raw_img, patient_id=patient_id)
-            query += f"\n\n[Multimodal Context: {multimodal_res.triage_summary}]"
+            if multimodal_res and getattr(multimodal_res, "triage_summary", None):
+                query += f"\n\n[Multimodal Context: {multimodal_res.triage_summary}]"
 
         # Retrieve conversation history for this session (multi-turn memory)
         conversation_history = self._get_session_history(session_id)
