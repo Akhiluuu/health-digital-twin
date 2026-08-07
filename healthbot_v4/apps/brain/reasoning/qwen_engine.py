@@ -754,135 +754,19 @@ You are a trusted healthcare companion helping users understand, manage, monitor
             explanation = self._get_fallback_explanation(user_query, target_intent)
             return f"{explanation}\n\n> 💡 *VitalHealth Personal Health Assistant | Consult your physician for medical advice.*"
 
-        # ── Bundle-driven rendering (Only for Deep Audits & Full Summaries) ────
-        if evidence_bundle is not None and schema in ["DEEP_CLINICAL_AUDIT", "HEALTH_SUMMARY", "DIGITAL_TWIN_SIMULATION"]:
-            try:
-                from healthbot_v4.apps.brain.evidence.evidence_bundle import SourceStatus
-
-                lines.append(f"🩺 **Executive Summary**")
-                q_lower = user_query.lower()
-                if any(k in q_lower for k in ["symptom", "explain my symptoms"]):
-                    lines.append(f"Here is your personalized symptom evaluation and guidance based on your complete health ecosystem.\n")
-                elif any(k in q_lower for k in ["medication", "check my medications"]):
-                    lines.append(f"Here is your active medication regimen audit and safety review based on your complete health ecosystem.\n")
-                elif any(k in q_lower for k in ["heart", "cardiac", "how's my heart health"]):
-                    lines.append(f"Here is your cardiovascular health evaluation based on your BioGears Digital Twin vitals and health history.\n")
-                elif any(k in q_lower for k in ["lab", "read my lab results"]):
-                    lines.append(f"Here is your diagnostic lab report summary and biomarker status based on your complete health ecosystem.\n")
-                else:
-                    lines.append(f"Based on a review of your complete health ecosystem, here is what I found regarding: **\"{user_query.strip()}\"**\n")
-
-                # Filter sources and findings based on intent
-                is_simulation_query = (target_intent == "DIGITAL_TWIN" or schema == "DIGITAL_TWIN_SIMULATION" or any(k in user_query.lower() for k in ["simulation", "digital twin", "biogears", "organ score"]))
-                
-                active_sources = [
-                    src for src in evidence_bundle.sources
-                    if is_simulation_query or (src.name != "BioGears Digital Twin" and src.name != "BioGears Organ Scores")
-                ]
-                
-                active_findings = [
-                    f for f in evidence_bundle.findings
-                    if is_simulation_query or (f.source_type != "biogears_twin" and "BioGears" not in f.source_name and "Simulation" not in f.label)
-                ]
-
-                # Sources reviewed
-                lines.append("✅ **Sources Reviewed**")
-                for src in active_sources:
-                    icon = "✓" if src.status == SourceStatus.available else "⚠"
-                    count = f" — {src.records_count} records" if src.records_count > 0 else ""
-                    reason = f" ({src.missing_reason})" if src.missing_reason and src.status != SourceStatus.available else ""
-                    lines.append(f"{icon} {src.name}{count}{reason}")
-
-                # Key findings
-                lines.append("\n📊 **Key Findings**")
-                if active_findings:
-                    for f in active_findings:
-                        conf = f"{f.confidence_pct * 100:.0f}%" if f.confidence_pct else f.confidence.value
-                        val = f.value or "No data recorded"
-                        abnormal_tag = " ⚠ *Abnormal*" if f.is_abnormal else ""
-                        lines.append(
-                            f"- **{f.label}:** {val}{abnormal_tag}  \n"
-                            f"  *[Source: {f.source_name} | {f.timestamp_label} | Confidence: {conf}]*"
-                        )
-                else:
-                    lines.append("- No active clinical abnormalities, acute risk flags, or abnormal lab parameters currently documented in profile.")
-
-                # Contradictions
-                if evidence_bundle.conflicts:
-                    lines.append("\n🔄 **Cross-Source Insights**")
-                    for c in evidence_bundle.conflicts:
-                        lines.append(f"⚡ **{c.metric}:** {c.source_a} shows **{c.value_a}** but {c.source_b} shows **{c.value_b}**.")
-                        if c.possible_reasons:
-                            lines.append(f"   Possible reasons: {'; '.join(c.possible_reasons)}")
-                        lines.append(f"   *{c.recommendation}*")
-
-                # Clinical reasoning
-                available_names = [s.name for s in active_sources if s.status == SourceStatus.available]
-                missing_names = [s.name for s in active_sources if s.status != SourceStatus.available]
-                lines.append("\n🧠 **Clinical Reasoning**")
-                if available_names:
-                    lines.append(f"I reviewed data from: {', '.join(available_names)}.")
-                if missing_names:
-                    lines.append(f"The following sources had no records on file: {', '.join(missing_names)}.")
-                lines.append(f"Overall evidence confidence: **{int(evidence_bundle.overall_confidence * 100)}%** ({evidence_bundle.overall_confidence_label.value}).")
-
-                # Missing information
-                if evidence_bundle.missing_data:
-                    lines.append("\n⚠ **Missing Information**")
-                    lines.append("Confidence could be improved with:")
-                    for gap in evidence_bundle.missing_data:
-                        lines.append(f"• {gap}")
-
-                # Detailed Explanation Section
-                explanation = self._get_fallback_explanation(user_query, target_intent)
-                lines.append("\n💡 **Detailed Explanation & Clinical Insights**")
-                lines.append(explanation)
-
-                # Clinical Knowledge Supplement (query-matched guidance when LLM offline)
-                clinical_notes = self._clinical_knowledge_supplement(user_query)
-                if not clinical_notes:
-                    clinical_notes = self._default_fallback_recommendations(user_query, target_intent)
-
-                lines.append("\n✅ **Recommended Next Steps**")
-                lines.extend(clinical_notes)
-
-                # Suggested Follow-Up Questions
-                followups = self._get_fallback_followup_questions(user_query, target_intent)
-                if followups:
-                    lines.append("\n❓ **Suggested Follow-Up Questions**")
-                    for f_q in followups:
-                        lines.append(f"- *\"{f_q}\"*")
-
-                lines.append("\n> 💡 *VitalHealth Personal Health Assistant | Consult your physician for medical advice.*")
-                return "\n".join(lines)
-            except Exception:
-                pass  # fall through to snapshot-based rendering below
-
-        # ── Sleek Dynamic Default / Snapshot Fallback ─────────────────────────
-        snapshot = context.clinical_snapshot_block or ""
-        conditions = self._extract_field(snapshot, ["Active Conditions:"])
-        medications = self._extract_field(snapshot, ["Active Regimen:", "Active Medications:"])
-        labs = self._extract_field(snapshot, ["Latest Labs:"])
-        recent_syms = self._extract_field(snapshot, ["Recent Logged Symptoms:"])
-        risks = self._extract_field(snapshot, ["Active Risks:", "Active Clinical Risks:"])
-
+        # ── Clean Conversational Rendering (Headerless Dynamic Formatting) ───────
+        explanation = self._get_fallback_explanation(user_query, target_intent)
         persona = getattr(strategy, "persona", None) if strategy else None
         greeting = f"Hello {persona.first_name}, " if (persona and persona.first_name and persona.first_name.lower() not in ("friend", "user", "anonymous")) else ""
-        explanation = self._get_fallback_explanation(user_query, target_intent)
 
-        # Simple conversational, brief QA, nutrition, and lifestyle queries -> Clean, direct text
-        if schema in ["BRIEF_QA", "CHIT_CHAT", "GENERAL_HEALTH", "NUTRITION_DIETETICS", "LIFESTYLE_HABITS", "EXERCISE_PHYSIOLOGY"]:
-            lines.append(f"{greeting}{explanation}\n")
-            lines.append("> 💡 *VitalHealth Personal Health Assistant | Consult your physician for medical advice.*")
-            return "\n".join(lines)
+        lines.append(f"{greeting}{explanation}\n")
 
-        # Clinical symptom, medication, and lab queries -> Focused assessment + 3 next steps
-        lines.append(f"### 💡 Clinical Assessment & Guidance\n{greeting}{explanation}\n")
-
+        # Include clear actionable guidance points without rigid section titles
         fallback_notes = self._clinical_knowledge_supplement(user_query) or self._default_fallback_recommendations(user_query, target_intent)
-        lines.append("### ✅ Recommended Action Steps")
-        lines.extend(fallback_notes)
-        lines.append("")
+        if fallback_notes:
+            for note in fallback_notes:
+                lines.append(f"• {note.lstrip('-* ')}")
+            lines.append("")
 
         lines.append("> 💡 *VitalHealth Personal Health Assistant | Consult your physician for medical advice.*")
         return "\n".join(lines)
