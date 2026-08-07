@@ -20,7 +20,7 @@ from healthbot_v4.apps.brain.core import get_health_brain
 from healthbot_v4.apps.brain.orchestrator.orchestrator import AIOrchestrator, OrchestratorResponse
 from healthbot_v4.apps.brain.orchestrator.phos_orchestrator import PHOSOrchestrator
 from healthbot_v4.apps.brain.state.patient_state_manager import PatientStateManager
-from healthbot_v4.apps.brain.timeline.event_stream import MedicalTimelineEngine
+from healthbot_v4.apps.brain.timeline.event_stream import MedicalTimelineEngine, TimelineEventType
 from healthbot_v4.apps.brain.graph.patient_graph import PatientGraphEngine
 from healthbot_v4.apps.brain.copilot.health_copilot import HealthCopilot, DailyHealthBriefing
 from healthbot_v4.apps.ocr.engine.record_builder import SmartOCRPipeline
