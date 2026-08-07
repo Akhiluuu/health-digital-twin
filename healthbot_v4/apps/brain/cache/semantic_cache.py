@@ -41,37 +41,28 @@ class SemanticQueryCache(HealthBrainSubsystem):
             (
                 "What is HbA1c?",
                 "GENERAL_HEALTH_EDUCATION",
-                "### 📊 Understanding Glycated Hemoglobin (HbA1c)\n\n"
                 "**HbA1c (Glycated Hemoglobin)** measures the average percentage of blood glucose bound to hemoglobin over the past **2 to 3 months**.\n\n"
-                "### 🩺 Standard Reference Ranges\n"
-                "- **Normal:** Below 5.7%\n"
-                "- **Prediabetes:** 5.7% to 6.4%\n"
-                "- **Diabetes:** 6.5% or higher\n\n"
-                "- **Key Function:** It provides long-term glycemic trends rather than single daily spikes.\n"
-                "- **Management:** Healthy diet, daily exercise, and regular adherence to medical advice help maintain optimal levels.\n\n"
+                "• **Normal:** Below 5.7%\n"
+                "• **Prediabetes:** 5.7% to 6.4%\n"
+                "• **Diabetes:** 6.5% or higher\n\n"
+                "It provides long-term glycemic trends rather than single daily spikes. Healthy diet, physical activity, and regular medical checkups help maintain optimal levels.\n\n"
                 "> 💡 *Please consult your doctor for personalized medical advice.*",
                 ["ADA_2026_Guidelines"]
             ),
             (
                 "What is Metformin and how does it work?",
                 "MEDICATION",
-                "### 💊 Pharmacology Overview: Metformin\n\n"
-                "**Metformin** is a first-line oral antihyperglycemic medication prescribed for Managing Type 2 Diabetes.\n\n"
-                "### ⚙️ Mechanism of Action\n"
-                "- **Decreases Liver Glucose Production:** Reduces gluconeogenesis in the liver.\n"
-                "- **Improves Insulin Sensitivity:** Helps body tissues utilize glucose more effectively.\n"
-                "- **Decreases Intestinal Absorption:** Delays glucose intake during digestion.\n\n"
-                "### ⚠️ Essential Safety Guidance\n"
-                "- Take with meals to reduce gastrointestinal upset.\n"
-                "- Do not stop or alter doses without medical advice.\n\n"
+                "**Metformin** is a first-line oral antihyperglycemic medication prescribed for managing Type 2 Diabetes.\n\n"
+                "• **Reduces Glucose Production:** Lowers liver gluconeogenesis.\n"
+                "• **Improves Insulin Sensitivity:** Helps body tissues utilize glucose efficiently.\n"
+                "• **Safety Note:** Take with meals to minimize gastrointestinal upset, and do not alter dosages without consulting your physician.\n\n"
                 "> 💡 *Please consult your doctor for personalized medical advice.*",
                 ["ADA_2026_Pharmacology"]
             ),
             (
                 "What is normal blood pressure?",
                 "GENERAL_HEALTH_EDUCATION",
-                "### 🫀 Standard Blood Pressure Categories\n\n"
-                "Blood pressure is measured in **mmHg** using Systolic (top) and Diastolic (bottom) numbers:\n\n"
+                "Blood pressure is measured in **mmHg** using Systolic (top) and Diastolic (bottom) values:\n\n"
                 "| Category | Systolic (mmHg) | Diastolic (mmHg) |\n"
                 "| :--- | :--- | :--- |\n"
                 "| **Normal** | Less than 120 | and Less than 80 |\n"
