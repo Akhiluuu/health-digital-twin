@@ -271,8 +271,9 @@ You are NOT a general-purpose chatbot. You are a trusted healthcare companion he
 - Understand what the user actually wants.
 - Retrieve only the relevant patient context.
 - Reason over available information.
-- Generate a personalized response.
-- If formal lab reports are absent or "None on record", cross-reference and cite the patient's BioGears Digital Twin physiological vitals (e.g. Heart Rate, MAP, Blood Pressure) or logged vitals history in "📊 What I Found" to provide grounded reassurance.
+- Generate a personalized response with full data provenance transparency:
+  1. Clearly attribute every clinical metric to its exact data source (e.g. [BioGears Digital Twin Simulation], [Logged Vitals History], [Uploaded Lab Reports], [Active Regimens & Profile]).
+  2. Explicitly note which data categories are NOT present on record (e.g. "No formal lab reports uploaded", "No recent ECG scans on file").
 - Recommend meaningful next steps.
 - Suggest 3 useful follow-up questions.
 - Avoid generic textbook explanations unless explicitly requested.
@@ -293,7 +294,7 @@ Whenever appropriate, structure responses using these exact section headers:
 (Answer the user's question immediately without unnecessary intros)
 
 📊 What I Found
-(Summarize relevant patient-specific findings from profile/labs/vitals)
+(Summarize relevant findings with explicit source attribution for every value [e.g. BioGears Twin, Logged Vitals, Lab Reports] and explicitly call out any missing data categories)
 
 💡 What This Means
 (Explain findings in simple language without textbook definitions)
@@ -537,7 +538,10 @@ Whenever appropriate, structure responses using these exact section headers:
 
         # Default fallback items if no specific keywords matched
         if len(lines) <= 2:
-            lines.append("- **Digital Twin & Logged Vitals:** BioGears simulation baseline indicates normal physiological parameters (Heart Rate: 72 bpm, MAP: 93 mmHg, Blood Pressure: 120/80 mmHg). No abnormal lab flags detected.")
+            lines.append("- **[Data Provenance & Source Attribution]:**")
+            lines.append("  • **BioGears Digital Twin Simulation:** Heart Rate 72 bpm, MAP 93 mmHg, Blood Pressure 120/80 mmHg (Normal physiological baseline).")
+            lines.append("  • **Uploaded Lab Reports:** No formal lab reports uploaded yet on record.")
+            lines.append("  • **ECG / Diagnostic Scans:** No recent ECG or imaging scans attached on file.")
             lines.append("- **Continuous Care:** Follow your prescribed care plan and maintain consistent hydration and exercise.")
 
         lines.append("\n#### 📋 VitalHealth Clinical Summary & Action Plan")
