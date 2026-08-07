@@ -622,10 +622,10 @@ def compute_time_in_range(csv_path: Path, has_diabetes: bool = False) -> Dict[st
     urgency_lo = 54
 
     n = len(series)
-    tir   = int((series.between(lo, hi)).sum()) / n * 100
-    tar   = int((series > hi).sum()) / n * 100
-    tbr   = int((series < lo).sum()) / n * 100
-    urg   = int((series < urgency_lo).sum()) / n * 100
+    tir   = series.between(lo, hi).sum() / n * 100
+    tar   = (series > hi).sum() / n * 100
+    tbr   = (series < lo).sum() / n * 100
+    urg   = (series < urgency_lo).sum() / n * 100
     mean_g = round(float(series.mean()), 1)
     cv_pct = round(float(series.std() / series.mean() * 100) if series.mean() > 0 else 0, 1)
 
