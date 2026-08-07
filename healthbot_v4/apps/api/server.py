@@ -18,6 +18,7 @@ from healthbot_v4.shared.logger.logger import logger
 from healthbot_v4.shared.models.base import PatientProfile, NormalizedLab, NormalizedMedication, RiskFlag
 from healthbot_v4.apps.brain.core import get_health_brain
 from healthbot_v4.apps.brain.orchestrator.orchestrator import AIOrchestrator, OrchestratorResponse
+from healthbot_v4.apps.brain.orchestrator.phos_orchestrator import PHOSOrchestrator
 from healthbot_v4.apps.brain.state.patient_state_manager import PatientStateManager
 from healthbot_v4.apps.brain.timeline.event_stream import MedicalTimelineEngine
 from healthbot_v4.apps.brain.graph.patient_graph import PatientGraphEngine
@@ -46,6 +47,7 @@ async def lifespan(app: FastAPI):
     brain.register_subsystem(ProgressEngine())
     brain.register_subsystem(JourneyInsightsEngine())
     await brain.initialize_all()
+    await phos_orchestrator.initialize()
     yield
     logger.info("Shutting down Health Brain FastAPI Gateway...")
     await brain.shutdown_all()
@@ -103,6 +105,7 @@ graph_engine = PatientGraphEngine()
 copilot = HealthCopilot()
 ocr_pipeline = SmartOCRPipeline()
 orchestrator = AIOrchestrator()
+phos_orchestrator = PHOSOrchestrator()
 
 
 @app.get("/health", tags=["System Health"])
@@ -189,6 +192,17 @@ async def process_explainable_query(req: QueryRequest):
             "sources_cited": res.metadata.get("sources_cited"),
         },
     }
+
+
+@app.post("/api/v6/brain/phos/query", tags=["Enterprise PHOS Engine"])
+async def process_phos_query(req: QueryRequest):
+    """
+    Executes the 14-step PHOS Multi-Agent Reasoning Engine pipeline.
+    Returns complete structured evidence, intent analysis, hypotheses, strategy, and UI widgets.
+    """
+    state = state_mgr.get_or_create_state(req.patient_id)
+    response_payload = phos_orchestrator.process_query(req.query, state)
+    return response_payload.to_full_contract()
 
 
 @app.post("/api/v5/brain/query/stream", tags=["AI Reasoning Engine"])
@@ -725,6 +739,23 @@ _hitl_manager = HITLEscalationManager()
 class CounterfactualQueryRequest(BaseModel):
     patient_id: str
     query: str
+
+
+@app.post("/api/v6/brain/query/counterfactual", tags=["Enterprise Health OS v6.0"])
+async def run_counterfactual_query(req: CounterfactualQueryRequest):
+    scenario_engine = BioGearsScenarioEngine()
+    scenario = scenario_engine.simulate_counterfactual_scenario(req.patient_id, req.query)
+    return {
+        "status": "SUCCESS",
+        "patient_id": req.patient_id,
+        "query": req.query,
+        "scenario": scenario.model_dump(),
+    }
+
+
+@app.get("/api/v6/brain/graph/sync-status", tags=["Enterprise Health OS v6.0"])
+async def get_graph_sync_status():
+    return graph_engine.persistent_adapter.get_sync_status()
 
 
 class ConsentCheckRequest(BaseModel):

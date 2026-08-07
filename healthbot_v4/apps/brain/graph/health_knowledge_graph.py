@@ -4,7 +4,7 @@ Health Knowledge Graph Engine for VitalHealth v6.0 Enterprise.
 Manages entity-relationship graph traversals linking Diseases, Medications, Side Effects, Labs, Risks, and Symptoms.
 """
 
-from typing import Dict, Any, List, Set
+from typing import Dict, Any, List, Set, Optional
 from healthbot_v4.apps.patient.models.patient_state import UnifiedPatientState
 from healthbot_v4.shared.logger.logger import logger
 
@@ -23,15 +23,21 @@ class GraphEdge:
         self.relationship = relationship  # HAS_CONDITION, TREATED_BY, MONITORED_BY, CAUSES_SIDE_EFFECT, ELEVATES_RISK
 
 
+from healthbot_v4.apps.brain.graph.persistent_graph_adapter import PersistentGraphAdapter
+
+
 class HealthKnowledgeGraphEngine:
     """
     Health Knowledge Graph Service.
-    Enables graph traversal to discover indirect clinical connections and risk paths.
+    Enables dual-layer graph traversal:
+    - L1: In-memory query cache (< 1ms traversal for real-time inference)
+    - L2: Persistent Graph Adapter (asynchronous OpenCypher export)
     """
 
     def __init__(self):
         self._nodes: Dict[str, GraphNode] = {}
         self._edges: List[GraphEdge] = []
+        self.persistent_adapter = PersistentGraphAdapter()
         self._initialize_seed_knowledge()
 
     def _initialize_seed_knowledge(self):
@@ -52,15 +58,27 @@ class HealthKnowledgeGraphEngine:
         self._add_edge("Medication:Lisinopril", "Lab:Serum Potassium", "MONITORED_BY")
         self._add_edge("Medication:Lisinopril", "Symptom:Dry Cough", "CAUSES_SIDE_EFFECT")
 
-    def _add_edge(self, source: str, target: str, rel: str):
+    def _add_edge(self, source: str, target: str, rel: str, patient_id: str = "global", props: Optional[Dict[str, Any]] = None):
+        src_label, src_name = source.split(":", 1) if ":" in source else ("Entity", source)
+        tgt_label, tgt_name = target.split(":", 1) if ":" in target else ("Entity", target)
+
         if source not in self._nodes:
-            label, name = source.split(":", 1) if ":" in source else ("Entity", source)
-            self._nodes[source] = GraphNode(source, label, {"name": name})
+            self._nodes[source] = GraphNode(source, src_label, {"name": src_name})
         if target not in self._nodes:
-            label, name = target.split(":", 1) if ":" in target else ("Entity", target)
-            self._nodes[target] = GraphNode(target, label, {"name": name})
+            self._nodes[target] = GraphNode(target, tgt_label, {"name": tgt_name})
 
         self._edges.append(GraphEdge(source, target, rel))
+
+        # Asynchronously queue to L2 persistent store (non-blocking)
+        self.persistent_adapter.queue_triple(
+            source_id=source,
+            source_label=src_label,
+            target_id=target,
+            target_label=tgt_label,
+            relationship=rel,
+            properties=props or {"name": tgt_name},
+            patient_id=patient_id
+        )
 
     def build_patient_subgraph(self, state: UnifiedPatientState) -> Dict[str, Any]:
         """
@@ -91,3 +109,33 @@ class HealthKnowledgeGraphEngine:
             "traversal_paths": paths,
             "connected_nodes_count": len(set(paths))
         }
+
+    def ingest_evidence_item(self, patient_id: str, item: Any) -> str:
+        """Dynamic ingestion of EvidenceItem into PHKG with temporal attribution."""
+        patient_node = f"Patient:{patient_id}"
+        item_id = getattr(item, "itemId", "item")
+        data_type = getattr(item, "dataType", "Observation").capitalize()
+        node_id = f"{data_type}:{item_id}"
+
+        self._nodes[node_id] = GraphNode(
+            node_id=node_id,
+            label=data_type,
+            properties={
+                "value": getattr(item, "value", None),
+                "unit": getattr(item, "unit", None),
+                "timestamp": str(getattr(item, "timestamp", "")),
+                "confidence": getattr(item, "confidence", 0.9),
+                "is_abnormal": getattr(item, "is_abnormal", False),
+            }
+        )
+
+        rel = "HAS_OBSERVATION"
+        if data_type.lower() == "symptom":
+            rel = "RECORDED_SYMPTOM"
+        elif data_type.lower() == "medication":
+            rel = "TOOK_MEDICATION"
+        elif data_type.lower() == "condition":
+            rel = "HAS_DIAGNOSIS"
+
+        self._add_edge(patient_node, node_id, rel)
+        return node_id

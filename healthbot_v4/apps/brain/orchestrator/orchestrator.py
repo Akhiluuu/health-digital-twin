@@ -112,8 +112,8 @@ class AIOrchestrator(HealthBrainSubsystem):
         await self.action_engine.initialize()
         await self.fhir_exporter.initialize()
         
-        # Production Model Warm-Up Execution
-        await self.warmup_model()
+        # Production Model Warm-Up Execution (Async non-blocking background task)
+        asyncio.create_task(self.warmup_model())
         logger.info("🤖 AI Orchestrator initialized (Multi-Turn Memory + Local LLM — Zero External APIs)")
 
     # =========================================================================

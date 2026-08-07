@@ -125,23 +125,31 @@ class OrchestratorToolManager:
     # Module Collectors
     # -------------------------------------------------------------------------
 
-    def _collect_medical_records(self, state: PatientState) -> EvidenceSource:
+    def _collect_medical_records(self, state: Any) -> EvidenceSource:
         findings: List[EvidenceFinding] = []
-        conditions = state.current_conditions or []
-        allergies = state.profile.allergies or []
+        raw_conditions = getattr(state, "conditions", None) or getattr(state, "current_conditions", None) or []
+        conditions = [getattr(c, "name", str(c)) for c in raw_conditions]
+        
+        raw_allergies = getattr(state, "allergies", None) or []
+        if hasattr(state, "get_allergy_names"):
+            allergies = state.get_allergy_names()
+        elif hasattr(getattr(state, "profile", None), "allergies"):
+            allergies = getattr(state.profile, "allergies", [])
+        else:
+            allergies = [getattr(a, "substance", str(a)) for a in raw_allergies]
 
         if conditions:
-            for c in conditions:
+            for c_name in conditions:
                 findings.append(EvidenceFinding(
                     finding_id=_fid(), label="Diagnosed Condition",
-                    value=c.condition_name, source_name="Medical Records",
+                    value=c_name, source_name="Medical Records",
                     source_type="medical_records", timestamp_label="On record",
                     confidence=ConfidenceLevel.high,
                 ))
         if allergies:
             findings.append(EvidenceFinding(
                 finding_id=_fid(), label="Known Allergies",
-                value=", ".join(allergies), source_name="Medical Records",
+                value=", ".join(allergies) if isinstance(allergies, list) else str(allergies), source_name="Medical Records",
                 source_type="medical_records", timestamp_label="On record",
                 confidence=ConfidenceLevel.high,
             ))
@@ -215,17 +223,22 @@ class OrchestratorToolManager:
             missing_reason="No BioGears simulation vitals received from mobile client" if not findings else None,
         )
 
-    def _collect_vitals_history(self, state: PatientState, pc: Dict) -> EvidenceSource:
-        findings: List[EvidenceFinding] = []
+    def _collect_vitals_history(self, state: Any, pc: Dict) -> EvidenceSource:
         body_m = pc.get("body_measurements") or {}
+        findings: List[EvidenceFinding] = []
 
-        for vital in (state.recent_vitals or []):
-            val_str = f"{vital.value_primary}"
-            if vital.value_secondary is not None:
-                val_str += f"/{vital.value_secondary}"
-            val_str += f" {vital.unit}"
+        vitals_list = getattr(state, "recent_vitals", None) or getattr(state, "latest_vitals", None) or []
+        for vital in vitals_list:
+            v_name = getattr(vital, "vital_type", None) or getattr(vital, "metric_name", "Vital")
+            v_val = getattr(vital, "value_primary", getattr(vital, "value", ""))
+            v_sec = getattr(vital, "value_secondary", None)
+            v_unit = getattr(vital, "unit", "")
+            val_str = f"{v_val}"
+            if v_sec is not None:
+                val_str += f"/{v_sec}"
+            val_str += f" {v_unit}".rstrip()
             findings.append(EvidenceFinding(
-                finding_id=_fid(), label=vital.vital_type.replace("_", " ").title(),
+                finding_id=_fid(), label=v_name.replace("_", " ").title(),
                 value=val_str, source_name="Logged Vitals History",
                 source_type="vital_logs", timestamp_label="Recent reading",
                 confidence=ConfidenceLevel.high,
@@ -262,21 +275,16 @@ class OrchestratorToolManager:
         telemetry_cache = pc.get("telemetry_cache") or {}
         findings: List[EvidenceFinding] = []
 
-        for key, label, unit in [
-            ("steps", "Daily Steps", "steps"),
-            ("calories", "Calories Burned", "kcal"),
-            ("distance_km", "Distance", "km"),
-        ]:
-            v = fit_a.get(key) if isinstance(fit_a, dict) else telemetry_cache.get(key)
-            if v:
-                findings.append(EvidenceFinding(
-                    finding_id=_fid(), label=label, value=f"{v} {unit}",
-                    source_name="Telemetry Engine", source_type="telemetry",
-                    timestamp_label="Live Stream" if key in telemetry_cache else "Today",
-                    confidence=ConfidenceLevel.high,
-                ))
+        steps = fit_a.get("steps") or telemetry_cache.get("daily_steps")
+        if steps:
+            findings.append(EvidenceFinding(
+                finding_id=_fid(), label="Daily Steps (Hardware Telemetry)",
+                value=f"{steps:,} steps", source_name="Telemetry Engine",
+                source_type="telemetry", timestamp_label="Today",
+                confidence=ConfidenceLevel.high,
+            ))
 
-        water = (hyd_a.get("water_intake_ml") if isinstance(hyd_a, dict) else None)
+        water = hyd_a.get("today_ml")
         if water:
             findings.append(EvidenceFinding(
                 finding_id=_fid(), label="Hydration", value=f"{water} mL / 2500 mL goal",
@@ -293,13 +301,17 @@ class OrchestratorToolManager:
             missing_reason="No activity/telemetry data received — connect wearable or log activity" if not findings else None,
         )
 
-    def _collect_medications(self, state: PatientState) -> EvidenceSource:
+    def _collect_medications(self, state: Any) -> EvidenceSource:
         findings: List[EvidenceFinding] = []
-        for m in (state.active_medications or []):
+        meds_list = getattr(state, "active_medications", None) or getattr(state, "active_regimen", None) or []
+        for m in meds_list:
+            m_name = getattr(m, "name", "Medication")
+            m_dose = getattr(m, "dosage_form", None) or getattr(m, "dose", "")
+            m_freq = getattr(m, "frequency", "")
             findings.append(EvidenceFinding(
                 finding_id=_fid(),
-                label=f"Active Medication: {m.name}",
-                value=f"{m.dosage_form}, {m.frequency}",
+                label=f"Active Medication: {m_name}",
+                value=f"{m_dose}, {m_freq}".strip(", "),
                 source_name="Medication Vault",
                 source_type="medication_vault",
                 timestamp_label="Current regimen",
@@ -315,7 +327,7 @@ class OrchestratorToolManager:
             missing_reason="No active medications on record" if not findings else None,
         )
 
-    def _collect_symptoms(self, state: PatientState, symptoms_logged: List[str]) -> EvidenceSource:
+    def _collect_symptoms(self, state: Any, symptoms_logged: List[str]) -> EvidenceSource:
         findings: List[EvidenceFinding] = []
         seen: set = set()
         for s in symptoms_logged:
@@ -337,16 +349,21 @@ class OrchestratorToolManager:
             missing_reason="No symptoms currently logged in journal" if not findings else None,
         )
 
-    def _collect_labs(self, state: PatientState) -> EvidenceSource:
+    def _collect_labs(self, state: Any) -> EvidenceSource:
         findings: List[EvidenceFinding] = []
-        for lab in (state.recent_labs or []):
-            is_abn = lab.classification.lower() not in ["normal", "within range", ""]
+        labs_list = getattr(state, "recent_labs", None) or getattr(state, "lab_trends", None) or []
+        for lab in labs_list:
+            name = getattr(lab, "canonical_name", None) or getattr(lab, "biomarker_name", "Lab Test")
+            val = getattr(lab, "value", "")
+            unit = getattr(lab, "unit", "")
+            cls_status = getattr(lab, "classification", None) or getattr(lab, "status", "NORMAL")
+            is_abn = str(cls_status).lower() not in ["normal", "optimal", "within range", ""]
             findings.append(EvidenceFinding(
-                finding_id=_fid(), label=lab.canonical_name,
-                value=f"{lab.value} {lab.unit} ({lab.classification})",
+                finding_id=_fid(), label=name,
+                value=f"{val} {unit} ({cls_status})".strip(),
                 source_name="Uploaded Lab Reports",
                 source_type="lab_reports",
-                timestamp_label=lab.timestamp.strftime("%Y-%m-%d"),
+                timestamp_label="Recent",
                 confidence=ConfidenceLevel.high,
                 is_abnormal=is_abn,
             ))

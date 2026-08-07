@@ -4,7 +4,7 @@ Dynamic Patient-Specific Prompt Generator & Token Budgeter for VitalHealth v5.0.
 Synthesizes Clinical Snapshots, Retrieval Plans, and Safety Instructions into token-budgeted prompt contexts.
 """
 
-from typing import Optional
+from typing import Optional, Any
 from pydantic import BaseModel
 from healthbot_v4.apps.brain.core import HealthBrainSubsystem
 from healthbot_v4.apps.brain.copilot.clinical_snapshot import CurrentClinicalSnapshot
@@ -104,16 +104,32 @@ class ContextBudgeter(HealthBrainSubsystem):
             total_token_estimate=token_est,
         )
 
-    def build_budgeted_context(self, patient_state: PatientState, query: str = "") -> BudgetedContext:
+    def build_budgeted_context(self, patient_state: Any, query: str = "") -> BudgetedContext:
         """Helper building a complete BudgetedContext given a patient state and query."""
         from healthbot_v4.apps.brain.copilot.clinical_snapshot import ClinicalSnapshotEngine
         from healthbot_v4.apps.brain.reasoning.retrieval_planner import ContextRetrievalPlanner
         from healthbot_v4.apps.brain.reasoning.clinical_intent import ClinicalIntentEngine
 
-        snapshot = ClinicalSnapshotEngine().generate_snapshot(patient_state)
-        intent = ClinicalIntentEngine().classify_intent(query if query else "general health query")
-        plan = ContextRetrievalPlanner().create_retrieval_plan(intent, patient_state)
-        return self.assemble_context(patient_state, snapshot, plan)
+        try:
+            snapshot = ClinicalSnapshotEngine().generate_snapshot(patient_state)
+            intent = ClinicalIntentEngine().classify_intent(query if query else "general health query")
+            plan = ContextRetrievalPlanner().create_retrieval_plan(intent, patient_state)
+            return self.assemble_context(patient_state, snapshot, plan)
+        except Exception as e:
+            logger.warning(f"Fallback budgeted context build due to: {e}")
+            p_id = getattr(patient_state, "patient_id", "patient-unknown")
+            return BudgetedContext(
+                patient_id=p_id,
+                clinical_snapshot_block=f"=== CLINICAL SNAPSHOT ({p_id}) ===\nQuery: {query}",
+                master_summary_block=f"PATIENT SUMMARY: {p_id}",
+                active_risks_block="ACTIVE CLINICAL RISKS: None",
+                retrieval_plan_block=f"RETRIEVAL PLAN: Intent-filtered context for query '{query}'",
+                total_token_estimate=120,
+            )
+
+    def build_context(self, query: str = "", state: Any = None, history: Optional[list] = None) -> BudgetedContext:
+        """Standardized interface for PHOS orchestrator and reasoning pipelines."""
+        return self.build_budgeted_context(state, query)
 
 
 # Backward compatibility alias

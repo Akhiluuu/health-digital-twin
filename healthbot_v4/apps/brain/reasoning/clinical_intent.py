@@ -45,10 +45,19 @@ class ClinicalIntent(str, Enum):
     GENERAL_HEALTH     = "GENERAL_HEALTH"
 
 
+class ClinicalGoal(str, Enum):
+    ASSESSMENT = "Assessment"
+    ADVICE     = "Advice"
+    EDUCATION  = "Education"
+    ALERT      = "Alert"
+
+
 class IntentAnalysisResult(BaseModel):
+    query: str = ""
     primary_intent: ClinicalIntent
     secondary_intents: List[ClinicalIntent] = Field(default_factory=list)
     confidence: float = 0.95
+    clinicalGoal: ClinicalGoal = ClinicalGoal.ASSESSMENT
     extracted_entities: Dict[str, Any] = Field(default_factory=dict)
     reasoning: str = ""
 
@@ -241,10 +250,21 @@ class ClinicalIntentEngine(HealthBrainSubsystem):
     def classify_intent(self, query: str) -> IntentAnalysisResult:
         q = query.strip()
 
+        def _goal(intent: ClinicalIntent) -> ClinicalGoal:
+            if intent == ClinicalIntent.EMERGENCY:
+                return ClinicalGoal.ALERT
+            if intent in (ClinicalIntent.GENERAL_HEALTH_EDUCATION, ClinicalIntent.PREVENTIVE_CARE):
+                return ClinicalGoal.EDUCATION
+            if intent in (ClinicalIntent.EXERCISE, ClinicalIntent.NUTRITION, ClinicalIntent.DOCTOR_FOLLOWUP, ClinicalIntent.HEALTH_GOAL):
+                return ClinicalGoal.ADVICE
+            return ClinicalGoal.ASSESSMENT
+
         # ── Priority 1: Emergency (always first) ──────────────────────────────
         if _EMERGENCY.search(q):
             return IntentAnalysisResult(
+                query=q,
                 primary_intent=ClinicalIntent.EMERGENCY,
+                clinicalGoal=ClinicalGoal.ALERT,
                 confidence=1.0,
                 reasoning="Emergency safety keyword detected via regex pattern.",
                 extracted_entities=_extract_entities(q),

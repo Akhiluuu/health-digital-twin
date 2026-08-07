@@ -1,0 +1,94 @@
+"""
+healthbot_v4/apps/brain/reasoning/ui_selector.py
+
+UI Component Selector for Personal Health Operating System (PHOS).
+Maps response sections and data artifacts to optimal frontend widgets.
+"""
+
+from typing import Any, Dict, List, Optional
+from pydantic import BaseModel, Field
+from healthbot_v4.apps.brain.reasoning.response_strategy import ResponseStrategy, StrategyMode
+from healthbot_v4.shared.logger.logger import logger
+
+
+class UIWidget(BaseModel):
+    widget_type: str        # alert_banner, summary_card, trend_chart, comparison_table, biogears_card, followup_chips
+    title: str
+    payload: Dict[str, Any] = Field(default_factory=dict)
+
+
+class UIComponentSelection(BaseModel):
+    widgets: List[UIWidget] = Field(default_factory=list)
+
+    def to_json_contract(self) -> Dict[str, Any]:
+        return {
+            "widgets": [
+                {
+                    "type": w.widget_type,
+                    "title": w.title,
+                    "payload": w.payload,
+                }
+                for w in self.widgets
+            ]
+        }
+
+
+class UIComponentSelector:
+    """
+    Selects UI widgets for rendering in mobile/web client.
+    """
+
+    def select_components(
+        self,
+        strategy: ResponseStrategy,
+        summary_text: str,
+        follow_ups: List[str],
+        twin_data: Optional[Dict[str, Any]] = None
+    ) -> UIComponentSelection:
+        widgets: List[UIWidget] = []
+
+        # 1. Emergency Alert Banner
+        if strategy.requires_alert_banner or strategy.mode == StrategyMode.URGENT_TRIAGE:
+            widgets.append(UIWidget(
+                widget_type="alert_banner",
+                title="🚨 Medical Alert / Immediate Attention Recommended",
+                payload={"message": "Your query or vitals indicate potential urgent symptoms. Please seek emergency medical care immediately.", "level": "critical"}
+            ))
+
+        # 2. Executive Summary Card
+        widgets.append(UIWidget(
+            widget_type="summary_card",
+            title="Clinical Summary",
+            payload={"text": summary_text, "mode": strategy.mode.value}
+        ))
+
+        # 3. BioGears Simulation Digital Twin Card
+        if strategy.include_biogears_card:
+            widgets.append(UIWidget(
+                widget_type="biogears_card",
+                title="Digital Twin Physiological Simulation",
+                payload=twin_data or {
+                    "cardiac_output": "5.2 L/min (Normal)",
+                    "map": "93 mmHg (Stable)",
+                    "organ_perfusion": "Optimal",
+                }
+            ))
+
+        # 4. Trend Chart (if applicable)
+        if strategy.include_trend_chart:
+            widgets.append(UIWidget(
+                widget_type="trend_chart",
+                title="6-Month Vitals Trend",
+                payload={"metric": "Resting Heart Rate", "unit": "bpm", "status": "Stable Range"}
+            ))
+
+        # 5. Follow-up Chips
+        if follow_ups:
+            widgets.append(UIWidget(
+                widget_type="followup_chips",
+                title="Suggested Next Questions",
+                payload={"chips": follow_ups}
+            ))
+
+        logger.info(f"📱 Selected {len(widgets)} UI components for rendering")
+        return UIComponentSelection(widgets=widgets)

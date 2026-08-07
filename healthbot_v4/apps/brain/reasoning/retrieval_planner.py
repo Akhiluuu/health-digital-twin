@@ -6,12 +6,25 @@ Supports all 28 clinical intents including new categories: mental health, injury
 women's health, dermatology, dental, travel, and general health education.
 """
 
-from typing import Dict, Any
+from typing import Dict, Any, List, Optional
 from pydantic import BaseModel, Field
 from healthbot_v4.apps.brain.core import HealthBrainSubsystem
 from healthbot_v4.apps.brain.reasoning.clinical_intent import ClinicalIntent, IntentAnalysisResult
 from healthbot_v4.shared.logger.logger import logger
 from healthbot_v4.shared.models.base import PatientState
+
+
+class EvidencePlan(BaseModel):
+    intent: str
+    requiredDomains: List[str] = Field(default_factory=list)
+    priorityOrder: List[str] = Field(default_factory=list)
+
+    def to_json_contract(self) -> Dict[str, Any]:
+        return {
+            "intent": self.intent,
+            "requiredDomains": self.requiredDomains,
+            "priorityOrder": self.priorityOrder,
+        }
 
 
 class RetrievalPlan(BaseModel):
@@ -28,6 +41,7 @@ class RetrievalPlan(BaseModel):
     retrieve_risks: bool = True
     retrieve_conversation_history: bool = True  # Always retrieve for multi-turn continuity
     explainable_matrix: Dict[str, str] = Field(default_factory=dict)
+    evidence_plan: Optional[EvidencePlan] = None
 
 
 class ContextRetrievalPlanner(HealthBrainSubsystem):

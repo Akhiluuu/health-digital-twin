@@ -66,6 +66,24 @@ class EvidenceFinding(BaseModel):
     notes: Optional[str] = None             # clinical interpretation note
     raw_data: Dict[str, Any] = Field(default_factory=dict)
 
+    @classmethod
+    def from_evidence_item(cls, item: Any) -> "EvidenceFinding":
+        """Convert a PHOS EvidenceItem to an EvidenceFinding for backwards compatibility."""
+        val_str = f"{item.value} {item.unit}".strip() if getattr(item, "unit", None) else str(item.value)
+        return cls(
+            finding_id=getattr(item, "itemId", "finding-item"),
+            label=getattr(item, "notes", None) or getattr(item, "dataType", "Finding").replace("_", " ").title(),
+            value=val_str,
+            source_name=getattr(item, "source", "Unknown Source"),
+            source_type=getattr(item, "dataType", "general"),
+            timestamp_label=getattr(item, "timestamp", _utc_now()).strftime("%Y-%m-%d %H:%M UTC") if isinstance(getattr(item, "timestamp", None), datetime) else "Recent",
+            confidence=ConfidenceLevel.high if getattr(item, "confidence", 0.9) >= 0.8 else ConfidenceLevel.medium,
+            confidence_pct=getattr(item, "confidence", 0.85),
+            is_abnormal=getattr(item, "is_abnormal", False),
+            notes=getattr(item, "notes", None),
+            raw_data=getattr(item, "raw_payload", {}),
+        )
+
 
 # ---------------------------------------------------------------------------
 # Source summary — status of one entire data module
@@ -202,3 +220,22 @@ class EvidenceBundle(BaseModel):
 
     def get_findings_by_source(self, source_type: str) -> List[EvidenceFinding]:
         return [f for f in self.findings if f.source_type == source_type]
+
+    def to_evidence_items(self) -> List[Any]:
+        """Convert findings into EvidenceItem schema objects for PHKG correlation."""
+        from healthbot_v4.shared.models.evidence_schema import EvidenceItem, ReliabilityLevel, TrendType
+        items = []
+        for f in self.findings:
+            items.append(EvidenceItem(
+                itemId=f.finding_id,
+                source=f.source_name,
+                dataType=f.source_type,
+                value=f.value,
+                confidence=f.confidence_pct or 0.85,
+                reliability=ReliabilityLevel.HIGH if f.confidence.value == "high" else ReliabilityLevel.MEDIUM,
+                trend=TrendType.STABLE,
+                is_abnormal=f.is_abnormal,
+                notes=f.notes or f.label,
+                raw_payload=f.raw_data,
+            ))
+        return items
