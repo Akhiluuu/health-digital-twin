@@ -109,8 +109,11 @@ phos_orchestrator = PHOSOrchestrator()
 
 
 @app.get("/health", tags=["System Health"])
+@app.get("/health/", tags=["System Health"])
 @app.get("/ai/health", tags=["System Health"])
+@app.get("/ai/health/", tags=["System Health"])
 @app.get("//health", tags=["System Health"])
+@app.get("//health/", tags=["System Health"])
 async def health_check():
     return {
         "status": "HEALTHY",
