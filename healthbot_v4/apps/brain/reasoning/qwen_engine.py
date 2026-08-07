@@ -790,8 +790,8 @@ You are a trusted healthcare companion helping users understand, manage, monitor
                 "> 💡 *VitalHealth Personal Health Assistant | Consult your physician for medical advice.*"
             )
 
-        # ── Bundle-driven rendering ────────────────────────────────────────────
-        if evidence_bundle is not None:
+        # ── Bundle-driven rendering (Only for Deep Audits & Full Summaries) ────
+        if evidence_bundle is not None and schema in ["DEEP_CLINICAL_AUDIT", "HEALTH_SUMMARY", "DIGITAL_TWIN_SIMULATION"]:
             try:
                 from healthbot_v4.apps.brain.evidence.evidence_bundle import SourceStatus
 
@@ -891,9 +891,17 @@ You are a trusted healthcare companion helping users understand, manage, monitor
 
                 lines.append("\n> 💡 *VitalHealth Personal Health Assistant | Consult your physician for medical advice.*")
                 return "\n".join(lines)
-
             except Exception:
                 pass  # fall through to snapshot-based rendering below
+
+        # ── Sleek Dynamic Default Output ──────────────────────────────────────
+        explanation = self._get_fallback_explanation(user_query, target_intent)
+        clinical_notes = self._clinical_knowledge_supplement(user_query) or self._default_fallback_recommendations(user_query, target_intent)
+        return (
+            f"### 💡 Clinical Assessment & Guidance\n{explanation}\n\n"
+            f"### ✅ Recommended Action Steps\n" + "\n".join(clinical_notes) + "\n\n"
+            "> 💡 *VitalHealth Personal Health Assistant | Consult your physician for medical advice.*"
+        )
 
         # ── Snapshot-only fallback (no bundle available) ──────────────────────
         snapshot = context.clinical_snapshot_block or ""
