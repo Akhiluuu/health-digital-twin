@@ -740,12 +740,13 @@ class ConsentCheckRequest(BaseModel):
 
 @app.get("/export/clinical-digest/{user_id}", tags=["Clinical Export"])
 async def export_clinical_digest(user_id: str):
+    from healthbot_v4.apps.brain.evidence.evidence_bundle import SourceStatus
     state = state_mgr.get_or_create_state(user_id)
     bundle = orchestrator.otm.collect_evidence(
         query="Doctor Followup Summary",
         intent="DOCTOR_FOLLOWUP",
         state=state,
-        patient_context=state.patient_context
+        patient_context=None
     )
     
     digest_markdown = f"# 🩺 VitalHealth Clinical Intelligence Digest\n"
