@@ -894,53 +894,38 @@ You are a trusted healthcare companion helping users understand, manage, monitor
             except Exception:
                 pass  # fall through to snapshot-based rendering below
 
-        # ── Sleek Dynamic Default Output ──────────────────────────────────────
-        explanation = self._get_fallback_explanation(user_query, target_intent)
-        clinical_notes = self._clinical_knowledge_supplement(user_query) or self._default_fallback_recommendations(user_query, target_intent)
-        return (
-            f"### 💡 Clinical Assessment & Guidance\n{explanation}\n\n"
-            f"### ✅ Recommended Action Steps\n" + "\n".join(clinical_notes) + "\n\n"
-            "> 💡 *VitalHealth Personal Health Assistant | Consult your physician for medical advice.*"
-        )
-
-        # ── Snapshot-only fallback (no bundle available) ──────────────────────
+        # ── Sleek Dynamic Default / Snapshot Fallback ─────────────────────────
         snapshot = context.clinical_snapshot_block or ""
         medications = self._extract_field(snapshot, ["Active Regimen:", "Active Medications:"])
         risks = self._extract_field(snapshot, ["Active Risks:", "Active Clinical Risks:"])
-        lines.append("🩺 **Executive Summary**")
-        lines.append(f"Here is your personalized health guidance regarding **\"{user_query.strip()}\"** based on your current clinical profile.\n")
-        lines.append("📊 **Key Findings**")
-        if medications and medications != "None":
-            lines.append(f"- **Active Medications:** {medications}  \n  *[Source: Clinical Profile | Current]*")
-        if risks and "none" not in risks.lower():
-            lines.append(f"- **Logged Symptoms / Risks:** {risks}  \n  *[Source: Symptom Journal | Recent]*")
-        else:
-            lines.append("- **Symptom Journal:** No active symptoms currently logged. You can log symptoms anytime in the Symptoms tab of the app.  \n  *[Source: Symptom Journal | Current]*")
-        
-        q_lower = user_query.lower()
-        if any(k in q_lower for k in ["biogears", "twin", "simulation", "organ"]):
-            lines.append("- **[BioGears Digital Twin]:** Normal physiological baseline.  \n  *[Source: BioGears Simulation | Latest]*")
-        lines.append("- **[Lab Reports]:** No recent lab reports on file for this query.  \n  *[Source: Documents Tab | Not uploaded]*")
-        lines.append("\n⚠ **Missing Information**")
-        lines.append("• Log your symptoms directly in the Symptoms section of the app to enable personalized AI clinical tracking.")
-        lines.append("• Upload lab reports in the Documents tab to improve response accuracy.")
-
         
         explanation = self._get_fallback_explanation(user_query, target_intent)
-        lines.append("\n💡 **Detailed Explanation & Clinical Insights**")
-        lines.append(explanation)
+        lines.append(f"### 💡 Clinical Assessment & Guidance\n{explanation}\n")
+
+        # Include profile highlights if available
+        profile_notes = []
+        if medications and medications != "None":
+            profile_notes.append(f"- **Active Regimen:** {medications}")
+        if risks and "none" not in risks.lower():
+            profile_notes.append(f"- **Active Risks / Logged Symptoms:** {risks}")
+        if profile_notes:
+            lines.append("📌 **Relevant Health Profile Highlights**")
+            lines.extend(profile_notes)
+            lines.append("")
 
         fallback_notes = self._clinical_knowledge_supplement(user_query) or self._default_fallback_recommendations(user_query, target_intent)
-        lines.append("\n✅ **Recommended Next Steps**")
+        lines.append("### ✅ Recommended Action Steps")
         lines.extend(fallback_notes)
+        lines.append("")
 
         followups = self._get_fallback_followup_questions(user_query, target_intent)
         if followups:
-            lines.append("\n❓ **Suggested Follow-Up Questions**")
+            lines.append("❓ **Suggested Follow-Up Questions**")
             for f_q in followups:
                 lines.append(f"- *\"{f_q}\"*")
+            lines.append("")
 
-        lines.append("\n> 💡 *VitalHealth Personal Health Assistant | Consult your physician for medical advice.*")
+        lines.append("> 💡 *VitalHealth Personal Health Assistant | Consult your physician for medical advice.*")
         return "\n".join(lines)
 
     # =========================================================================
