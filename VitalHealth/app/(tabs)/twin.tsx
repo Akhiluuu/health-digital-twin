@@ -1006,7 +1006,8 @@ export default function TwinScreen() {
           { text: "Share Digest", onPress: async () => {
             const canShare = await Sharing.isAvailableAsync();
             if (canShare) {
-              const fileUri = `${DOCS_DIR}Clinical_Digest_${Date.now()}.md`;
+              const dir = FileSystem.documentDirectory || FileSystem.cacheDirectory || '';
+              const fileUri = `${dir}Clinical_Digest_${Date.now()}.md`;
               await FileSystem.writeAsStringAsync(fileUri, data.digest_markdown);
               await Sharing.shareAsync(fileUri, { mimeType: "text/markdown", dialogTitle: "Doctor Summary Digest" });
             }
