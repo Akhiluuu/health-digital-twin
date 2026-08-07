@@ -241,10 +241,10 @@ def compute_session_stats(csv_path: Path) -> Dict[str, Any]:
             if len(series) == 0:
                 continue
             stats[alias] = {
-                "min":  round(float(series.min()), 2),
-                "max":  round(float(series.max()), 2),
-                "mean": round(float(series.mean()), 2),
-                "std":  round(float(series.std()), 2),
+                "min":  round(series.min(), 2),
+                "max":  round(series.max(), 2),
+                "mean": round(series.mean(), 2),
+                "std":  round(series.std(), 2),
                 "unit": _unit_map.get(alias, ""),
             }
 
@@ -291,7 +291,7 @@ def compute_trends(user_id: str, history_dir: Path) -> Dict[str, Any]:
         row: Dict[str, Any] = {"session_id": session_id, "timestamp": timestamp}
         for col, alias in tracked.items():
             if col in df.columns:
-                avg = round(float(df[col].mean()), 2)
+                avg = round(df[col].mean(), 2)
                 row[alias] = avg
                 per_vital_values[alias].append(avg)
         sessions.append(row)
