@@ -25,6 +25,8 @@ import * as FileSystem from "expo-file-system/legacy";
 import * as Sharing from "expo-sharing";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useTheme } from "../../context/ThemeContext";
+import { useFamily } from "../../context/FamilyContext";
+import { getTwinId } from "../../utils/twinUtils";
 import Header from "../components/Header";
 import { getBiogearsBaseUrl } from "../../services/biogears";
 
@@ -339,8 +341,8 @@ function InAppViewer({
 // ─── Main Screen ──────────────────────────────────────────────────────────────
 
 export default function DocumentsScreen() {
-  const { theme } = useTheme();
-  const isDark = theme === "dark";
+  const { activeProfile } = useFamily();
+  const userId = activeProfile ? getTwinId(activeProfile) : "p_healthy";
 
   const colors = isDark
     ? {
@@ -487,7 +489,7 @@ export default function DocumentsScreen() {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              user_id: "self",
+              user_id: userId,
               report_title: reportName.trim(),
               category: selectedCategory,
             })
