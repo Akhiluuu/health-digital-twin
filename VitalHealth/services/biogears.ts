@@ -631,6 +631,37 @@ export interface ConsentEvaluationResponse {
   policy_id_applied?: string;
 }
 
+export interface PHOSQueryResponse {
+  query: string;
+  patient_id: string;
+  intentAnalysis: {
+    primaryIntent: string;
+    secondaryIntents?: string[];
+    clinicalGoal?: string;
+    confidence?: number;
+  };
+  confidence?: any;
+  strategy?: any;
+  answerText: string;
+  followUps?: string[];
+  uiComponents?: Array<{
+    type: string;
+    title: string;
+    payload: any;
+  }>;
+  latencyMs: number;
+}
+
+/**
+ * Execute PHOS v6.0 AI Multi-Agent Reasoning Query
+ */
+export async function queryPHOSEngine(patientId: string, queryText: string): Promise<PHOSQueryResponse> {
+  return apiFetch('/api/v6/brain/phos/query', {
+    method: 'POST',
+    body: JSON.stringify({ patient_id: patientId, query: queryText }),
+  }, 45_000);
+}
+
 /**
  * Execute Counterfactual Scenario Query ("What happens if I stop taking Metformin?")
  */

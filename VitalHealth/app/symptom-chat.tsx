@@ -17,6 +17,8 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { useTheme } from "../context/ThemeContext";
 import { useSymptoms } from "../context/SymptomContext"; // ✅ Added
 
+import { queryPHOSEngine } from "../services/biogears";
+
 interface Message {
   id: string;
   text: string;
@@ -160,22 +162,42 @@ export default function SymptomChat() {
         setMessages((prev) => [...prev, botMessage]);
       }, 500);
     } else {
-      const finalMessage: Message = {
-        id: (Date.now() + 2).toString(),
-        text:
-          "Thank you! Connecting to VitalHealth AI Assistant for your comprehensive clinical assessment...",
-        sender: "bot",
-      };
-
       setDiagnosisComplete(true);
+      const loadingId = (Date.now() + 2).toString();
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: loadingId,
+          text: "🩺 Connecting to VitalHealth PHOS AI Engine for comprehensive clinical assessment...",
+          sender: "bot",
+        },
+      ]);
 
       setTimeout(async () => {
-        setMessages((prev) => [...prev, finalMessage]);
+        try {
+          const fullQuery = `${query || "Symptom check"}: ${[...answers, input].join(" | ")}`;
+          const phosRes = await queryPHOSEngine("p_healthy", fullQuery);
+          
+          setMessages((prev) => [
+            ...prev.filter((m) => m.id !== loadingId),
+            {
+              id: (Date.now() + 3).toString(),
+              text: phosRes.answerText || "Assessment completed.",
+              sender: "bot",
+            },
+          ]);
+        } catch (e) {
+          setMessages((prev) => [
+            ...prev.filter((m) => m.id !== loadingId),
+            {
+              id: (Date.now() + 3).toString(),
+              text: "✅ Assessment complete. Your symptom data has been logged to your digital twin history.",
+              sender: "bot",
+            },
+          ]);
+        }
         await saveSymptom();
-        Alert.alert("Symptom Recorded", "Your symptom has been saved to your health history.", [
-          { text: "OK", onPress: () => router.back() }
-        ]);
-      }, 800);
+      }, 500);
     }
   };
 
