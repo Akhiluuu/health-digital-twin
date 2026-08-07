@@ -29,7 +29,7 @@ def _now_label() -> str:
 _INTENT_MODULE_MAP: Dict[str, List[str]] = {
     "GENERAL_HEALTH":        ["medical_records","biogears_twin","vitals_history","medications","symptoms","labs","lifestyle","organ_scores"],
     "HEALTH_SUMMARY":        ["medical_records","biogears_twin","vitals_history","medications","symptoms","labs","telemetry","lifestyle","organ_scores"],
-    "SYMPTOMS":              ["medical_records","biogears_twin","vitals_history","medications","symptoms","labs","lifestyle"],
+    "SYMPTOMS":              ["symptoms","medications","vitals_history","medical_records","labs","lifestyle"],
     "LAB_REPORT":            ["labs","medical_records","medications","biogears_twin"],
     "MEDICATION":            ["medications","medical_records","labs","symptoms"],
     "PRESCRIPTION":          ["medications","medical_records","labs"],

@@ -808,9 +808,22 @@ You are a trusted healthcare companion helping users understand, manage, monitor
                 else:
                     lines.append(f"Based on a review of your complete health ecosystem, here is what I found regarding: **\"{user_query.strip()}\"**\n")
 
+                # Filter sources and findings based on intent
+                is_simulation_query = (target_intent == "DIGITAL_TWIN" or schema == "DIGITAL_TWIN_SIMULATION" or any(k in user_query.lower() for k in ["simulation", "digital twin", "biogears", "organ score"]))
+                
+                active_sources = [
+                    src for src in evidence_bundle.sources
+                    if is_simulation_query or (src.name != "BioGears Digital Twin" and src.name != "BioGears Organ Scores")
+                ]
+                
+                active_findings = [
+                    f for f in evidence_bundle.findings
+                    if is_simulation_query or (f.source_type != "biogears_twin" and "BioGears" not in f.source_name and "Simulation" not in f.label)
+                ]
+
                 # Sources reviewed
                 lines.append("✅ **Sources Reviewed**")
-                for src in evidence_bundle.sources:
+                for src in active_sources:
                     icon = "✓" if src.status == SourceStatus.available else "⚠"
                     count = f" — {src.records_count} records" if src.records_count > 0 else ""
                     reason = f" ({src.missing_reason})" if src.missing_reason and src.status != SourceStatus.available else ""
@@ -818,8 +831,8 @@ You are a trusted healthcare companion helping users understand, manage, monitor
 
                 # Key findings
                 lines.append("\n📊 **Key Findings**")
-                if evidence_bundle.findings:
-                    for f in evidence_bundle.findings:
+                if active_findings:
+                    for f in active_findings:
                         conf = f"{f.confidence_pct * 100:.0f}%" if f.confidence_pct else f.confidence.value
                         val = f.value or "No data recorded"
                         abnormal_tag = " ⚠ *Abnormal*" if f.is_abnormal else ""
@@ -840,8 +853,8 @@ You are a trusted healthcare companion helping users understand, manage, monitor
                         lines.append(f"   *{c.recommendation}*")
 
                 # Clinical reasoning
-                available_names = [s.name for s in evidence_bundle.sources if s.status == SourceStatus.available]
-                missing_names = [s.name for s in evidence_bundle.sources if s.status != SourceStatus.available]
+                available_names = [s.name for s in active_sources if s.status == SourceStatus.available]
+                missing_names = [s.name for s in active_sources if s.status != SourceStatus.available]
                 lines.append("\n🧠 **Clinical Reasoning**")
                 if available_names:
                     lines.append(f"I reviewed data from: {', '.join(available_names)}.")
