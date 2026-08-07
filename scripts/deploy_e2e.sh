@@ -23,9 +23,14 @@ command -v python3 >/dev/null 2>&1 || { echo "❌ Python3 is required. Run: sudo
 command -v curl >/dev/null 2>&1 || { echo "❌ curl is required."; exit 1; }
 
 if [ -d ".git" ]; then
-    echo "📥 Syncing codebase with GitHub origin/main..."
-    git fetch origin main
-    git reset --hard origin/main
+    git fetch origin main >/dev/null 2>&1 || true
+    LOCAL_HASH=$(git rev-parse HEAD 2>/dev/null || true)
+    REMOTE_HASH=$(git rev-parse origin/main 2>/dev/null || true)
+    if [ -n "$REMOTE_HASH" ] && [ "$LOCAL_HASH" != "$REMOTE_HASH" ]; then
+        echo "📥 Updating codebase to $REMOTE_HASH and restarting deployment..."
+        git reset --hard origin/main
+        exec "$0" "$@"
+    fi
 fi
 
 # 2. Virtual Environment Setup
