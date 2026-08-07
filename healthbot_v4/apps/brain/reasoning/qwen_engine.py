@@ -269,11 +269,12 @@ You are NOT a general-purpose chatbot. You are a trusted healthcare companion he
 
 # CORE OBJECTIVE
 - Understand what the user actually wants.
-- Retrieve only the relevant patient context.
+- Retrieve only context directly relevant to the user's question.
 - Reason over available information.
-- Generate a personalized response with full data provenance transparency:
-  1. Clearly attribute every clinical metric to its exact data source (e.g. [BioGears Digital Twin Simulation], [Logged Vitals History], [Uploaded Lab Reports], [Active Regimens & Profile]).
-  2. Explicitly note which data categories are NOT present on record (e.g. "No formal lab reports uploaded", "No recent ECG scans on file").
+- Generate a personalized response with query-relevant data provenance:
+  1. Only list clinical metrics directly RELEVANT to the user's query/symptom.
+  2. Clearly state where each relevant value came from (e.g. [BioGears Digital Twin], [Logged Vitals], [Uploaded Lab Reports]).
+  3. If relevant data is missing for that specific category, simply note it (e.g. "No formal lab reports on file for ECG/cardio").
 - Recommend meaningful next steps.
 - Suggest 3 useful follow-up questions.
 - Avoid generic textbook explanations unless explicitly requested.
@@ -294,7 +295,7 @@ Whenever appropriate, structure responses using these exact section headers:
 (Answer the user's question immediately without unnecessary intros)
 
 📊 What I Found
-(Summarize relevant findings with explicit source attribution for every value [e.g. BioGears Twin, Logged Vitals, Lab Reports] and explicitly call out any missing data categories)
+(Summarize ONLY query-relevant findings with clean source attribution [e.g. BioGears Twin, Logged Vitals, Lab Reports] and state if relevant records are absent)
 
 💡 What This Means
 (Explain findings in simple language without textbook definitions)
@@ -538,10 +539,8 @@ Whenever appropriate, structure responses using these exact section headers:
 
         # Default fallback items if no specific keywords matched
         if len(lines) <= 2:
-            lines.append("- **[Data Provenance & Source Attribution]:**")
-            lines.append("  • **BioGears Digital Twin Simulation:** Heart Rate 72 bpm, MAP 93 mmHg, Blood Pressure 120/80 mmHg (Normal physiological baseline).")
-            lines.append("  • **Uploaded Lab Reports:** No formal lab reports uploaded yet on record.")
-            lines.append("  • **ECG / Diagnostic Scans:** No recent ECG or imaging scans attached on file.")
+            lines.append("- **[BioGears Digital Twin Simulation]:** Heart Rate 72 bpm, MAP 93 mmHg, Blood Pressure 120/80 mmHg (Normal physiological baseline).")
+            lines.append("- **[Uploaded Lab Reports]:** No relevant lab reports on file for this specific query.")
             lines.append("- **Continuous Care:** Follow your prescribed care plan and maintain consistent hydration and exercise.")
 
         lines.append("\n#### 📋 VitalHealth Clinical Summary & Action Plan")
