@@ -503,7 +503,9 @@ class AIOrchestrator(HealthBrainSubsystem):
                 bp = body_m.get("blood_pressure", "120/80 mmHg")
                 extra_lines.append(f"• BODY MEASUREMENTS & PHYSIQUE: Height {h}, Weight {w}, BMI {bmi} kg/m², Blood Type {bt}, Resting HR {rhr} bpm, BP {bp}")
 
-            if sim_v and isinstance(sim_v, dict):
+            # Only inject detailed BioGears simulation vitals & organ scores if retrieve_twin is planned or intent is digital twin simulation
+            is_twin_query = getattr(plan, "retrieve_twin", False) or any(kw in query.lower() for kw in ["simulation", "digital twin", "biogears", "organ score", "vitals"])
+            if is_twin_query and sim_v and isinstance(sim_v, dict):
                 hr_v = sim_v.get("heart_rate") or sim_v.get("heartRate") or sim_v.get("hr") or (body_m.get("resting_hr") if isinstance(body_m, dict) else 72) or 72
                 sys_bp = sim_v.get("systolic_bp") or sim_v.get("systolicBp")
                 dia_bp = sim_v.get("diastolic_bp") or sim_v.get("diastolicBp")
@@ -523,7 +525,7 @@ class AIOrchestrator(HealthBrainSubsystem):
                 temp_v = sim_v.get("core_temperature") or sim_v.get("coreTemperature") or 37.0
                 extra_lines.append(f"• BIOGEARS DIGITAL TWIN VITALS: HR: {hr_v} bpm | BP: {bp_v} | MAP: {map_v} mmHg | Cardiac Output: {co_v} L/min | Stroke Volume: {sv_v} mL | Respiration: {rr_v} br/min | Tidal Volume: {tv_v} mL | Arterial pH: {ph_v} | Glucose: {gluc_v} mg/dL | SpO2: {spo2_v}% | Core Temp: {temp_v} °C")
 
-            if organ_s and isinstance(organ_s, dict):
+            if is_twin_query and organ_s and isinstance(organ_s, dict):
                 scores_dict = organ_s.get("scores") if isinstance(organ_s.get("scores"), dict) else organ_s
                 org_pairs = []
                 for k, v in scores_dict.items():
