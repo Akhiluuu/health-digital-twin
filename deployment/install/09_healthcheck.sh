@@ -46,7 +46,7 @@ if [[ -s "$SHARD1" ]]; then
         sleep 5
     done
     run_endpoint_check "Health AI Direct API" "http://127.0.0.1:8001/health" "HEALTHY"
-    run_endpoint_check "Nginx Health AI Proxy" "http://127.0.0.1/ai/health" "HEALTHY"
+    run_endpoint_check "Nginx Health AI Proxy" "http://127.0.0.1/ai/health/" "HEALTHY"
 else
     warn "Skipped Health AI checks: LLM model shards not found."
 fi
