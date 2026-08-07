@@ -911,42 +911,21 @@ You are a trusted healthcare companion helping users understand, manage, monitor
 
         persona = getattr(strategy, "persona", None) if strategy else None
         greeting = f"Hello {persona.first_name}, " if (persona and persona.first_name and persona.first_name.lower() not in ("friend", "user", "anonymous")) else ""
-
         explanation = self._get_fallback_explanation(user_query, target_intent)
-        if schema in ["BRIEF_QA", "CHIT_CHAT", "GENERAL_HEALTH", "NUTRITION_DIETETICS", "LIFESTYLE_HABITS"]:
-            lines.append(f"{greeting}{explanation}\n")
-        else:
-            lines.append(f"### 💡 Clinical Assessment & Guidance\n{greeting}{explanation}\n")
 
-        # Include 360-degree profile highlights if available
-        profile_notes = []
-        if conditions and conditions != "None":
-            profile_notes.append(f"- **Active Conditions:** {conditions}")
-        if medications and medications != "None":
-            profile_notes.append(f"- **Active Regimen:** {medications}")
-        if recent_syms and recent_syms != "None recently logged":
-            profile_notes.append(f"- **Recent Logged Symptoms:** {recent_syms}")
-        if labs and labs != "None on record":
-            profile_notes.append(f"- **Recent Lab Flags:** {labs}")
-        if risks and "none" not in risks.lower():
-            profile_notes.append(f"- **Clinical Risk Flags:** {risks}")
-            
-        if profile_notes:
-            lines.append("📌 **Personalized Health Profile Context**")
-            lines.extend(profile_notes)
-            lines.append("")
+        # Simple conversational, brief QA, nutrition, and lifestyle queries -> Clean, direct text
+        if schema in ["BRIEF_QA", "CHIT_CHAT", "GENERAL_HEALTH", "NUTRITION_DIETETICS", "LIFESTYLE_HABITS", "EXERCISE_PHYSIOLOGY"]:
+            lines.append(f"{greeting}{explanation}\n")
+            lines.append("> 💡 *VitalHealth Personal Health Assistant | Consult your physician for medical advice.*")
+            return "\n".join(lines)
+
+        # Clinical symptom, medication, and lab queries -> Focused assessment + 3 next steps
+        lines.append(f"### 💡 Clinical Assessment & Guidance\n{greeting}{explanation}\n")
 
         fallback_notes = self._clinical_knowledge_supplement(user_query) or self._default_fallback_recommendations(user_query, target_intent)
         lines.append("### ✅ Recommended Action Steps")
         lines.extend(fallback_notes)
         lines.append("")
-
-        followups = self._get_fallback_followup_questions(user_query, target_intent)
-        if followups:
-            lines.append("❓ **Suggested Follow-Up Questions**")
-            for f_q in followups:
-                lines.append(f"- *\"{f_q}\"*")
-            lines.append("")
 
         lines.append("> 💡 *VitalHealth Personal Health Assistant | Consult your physician for medical advice.*")
         return "\n".join(lines)
