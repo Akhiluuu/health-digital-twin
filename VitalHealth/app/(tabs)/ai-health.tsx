@@ -1272,7 +1272,14 @@ export default function AIHealthScreen() {
   const [partialVoiceText, setPartialVoiceText] = useState("");
 
   // Chat State
-  const [messages, setMessages] = useState<Message[]>([]);
+  const [messages, setMessages] = useState<Message[]>([
+    {
+      id: "welcome",
+      text: "Good day. I am your **Personal Digital Twin Assistant**.\n\nAsk me about your symptoms, physiological vitals, or clinical reports — I will provide evidence-based insights.",
+      sender: "ai",
+      timestamp: new Date(),
+    },
+  ]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [autoSent, setAutoSent] = useState(false);
@@ -1280,7 +1287,7 @@ export default function AIHealthScreen() {
   const listRef = useRef<FlatList>(null);
   const inputRef = useRef<TextInput>(null);
   const historyRef = useRef<string[]>([]);
-  const isInitialLoadRef = useRef<boolean>(true);
+  const isInitialLoadRef = useRef<boolean>(false);
 
   // Voice Event Listeners
   useEffect(() => {
@@ -1431,37 +1438,22 @@ export default function AIHealthScreen() {
     })();
   }, []);
 
-  // Sync Chat History per profile
+  // Sync Chat History for drawer & start fresh New Chat session by default on screen open
   const loadedUserIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     let active = true;
     loadedUserIdRef.current = null;
-    isInitialLoadRef.current = true;
     (async () => {
       try {
         const history = await loadChatHistory(currentUserId);
         if (!active) return;
         setChatSessions(history);
-        if (history.length > 0) {
-          const latest = history[0];
-          setCurrentSessionId(latest.id);
-          const desMsgs = deserializeMessages(latest.messages);
-          setMessages(desMsgs);
-          const uAndA = latest.messages.filter((m) => m.sender !== "system");
-          historyRef.current = uAndA.map((m) => m.text).slice(-10);
-        } else {
-          setCurrentSessionId(genId());
-          historyRef.current = [];
-          await fetchGreeting();
-        }
+        setCurrentSessionId(genId());
+        historyRef.current = [];
+        await fetchGreeting();
         if (active) {
           loadedUserIdRef.current = currentUserId;
-          // Jump to bottom instantly without animation to prevent scroll glitching
-          setTimeout(() => {
-            listRef.current?.scrollToEnd({ animated: false });
-            isInitialLoadRef.current = false;
-          }, 50);
         }
       } catch (e) {
         console.error(e);
