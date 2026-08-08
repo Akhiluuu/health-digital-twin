@@ -1129,17 +1129,33 @@ export default function AIHealthScreen() {
       setPartialVoiceText("");
     };
 
+    Voice.onSpeechRecognized = () => {
+      setIsRecording(true);
+    };
+
+    Voice.onSpeechEnd = () => {
+      setIsRecording(false);
+    };
+
     Voice.onSpeechError = (e: any) => {
       setIsRecording(false);
       setPartialVoiceText("");
-      const code = e?.error?.code?.toString();
-      if (code !== "7") {
-        Alert.alert("Voice Recognition", e?.error?.message || "Could not recognize speech.");
+      const code = e?.error?.code?.toString() || e?.code?.toString() || "";
+      const errorMsg = e?.error?.message || e?.message || "";
+      // Error code 7 is no match / network timeout on Android SpeechRecognizer
+      if (code === "7" || errorMsg.includes("7/No match")) {
+        console.log("Voice recognizer idle/no match");
+      } else if (code) {
+        Alert.alert("Voice Assistant", errorMsg || "Could not recognize speech. Please try speaking again.");
       }
     };
 
     Voice.onSpeechPartialResults = (e: any) => {
-      setPartialVoiceText(e?.value?.[0] || "");
+      const partial = e?.value?.[0] || "";
+      setPartialVoiceText(partial);
+      if (partial.trim()) {
+        setInput(partial);
+      }
     };
 
     Voice.onSpeechResults = (e: any) => {
@@ -1165,7 +1181,7 @@ export default function AIHealthScreen() {
       try {
         const granted = await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.RECORD_AUDIO, {
           title: "Microphone Permission",
-          message: "VitalHealth AI requires microphone access for voice query input.",
+          message: "VitalHealth AI requires microphone access to listen to your health questions.",
           buttonPositive: "Allow",
           buttonNegative: "Deny",
         });
@@ -1181,7 +1197,7 @@ export default function AIHealthScreen() {
     if (!Voice) {
       Alert.alert(
         "Voice Input Unavailable",
-        "Voice-to-text requires a physical mobile device with microphone permissions enabled. Please type your query."
+        "Voice-to-text requires speech service support on your physical mobile device."
       );
       return;
     }
@@ -1197,17 +1213,18 @@ export default function AIHealthScreen() {
 
     const hasPermission = await requestMicPermission();
     if (!hasPermission) {
-      Alert.alert("Permission Denied", "Microphone access is required for voice input.");
+      Alert.alert("Permission Denied", "Microphone access is required for voice input. Please enable microphone permissions in App Settings.");
       return;
     }
 
     setPartialVoiceText("");
     try {
-      await Voice.destroy().catch(() => {});
+      await Voice.stop().catch(() => {});
       await Voice.start("en-US");
+      setIsRecording(true);
     } catch (e: any) {
       setIsRecording(false);
-      Alert.alert("Voice Error", e?.message || "Cannot initialize voice engine.");
+      Alert.alert("Voice Engine Error", e?.message || "Could not start voice recognition.");
     }
   };
 
