@@ -125,7 +125,6 @@ export default function AddMedicationFlow({
     if (step < totalSteps - 1) {
       setStep((prev) => prev + 1);
     } else {
-      // Build dose string from quantity and units
       const finalDose = `${doseQty} ${doseUnit}${doseQty > 1 && !doseUnit.endsWith("s") ? "s" : ""}`;
       onAddMedicine({
         name,
@@ -160,7 +159,6 @@ export default function AddMedicationFlow({
 
   const progressPct = ((step + 1) / totalSteps) * 100;
 
-  // Custom datetime picker render
   const renderDateTimePicker = () => {
     if (!showDatePicker) return null;
 
@@ -168,9 +166,9 @@ export default function AddMedicationFlow({
       return (
         <Modal transparent animationType="slide" visible={showDatePicker}>
           <View style={{ flex: 1, justifyContent: "flex-end", backgroundColor: "rgba(0,0,0,0.5)" }}>
-            <View style={{ backgroundColor: c.card, borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20, borderWidth: 1, borderColor: c.border }}>
+            <View style={{ backgroundColor: c.card, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20, borderWidth: 1, borderColor: c.border }}>
               <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 15 }}>
-                <Text style={{ fontSize: 16, fontWeight: "700", color: c.text }}>
+                <Text style={{ fontSize: 16, fontWeight: "800", color: c.text }}>
                   {datePickerMode === "time" ? "Select Time" : "Select Date"}
                 </Text>
                 <TouchableOpacity
@@ -234,7 +232,6 @@ export default function AddMedicationFlow({
     );
   };
 
-  // Safe parsed date helper
   const openDatePickerFor = (mode: "start" | "end", currentVal: string) => {
     setDatePickerMode(mode);
     const parts = currentVal.split("-").map(Number);
@@ -247,15 +244,25 @@ export default function AddMedicationFlow({
   };
 
   return (
-    <View style={{ flex: 1 }}>
-      {/* Visual Progress Bar */}
-      <View style={styles.wizardProgress}>
-        <View
-          style={[
-            styles.wizardProgressBar,
-            { width: `${progressPct}%`, backgroundColor: c.accent },
-          ]}
-        />
+    <View style={{ flex: 1, backgroundColor: c.bg }}>
+      {/* Visual Segmented Progress Bar */}
+      <View style={styles.wizardProgressContainer}>
+        <View style={styles.wizardProgressTrack}>
+          <View
+            style={[
+              styles.wizardProgressBar,
+              { width: `${progressPct}%`, backgroundColor: c.accent },
+            ]}
+          />
+        </View>
+        <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 8 }}>
+          <Text style={{ fontSize: 11, fontWeight: "800", color: c.accent, letterSpacing: 0.5 }}>
+            STEP {step + 1} OF {totalSteps}
+          </Text>
+          <Text style={{ fontSize: 11, fontWeight: "700", color: c.sub }}>
+            {Math.round(progressPct)}% Completed
+          </Text>
+        </View>
       </View>
 
       <ScrollView contentContainerStyle={styles.wizardScroll} showsVerticalScrollIndicator={false}>
@@ -263,7 +270,7 @@ export default function AddMedicationFlow({
         {step === 0 && (
           <View>
             <Text style={styles.wizardTitle}>Add Medication</Text>
-            <Text style={[styles.wizardSubtitle, { color: c.sub }]}>
+            <Text style={styles.wizardSubtitle}>
               Choose how you want to add your medication schedule to the vault.
             </Text>
 
@@ -272,13 +279,13 @@ export default function AddMedicationFlow({
                 style={[styles.methodCard, { backgroundColor: c.card, borderColor: c.border }]}
                 onPress={onOCRScan}
               >
-                <View style={[styles.methodIconContainer, { backgroundColor: `${c.accent}15` }]}>
-                  <Ionicons name="document-text" size={24} color={c.accent} />
+                <View style={[styles.methodIconContainer, { backgroundColor: c.accent + "18" }]}>
+                  <Ionicons name="document-text" size={26} color={c.accent} />
                 </View>
                 <View style={styles.methodInfo}>
                   <Text style={styles.methodTitle}>Scan Prescription</Text>
                   <Text style={[styles.methodDesc, { color: c.sub }]}>
-                    Snap a photo of your doctor's order to extract schedules.
+                    Snap a photo of your doctor's order to extract schedules automatically.
                   </Text>
                 </View>
               </TouchableOpacity>
@@ -287,8 +294,8 @@ export default function AddMedicationFlow({
                 style={[styles.methodCard, { backgroundColor: c.card, borderColor: c.border }]}
                 onPress={nextStep}
               >
-                <View style={[styles.methodIconContainer, { backgroundColor: `${c.accent}15` }]}>
-                  <Ionicons name="create" size={24} color={c.accent} />
+                <View style={[styles.methodIconContainer, { backgroundColor: c.accent + "18" }]}>
+                  <Ionicons name="create" size={26} color={c.accent} />
                 </View>
                 <View style={styles.methodInfo}>
                   <Text style={styles.methodTitle}>Enter Details Manually</Text>
@@ -305,14 +312,14 @@ export default function AddMedicationFlow({
         {step === 1 && (
           <View>
             <Text style={styles.wizardTitle}>Medication Identity</Text>
-            <Text style={[styles.wizardSubtitle, { color: c.sub }]}>
+            <Text style={styles.wizardSubtitle}>
               Enter name and strength details. Dose size will be configured in the next step.
             </Text>
 
             <Text style={styles.wizardFormLabel}>MEDICATION NAME *</Text>
             <TextInput
               placeholder="e.g. Metformin"
-              placeholderTextColor={c.placeholder}
+              placeholderTextColor={c.sub}
               style={[styles.wizardFormInput, { backgroundColor: c.card, color: c.text, borderColor: c.border }]}
               value={name}
               onChangeText={setName}
@@ -321,7 +328,7 @@ export default function AddMedicationFlow({
             <Text style={styles.wizardFormLabel}>BRAND NAME (OPTIONAL)</Text>
             <TextInput
               placeholder="e.g. Glucophage"
-              placeholderTextColor={c.placeholder}
+              placeholderTextColor={c.sub}
               style={[styles.wizardFormInput, { backgroundColor: c.card, color: c.text, borderColor: c.border }]}
               value={brand}
               onChangeText={setBrand}
@@ -330,7 +337,7 @@ export default function AddMedicationFlow({
             <Text style={styles.wizardFormLabel}>GENERIC INGREDIENT (OPTIONAL)</Text>
             <TextInput
               placeholder="e.g. Metformin Hydrochloride"
-              placeholderTextColor={c.placeholder}
+              placeholderTextColor={c.sub}
               style={[styles.wizardFormInput, { backgroundColor: c.card, color: c.text, borderColor: c.border }]}
               value={generic}
               onChangeText={setGeneric}
@@ -339,7 +346,7 @@ export default function AddMedicationFlow({
             <Text style={styles.wizardFormLabel}>STRENGTH / CONCENTRATION</Text>
             <TextInput
               placeholder="e.g. 500mg, 10mcg, 1.2%"
-              placeholderTextColor={c.placeholder}
+              placeholderTextColor={c.sub}
               style={[styles.wizardFormInput, { backgroundColor: c.card, color: c.text, borderColor: c.border }]}
               value={strength}
               onChangeText={setStrength}
@@ -351,7 +358,7 @@ export default function AddMedicationFlow({
         {step === 2 && (
           <View>
             <Text style={styles.wizardTitle}>Form & Dose Size</Text>
-            <Text style={[styles.wizardSubtitle, { color: c.sub }]}>
+            <Text style={styles.wizardSubtitle}>
               Specify the physical medication type and the dose amount you will take at each time.
             </Text>
 
@@ -383,16 +390,7 @@ export default function AddMedicationFlow({
             <Text style={styles.wizardFormLabel}>DOSE QUANTITY</Text>
             <View style={{ flexDirection: "row", alignItems: "center", gap: 14, marginBottom: 20 }}>
               <TouchableOpacity
-                style={{
-                  width: 44,
-                  height: 44,
-                  borderRadius: 12,
-                  borderWidth: 1,
-                  borderColor: c.border,
-                  backgroundColor: c.card,
-                  alignItems: "center",
-                  justifyContent: "center",
-                }}
+                style={styles.qtyCounterBtn}
                 onPress={() => {
                   Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                   if (doseQty > 0.5) setDoseQty((prev) => prev - 0.5);
@@ -402,20 +400,11 @@ export default function AddMedicationFlow({
               </TouchableOpacity>
 
               <View style={{ minWidth: 60, alignItems: "center" }}>
-                <Text style={{ fontSize: 20, fontWeight: "700", color: c.text }}>{doseQty}</Text>
+                <Text style={styles.qtyCounterVal}>{doseQty}</Text>
               </View>
 
               <TouchableOpacity
-                style={{
-                  width: 44,
-                  height: 44,
-                  borderRadius: 12,
-                  borderWidth: 1,
-                  borderColor: c.border,
-                  backgroundColor: c.card,
-                  alignItems: "center",
-                  justifyContent: "center",
-                }}
+                style={styles.qtyCounterBtn}
                 onPress={() => {
                   Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                   setDoseQty((prev) => prev + 0.5);
@@ -450,21 +439,23 @@ export default function AddMedicationFlow({
               })}
             </View>
 
-            {/* Beautiful Dose Summary Box */}
+            {/* Dose Summary Box */}
             <View
               style={{
-                backgroundColor: c.accent + "08",
-                borderRadius: 16,
-                padding: 16,
+                backgroundColor: c.accent + "10",
+                borderRadius: 20,
+                padding: 18,
                 borderWidth: 1,
-                borderColor: c.accent + "20",
+                borderColor: c.accent + "30",
                 alignItems: "center",
-                marginTop: 10,
+                marginTop: 14,
               }}
             >
               <PillAvatar type={form} color={c.accent} size={48} />
-              <Text style={{ fontSize: 13, color: c.sub, marginTop: 8 }}>Schedule Dose Preview</Text>
-              <Text style={{ fontSize: 16, fontWeight: "700", color: c.text, marginTop: 4, textAlign: "center" }}>
+              <Text style={{ fontSize: 12, color: c.sub, marginTop: 8, fontWeight: "700", textTransform: "uppercase", letterSpacing: 0.5 }}>
+                SCHEDULE DOSE PREVIEW
+              </Text>
+              <Text style={{ fontSize: 16, fontWeight: "800", color: c.text, marginTop: 4, textAlign: "center" }}>
                 Take {doseQty} {doseUnit}{doseQty > 1 && !doseUnit.endsWith("s") ? "s" : ""} of{" "}
                 <Text style={{ color: c.accent }}>{name || "Medication"}</Text>
                 {strength ? ` (${strength})` : ""}
@@ -477,7 +468,7 @@ export default function AddMedicationFlow({
         {step === 3 && (
           <View>
             <Text style={styles.wizardTitle}>Intake Schedule & Timing</Text>
-            <Text style={[styles.wizardSubtitle, { color: c.sub }]}>
+            <Text style={styles.wizardSubtitle}>
               Configure when and how often you will take your medicine throughout the day.
             </Text>
 
@@ -518,7 +509,6 @@ export default function AddMedicationFlow({
                           backgroundColor: c.card,
                           borderColor: c.border,
                           justifyContent: "center",
-                          marginBottom: 0,
                         },
                       ]}
                       onPress={() => {
@@ -533,17 +523,17 @@ export default function AddMedicationFlow({
                       }}
                     >
                       <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
-                        <Text style={{ color: c.text, fontWeight: "600" }}>{t}</Text>
-                        <Ionicons name="time-outline" size={20} color={c.sub} />
+                        <Text style={{ color: c.text, fontWeight: "700", fontSize: 16 }}>{t}</Text>
+                        <Ionicons name="time-outline" size={22} color={c.sub} />
                       </View>
                     </TouchableOpacity>
 
                     {times.length > 1 && (
                       <TouchableOpacity
                         style={{
-                          height: 48,
-                          width: 48,
-                          borderRadius: 12,
+                          height: 52,
+                          width: 52,
+                          borderRadius: 16,
                           backgroundColor: "#ef444415",
                           borderWidth: 1,
                           borderColor: "#ef444430",
@@ -555,7 +545,7 @@ export default function AddMedicationFlow({
                           setTimes(times.filter((_, i) => i !== index));
                         }}
                       >
-                        <Ionicons name="trash-outline" size={20} color="#ef4444" />
+                        <Ionicons name="trash-outline" size={22} color="#ef4444" />
                       </TouchableOpacity>
                     )}
                   </View>
@@ -566,12 +556,12 @@ export default function AddMedicationFlow({
                     flexDirection: "row",
                     alignItems: "center",
                     gap: 6,
-                    paddingVertical: 10,
-                    paddingHorizontal: 14,
-                    borderRadius: 12,
+                    paddingVertical: 12,
+                    paddingHorizontal: 16,
+                    borderRadius: 14,
                     borderWidth: 1,
                     borderColor: c.accent,
-                    backgroundColor: c.accent + "08",
+                    backgroundColor: c.accent + "10",
                     alignSelf: "flex-start",
                     marginTop: 4,
                     marginBottom: 20,
@@ -585,8 +575,8 @@ export default function AddMedicationFlow({
                     setTimes([...times, formatted]);
                   }}
                 >
-                  <Ionicons name="add" size={16} color={c.accent} />
-                  <Text style={{ fontSize: 13, fontWeight: "700", color: c.accent }}>Add Another Time</Text>
+                  <Ionicons name="add" size={18} color={c.accent} />
+                  <Text style={{ fontSize: 13, fontWeight: "800", color: c.accent }}>Add Another Time</Text>
                 </TouchableOpacity>
               </>
             )}
@@ -628,11 +618,11 @@ export default function AddMedicationFlow({
           </View>
         )}
 
-        {/* Step 4: Safety Reviews, Refills & Date Ranges */}
+        {/* Step 4: Duration & Refills */}
         {step === 4 && (
           <View>
             <Text style={styles.wizardTitle}>Duration & Refills</Text>
-            <Text style={[styles.wizardSubtitle, { color: c.sub }]}>
+            <Text style={styles.wizardSubtitle}>
               Set active dates, safety review cycles, and optional inventory tracking.
             </Text>
 
@@ -645,7 +635,7 @@ export default function AddMedicationFlow({
               onPress={() => openDatePickerFor("start", startDate)}
             >
               <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
-                <Text style={{ color: c.text, fontWeight: "600" }}>{startDate}</Text>
+                <Text style={{ color: c.text, fontWeight: "700" }}>{startDate}</Text>
                 <Ionicons name="calendar-outline" size={20} color={c.sub} />
               </View>
             </TouchableOpacity>
@@ -700,7 +690,7 @@ export default function AddMedicationFlow({
                 onPress={() => openDatePickerFor("end", endDate || getLocalDateString())}
               >
                 <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
-                  <Text style={{ color: endDate ? c.text : c.placeholder, fontWeight: "600" }}>
+                  <Text style={{ color: endDate ? c.text : c.sub, fontWeight: "700" }}>
                     {endDate || "Select End Date"}
                   </Text>
                   <Ionicons name="calendar-outline" size={20} color={c.sub} />
@@ -711,7 +701,7 @@ export default function AddMedicationFlow({
             <Text style={styles.wizardFormLabel}>LINKED HEALTH CONDITION</Text>
             <TextInput
               placeholder="e.g. Type 2 Diabetes"
-              placeholderTextColor={c.placeholder}
+              placeholderTextColor={c.sub}
               style={[styles.wizardFormInput, { backgroundColor: c.card, color: c.text, borderColor: c.border }]}
               value={diseaseLinked}
               onChangeText={setDiseaseLinked}
@@ -742,22 +732,22 @@ export default function AddMedicationFlow({
             </View>
 
             {/* Inventory Tracker Toggle Switch */}
-            <View style={{ height: 1, backgroundColor: c.border, marginVertical: 14 }} />
+            <View style={{ height: 1, backgroundColor: c.border, marginVertical: 18 }} />
 
             <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginVertical: 6 }}>
               <View style={{ flex: 1, marginRight: 12 }}>
-                <Text style={{ fontSize: 14, fontWeight: "700", color: c.text }}>Track Pill Inventory</Text>
+                <Text style={{ fontSize: 15, fontWeight: "800", color: c.text }}>Track Pill Inventory</Text>
                 <Text style={{ fontSize: 12, color: c.sub, marginTop: 2, lineHeight: 16 }}>
                   Keep track of remaining medication stock and receive notifications before you run out.
                 </Text>
               </View>
               <TouchableOpacity
                 style={{
-                  width: 50,
-                  height: 28,
-                  borderRadius: 14,
+                  width: 52,
+                  height: 30,
+                  borderRadius: 15,
                   backgroundColor: trackInventory ? c.accent : c.border,
-                  padding: 2,
+                  padding: 3,
                   justifyContent: "center",
                 }}
                 onPress={() => {
@@ -772,11 +762,6 @@ export default function AddMedicationFlow({
                     borderRadius: 12,
                     backgroundColor: "#ffffff",
                     alignSelf: trackInventory ? "flex-end" : "flex-start",
-                    elevation: 2,
-                    shadowColor: "#000",
-                    shadowOffset: { width: 0, height: 1 },
-                    shadowOpacity: 0.2,
-                    shadowRadius: 1.5,
                   }}
                 />
               </TouchableOpacity>
@@ -788,7 +773,7 @@ export default function AddMedicationFlow({
                   <Text style={styles.wizardFormLabel}>CURRENT PILL COUNT</Text>
                   <TextInput
                     placeholder="e.g. 30"
-                    placeholderTextColor={c.placeholder}
+                    placeholderTextColor={c.sub}
                     style={[styles.wizardFormHalfInput, { backgroundColor: c.card, color: c.text, borderColor: c.border }]}
                     value={inventoryCount}
                     onChangeText={setInventoryCount}
@@ -800,7 +785,7 @@ export default function AddMedicationFlow({
                   <Text style={styles.wizardFormLabel}>REFILLS REMAINING</Text>
                   <TextInput
                     placeholder="e.g. 3"
-                    placeholderTextColor={c.placeholder}
+                    placeholderTextColor={c.sub}
                     style={[styles.wizardFormHalfInput, { backgroundColor: c.card, color: c.text, borderColor: c.border }]}
                     value={refillCount}
                     onChangeText={setRefillCount}

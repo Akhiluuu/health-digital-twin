@@ -27,7 +27,6 @@ import { useNotifications } from "../context/NotificationContext";
 import { useFamily } from "../context/FamilyContext";
 import { useProfile } from "../context/ProfileContext";
 import { useBiogearsTwin } from "../context/BiogearsTwinContext";
-import { useSymptoms } from "../context/SymptomContext";
 import { log } from "../utils/logger";
 import { getLocalDateString } from "../utils/twinUtils";
 import * as FileSystem from "expo-file-system/legacy";
@@ -36,18 +35,16 @@ import * as Sharing from "expo-sharing";
 // API
 import {
   ocrPrescription,
-  chatWithAssistant,
   listPrescriptions,
 } from "../services/medicationVaultAPI";
 
 // Decomposed Modular Components
 import TodayRegimen from "../components/vault/TodayRegimen";
 import MedicineCabinet from "../components/vault/MedicineCabinet";
-import AssistantCompanion from "../components/vault/AssistantCompanion";
 import AddMedicationFlow from "../components/vault/AddMedicationFlow";
 import MedicationDetail from "../components/vault/MedicationDetail";
 
-type ActivePage = "dashboard" | "medications" | "ai" | "add" | "detail";
+type ActivePage = "dashboard" | "medications" | "add" | "detail";
 
 interface MedicineMeta {
   brand: string;
@@ -196,7 +193,6 @@ export default function MedicationVault() {
   const { isSwitched, activeProfile, members, switchToMember, switchToSelf } = useFamily();
   const { profile: selfProfile } = useProfile();
   const { runSimulation } = useBiogearsTwin();
-  const { activeSymptoms, historySymptoms } = useSymptoms();
 
   // Navigation & Details States
   const [activePage, setActivePage] = useState<ActivePage>("dashboard");
@@ -204,9 +200,6 @@ export default function MedicationVault() {
 
   // Metadata Cache
   const [metadataCache, setMetadataCache] = useState<Record<number, MedicineMeta>>({});
-
-  // AI Assistant Chat State
-  const [aiMessages, setAiMessages] = useState<Array<{ sender: "user" | "assistant"; text: string }>>([]);
   const [prescriptions, setPrescriptions] = useState<any[]>([]);
 
   // Load live documents list
@@ -227,17 +220,6 @@ export default function MedicationVault() {
     markReadByCategory("medication");
     loadLivePrescriptions();
   }, [loadLivePrescriptions]);
-
-  // Personalize greeting once the profile is loaded
-  useEffect(() => {
-    const name = selfProfile?.firstName;
-    setAiMessages([
-      {
-        sender: "assistant",
-        text: `Hello ${name || "there"}! I'm your Personal Health Assistant. I have access to your medication regimen, active symptoms, and health profile. I can explain your medications, check for interactions, advise on missed doses, or answer any health question you have. What's on your mind today?`,
-      },
-    ]);
-  }, [selfProfile?.firstName]);
 
   // Read metadata from local AsyncStorage Cache
   const loadMetadata = useCallback(async () => {
@@ -403,71 +385,6 @@ export default function MedicationVault() {
     }
   };
 
-  // AI Chat context generator
-  const handleSendAiMessage = async (messageText: string) => {
-    setAiMessages((prev) => [...prev, { sender: "user", text: messageText }, { sender: "assistant", text: "…" }]);
-
-    try {
-      const patientMedicines = medicines.map((m) => {
-        const meta = metadataCache[m.id] || {};
-        return {
-          id: m.id.toString(),
-          name: m.name,
-          dose: m.dose || meta.strength || "1 Unit",
-          type: m.type || meta.shape || "tablet",
-          frequency: m.frequency,
-          time: m.time,
-          meal: m.meal,
-        };
-      });
-
-      const patientActiveSymptoms = (activeSymptoms || []).map((s) => ({
-        name: s.name,
-        severity: s.severity,
-        startedAt: s.startedAt,
-        notes: s.notes,
-      }));
-
-      const patientHistorySymptoms = (historySymptoms || []).map((s) => ({
-        name: s.name,
-        severity: s.severity,
-        startedAt: s.startedAt,
-        resolvedAt: s.resolvedAt,
-        notes: s.notes,
-      }));
-
-      const conversationHistory = aiMessages
-        .slice(-6)
-        .map((m) => `${m.sender === "user" ? "User" : "Personal Health Assistant"}: ${m.text}`);
-
-      const res = await chatWithAssistant({
-        message: messageText,
-        history: conversationHistory,
-        patient_context: {
-          medicines: patientMedicines,
-          activeSymptoms: patientActiveSymptoms,
-          historySymptoms: patientHistorySymptoms,
-        },
-      });
-
-      const reply = (res as any)?.data?.reply || (res as any)?.data?.response || "Personal Health Assistant is compiling feedback.";
-      setAiMessages((prev) => {
-        const updated = [...prev];
-        const idx = updated.map((m) => m.sender).lastIndexOf("assistant");
-        if (idx !== -1) updated[idx] = { sender: "assistant", text: reply };
-        return updated;
-      });
-    } catch (err) {
-      log("Assistant chat error:", err);
-      setAiMessages((prev) => {
-        const updated = [...prev];
-        const idx = updated.map((m) => m.sender).lastIndexOf("assistant");
-        if (idx !== -1) updated[idx] = { sender: "assistant", text: "Personal Health Assistant is offline. Reconnecting..." };
-        return updated;
-      });
-    }
-  };
-
   const handleExportReport = async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     router.push("/settings-export-summary" as any);
@@ -478,7 +395,6 @@ export default function MedicationVault() {
     const titleMap: Record<ActivePage, string> = {
       dashboard: "Today's Regimen",
       medications: "My Cabinet",
-      ai: "Assistant Support",
       add: "Add Medication",
       detail: "Medication Detail",
     };
@@ -557,7 +473,6 @@ export default function MedicationVault() {
     const tabs: Array<{ id: ActivePage; icon: string; label: string }> = [
       { id: "dashboard", icon: "calendar-outline", label: "Regimen" },
       { id: "medications", icon: "medical-outline", label: "Cabinet" },
-      { id: "ai", icon: "chatbubble-ellipses-outline", label: "Assistant" },
     ];
 
     return (
@@ -621,16 +536,6 @@ export default function MedicationVault() {
             }}
             onScanPrescription={handleStartOCRScan}
             onNavigateToAdd={() => setActivePage("add")}
-          />
-        );
-
-      case "ai":
-        return (
-          <AssistantCompanion
-            messages={aiMessages}
-            activeSymptoms={activeSymptoms}
-            onSendMessage={handleSendAiMessage}
-            onExportReport={handleExportReport}
           />
         );
 

@@ -97,26 +97,28 @@ export default function TodayRegimen({
 
   // Group daily meds by timeslot
   const timeSlots = useMemo(() => {
-    const slots: Record<string, Medicine[]> = {
-      Morning: [],
-      Afternoon: [],
-      Evening: [],
-      Night: [],
+    const slots: Record<string, { label: string; meds: Medicine[] }> = {
+      Morning: { label: "Morning (6 AM - 12 PM)", meds: [] },
+      Afternoon: { label: "Afternoon (12 PM - 5 PM)", meds: [] },
+      Evening: { label: "Evening (5 PM - 9 PM)", meds: [] },
+      Night: { label: "Night (9 PM - 6 AM)", meds: [] },
     };
 
     dailyMeds.forEach((med) => {
       const [hour] = med.time.split(":").map(Number);
-      if (hour >= 6 && hour < 12) slots.Morning.push(med);
-      else if (hour >= 12 && hour < 17) slots.Afternoon.push(med);
-      else if (hour >= 17 && hour < 21) slots.Evening.push(med);
-      else slots.Night.push(med);
+      if (hour >= 6 && hour < 12) slots.Morning.meds.push(med);
+      else if (hour >= 12 && hour < 17) slots.Afternoon.meds.push(med);
+      else if (hour >= 17 && hour < 21) slots.Evening.meds.push(med);
+      else slots.Night.meds.push(med);
     });
 
     return slots;
   }, [dailyMeds]);
 
+  const isDark = theme === "dark";
+
   return (
-    <View style={{ flex: 1 }}>
+    <View style={{ flex: 1, backgroundColor: c.bg }}>
       {/* Care Circle Profile Row - Hidden unless actively switched or managing family profiles */}
       {isSwitched && (
         <View style={styles.careCircleContainer}>
@@ -201,85 +203,73 @@ export default function TodayRegimen({
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollPadding}>
         {medicines.length === 0 ? (
           <View style={{ flex: 1, justifyContent: "center", alignItems: "center", paddingVertical: 80 }}>
-            <View style={{ width: 80, height: 80, borderRadius: 40, backgroundColor: c.accent + "15", justifyContent: "center", alignItems: "center", marginBottom: 20 }}>
-              <Ionicons name="medical" size={40} color={c.accent} />
+            <View
+              style={{
+                width: 84,
+                height: 84,
+                borderRadius: 42,
+                backgroundColor: c.accent + "18",
+                borderWidth: 1.5,
+                borderColor: c.accent + "30",
+                justifyContent: "center",
+                alignItems: "center",
+                marginBottom: 20,
+              }}
+            >
+              <Ionicons name="medical" size={42} color={c.accent} />
             </View>
-            <Text style={[styles.placeholderTitle, { fontSize: 20, fontWeight: "700", marginBottom: 8, color: c.text }]}>Start Your Medication Vault</Text>
-            <Text style={[styles.placeholderSub, { textAlign: "center", paddingHorizontal: 40, marginBottom: 24, color: c.sub, lineHeight: 18 }]}>
-              Keep track of your active prescriptions, schedules, and digital twin simulation connections.
+            <Text style={[styles.placeholderTitle, { fontSize: 22, fontWeight: "800", marginBottom: 8, color: c.text }]}>
+              Medication Vault Empty
+            </Text>
+            <Text style={[styles.placeholderSub, { textAlign: "center", paddingHorizontal: 36, marginBottom: 28, color: c.sub, lineHeight: 20 }]}>
+              Log your active prescriptions, schedules, and digital twin simulation links for total health tracking.
             </Text>
             <TouchableOpacity
-              style={{
-                backgroundColor: c.accent,
-                paddingHorizontal: 24,
-                paddingVertical: 12,
-                borderRadius: 24,
-                flexDirection: "row",
-                alignItems: "center",
-                gap: 8,
-                elevation: 3,
-                shadowColor: "#000",
-                shadowOffset: { width: 0, height: 2 },
-                shadowOpacity: 0.1,
-                shadowRadius: 4,
-              }}
+              style={[styles.actionPillButton, { paddingHorizontal: 24, paddingVertical: 14, borderRadius: 28 }]}
               onPress={onNavigateToAdd}
             >
-              <Ionicons name="add" size={20} color="#ffffff" />
-              <Text style={{ color: "#ffffff", fontWeight: "700", fontSize: 15 }}>Add Medication</Text>
+              <Ionicons name="add" size={22} color="#ffffff" />
+              <Text style={{ color: "#ffffff", fontWeight: "800", fontSize: 16 }}>Add Medication</Text>
             </TouchableOpacity>
           </View>
         ) : (
           <>
-            {/* Highlighted Premium Adherence Score Display */}
+            {/* Highlighted Hero Glassmorphic Adherence Card */}
             <LinearGradient
-              colors={theme === "light" ? ["#3b82f6", "#1d4ed8"] : ["#1e293b", "#0f172a"]}
-              style={{
-                borderRadius: 20,
-                padding: 20,
-                marginBottom: 20,
-                elevation: 4,
-                shadowColor: "#000",
-                shadowOffset: { width: 0, height: 4 },
-                shadowOpacity: 0.15,
-                shadowRadius: 8,
-              }}
+              colors={isDark ? ["#111d3a", "#0b1329"] : ["#2563eb", "#1d4ed8"]}
+              style={styles.heroCard}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}
             >
               <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
                 <View style={{ flex: 1, marginRight: 16 }}>
-                  <Text style={{ fontSize: 11, fontWeight: "800", color: theme === "light" ? "#bfdbfe" : c.accent, letterSpacing: 0.5 }}>
+                  <Text style={[styles.heroBadgeLabel, { color: isDark ? c.accent : "#bfdbfe" }]}>
                     DAILY REGIMEN ADHERENCE
                   </Text>
-                  <Text style={{ fontSize: 24, fontWeight: "800", color: "#ffffff", marginTop: 4 }}>
+                  <Text style={styles.heroTitle}>
                     {stats.complianceRate}% Compliance
                   </Text>
-                  <Text style={{ fontSize: 13, color: theme === "light" ? "#eff6ff" : c.sub, marginTop: 8, lineHeight: 18 }}>
+                  <Text style={[styles.heroSub, { color: isDark ? c.sub : "#eff6ff" }]}>
                     {stats.complianceRate === 100
-                      ? "🏆 Perfect compliance! Excellent job."
+                      ? "🏆 Perfect compliance! All doses taken."
                       : stats.complianceRate >= 80
-                      ? "👍 Great job! You are staying right on track."
-                      : "⚠️ Don't forget to log your remaining doses today."}
+                      ? "👍 Excellent progress! Staying right on track."
+                      : "⚠️ Don't forget to log remaining doses today."}
                   </Text>
                 </View>
 
                 {/* Circular Badge Display */}
                 <View
-                  style={{
-                    width: 64,
-                    height: 64,
-                    borderRadius: 32,
-                    backgroundColor: "rgba(255, 255, 255, 0.15)",
-                    justifyContent: "center",
-                    alignItems: "center",
-                    borderWidth: 2,
-                    borderColor: stats.complianceRate >= 80 ? "#22c55e" : "#f59e0b",
-                  }}
+                  style={[
+                    styles.heroRing,
+                    {
+                      borderColor: stats.complianceRate >= 80 ? "#22c55e" : "#f59e0b",
+                    },
+                  ]}
                 >
                   <Ionicons
                     name={stats.complianceRate === 100 ? "trophy" : "heart"}
-                    size={28}
+                    size={30}
                     color={stats.complianceRate >= 80 ? "#4ade80" : "#fbbf24"}
                   />
                 </View>
@@ -289,34 +279,34 @@ export default function TodayRegimen({
               <View style={{ height: 1, backgroundColor: "rgba(255, 255, 255, 0.15)", marginVertical: 16 }} />
 
               {/* Stat Badges Grid */}
-              <View style={{ flexDirection: "row", justifyContent: "space-between", gap: 10 }}>
+              <View style={styles.statBadgesRow}>
                 {/* Taken Badge */}
-                <View style={{ flex: 1, backgroundColor: "rgba(255, 255, 255, 0.1)", borderRadius: 12, padding: 10, alignItems: "center" }}>
-                  <Ionicons name="checkmark-circle" size={18} color="#4ade80" />
-                  <Text style={{ color: "#ffffff", fontWeight: "700", fontSize: 15, marginTop: 4 }}>{stats.taken}</Text>
-                  <Text style={{ color: theme === "light" ? "#dbeafe" : c.sub, fontSize: 10, fontWeight: "600", marginTop: 2 }}>Taken</Text>
+                <View style={styles.statBadgeItem}>
+                  <Ionicons name="checkmark-circle" size={20} color="#4ade80" />
+                  <Text style={styles.statBadgeVal}>{stats.taken}</Text>
+                  <Text style={[styles.statBadgeLbl, { color: isDark ? c.sub : "#dbeafe" }]}>Taken</Text>
                 </View>
 
                 {/* Remaining/Pending Badge */}
-                <View style={{ flex: 1, backgroundColor: "rgba(255, 255, 255, 0.1)", borderRadius: 12, padding: 10, alignItems: "center" }}>
-                  <Ionicons name="time" size={18} color="#60a5fa" />
-                  <Text style={{ color: "#ffffff", fontWeight: "700", fontSize: 15, marginTop: 4 }}>{stats.remaining}</Text>
-                  <Text style={{ color: theme === "light" ? "#dbeafe" : c.sub, fontSize: 10, fontWeight: "600", marginTop: 2 }}>Pending</Text>
+                <View style={styles.statBadgeItem}>
+                  <Ionicons name="time" size={20} color="#60a5fa" />
+                  <Text style={styles.statBadgeVal}>{stats.remaining}</Text>
+                  <Text style={[styles.statBadgeLbl, { color: isDark ? c.sub : "#dbeafe" }]}>Pending</Text>
                 </View>
 
                 {/* Missed Badge */}
-                <View style={{ flex: 1, backgroundColor: "rgba(255, 255, 255, 0.1)", borderRadius: 12, padding: 10, alignItems: "center" }}>
-                  <Ionicons name="close-circle" size={18} color="#f87171" />
-                  <Text style={{ color: "#ffffff", fontWeight: "700", fontSize: 15, marginTop: 4 }}>{stats.missed}</Text>
-                  <Text style={{ color: theme === "light" ? "#dbeafe" : c.sub, fontSize: 10, fontWeight: "600", marginTop: 2 }}>Missed</Text>
+                <View style={styles.statBadgeItem}>
+                  <Ionicons name="close-circle" size={20} color="#f87171" />
+                  <Text style={styles.statBadgeVal}>{stats.missed}</Text>
+                  <Text style={[styles.statBadgeLbl, { color: isDark ? c.sub : "#dbeafe" }]}>Missed</Text>
                 </View>
               </View>
             </LinearGradient>
 
-            {/* Next Scheduled Medicine Card */}
+            {/* Next Scheduled Medicine Spotlight Card */}
             {nextDose ? (
               <LinearGradient
-                colors={theme === "light" ? ["#2563eb", "#1d4ed8"] : ["#1e294b", "#0f172a"]}
+                colors={isDark ? ["#1e294b", "#0f172a"] : ["#3b82f6", "#1d4ed8"]}
                 style={styles.nextDoseCard}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 1 }}
@@ -333,15 +323,15 @@ export default function TodayRegimen({
                     <PillAvatar
                       type={nextDose.type}
                       color={metadataCache[nextDose.id]?.color || "#ffffff"}
-                      size={32}
+                      size={34}
                     />
                   </View>
-                  <View style={{ flex: 1, marginLeft: 12 }}>
+                  <View style={{ flex: 1, marginLeft: 14 }}>
                     <Text style={styles.nextDoseName}>{nextDose.name}</Text>
                     <Text style={styles.nextDoseDose}>
                       {nextDose.dose} · {metadataCache[nextDose.id]?.strength || ""}
                     </Text>
-                    <Text style={styles.nextDoseReason}>
+                    <Text style={styles.nextDoseReason} numberOfLines={1}>
                       Purpose: {metadataCache[nextDose.id]?.purpose || "General Therapy"}
                     </Text>
                   </View>
@@ -355,7 +345,7 @@ export default function TodayRegimen({
                       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
                     }}
                   >
-                    <Ionicons name="checkmark" size={16} color="#ffffff" />
+                    <Ionicons name="checkmark" size={18} color="#ffffff" />
                     <Text style={styles.nextActionTxt}>Take Now</Text>
                   </TouchableOpacity>
 
@@ -366,22 +356,22 @@ export default function TodayRegimen({
                       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
                     }}
                   >
-                    <Ionicons name="close" size={16} color="#ffffff" />
+                    <Ionicons name="close" size={18} color="#ffffff" />
                     <Text style={styles.nextActionTxt}>Skip</Text>
                   </TouchableOpacity>
 
                   <TouchableOpacity
-                    style={[styles.nextActionBtn, { backgroundColor: "rgba(255, 255, 255, 0.15)" }]}
+                    style={[styles.nextActionBtn, { backgroundColor: "rgba(255, 255, 255, 0.18)" }]}
                     onPress={() => onDelayDose(nextDose)}
                   >
-                    <Ionicons name="time-outline" size={16} color="#ffffff" />
+                    <Ionicons name="time-outline" size={18} color="#ffffff" />
                     <Text style={styles.nextActionTxt}>Delay 15m</Text>
                   </TouchableOpacity>
                 </View>
               </LinearGradient>
             ) : (
               <View style={styles.nextDoseCardPlaceholder}>
-                <Ionicons name="checkmark-circle" size={32} color="#22c55e" />
+                <Ionicons name="checkmark-circle" size={36} color="#22c55e" />
                 <Text style={styles.placeholderTitle}>All Doses Logged!</Text>
                 <Text style={styles.placeholderSub}>Your schedule is completely clear for today.</Text>
               </View>
@@ -389,11 +379,11 @@ export default function TodayRegimen({
 
             {/* Regimen Chronological Windows */}
             <Text style={styles.sectionTitle}>Today's Schedule</Text>
-            {Object.entries(timeSlots).map(([slot, meds]) => {
+            {Object.entries(timeSlots).map(([slotKey, { label, meds }]) => {
               if (meds.length === 0) return null;
               return (
-                <View key={slot} style={styles.regimenSlotContainer}>
-                  <Text style={styles.regimenSlotTitle}>{slot}</Text>
+                <View key={slotKey} style={styles.regimenSlotContainer}>
+                  <Text style={styles.regimenSlotTitle}>{label}</Text>
                   {meds.map((med) => {
                     const meta = metadataCache[med.id] || {};
                     const taken = med.taken === 1;
@@ -404,8 +394,9 @@ export default function TodayRegimen({
                         key={med.id}
                         style={styles.regimenCard}
                         onPress={() => onSelectMedicine(med)}
+                        activeOpacity={0.7}
                       >
-                        <PillAvatar type={med.type} color={meta.color || c.accent} size={36} />
+                        <PillAvatar type={med.type} color={meta.color || c.accent} size={38} />
                         <View style={styles.regimenCardContent}>
                           <Text style={styles.regimenCardName}>{med.name}</Text>
                           <Text style={styles.regimenCardDetails}>
@@ -417,12 +408,12 @@ export default function TodayRegimen({
                         </View>
 
                         {taken ? (
-                          <View style={{ backgroundColor: "#22c55e20", padding: 8, borderRadius: 8 }}>
-                            <Ionicons name="checkmark-circle" size={20} color="#22c55e" />
+                          <View style={{ backgroundColor: "#22c55e20", padding: 10, borderRadius: 12 }}>
+                            <Ionicons name="checkmark-circle" size={22} color="#22c55e" />
                           </View>
                         ) : missed ? (
-                          <View style={{ backgroundColor: "#ef444420", padding: 8, borderRadius: 8 }}>
-                            <Ionicons name="close-circle" size={20} color="#ef4444" />
+                          <View style={{ backgroundColor: "#ef444420", padding: 10, borderRadius: 12 }}>
+                            <Ionicons name="close-circle" size={22} color="#ef4444" />
                           </View>
                         ) : (
                           <View style={styles.regimenCardActions}>
@@ -447,7 +438,7 @@ export default function TodayRegimen({
               );
             })}
 
-            {/* PRN Section */}
+            {/* PRN As-Needed Section */}
             {prnMeds.length > 0 && (
               <View style={{ marginTop: 12 }}>
                 <Text style={styles.sectionTitle}>As-Needed (PRN)</Text>
@@ -455,7 +446,7 @@ export default function TodayRegimen({
                   const meta = metadataCache[med.id] || {};
                   return (
                     <View key={med.id} style={styles.regimenCard}>
-                      <PillAvatar type={med.type} color={meta.color || c.accent} size={36} />
+                      <PillAvatar type={med.type} color={meta.color || c.accent} size={38} />
                       <View style={styles.regimenCardContent}>
                         <Text style={styles.regimenCardName}>{med.name}</Text>
                         <Text style={styles.regimenCardDetails}>
