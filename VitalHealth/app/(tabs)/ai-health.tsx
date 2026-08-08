@@ -1272,9 +1272,7 @@ export default function AIHealthScreen() {
   const [partialVoiceText, setPartialVoiceText] = useState("");
 
   // Chat State
-  const [messages, setMessages] = useState<Message[]>([
-    { id: "welcome", text: "__welcome__", sender: "ai", timestamp: new Date() },
-  ]);
+  const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [autoSent, setAutoSent] = useState(false);
@@ -1282,6 +1280,7 @@ export default function AIHealthScreen() {
   const listRef = useRef<FlatList>(null);
   const inputRef = useRef<TextInput>(null);
   const historyRef = useRef<string[]>([]);
+  const isInitialLoadRef = useRef<boolean>(true);
 
   // Voice Event Listeners
   useEffect(() => {
@@ -1438,6 +1437,7 @@ export default function AIHealthScreen() {
   useEffect(() => {
     let active = true;
     loadedUserIdRef.current = null;
+    isInitialLoadRef.current = true;
     (async () => {
       try {
         const history = await loadChatHistory(currentUserId);
@@ -1446,7 +1446,8 @@ export default function AIHealthScreen() {
         if (history.length > 0) {
           const latest = history[0];
           setCurrentSessionId(latest.id);
-          setMessages(deserializeMessages(latest.messages));
+          const desMsgs = deserializeMessages(latest.messages);
+          setMessages(desMsgs);
           const uAndA = latest.messages.filter((m) => m.sender !== "system");
           historyRef.current = uAndA.map((m) => m.text).slice(-10);
         } else {
@@ -1456,6 +1457,11 @@ export default function AIHealthScreen() {
         }
         if (active) {
           loadedUserIdRef.current = currentUserId;
+          // Jump to bottom instantly without animation to prevent scroll glitching
+          setTimeout(() => {
+            listRef.current?.scrollToEnd({ animated: false });
+            isInitialLoadRef.current = false;
+          }, 50);
         }
       } catch (e) {
         console.error(e);
@@ -1466,7 +1472,7 @@ export default function AIHealthScreen() {
     };
   }, [currentUserId]);
 
-  // Focus: Auto-connect server
+  // Focus: Auto-connect server check (Health check ONLY — do not reset messages)
   useFocusEffect(
     React.useCallback(() => {
       (async () => {
@@ -1474,13 +1480,11 @@ export default function AIHealthScreen() {
           const baseUrl = await getAiBaseUrl();
           const r = await fetch(`${baseUrl}/health`);
           setConnected(r.ok);
-          if (r.ok && messages.length <= 1) await fetchGreeting();
         } catch {
           setConnected(false);
-          if (messages.length <= 1) await fetchGreeting();
         }
       })();
-    }, [messages.length, currentUserId])
+    }, [])
   );
 
   // Persist current session
@@ -1515,23 +1519,33 @@ export default function AIHealthScreen() {
   }, [symptom]);
 
   useEffect(() => {
-    if (messages.length > 1) {
-      setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 100);
+    if (messages.length > 0) {
+      const animated = !isInitialLoadRef.current;
+      setTimeout(() => listRef.current?.scrollToEnd({ animated }), 50);
     }
-  }, [messages]);
+  }, [messages.length]);
 
   // Reset / New Session
   const handleNewChat = async () => {
+    isInitialLoadRef.current = true;
     setCurrentSessionId(genId());
     historyRef.current = [];
     await fetchGreeting();
+    setTimeout(() => {
+      isInitialLoadRef.current = false;
+    }, 100);
   };
 
   const handleSelectSession = (session: ChatSession) => {
+    isInitialLoadRef.current = true;
     setCurrentSessionId(session.id);
     setMessages(deserializeMessages(session.messages));
     const uAndA = session.messages.filter((m) => m.sender !== "system");
     historyRef.current = uAndA.map((m) => m.text).slice(-10);
+    setTimeout(() => {
+      listRef.current?.scrollToEnd({ animated: false });
+      isInitialLoadRef.current = false;
+    }, 50);
   };
 
   const handleDeleteSession = async (id: string) => {

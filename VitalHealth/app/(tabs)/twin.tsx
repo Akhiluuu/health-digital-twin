@@ -1672,20 +1672,151 @@ export default function TwinScreen() {
     const v = lastVitals;
     const bp = parseBP(v?.blood_pressure);
 
-    // Per-vital status helper
-    const vStatus = (val: number | null | undefined, lo: number, hi: number) =>
-      val == null ? null : val < lo ? '#f59e0b' : val > hi ? '#ef4444' : '#10b981';
-
     return (
-      <>
-        {/* ── Inline Simulation Status Card (replaces floating overlay) ── */}
+      <View style={{ gap: 14 }}>
+        {/* ── [1/6] User-Centric Theme Hero Card (No Pitch-Black, No Technical Jargon, No Catchup Button) ── */}
+        <View style={[ss.heroCardMinimal, { backgroundColor: c.card, borderColor: c.border }]}>
+          <View style={ss.heroRow}>
+            <View style={[ss.heroIconBadge, { backgroundColor: c.active + '18' }]}>
+              <Ionicons name="body-outline" size={22} color={c.active} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                <Text style={[ss.heroTitleMinimal, { color: c.text }]}>
+                  {profile?.firstName || 'Clinical'}'s Digital Twin
+                </Text>
+                <View style={[ss.statusPillMinimal, { backgroundColor: '#10b98115', borderColor: '#10b98140' }]}>
+                  <View style={ss.statusDotGreen} />
+                  <Text style={ss.statusTxtGreen}>Twin Active</Text>
+                </View>
+              </View>
+              <Text style={[ss.heroSubMinimal, { color: c.sub }]}>
+                Real-time physiological balance & health tracking
+              </Text>
+            </View>
+          </View>
+        </View>
+
+        {/* ── [2/6] Saved Routines Section (MOVED TO TOP) ── */}
+        <View style={{ marginTop: 2 }}>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, paddingHorizontal: 2 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <Ionicons name="calendar-outline" size={16} color={c.active} />
+              <Text style={[ss.sectionTitleClean, { color: c.text }]}>Saved Routines</Text>
+            </View>
+            <TouchableOpacity
+              onPress={handleRestoreDefault}
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 5,
+                backgroundColor: c.active + '15',
+                borderColor: c.active + '35',
+                borderWidth: 1,
+                paddingHorizontal: 10,
+                paddingVertical: 5,
+                borderRadius: 12,
+              }}
+            >
+              <Ionicons name="refresh-outline" size={13} color={c.active} />
+              <Text style={{ color: c.active, fontSize: 11, fontWeight: '700' }}>Restore Default</Text>
+            </TouchableOpacity>
+          </View>
+
+          {savedRoutines.length > 0 ? (
+            savedRoutines.map(r => (
+              <TouchableOpacity key={r.id} style={[ss.routineCardClean, { backgroundColor: c.card, borderColor: c.border }]}
+                onPress={() => handleLoadRoutine(r.id, r.name)}
+                onLongPress={() => Alert.alert('Routine Options', `"${r.name}"`, [
+                  { text: r.isDefault ? 'Remove Default' : 'Set as Default', onPress: () => setDefaultRoutine(r.id) },
+                  { text: 'Rename', onPress: () => handleOpenRename(r.id, r.name) },
+                  { text: 'Edit Events', onPress: () => handleEditRoutine(r.id, r.name) },
+                  {
+                    text: 'Delete Routine', style: 'destructive', onPress: () => {
+                      if (r.isDefault) {
+                        Alert.alert('Cannot Delete Default State', 'This routine is currently marked as your active Default Catch-up routine.');
+                        return;
+                      }
+                      if (savedRoutines.length <= 1) {
+                        Alert.alert('Cannot Delete State', 'You must keep at least one saved routine/state.');
+                        return;
+                      }
+                      Alert.alert('Delete Routine', `Delete "${r.name}"? This cannot be undone.`, [
+                        { text: 'Cancel', style: 'cancel' },
+                        { text: 'Delete', style: 'destructive', onPress: () => deleteRoutine(r.id) },
+                      ]);
+                    }
+                  },
+                  { text: 'Cancel', style: 'cancel' },
+                ])}>
+                <View style={[ss.routineIconClean, { backgroundColor: r.isDefault ? '#f59e0b18' : c.active + '15' }]}>
+                  <Ionicons name={r.isDefault ? "star" : "time-outline"} size={18} color={r.isDefault ? "#f59e0b" : c.active} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[ss.routineName, { color: c.text }]}>{r.name}</Text>
+                  <Text style={[ss.routineMeta, { color: c.sub }]}>
+                    {r.eventCount} logged events
+                    {r.isDefault && <Text style={{ color: '#f59e0b', fontWeight: 'bold' }}> · Active Default</Text>}
+                  </Text>
+                </View>
+                <Ionicons name="play-circle" size={24} color={c.active} />
+              </TouchableOpacity>
+            ))
+          ) : (
+            <View style={[ss.emptyRoutineCard, { backgroundColor: c.card, borderColor: c.border }]}>
+              <View style={ss.emptyRoutineIconContainer}>
+                <Ionicons name="calendar-outline" size={24} color={c.active} />
+              </View>
+              <Text style={[ss.emptyRoutineTitle, { color: c.text }]}>No Saved Routines</Text>
+              <Text style={[ss.emptyRoutineDesc, { color: c.sub }]}>
+                {isSwitched 
+                  ? `No daily habits or routines have been logged for ${profile?.firstName || 'this member'}.`
+                  : "A saved routine represents your typical daily schedule (sleep, meals, activities) to automatically sync the clinical twin."
+                }
+              </Text>
+              
+              <View style={ss.emptyRoutineActions}>
+                <TouchableOpacity
+                  style={[ss.emptyRoutineBtn, { backgroundColor: c.active }]}
+                  onPress={() => {
+                    switchMode('routine');
+                    setActiveTab('meal');
+                    Animated.spring(fabAnim, { toValue: 1, useNativeDriver: true }).start();
+                  }}
+                >
+                  <Ionicons name="add-circle" size={16} color="#fff" />
+                  <Text style={ss.emptyRoutineBtnTxt}>Log Custom Routine</Text>
+                </TouchableOpacity>
+
+                {isSwitched ? (
+                  <TouchableOpacity
+                    style={[ss.emptyRoutineBtnSecondary, { borderColor: c.active, borderWidth: 1 }]}
+                    onPress={copyPrimaryDefaultRoutine}
+                  >
+                    <Ionicons name="copy-outline" size={16} color={c.active} />
+                    <Text style={[ss.emptyRoutineBtnTxtSecondary, { color: c.active }]}>Copy Primary Routine</Text>
+                  </TouchableOpacity>
+                ) : (
+                  <TouchableOpacity
+                    style={[ss.emptyRoutineBtnSecondary, { borderColor: c.active, borderWidth: 1 }]}
+                    onPress={handleRestoreDefault}
+                  >
+                    <Ionicons name="sync-outline" size={16} color={c.active} />
+                    <Text style={[ss.emptyRoutineBtnTxtSecondary, { color: c.active }]}>Retrieve Default State</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            </View>
+          )}
+        </View>
+
+        {/* ── Inline Simulation Status Card (when running/queued) ── */}
         {(simulationStatus === 'queued' || simulationStatus === 'running') && (
           <LinearGradient
             colors={['#0ea5e920', '#38bdf820', '#0ea5e910']}
             start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
             style={[ss.simCard, { borderColor: '#38bdf840' }]}
           >
-            {/* Top row: icon + title + elapsed */}
             <View style={ss.simCardHeader}>
               <View style={[ss.simPulse, { backgroundColor: '#38bdf820', borderColor: '#38bdf860' }]}>
                 <ActivityIndicator color='#38bdf8' size='small' />
@@ -1699,10 +1830,9 @@ export default function TwinScreen() {
                 <Text style={ss.simElapsedTxt}>{fmtElapsed(elapsedSecs)}</Text>
               </View>
             </View>
-            {/* Progress dots */}
+
             <View style={ss.simDotsRow}>
               {['Engine init', 'Running physics', 'Computing vitals', 'Finalising'].map((label, i) => {
-                // Realistic BioGears timing: init ~30s, physics bulk ~2min, vitals ~8min, done ~15min
                 const thresholds = [30, 120, 480, 900];
                 const done = simulationStatus === 'running' && elapsedSecs > thresholds[i];
                 const active = simulationStatus === 'running' && !done &&
@@ -1722,13 +1852,10 @@ export default function TwinScreen() {
                 );
               })}
             </View>
-            <Text style={[ss.simNote, { color: c.sub }]}>
-              ⏱ BioGears runs up to 12 h of physiology — this takes 10–25 min. You can use other parts of the app.
-            </Text>
           </LinearGradient>
         )}
 
-        {/* Simulation error banner */}
+        {/* ── Simulation error banner ── */}
         {simulationStatus === 'failed' && (
           <View style={[ss.errorBox, { backgroundColor: '#ef444420' }]}>
             <Ionicons name="warning" size={18} color="#ef4444" />
@@ -1736,7 +1863,7 @@ export default function TwinScreen() {
           </View>
         )}
 
-        {/* Drug Interaction Banner */}
+        {/* ── Drug Interaction Banner ── */}
         {lastInteractionWarnings.length > 0 && (
           <View style={ss.interactionBanner}>
             <Ionicons name="medical" size={16} color="#fbbf24" />
@@ -1744,217 +1871,111 @@ export default function TwinScreen() {
           </View>
         )}
 
-        {/* Circadian Clock */}
-        <CircadianClock />
-
-        {/* Health Score */}
+        {/* ── [3/6] Health Score Card (FIXED: Prominently Renders Score & Grade) ── */}
         {healthScore && (
           <LinearGradient
-            colors={healthScore.grade === 'A' ? ['#10b981', '#059669'] : healthScore.grade === 'B' ? ['#38bdf8', '#0284c7'] : healthScore.grade === 'C' ? ['#f59e0b', '#d97706'] : ['#ef4444', '#dc2626']}
-            style={ss.scoreBadge} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}>
-            <View>
-              <Text style={ss.scoreLetter}>{healthScore.grade}</Text>
-              <Text style={ss.scoreLabel}>{healthScore.label}</Text>
-            </View>
-            <View style={{ alignItems: 'flex-end' }}>
-              <Text style={ss.scoreNum}>{healthScore.score}</Text>
-              <Text style={ss.scoreSubLabel}>/ 100</Text>
+            colors={healthScore.grade === 'A' ? ['#059669', '#10b981'] : healthScore.grade === 'B' ? ['#0284c7', '#38bdf8'] : healthScore.grade === 'C' ? ['#d97706', '#f59e0b'] : ['#dc2626', '#ef4444']}
+            style={ss.scoreBadgeClean} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
+                <View style={ss.scoreGradeBadgeClean}>
+                  <Text style={ss.scoreLetterClean}>{healthScore.grade}</Text>
+                </View>
+                <View>
+                  <Text style={ss.scoreTitleClean}>{healthScore.label}</Text>
+                  <Text style={ss.scoreSubClean}>Physiological Stability</Text>
+                </View>
+              </View>
+
+              <View style={{ alignItems: 'flex-end', justifyContent: 'center' }}>
+                <View style={{ flexDirection: 'row', alignItems: 'baseline' }}>
+                  <Text style={ss.scoreNumClean}>{healthScore.score}</Text>
+                  <Text style={ss.scoreDenomClean}>/100</Text>
+                </View>
+                <Text style={ss.scoreStatusPill}>Health Score</Text>
+              </View>
             </View>
           </LinearGradient>
         )}
 
-        {/* Quick Add row */}
+        {/* ── [4/6] Streamlined Circadian Clock ── */}
+        <CircadianClock />
+
+        {/* ── Quick Add Row ── */}
         <QuickAddRow addEventAndSimulate={addEventAndSimulate} twinStatus={twinStatus} />
 
-        {/* Doctor Summary Export Digest Action Bar */}
-        <TouchableOpacity
-          style={{
-            backgroundColor: "#2563eb18",
-            borderColor: "#2563eb40",
-            borderWidth: 1,
-            borderRadius: 12,
-            padding: 12,
-            marginTop: 12,
-            marginBottom: 4,
-            flexDirection: "row",
-            alignItems: "center",
-            justifyContent: "space-between"
-          }}
-          onPress={handleExportDoctorDigest}
-          activeOpacity={0.85}
-        >
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
-            <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: "#2563eb25", alignItems: "center", justifyContent: "center" }}>
-              <Ionicons name="document-text" size={20} color="#2563eb" />
+        {/* ── [5/6] Lightweight, Friendly Vitals Grid ── */}
+        <View style={{ marginTop: 2 }}>
+          <Text style={[ss.sectionTitleClean, { color: c.text, marginBottom: 10 }]}>Physiological Vitals</Text>
+          {v ? (
+            <View style={ss.vitalsGridLight}>
+              {[
+                { label: 'Heart Rate', val: v.heart_rate ? Math.round(v.heart_rate) : (profile?.biogears_resting_hr ? Number(profile.biogears_resting_hr) : 72), unit: 'bpm', icon: '🫀', lo: 60, hi: 100 },
+                { label: 'Blood Pressure', val: bp.sys && bp.dia ? `${Math.round(bp.sys)}/${Math.round(bp.dia)}` : '120/80', unit: 'mmHg', icon: '🩸', lo: 90, hi: 120 },
+                { label: 'Glucose', val: v.glucose ? Math.round(v.glucose) : 95, unit: 'mg/dL', icon: '🍬', lo: 70, hi: 140 },
+                { label: 'SpO₂', val: v.spo2 ? Math.round(v.spo2) : 98, unit: '%', icon: '🫁', lo: 94, hi: 100 },
+                { label: 'Resp. Rate', val: v.respiration ? Math.round(v.respiration) : 14, unit: 'br/min', icon: '💨', lo: 12, hi: 20 },
+                { label: 'Cardiac Output', val: v.cardiac_output != null ? Number(v.cardiac_output.toFixed(1)) : 5.1, unit: 'L/min', icon: '⚡', lo: 4.5, hi: 6.5 },
+                { label: 'MAP', val: v.map != null ? Math.round(v.map!) : 93, unit: 'mmHg', icon: '📈', lo: 70, hi: 100 },
+                { label: 'Core Temp', val: v.core_temperature != null ? Number((v.core_temperature!).toFixed(1)) : ((profile as any)?.biogears_resting_temp ? Number((profile as any).biogears_resting_temp) : 37.0), unit: '°C', icon: '🌡️', lo: 36.5, hi: 37.5 },
+              ].map(({ label, val, unit, icon, lo, hi }) => {
+                const numVal = typeof val === 'number' ? val : (bp.sys || 120);
+                const isOptimal = numVal >= lo && numVal <= hi;
+                return (
+                  <View key={label} style={[ss.vitalCardLight, { backgroundColor: c.card, borderColor: c.border }]}>
+                    <View style={ss.vitalHeaderLight}>
+                      <Text style={{ fontSize: 16 }}>{icon}</Text>
+                      <View style={[ss.vitalTagLight, { backgroundColor: isOptimal ? '#10b98115' : '#f59e0b15' }]}>
+                        <View style={[ss.vitalDotLight, { backgroundColor: isOptimal ? '#10b981' : '#f59e0b' }]} />
+                        <Text style={[ss.vitalTagTxtLight, { color: isOptimal ? '#10b981' : '#f59e0b' }]}>
+                          {isOptimal ? 'Optimal' : 'Watch'}
+                        </Text>
+                      </View>
+                    </View>
+                    <Text style={[ss.vitalValLight, { color: c.text }]}>{val ?? '—'}</Text>
+                    <Text style={[ss.vitalUnitLight, { color: c.sub }]}>{unit}</Text>
+                    <Text style={[ss.vitalNameLight, { color: c.sub }]}>{label}</Text>
+                  </View>
+                );
+              })}
             </View>
-            <View>
-              <Text style={{ fontSize: 14, fontWeight: "700", color: c.text }}>Export Doctor Summary</Text>
-              <Text style={{ fontSize: 11, color: c.sub }}>Generate shareable FHIR/Markdown evidence digest</Text>
+          ) : (
+            <View style={[ss.emptyCard, { backgroundColor: c.card }]}>
+              <Text style={{ fontSize: 40 }}>🔬</Text>
+              <Text style={[ss.emptyTitle, { color: c.text }]}>No Simulation Data Yet</Text>
+              <Text style={[ss.emptySub, { color: c.sub }]}>Tap + to log your routine and run a simulation</Text>
             </View>
-          </View>
-          <Ionicons name="chevron-forward" size={18} color="#2563eb" />
-        </TouchableOpacity>
-
-        {/* Saved Routines (Moved here for immediate access on Clinical Twin page) */}
-        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 15, marginBottom: 8, paddingHorizontal: 4 }}>
-          <Text style={[ss.section, { color: c.text, marginTop: 0 }]}>Saved Routines</Text>
-          <TouchableOpacity onPress={handleRestoreDefault}>
-            <Text style={{ color: c.active, fontSize: 12, fontWeight: '600' }}>🔄 Restore Default State</Text>
-          </TouchableOpacity>
+          )}
         </View>
 
-        {savedRoutines.length > 0 ? (
-          savedRoutines.map(r => (
-            <TouchableOpacity key={r.id} style={[ss.routineCard, { backgroundColor: c.card }]}
-              onPress={() => handleLoadRoutine(r.id, r.name)}
-              onLongPress={() => Alert.alert('Routine Options', `"${r.name}"`, [
-                { text: r.isDefault ? 'Remove Default' : 'Set as Default', onPress: () => setDefaultRoutine(r.id) },
-                { text: 'Rename', onPress: () => handleOpenRename(r.id, r.name) },
-                { text: 'Edit Events', onPress: () => handleEditRoutine(r.id, r.name) },
-                {
-                  text: 'Delete Routine', style: 'destructive', onPress: () => {
-                    if (r.isDefault) {
-                      Alert.alert('Cannot Delete Default State', 'This routine is currently marked as your active Default Catch-up routine. Please select/set another routine as the default first before deleting this one.');
-                      return;
-                    }
-                    if (savedRoutines.length <= 1) {
-                      Alert.alert('Cannot Delete State', 'You must keep at least one saved routine/state to represent your baseline schedule.');
-                      return;
-                    }
-                    Alert.alert('Delete Routine', `Delete "${r.name}"? This cannot be undone.`, [
-                      { text: 'Cancel', style: 'cancel' },
-                      { text: 'Delete', style: 'destructive', onPress: () => deleteRoutine(r.id) },
-                    ]);
-                  }
-                },
-                { text: 'Cancel', style: 'cancel' },
-              ])}>
-              <View style={ss.routineIcon}><Text style={{ fontSize: 20 }}>{r.isDefault ? '⭐' : '📋'}</Text></View>
-              <View style={{ flex: 1 }}>
-                <Text style={[ss.routineName, { color: c.text }]}>{r.name}</Text>
-                <Text style={[ss.routineMeta, { color: c.sub }]}>
-                  {r.eventCount} events · {new Date(r.createdAt).toLocaleDateString('en-IN')}
-                  {r.isDefault && <Text style={{ color: '#f59e0b', fontWeight: 'bold' }}> · Default Catch-up</Text>}
-                </Text>
-              </View>
-              <Ionicons name="play-circle" size={28} color={c.active} />
-            </TouchableOpacity>
-          ))
-        ) : (
-          <View style={[ss.emptyRoutineCard, { backgroundColor: c.card, borderColor: c.border }]}>
-            <View style={ss.emptyRoutineIconContainer}>
-              <Ionicons name="calendar-outline" size={24} color={c.active} />
-            </View>
-            <Text style={[ss.emptyRoutineTitle, { color: c.text }]}>No Saved Routines</Text>
-            <Text style={[ss.emptyRoutineDesc, { color: c.sub }]}>
-              {isSwitched 
-                ? `No daily habits or routines have been logged for ${profile?.firstName || 'this member'}.`
-                : "A saved routine represents your typical daily schedule (sleep, meals, activities) to automatically sync the clinical twin."
-              }
-            </Text>
-            
-            <View style={ss.emptyRoutineActions}>
-              <TouchableOpacity
-                style={[ss.emptyRoutineBtn, { backgroundColor: c.active }]}
-                onPress={() => {
-                  switchMode('routine');
-                  setActiveTab('meal');
-                  Animated.spring(fabAnim, { toValue: 1, useNativeDriver: true }).start();
-                }}
-              >
-                <Ionicons name="add-circle" size={16} color="#fff" />
-                <Text style={ss.emptyRoutineBtnTxt}>Log Custom Routine</Text>
-              </TouchableOpacity>
-
-              {isSwitched ? (
-                <TouchableOpacity
-                  style={[ss.emptyRoutineBtnSecondary, { borderColor: c.active, borderWidth: 1 }]}
-                  onPress={copyPrimaryDefaultRoutine}
-                >
-                  <Ionicons name="copy-outline" size={16} color={c.active} />
-                  <Text style={[ss.emptyRoutineBtnTxtSecondary, { color: c.active }]}>Copy Primary Routine</Text>
-                </TouchableOpacity>
-              ) : (
-                <TouchableOpacity
-                  style={[ss.emptyRoutineBtnSecondary, { borderColor: c.active, borderWidth: 1 }]}
-                  onPress={handleRestoreDefault}
-                >
-                  <Ionicons name="sync-outline" size={16} color={c.active} />
-                  <Text style={[ss.emptyRoutineBtnTxtSecondary, { color: c.active }]}>Retrieve Default State</Text>
-                </TouchableOpacity>
-              )}
-            </View>
-          </View>
-        )}
-
-        {/* Vitals Grid */}
-        <Text style={[ss.section, { color: c.text }]}>Simulation Vitals</Text>
-        {v ? (
-          <View style={ss.vitalsGrid}>
-            {[
-              { label: 'Heart Rate', val: v.heart_rate ? Math.round(v.heart_rate) : (profile?.biogears_resting_hr ? Number(profile.biogears_resting_hr) : 72), unit: 'bpm', icon: '🫀', color: '#ef4444', lo: 60, hi: 100 },
-              { label: 'Systolic BP', val: bp.sys ? Math.round(bp.sys!) : (profile?.biogears_systolic_bp ? Number(profile.biogears_systolic_bp) : 120), unit: 'mmHg', icon: '🩸', color: '#f59e0b', lo: 90, hi: 120 },
-              { label: 'Diastolic BP', val: bp.dia ? Math.round(bp.dia!) : (profile?.biogears_diastolic_bp ? Number(profile.biogears_diastolic_bp) : 80), unit: 'mmHg', icon: '🩸', color: '#f97316', lo: 60, hi: 80 },
-              { label: 'Glucose', val: v.glucose ? Math.round(v.glucose) : 95, unit: 'mg/dL', icon: '🍬', color: '#6366f1', lo: 70, hi: 140 },
-              { label: 'SpO₂', val: v.spo2 ? Math.round(v.spo2) : 98, unit: '%', icon: '🫁', color: '#38bdf8', lo: 94, hi: 100 },
-              { label: 'Resp. Rate', val: v.respiration ? Math.round(v.respiration) : 14, unit: 'br/min', icon: '💨', color: '#10b981', lo: 12, hi: 20 },
-              { label: 'Cardiac Output', val: v.cardiac_output != null ? Number(v.cardiac_output.toFixed(1)) : 5.1, unit: 'L/min', icon: '⚡', color: '#ec4899', lo: 4.5, hi: 6.5 },
-              { label: 'MAP', val: v.map != null ? Math.round(v.map!) : 93, unit: 'mmHg', icon: '📈', color: '#a78bfa', lo: 70, hi: 100 },
-              { label: 'Core Temp', val: v.core_temperature != null ? Number((v.core_temperature!).toFixed(1)) : ((profile as any)?.biogears_resting_temp ? Number((profile as any).biogears_resting_temp) : 37.0), unit: '°C', icon: '🌡️', color: '#fb923c', lo: 36.5, hi: 37.5 },
-              { label: 'Stroke Volume', val: v.stroke_volume != null ? Math.round(v.stroke_volume!) : 72, unit: 'mL', icon: '🌊', color: '#06b6d4', lo: 60, hi: 100 },
-              { label: 'Tidal Volume', val: v.tidal_volume != null ? Math.round(v.tidal_volume!) : 500, unit: 'mL', icon: '🌬️', color: '#14b8a6', lo: 400, hi: 600 },
-              { label: 'Arterial pH', val: v.arterial_ph != null ? Number((v.arterial_ph!).toFixed(2)) : 7.40, unit: 'pH', icon: '🧪', color: '#8b5cf6', lo: 7.35, hi: 7.45 },
-            ].map(({ label, val, unit, icon, color, lo, hi }) => {
-              const dot = vStatus(val, lo, hi);
-              return (
-                <View key={label} style={[ss.vitalCard, { borderColor: color + '40', backgroundColor: c.card }]}>
-                  <View style={ss.vitalTopRow}>
-                    <Text style={ss.vitalIcon}>{icon}</Text>
-                    {dot && <View style={[ss.statusDot, { backgroundColor: dot }]} />}
-                  </View>
-                  <Text style={[ss.vitalValue, { color }]}>{val ?? '—'}</Text>
-                  <Text style={[ss.vitalUnit, { color: c.sub }]}>{unit}</Text>
-                  <Text style={[ss.vitalLabel, { color: c.sub }]}>{label}</Text>
-                </View>
-              );
-            })}
-          </View>
-        ) : (
-          <View style={[ss.emptyCard, { backgroundColor: c.card }]}>
-            <Text style={{ fontSize: 40 }}>🔬</Text>
-            <Text style={[ss.emptyTitle, { color: c.text }]}>No Simulation Yet</Text>
-            <Text style={[ss.emptySub, { color: c.sub }]}>Tap + to log your routine and run a simulation</Text>
-          </View>
-        )}
-
-        {/* AI Insights */}
+        {/* ── [6/6] AI Insights ── */}
         {lastAiInsights.length > 0 && (
-          <>
-            <Text style={[ss.section, { color: c.text }]}>AI Insights</Text>
+          <View style={{ marginTop: 2 }}>
+            <Text style={[ss.sectionTitleClean, { color: c.text, marginBottom: 8 }]}>AI Clinical Insights</Text>
             {lastAiInsights.map((ins, i) => (
-              <View key={i} style={[ss.insightPill, { backgroundColor: c.card }]}>
-                <Text style={{ color: c.text, fontSize: 13, lineHeight: 18 }}>{ins}</Text>
+              <View key={i} style={[ss.insightPillClean, { backgroundColor: c.card, borderColor: c.border }]}>
+                <Ionicons name="sparkles" size={15} color={c.active} style={{ marginTop: 2 }} />
+                <Text style={{ color: c.text, fontSize: 13, lineHeight: 18, flex: 1 }}>{ins}</Text>
               </View>
             ))}
-          </>
+          </View>
         )}
 
-        {/* Macro Rings */}
+        {/* ── Today's Nutrition Macro Rings ── */}
         {todayMacros.calories > 0 && (
-          <>
-            <Text style={[ss.section, { color: c.text }]}>Today's Nutrition</Text>
-            <View style={[ss.macroRingsCard, { backgroundColor: c.card }]}>
-              {/* Calorie ring (large) */}
+          <View style={{ marginTop: 2 }}>
+            <Text style={[ss.sectionTitleClean, { color: c.text, marginBottom: 8 }]}>Today's Nutrition</Text>
+            <View style={[ss.macroRingsCard, { backgroundColor: c.card, borderColor: c.border, borderWidth: 1 }]}>
               <View style={ss.macroRingWrap}>
-                <View style={[ss.macroOuterRing, { borderColor: '#f59e0b40', width: 100, height: 100, borderRadius: 50 }]}>
-                  <View style={[ss.macroInnerRing, { backgroundColor: c.card, width: 72, height: 72, borderRadius: 36 }]}>
+                <View style={[ss.macroOuterRing, { borderColor: '#f59e0b40', width: 92, height: 92, borderRadius: 46 }]}>
+                  <View style={[ss.macroInnerRing, { backgroundColor: c.card, width: 66, height: 66, borderRadius: 33 }]}>
                     <Text style={[ss.macroRingVal, { color: '#f59e0b' }]}>{Math.round(todayMacros.calories)}</Text>
                     <Text style={[ss.macroRingUnit, { color: c.sub }]}>kcal</Text>
                   </View>
                 </View>
                 <Text style={[ss.macroRingLabel, { color: c.sub }]}>Calories</Text>
               </View>
-              {/* Mini rings */}
+
               {[
                 { label: 'Carbs', val: todayMacros.carbs, color: '#f59e0b', target: 250 },
                 { label: 'Protein', val: todayMacros.protein, color: '#10b981', target: 60 },
@@ -1963,9 +1984,9 @@ export default function TwinScreen() {
                 const pct = Math.min(m.val / m.target, 1);
                 return (
                   <View key={m.label} style={ss.macroRingWrap}>
-                    <View style={[ss.macroOuterRing, { borderColor: m.color + '40', width: 76, height: 76, borderRadius: 38 }]}>
-                      <View style={[ss.macroInnerRing, { backgroundColor: c.card, width: 54, height: 54, borderRadius: 27 }]}>
-                        <Text style={[ss.macroRingVal, { color: m.color, fontSize: 14 }]}>{Math.round(m.val)}g</Text>
+                    <View style={[ss.macroOuterRing, { borderColor: m.color + '40', width: 68, height: 68, borderRadius: 34 }]}>
+                      <View style={[ss.macroInnerRing, { backgroundColor: c.card, width: 48, height: 48, borderRadius: 24 }]}>
+                        <Text style={[ss.macroRingVal, { color: m.color, fontSize: 13 }]}>{Math.round(m.val)}g</Text>
                         <Text style={[ss.macroRingUnit, { color: c.sub }]}>{Math.round(pct * 100)}%</Text>
                       </View>
                     </View>
@@ -1974,43 +1995,72 @@ export default function TwinScreen() {
                 );
               })}
             </View>
-          </>
+          </View>
         )}
 
-        {/* CVD / Recovery */}
+        {/* ── CVD Risk / Recovery Analytics ── */}
         {(cvdRisk || recoveryReadiness) && (
-          <View style={ss.row}>
+          <View style={[ss.row, { marginTop: 2 }]}>
             {cvdRisk && (
-              <View style={[ss.analyticsCard, { backgroundColor: c.card, flex: 1, marginRight: 8 }]}>
-                <Text style={[ss.analyticsTitle, { color: c.sub }]}>CVD Risk (10yr)</Text>
+              <View style={[ss.analyticsCardClean, { backgroundColor: c.card, borderColor: c.border, flex: 1, marginRight: 8 }]}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                  <Ionicons name="heart" size={14} color={cvdRisk.color} />
+                  <Text style={[ss.analyticsTitle, { color: c.sub }]}>CVD Risk (10yr)</Text>
+                </View>
                 <Text style={[ss.analyticsValue, { color: cvdRisk.color }]}>{cvdRisk.ten_year_risk_pct}%</Text>
-                <Text style={[ss.analyticsLabel, { color: c.sub }]}>{cvdRisk.category}</Text>
+                <Text style={[ss.analyticsTagTxtClean, { color: cvdRisk.color }]}>{cvdRisk.category}</Text>
               </View>
             )}
+
             {recoveryReadiness && (
-              <View style={[ss.analyticsCard, { backgroundColor: c.card, flex: 1 }]}>
-                <Text style={[ss.analyticsTitle, { color: c.sub }]}>Recovery</Text>
+              <View style={[ss.analyticsCardClean, { backgroundColor: c.card, borderColor: c.border, flex: 1 }]}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                  <Ionicons name="battery-charging" size={14} color="#10b981" />
+                  <Text style={[ss.analyticsTitle, { color: c.sub }]}>Recovery Score</Text>
+                </View>
                 <Text style={[ss.analyticsValue, { color: recoveryReadiness.status === 'Ready' ? '#10b981' : '#f59e0b' }]}>
                   {recoveryReadiness.readiness_score}
                 </Text>
-                <Text style={[ss.analyticsLabel, { color: c.sub }]}>{recoveryReadiness.status}</Text>
+                <Text style={[ss.analyticsTagTxtClean, { color: recoveryReadiness.status === 'Ready' ? '#10b981' : '#f59e0b' }]}>
+                  {recoveryReadiness.status}
+                </Text>
               </View>
             )}
           </View>
         )}
-      </>
+      </View>
     );
   };
 
   const renderOrgansTab = () => (
-    <>
+    <View style={{ gap: 14 }}>
+      <View style={[ss.heroCardMinimal, { backgroundColor: c.card, borderColor: c.border }]}>
+        <View style={ss.heroRow}>
+          <View style={[ss.heroIconBadge, { backgroundColor: '#38bdf818' }]}>
+            <Ionicons name="fitness-outline" size={22} color="#38bdf8" />
+          </View>
+          <View style={{ flex: 1 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+              <Text style={[ss.heroTitleMinimal, { color: c.text }]}>Anatomical Organ Twin</Text>
+              <View style={[ss.statusPillMinimal, { backgroundColor: '#38bdf815', borderColor: '#38bdf840' }]}>
+                <View style={[ss.statusDotGreen, { backgroundColor: '#38bdf8' }]} />
+                <Text style={[ss.statusTxtGreen, { color: '#38bdf8' }]}>Interactive Model</Text>
+              </View>
+            </View>
+            <Text style={[ss.heroSubMinimal, { color: c.sub }]}>
+              Real-time physiological stress & integrity scores across major organ systems
+            </Text>
+          </View>
+        </View>
+      </View>
+
       {sessions.length > 0 && organScores?.scores ? (
         <BodyMap scores={organScores.scores} c={c} lastVitals={lastVitals} sessions={sessions} profile={profile} />
       ) : sessions.length > 0 ? (
         <View style={[ss.emptyCard, { backgroundColor: c.card, minHeight: 250, justifyContent: 'center' }]}>
           <ActivityIndicator size="large" color={c.active} style={{ marginBottom: 12 }} />
-          <Text style={[ss.emptyTitle, { color: c.text }]}>Analyzing Vitals...</Text>
-          <Text style={[ss.emptySub, { color: c.sub }]}>Resolving organ health metrics from BioGears</Text>
+          <Text style={[ss.emptyTitle, { color: c.text }]}>Analyzing Organ Physiology...</Text>
+          <Text style={[ss.emptySub, { color: c.sub }]}>Computing anatomical scores from BioGears</Text>
         </View>
       ) : (
         <View style={[ss.emptyCard, { backgroundColor: c.card, alignItems: 'center', padding: 24, borderRadius: 20 }]}>
@@ -2028,18 +2078,36 @@ export default function TwinScreen() {
           </TouchableOpacity>
         </View>
       )}
-    </>
+    </View>
   );
 
   const renderTrendsTab = () => (
-    <>
-      {/* Session History */}
+    <View style={{ gap: 14 }}>
       {sessions.length > 0 ? (
         <>
-          <View style={ss.rowBetween}>
-            <Text style={[ss.section, { color: c.text }]}>Simulation History</Text>
+          <View style={[ss.heroCardMinimal, { backgroundColor: c.card, borderColor: c.border }]}>
+            <View style={ss.heroRow}>
+              <View style={[ss.heroIconBadge, { backgroundColor: '#a78bfa18' }]}>
+                <Ionicons name="analytics-outline" size={22} color="#a78bfa" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                  <Text style={[ss.heroTitleMinimal, { color: c.text }]}>Simulation History & Trends</Text>
+                  <View style={[ss.statusPillMinimal, { backgroundColor: '#a78bfa15', borderColor: '#a78bfa40' }]}>
+                    <Text style={[ss.statusTxtGreen, { color: '#a78bfa' }]}>{sessions.length} Runs Logged</Text>
+                  </View>
+                </View>
+                <Text style={[ss.heroSubMinimal, { color: c.sub }]}>
+                  Track historical simulation outputs, physiological anomalies, and AI insights
+                </Text>
+              </View>
+            </View>
+          </View>
+
+          <View style={[ss.rowBetween, { marginTop: 4 }]}>
+            <Text style={[ss.sectionTitleClean, { color: c.text }]}>Simulation Logs</Text>
             <TouchableOpacity onPress={handleUndo}>
-              <Text style={{ color: '#ef4444', fontSize: 12 }}>⏪ Undo Last</Text>
+              <Text style={{ color: '#ef4444', fontSize: 12, fontWeight: '700' }}>⏪ Undo Last Simulation</Text>
             </TouchableOpacity>
           </View>
 
@@ -2061,9 +2129,8 @@ export default function TwinScreen() {
           </View>
 
           {/* Filter Pills */}
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingBottom: 16, paddingTop: 4 }}>
-            {/* Anomaly Pills */}
-            <View style={{ flexDirection: 'row', gap: 6, marginRight: 12, borderRightWidth: 1, borderRightColor: c.border, paddingRight: 12 }}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingBottom: 6, paddingTop: 2 }}>
+            <View style={{ flexDirection: 'row', gap: 6, marginRight: 8, borderRightWidth: 1, borderRightColor: c.border, paddingRight: 8 }}>
               {(['all', 'normal', 'anomaly'] as const).map(type => (
                 <TouchableOpacity
                   key={type}
@@ -2081,7 +2148,6 @@ export default function TwinScreen() {
               ))}
             </View>
 
-            {/* Date Pills */}
             <View style={{ flexDirection: 'row', gap: 6 }}>
               {(['all', 'today', 'week', 'month'] as const).map(dateRange => (
                 <TouchableOpacity
@@ -2104,7 +2170,7 @@ export default function TwinScreen() {
           {filteredSessions.length > 0 ? (
             filteredSessions.map(s => (
               <TouchableOpacity key={s.session_id}
-                style={[ss.sessionCard, { backgroundColor: c.card }]}
+                style={[ss.sessionCard, { backgroundColor: c.card, borderColor: c.border, borderWidth: 1, borderRadius: 16 }]}
                 onPress={() => router.push(`/session/${s.session_id}`)}>
                 <View style={[ss.sessionDot, { backgroundColor: s.has_anomaly ? '#ef444420' : '#10b98120' }]}>
                   <Ionicons name={s.has_anomaly ? 'warning' : 'checkmark-circle'} size={22} color={s.has_anomaly ? '#ef4444' : '#10b981'} />
@@ -2151,14 +2217,14 @@ export default function TwinScreen() {
           <Text style={[ss.emptySub, { color: c.sub }]}>Completed simulations will appear here</Text>
         </View>
       )}
-    </>
+    </View>
   );
 
   const renderDashboard = () => {
-    const DASH_TABS: { id: DashTab; label: string; icon: string }[] = [
-      { id: 'overview', label: 'Overview', icon: '📊' },
-      { id: 'organs', label: 'Organs', icon: '🏥' },
-      { id: 'trends', label: 'Trends', icon: '📈' },
+    const DASH_TABS: { id: DashTab; label: string; icon: keyof typeof Ionicons.glyphMap }[] = [
+      { id: 'overview', label: 'Overview', icon: 'grid-outline' },
+      { id: 'organs', label: 'Organs', icon: 'fitness-outline' },
+      { id: 'trends', label: 'Trends', icon: 'analytics-outline' },
     ];
 
     return (
@@ -2166,14 +2232,33 @@ export default function TwinScreen() {
         contentContainerStyle={{ padding: 16, paddingTop: insets.top + 62, paddingBottom: 100 }}
         showsVerticalScrollIndicator={false}>
 
-        {/* Dashboard inner tabs */}
-        <View style={[ss.dashTabBar, { borderBottomColor: c.border }]}>
+        {/* Modern Segmented Control Bar */}
+        <View style={[ss.dashSegmentBar, { backgroundColor: c.card, borderColor: c.border }]}>
           {DASH_TABS.map(t => {
             const active = dashTab === t.id;
             return (
-              <TouchableOpacity key={t.id} style={ss.dashTabBtn} onPress={() => setDashTab(t.id)}>
-                <Text style={ss.dashTabIcon}>{t.icon}</Text>
-                <Text style={[ss.dashTabLabel, { color: active ? c.active : c.sub, borderBottomWidth: active ? 2.5 : 0, borderBottomColor: c.active }]}>
+              <TouchableOpacity
+                key={t.id}
+                style={[
+                  ss.dashSegmentBtn,
+                  active && {
+                    backgroundColor: c.active + '18',
+                    borderColor: c.active + '40',
+                  },
+                ]}
+                onPress={() => setDashTab(t.id)}
+              >
+                <Ionicons
+                  name={t.icon}
+                  size={16}
+                  color={active ? c.active : c.sub}
+                />
+                <Text
+                  style={[
+                    ss.dashSegmentTxt,
+                    { color: active ? c.active : c.sub, fontWeight: active ? '800' : '600' },
+                  ]}
+                >
                   {t.label}
                 </Text>
               </TouchableOpacity>
@@ -3164,5 +3249,510 @@ const ss = StyleSheet.create({
   filterPillText: {
     fontSize: 11,
     fontWeight: '700',
+  },
+
+  // ── Redesigned Overview Page Modern Styles ───────────────────────────────────
+  heroBanner: {
+    borderRadius: 24,
+    padding: 20,
+    borderWidth: 1.5,
+    marginBottom: 4,
+    overflow: 'hidden',
+  },
+  heroTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+    marginBottom: 14,
+  },
+  heroAvatarRing: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#6366f125',
+    borderWidth: 1.5,
+    borderColor: '#6366f160',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  heroAvatarEmoji: {
+    fontSize: 24,
+  },
+  heroTitle: {
+    fontSize: 17,
+    fontWeight: '800',
+    letterSpacing: -0.2,
+  },
+  heroOnlineBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#10b98120',
+    borderColor: '#10b98150',
+    borderWidth: 1,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 12,
+  },
+  heroPulseDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#10b981',
+  },
+  heroOnlineTxt: {
+    color: '#10b981',
+    fontSize: 9,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  heroSub: {
+    color: '#94a3b8',
+    fontSize: 11,
+    marginTop: 2,
+    lineHeight: 15,
+  },
+  heroMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+    flexWrap: 'wrap',
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255, 255, 255, 0.08)',
+    paddingTop: 12,
+  },
+  heroChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(255, 255, 255, 0.06)',
+    borderRadius: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  heroChipTxt: {
+    color: '#cbd5e1',
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  heroActionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: '#6366f1',
+    borderRadius: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    marginLeft: 'auto',
+  },
+  heroActionBtnTxt: {
+    color: '#fff',
+    fontSize: 11,
+    fontWeight: '800',
+  },
+
+  scoreBadgeModern: {
+    borderRadius: 20,
+    padding: 18,
+    marginBottom: 4,
+  },
+  scoreGradeBadge: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  scoreTitle: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: '900',
+  },
+  scoreSub: {
+    color: 'rgba(255, 255, 255, 0.8)',
+    fontSize: 11,
+    fontWeight: '600',
+    marginTop: 1,
+  },
+  scoreTagRow: {
+    flexDirection: 'row',
+    marginTop: 4,
+  },
+  scoreTagTxt: {
+    color: 'rgba(255, 255, 255, 0.95)',
+    fontSize: 10,
+    fontWeight: '700',
+    backgroundColor: 'rgba(0, 0, 0, 0.2)',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 10,
+  },
+
+  sectionHeaderTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    letterSpacing: -0.2,
+  },
+  badgePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(99, 102, 241, 0.1)',
+    borderRadius: 12,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  badgePillTxt: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+
+  vitalCategorySection: {
+    gap: 8,
+  },
+  categoryHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 4,
+  },
+  categoryIconWrap: {
+    width: 26,
+    height: 26,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  categoryTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    letterSpacing: 0.2,
+  },
+  vitalsGridModern: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+  },
+  vitalCardModern: {
+    width: (W - 42) / 2,
+    borderRadius: 18,
+    padding: 14,
+    borderWidth: 1,
+  },
+  vitalTopRowModern: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  vitalIconModern: {
+    fontSize: 20,
+  },
+  vitalStatusPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 10,
+  },
+  vitalStatusTxt: {
+    fontSize: 10,
+    fontWeight: '800',
+  },
+  vitalValueModern: {
+    fontSize: 26,
+    fontWeight: '900',
+    letterSpacing: -0.5,
+  },
+  vitalUnitModern: {
+    fontSize: 11,
+    fontWeight: '600',
+    marginTop: 1,
+  },
+  vitalLabelModern: {
+    fontSize: 12,
+    fontWeight: '700',
+    marginTop: 4,
+    marginBottom: 8,
+  },
+  rangeTrack: {
+    width: '100%',
+    height: 5,
+    borderRadius: 3,
+    backgroundColor: 'rgba(148, 163, 184, 0.15)',
+    overflow: 'hidden',
+  },
+  rangeFill: {
+    height: '100%',
+    borderRadius: 3,
+  },
+  rangeLimitsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 4,
+  },
+  rangeLimitTxt: {
+    fontSize: 9,
+    fontWeight: '600',
+  },
+
+  routineCardModern: {
+    borderRadius: 16,
+    padding: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 8,
+    borderWidth: 1,
+  },
+  routineIconModern: {
+    width: 42,
+    height: 42,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  insightPillModern: {
+    flexDirection: 'row',
+    gap: 10,
+    alignItems: 'flex-start',
+    borderRadius: 14,
+    padding: 14,
+    borderWidth: 1,
+    marginBottom: 8,
+  },
+  analyticsCardModern: {
+    borderRadius: 18,
+    padding: 14,
+    borderWidth: 1,
+  },
+  analyticsTagPill: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 10,
+    marginTop: 6,
+  },
+  analyticsTagTxt: {
+    fontSize: 11,
+    fontWeight: '800',
+  },
+
+  // Modern Segmented Tab Switcher Bar
+  dashSegmentBar: {
+    flexDirection: 'row',
+    borderRadius: 16,
+    borderWidth: 1,
+    padding: 4,
+    marginBottom: 16,
+    gap: 4,
+  },
+  dashSegmentBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 9,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'transparent',
+  },
+  dashSegmentTxt: {
+    fontSize: 13,
+    letterSpacing: -0.1,
+  },
+
+  // ── Revised User-Centric Overview Styles ───────────────────────────────────
+  heroCardMinimal: {
+    borderRadius: 18,
+    padding: 16,
+    borderWidth: 1,
+  },
+  heroRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  heroIconBadge: {
+    width: 42,
+    height: 42,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  heroTitleMinimal: {
+    fontSize: 16,
+    fontWeight: '800',
+    letterSpacing: -0.2,
+  },
+  statusPillMinimal: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    borderWidth: 1,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 12,
+  },
+  statusDotGreen: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#10b981',
+  },
+  statusTxtGreen: {
+    color: '#10b981',
+    fontSize: 10,
+    fontWeight: '800',
+  },
+  heroSubMinimal: {
+    fontSize: 11,
+    marginTop: 2,
+    fontWeight: '500',
+  },
+
+  sectionTitleClean: {
+    fontSize: 15,
+    fontWeight: '800',
+    letterSpacing: -0.2,
+  },
+
+  routineCardClean: {
+    borderRadius: 14,
+    padding: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 8,
+    borderWidth: 1,
+  },
+  routineIconClean: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  scoreBadgeClean: {
+    borderRadius: 18,
+    padding: 16,
+  },
+  scoreGradeBadgeClean: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    backgroundColor: 'rgba(255, 255, 255, 0.22)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  scoreLetterClean: {
+    fontSize: 24,
+    fontWeight: '900',
+    color: '#fff',
+  },
+  scoreTitleClean: {
+    color: '#fff',
+    fontSize: 17,
+    fontWeight: '900',
+  },
+  scoreSubClean: {
+    color: 'rgba(255, 255, 255, 0.85)',
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  scoreNumClean: {
+    color: '#fff',
+    fontSize: 28,
+    fontWeight: '900',
+    letterSpacing: -0.5,
+  },
+  scoreDenomClean: {
+    color: 'rgba(255, 255, 255, 0.8)',
+    fontSize: 13,
+    fontWeight: '700',
+    marginLeft: 2,
+  },
+  scoreStatusPill: {
+    color: 'rgba(255, 255, 255, 0.9)',
+    fontSize: 10,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginTop: -2,
+  },
+
+  vitalsGridLight: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+  },
+  vitalCardLight: {
+    width: (W - 42) / 2,
+    borderRadius: 16,
+    padding: 14,
+    borderWidth: 1,
+  },
+  vitalHeaderLight: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  vitalTagLight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 8,
+  },
+  vitalDotLight: {
+    width: 5,
+    height: 5,
+    borderRadius: 2.5,
+  },
+  vitalTagTxtLight: {
+    fontSize: 10,
+    fontWeight: '800',
+  },
+  vitalValLight: {
+    fontSize: 22,
+    fontWeight: '900',
+    letterSpacing: -0.4,
+  },
+  vitalUnitLight: {
+    fontSize: 11,
+    fontWeight: '600',
+    marginTop: 1,
+  },
+  vitalNameLight: {
+    fontSize: 12,
+    fontWeight: '700',
+    marginTop: 4,
+  },
+
+  insightPillClean: {
+    flexDirection: 'row',
+    gap: 10,
+    alignItems: 'flex-start',
+    borderRadius: 14,
+    padding: 12,
+    borderWidth: 1,
+    marginBottom: 8,
+  },
+  analyticsCardClean: {
+    borderRadius: 16,
+    padding: 14,
+    borderWidth: 1,
+  },
+  analyticsTagTxtClean: {
+    fontSize: 11,
+    fontWeight: '800',
+    marginTop: 2,
   },
 });

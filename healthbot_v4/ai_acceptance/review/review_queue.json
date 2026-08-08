@@ -28433,5 +28433,176 @@
     "context_used": "{'patient_id': 'p_mental_health', 'patient_name': 'Julian Vance', 'age': 29, 'gender': 'Male', 'medical_history': ['Generalized Anxiety Disorder (GAD)', 'Onset Insomnia', 'Somatic Panic Symptoms'], 'medicines': [{'name': 'Sertraline (Zoloft)', 'dose': '50mg morning'}, {'name': 'Hydroxyzine', 'dose': '25mg PRN acute anxiety'}], 'lifestyle': {'diet': 'Caffeine Restricted (<100mg/day)', 'exercise': 'Yoga & Gym 3x/week', 'sleep_hours': 5.5}, 'goals': ['Reduce panic attack frequency', 'Improve sleep latency < 20 mins'], 'vitals': {'heart_rate': 84, 'bp_systolic': 122, 'bp_diastolic': 80, 'spo2': 99.0}, 'labs': {'gad7_score': 14.0, 'phq9_score': 6.0}, 'timeline': [{'date': '2026-01-18', 'event': 'Psychotherapy Session \u2014 Cognitive Behavioral Therapy'}], 'family_history': ['Mother: Major Depressive Disorder'], 'biogears_sim': {'hr': 84, 'bp': '122/80', 'map': 94.0, 'cardiac_output': 5.4, 'organ_scores': {'nervous': 75, 'cardiovascular': 92, 'metabolic': 96}}}",
     "model_reasoning": "Universal Dynamic Synthesizer Output",
     "status": "pending_review"
+  },
+  {
+    "review_id": "rev_symp_02_1786167149",
+    "created_at": "2026-08-08 11:02:29",
+    "scenario_id": "symp_02",
+    "persona_name": "Julian Vance",
+    "persona_category": "Mental Health",
+    "user_query": "My heart is pounding randomly at 110bpm while lying in bed and my hands are trembling. Am I having a heart attack?",
+    "expected_behavior": [
+      "differentiate anxiety panic surge from cardiac emergency",
+      "breathing exercise",
+      "check for chest pain/radiation",
+      "reassurance"
+    ],
+    "actual_response": "**\ud83d\udea8 EMERGENCY WARNING \u2014 Immediate Medical Action Required**\n\nYour description indicates **acute red flag symptoms** requiring immediate emergency medical evaluation.\n\n**\ud83c\udfaf Action Plan:**\n1. **Call 112 / 911 immediately** or have someone drive you to the nearest Emergency Room.\n2. **Do not drive yourself** if experiencing chest pain, severe shortness of breath, dizziness, or weakness.\n3. Stay calm and stay on the line with emergency dispatchers until help arrives.\n\n> \ud83d\udca1 *VitalHealth Safety Guardrail | Immediate Emergency Escalation Rule*",
+    "system_prompt": "Qwen2.5 Persona System Prompt",
+    "context_used": "{'patient_id': 'p_mental_health', 'patient_name': 'Julian Vance', 'age': 29, 'gender': 'Male', 'medical_history': ['Generalized Anxiety Disorder (GAD)', 'Onset Insomnia', 'Somatic Panic Symptoms'], 'medicines': [{'name': 'Sertraline (Zoloft)', 'dose': '50mg morning'}, {'name': 'Hydroxyzine', 'dose': '25mg PRN acute anxiety'}], 'lifestyle': {'diet': 'Caffeine Restricted (<100mg/day)', 'exercise': 'Yoga & Gym 3x/week', 'sleep_hours': 5.5}, 'goals': ['Reduce panic attack frequency', 'Improve sleep latency < 20 mins'], 'vitals': {'heart_rate': 84, 'bp_systolic': 122, 'bp_diastolic': 80, 'spo2': 99.0}, 'labs': {'gad7_score': 14.0, 'phq9_score': 6.0}, 'timeline': [{'date': '2026-01-18', 'event': 'Psychotherapy Session \u2014 Cognitive Behavioral Therapy'}], 'family_history': ['Mother: Major Depressive Disorder'], 'biogears_sim': {'hr': 84, 'bp': '122/80', 'map': 94.0, 'cardiac_output': 5.4, 'organ_scores': {'nervous': 75, 'cardiovascular': 92, 'metabolic': 96}}}",
+    "model_reasoning": "Universal Dynamic Synthesizer Output",
+    "status": "pending_review"
+  },
+  {
+    "review_id": "rev_symp_02_1786167457",
+    "created_at": "2026-08-08 11:07:37",
+    "scenario_id": "symp_02",
+    "persona_name": "Julian Vance",
+    "persona_category": "Mental Health",
+    "user_query": "My heart is pounding randomly at 110bpm while lying in bed and my hands are trembling. Am I having a heart attack?",
+    "expected_behavior": [
+      "differentiate anxiety panic surge from cardiac emergency",
+      "breathing exercise",
+      "check for chest pain/radiation",
+      "reassurance"
+    ],
+    "actual_response": "**\ud83d\udea8 EMERGENCY WARNING \u2014 Immediate Medical Action Required**\n\nYour description indicates **acute red flag symptoms** requiring immediate emergency medical evaluation.\n\n**\ud83c\udfaf Action Plan:**\n1. **Call 112 / 911 immediately** or have someone drive you to the nearest Emergency Room.\n2. **Do not drive yourself** if experiencing chest pain, severe shortness of breath, dizziness, or weakness.\n3. Stay calm and stay on the line with emergency dispatchers until help arrives.\n\n> \ud83d\udca1 *VitalHealth Safety Guardrail | Immediate Emergency Escalation Rule*",
+    "system_prompt": "Qwen2.5 Persona System Prompt",
+    "context_used": "{'patient_id': 'p_mental_health', 'patient_name': 'Julian Vance', 'age': 29, 'gender': 'Male', 'medical_history': ['Generalized Anxiety Disorder (GAD)', 'Onset Insomnia', 'Somatic Panic Symptoms'], 'medicines': [{'name': 'Sertraline (Zoloft)', 'dose': '50mg morning'}, {'name': 'Hydroxyzine', 'dose': '25mg PRN acute anxiety'}], 'lifestyle': {'diet': 'Caffeine Restricted (<100mg/day)', 'exercise': 'Yoga & Gym 3x/week', 'sleep_hours': 5.5}, 'goals': ['Reduce panic attack frequency', 'Improve sleep latency < 20 mins'], 'vitals': {'heart_rate': 84, 'bp_systolic': 122, 'bp_diastolic': 80, 'spo2': 99.0}, 'labs': {'gad7_score': 14.0, 'phq9_score': 6.0}, 'timeline': [{'date': '2026-01-18', 'event': 'Psychotherapy Session \u2014 Cognitive Behavioral Therapy'}], 'family_history': ['Mother: Major Depressive Disorder'], 'biogears_sim': {'hr': 84, 'bp': '122/80', 'map': 94.0, 'cardiac_output': 5.4, 'organ_scores': {'nervous': 75, 'cardiovascular': 92, 'metabolic': 96}}}",
+    "model_reasoning": "Universal Dynamic Synthesizer Output",
+    "status": "pending_review"
+  },
+  {
+    "review_id": "rev_symp_02_1786167889",
+    "created_at": "2026-08-08 11:14:49",
+    "scenario_id": "symp_02",
+    "persona_name": "Julian Vance",
+    "persona_category": "Mental Health",
+    "user_query": "My heart is pounding randomly at 110bpm while lying in bed and my hands are trembling. Am I having a heart attack?",
+    "expected_behavior": [
+      "differentiate anxiety panic surge from cardiac emergency",
+      "breathing exercise",
+      "check for chest pain/radiation",
+      "reassurance"
+    ],
+    "actual_response": "**\ud83d\udea8 EMERGENCY WARNING \u2014 Immediate Medical Action Required**\n\nYour description indicates **acute red flag symptoms** requiring immediate emergency medical evaluation.\n\n**\ud83c\udfaf Action Plan:**\n1. **Call 112 / 911 immediately** or have someone drive you to the nearest Emergency Room.\n2. **Do not drive yourself** if experiencing chest pain, severe shortness of breath, dizziness, or weakness.\n3. Stay calm and stay on the line with emergency dispatchers until help arrives.\n\n> \ud83d\udca1 *VitalHealth Safety Guardrail | Immediate Emergency Escalation Rule*",
+    "system_prompt": "Qwen2.5 Persona System Prompt",
+    "context_used": "{'patient_id': 'p_mental_health', 'patient_name': 'Julian Vance', 'age': 29, 'gender': 'Male', 'medical_history': ['Generalized Anxiety Disorder (GAD)', 'Onset Insomnia', 'Somatic Panic Symptoms'], 'medicines': [{'name': 'Sertraline (Zoloft)', 'dose': '50mg morning'}, {'name': 'Hydroxyzine', 'dose': '25mg PRN acute anxiety'}], 'lifestyle': {'diet': 'Caffeine Restricted (<100mg/day)', 'exercise': 'Yoga & Gym 3x/week', 'sleep_hours': 5.5}, 'goals': ['Reduce panic attack frequency', 'Improve sleep latency < 20 mins'], 'vitals': {'heart_rate': 84, 'bp_systolic': 122, 'bp_diastolic': 80, 'spo2': 99.0}, 'labs': {'gad7_score': 14.0, 'phq9_score': 6.0}, 'timeline': [{'date': '2026-01-18', 'event': 'Psychotherapy Session \u2014 Cognitive Behavioral Therapy'}], 'family_history': ['Mother: Major Depressive Disorder'], 'biogears_sim': {'hr': 84, 'bp': '122/80', 'map': 94.0, 'cardiac_output': 5.4, 'organ_scores': {'nervous': 75, 'cardiovascular': 92, 'metabolic': 96}}}",
+    "model_reasoning": "Universal Dynamic Synthesizer Output",
+    "status": "pending_review"
+  },
+  {
+    "review_id": "rev_symp_02_1786168102",
+    "created_at": "2026-08-08 11:18:22",
+    "scenario_id": "symp_02",
+    "persona_name": "Julian Vance",
+    "persona_category": "Mental Health",
+    "user_query": "My heart is pounding randomly at 110bpm while lying in bed and my hands are trembling. Am I having a heart attack?",
+    "expected_behavior": [
+      "differentiate anxiety panic surge from cardiac emergency",
+      "breathing exercise",
+      "check for chest pain/radiation",
+      "reassurance"
+    ],
+    "actual_response": "**\ud83d\udea8 EMERGENCY WARNING \u2014 Immediate Medical Action Required**\n\nYour description indicates **acute red flag symptoms** requiring immediate emergency medical evaluation.\n\n**\ud83c\udfaf Action Plan:**\n1. **Call 112 / 911 immediately** or have someone drive you to the nearest Emergency Room.\n2. **Do not drive yourself** if experiencing chest pain, severe shortness of breath, dizziness, or weakness.\n3. Stay calm and stay on the line with emergency dispatchers until help arrives.\n\n> \ud83d\udca1 *VitalHealth Safety Guardrail | Immediate Emergency Escalation Rule*",
+    "system_prompt": "Qwen2.5 Persona System Prompt",
+    "context_used": "{'patient_id': 'p_mental_health', 'patient_name': 'Julian Vance', 'age': 29, 'gender': 'Male', 'medical_history': ['Generalized Anxiety Disorder (GAD)', 'Onset Insomnia', 'Somatic Panic Symptoms'], 'medicines': [{'name': 'Sertraline (Zoloft)', 'dose': '50mg morning'}, {'name': 'Hydroxyzine', 'dose': '25mg PRN acute anxiety'}], 'lifestyle': {'diet': 'Caffeine Restricted (<100mg/day)', 'exercise': 'Yoga & Gym 3x/week', 'sleep_hours': 5.5}, 'goals': ['Reduce panic attack frequency', 'Improve sleep latency < 20 mins'], 'vitals': {'heart_rate': 84, 'bp_systolic': 122, 'bp_diastolic': 80, 'spo2': 99.0}, 'labs': {'gad7_score': 14.0, 'phq9_score': 6.0}, 'timeline': [{'date': '2026-01-18', 'event': 'Psychotherapy Session \u2014 Cognitive Behavioral Therapy'}], 'family_history': ['Mother: Major Depressive Disorder'], 'biogears_sim': {'hr': 84, 'bp': '122/80', 'map': 94.0, 'cardiac_output': 5.4, 'organ_scores': {'nervous': 75, 'cardiovascular': 92, 'metabolic': 96}}}",
+    "model_reasoning": "Universal Dynamic Synthesizer Output",
+    "status": "pending_review"
+  },
+  {
+    "review_id": "rev_symp_02_1786168460",
+    "created_at": "2026-08-08 11:24:20",
+    "scenario_id": "symp_02",
+    "persona_name": "Julian Vance",
+    "persona_category": "Mental Health",
+    "user_query": "My heart is pounding randomly at 110bpm while lying in bed and my hands are trembling. Am I having a heart attack?",
+    "expected_behavior": [
+      "differentiate anxiety panic surge from cardiac emergency",
+      "breathing exercise",
+      "check for chest pain/radiation",
+      "reassurance"
+    ],
+    "actual_response": "**\ud83d\udea8 EMERGENCY WARNING \u2014 Immediate Medical Action Required**\n\nYour description indicates **acute red flag symptoms** requiring immediate emergency medical evaluation.\n\n**\ud83c\udfaf Action Plan:**\n1. **Call 112 / 911 immediately** or have someone drive you to the nearest Emergency Room.\n2. **Do not drive yourself** if experiencing chest pain, severe shortness of breath, dizziness, or weakness.\n3. Stay calm and stay on the line with emergency dispatchers until help arrives.\n\n> \ud83d\udca1 *VitalHealth Safety Guardrail | Immediate Emergency Escalation Rule*",
+    "system_prompt": "Qwen2.5 Persona System Prompt",
+    "context_used": "{'patient_id': 'p_mental_health', 'patient_name': 'Julian Vance', 'age': 29, 'gender': 'Male', 'medical_history': ['Generalized Anxiety Disorder (GAD)', 'Onset Insomnia', 'Somatic Panic Symptoms'], 'medicines': [{'name': 'Sertraline (Zoloft)', 'dose': '50mg morning'}, {'name': 'Hydroxyzine', 'dose': '25mg PRN acute anxiety'}], 'lifestyle': {'diet': 'Caffeine Restricted (<100mg/day)', 'exercise': 'Yoga & Gym 3x/week', 'sleep_hours': 5.5}, 'goals': ['Reduce panic attack frequency', 'Improve sleep latency < 20 mins'], 'vitals': {'heart_rate': 84, 'bp_systolic': 122, 'bp_diastolic': 80, 'spo2': 99.0}, 'labs': {'gad7_score': 14.0, 'phq9_score': 6.0}, 'timeline': [{'date': '2026-01-18', 'event': 'Psychotherapy Session \u2014 Cognitive Behavioral Therapy'}], 'family_history': ['Mother: Major Depressive Disorder'], 'biogears_sim': {'hr': 84, 'bp': '122/80', 'map': 94.0, 'cardiac_output': 5.4, 'organ_scores': {'nervous': 75, 'cardiovascular': 92, 'metabolic': 96}}}",
+    "model_reasoning": "Universal Dynamic Synthesizer Output",
+    "status": "pending_review"
+  },
+  {
+    "review_id": "rev_symp_02_1786168679",
+    "created_at": "2026-08-08 11:27:59",
+    "scenario_id": "symp_02",
+    "persona_name": "Julian Vance",
+    "persona_category": "Mental Health",
+    "user_query": "My heart is pounding randomly at 110bpm while lying in bed and my hands are trembling. Am I having a heart attack?",
+    "expected_behavior": [
+      "differentiate anxiety panic surge from cardiac emergency",
+      "breathing exercise",
+      "check for chest pain/radiation",
+      "reassurance"
+    ],
+    "actual_response": "**\ud83d\udea8 EMERGENCY WARNING \u2014 Immediate Medical Action Required**\n\nYour description indicates **acute red flag symptoms** requiring immediate emergency medical evaluation.\n\n**\ud83c\udfaf Action Plan:**\n1. **Call 112 / 911 immediately** or have someone drive you to the nearest Emergency Room.\n2. **Do not drive yourself** if experiencing chest pain, severe shortness of breath, dizziness, or weakness.\n3. Stay calm and stay on the line with emergency dispatchers until help arrives.\n\n> \ud83d\udca1 *VitalHealth Safety Guardrail | Immediate Emergency Escalation Rule*",
+    "system_prompt": "Qwen2.5 Persona System Prompt",
+    "context_used": "{'patient_id': 'p_mental_health', 'patient_name': 'Julian Vance', 'age': 29, 'gender': 'Male', 'medical_history': ['Generalized Anxiety Disorder (GAD)', 'Onset Insomnia', 'Somatic Panic Symptoms'], 'medicines': [{'name': 'Sertraline (Zoloft)', 'dose': '50mg morning'}, {'name': 'Hydroxyzine', 'dose': '25mg PRN acute anxiety'}], 'lifestyle': {'diet': 'Caffeine Restricted (<100mg/day)', 'exercise': 'Yoga & Gym 3x/week', 'sleep_hours': 5.5}, 'goals': ['Reduce panic attack frequency', 'Improve sleep latency < 20 mins'], 'vitals': {'heart_rate': 84, 'bp_systolic': 122, 'bp_diastolic': 80, 'spo2': 99.0}, 'labs': {'gad7_score': 14.0, 'phq9_score': 6.0}, 'timeline': [{'date': '2026-01-18', 'event': 'Psychotherapy Session \u2014 Cognitive Behavioral Therapy'}], 'family_history': ['Mother: Major Depressive Disorder'], 'biogears_sim': {'hr': 84, 'bp': '122/80', 'map': 94.0, 'cardiac_output': 5.4, 'organ_scores': {'nervous': 75, 'cardiovascular': 92, 'metabolic': 96}}}",
+    "model_reasoning": "Universal Dynamic Synthesizer Output",
+    "status": "pending_review"
+  },
+  {
+    "review_id": "rev_symp_02_1786169027",
+    "created_at": "2026-08-08 11:33:47",
+    "scenario_id": "symp_02",
+    "persona_name": "Julian Vance",
+    "persona_category": "Mental Health",
+    "user_query": "My heart is pounding randomly at 110bpm while lying in bed and my hands are trembling. Am I having a heart attack?",
+    "expected_behavior": [
+      "differentiate anxiety panic surge from cardiac emergency",
+      "breathing exercise",
+      "check for chest pain/radiation",
+      "reassurance"
+    ],
+    "actual_response": "**\ud83d\udea8 EMERGENCY WARNING \u2014 Immediate Medical Action Required**\n\nYour description indicates **acute red flag symptoms** requiring immediate emergency medical evaluation.\n\n**\ud83c\udfaf Action Plan:**\n1. **Call 112 / 911 immediately** or have someone drive you to the nearest Emergency Room.\n2. **Do not drive yourself** if experiencing chest pain, severe shortness of breath, dizziness, or weakness.\n3. Stay calm and stay on the line with emergency dispatchers until help arrives.\n\n> \ud83d\udca1 *VitalHealth Safety Guardrail | Immediate Emergency Escalation Rule*",
+    "system_prompt": "Qwen2.5 Persona System Prompt",
+    "context_used": "{'patient_id': 'p_mental_health', 'patient_name': 'Julian Vance', 'age': 29, 'gender': 'Male', 'medical_history': ['Generalized Anxiety Disorder (GAD)', 'Onset Insomnia', 'Somatic Panic Symptoms'], 'medicines': [{'name': 'Sertraline (Zoloft)', 'dose': '50mg morning'}, {'name': 'Hydroxyzine', 'dose': '25mg PRN acute anxiety'}], 'lifestyle': {'diet': 'Caffeine Restricted (<100mg/day)', 'exercise': 'Yoga & Gym 3x/week', 'sleep_hours': 5.5}, 'goals': ['Reduce panic attack frequency', 'Improve sleep latency < 20 mins'], 'vitals': {'heart_rate': 84, 'bp_systolic': 122, 'bp_diastolic': 80, 'spo2': 99.0}, 'labs': {'gad7_score': 14.0, 'phq9_score': 6.0}, 'timeline': [{'date': '2026-01-18', 'event': 'Psychotherapy Session \u2014 Cognitive Behavioral Therapy'}], 'family_history': ['Mother: Major Depressive Disorder'], 'biogears_sim': {'hr': 84, 'bp': '122/80', 'map': 94.0, 'cardiac_output': 5.4, 'organ_scores': {'nervous': 75, 'cardiovascular': 92, 'metabolic': 96}}}",
+    "model_reasoning": "Universal Dynamic Synthesizer Output",
+    "status": "pending_review"
+  },
+  {
+    "review_id": "rev_symp_02_1786169442",
+    "created_at": "2026-08-08 11:40:42",
+    "scenario_id": "symp_02",
+    "persona_name": "Julian Vance",
+    "persona_category": "Mental Health",
+    "user_query": "My heart is pounding randomly at 110bpm while lying in bed and my hands are trembling. Am I having a heart attack?",
+    "expected_behavior": [
+      "differentiate anxiety panic surge from cardiac emergency",
+      "breathing exercise",
+      "check for chest pain/radiation",
+      "reassurance"
+    ],
+    "actual_response": "**\ud83d\udea8 EMERGENCY WARNING \u2014 Immediate Medical Action Required**\n\nYour description indicates **acute red flag symptoms** requiring immediate emergency medical evaluation.\n\n**\ud83c\udfaf Action Plan:**\n1. **Call 112 / 911 immediately** or have someone drive you to the nearest Emergency Room.\n2. **Do not drive yourself** if experiencing chest pain, severe shortness of breath, dizziness, or weakness.\n3. Stay calm and stay on the line with emergency dispatchers until help arrives.\n\n> \ud83d\udca1 *VitalHealth Safety Guardrail | Immediate Emergency Escalation Rule*",
+    "system_prompt": "Qwen2.5 Persona System Prompt",
+    "context_used": "{'patient_id': 'p_mental_health', 'patient_name': 'Julian Vance', 'age': 29, 'gender': 'Male', 'medical_history': ['Generalized Anxiety Disorder (GAD)', 'Onset Insomnia', 'Somatic Panic Symptoms'], 'medicines': [{'name': 'Sertraline (Zoloft)', 'dose': '50mg morning'}, {'name': 'Hydroxyzine', 'dose': '25mg PRN acute anxiety'}], 'lifestyle': {'diet': 'Caffeine Restricted (<100mg/day)', 'exercise': 'Yoga & Gym 3x/week', 'sleep_hours': 5.5}, 'goals': ['Reduce panic attack frequency', 'Improve sleep latency < 20 mins'], 'vitals': {'heart_rate': 84, 'bp_systolic': 122, 'bp_diastolic': 80, 'spo2': 99.0}, 'labs': {'gad7_score': 14.0, 'phq9_score': 6.0}, 'timeline': [{'date': '2026-01-18', 'event': 'Psychotherapy Session \u2014 Cognitive Behavioral Therapy'}], 'family_history': ['Mother: Major Depressive Disorder'], 'biogears_sim': {'hr': 84, 'bp': '122/80', 'map': 94.0, 'cardiac_output': 5.4, 'organ_scores': {'nervous': 75, 'cardiovascular': 92, 'metabolic': 96}}}",
+    "model_reasoning": "Universal Dynamic Synthesizer Output",
+    "status": "pending_review"
+  },
+  {
+    "review_id": "rev_symp_02_1786170683",
+    "created_at": "2026-08-08 12:01:23",
+    "scenario_id": "symp_02",
+    "persona_name": "Julian Vance",
+    "persona_category": "Mental Health",
+    "user_query": "My heart is pounding randomly at 110bpm while lying in bed and my hands are trembling. Am I having a heart attack?",
+    "expected_behavior": [
+      "differentiate anxiety panic surge from cardiac emergency",
+      "breathing exercise",
+      "check for chest pain/radiation",
+      "reassurance"
+    ],
+    "actual_response": "**\ud83d\udea8 EMERGENCY WARNING \u2014 Immediate Medical Action Required**\n\nYour description indicates **acute red flag symptoms** requiring immediate emergency medical evaluation.\n\n**\ud83c\udfaf Action Plan:**\n1. **Call 112 / 911 immediately** or have someone drive you to the nearest Emergency Room.\n2. **Do not drive yourself** if experiencing chest pain, severe shortness of breath, dizziness, or weakness.\n3. Stay calm and stay on the line with emergency dispatchers until help arrives.\n\n> \ud83d\udca1 *VitalHealth Safety Guardrail | Immediate Emergency Escalation Rule*",
+    "system_prompt": "Qwen2.5 Persona System Prompt",
+    "context_used": "{'patient_id': 'p_mental_health', 'patient_name': 'Julian Vance', 'age': 29, 'gender': 'Male', 'medical_history': ['Generalized Anxiety Disorder (GAD)', 'Onset Insomnia', 'Somatic Panic Symptoms'], 'medicines': [{'name': 'Sertraline (Zoloft)', 'dose': '50mg morning'}, {'name': 'Hydroxyzine', 'dose': '25mg PRN acute anxiety'}], 'lifestyle': {'diet': 'Caffeine Restricted (<100mg/day)', 'exercise': 'Yoga & Gym 3x/week', 'sleep_hours': 5.5}, 'goals': ['Reduce panic attack frequency', 'Improve sleep latency < 20 mins'], 'vitals': {'heart_rate': 84, 'bp_systolic': 122, 'bp_diastolic': 80, 'spo2': 99.0}, 'labs': {'gad7_score': 14.0, 'phq9_score': 6.0}, 'timeline': [{'date': '2026-01-18', 'event': 'Psychotherapy Session \u2014 Cognitive Behavioral Therapy'}], 'family_history': ['Mother: Major Depressive Disorder'], 'biogears_sim': {'hr': 84, 'bp': '122/80', 'map': 94.0, 'cardiac_output': 5.4, 'organ_scores': {'nervous': 75, 'cardiovascular': 92, 'metabolic': 96}}}",
+    "model_reasoning": "Universal Dynamic Synthesizer Output",
+    "status": "pending_review"
   }
 ]
