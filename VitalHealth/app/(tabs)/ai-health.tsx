@@ -743,21 +743,25 @@ function VoiceIndicator({ visible, partialText }: { visible: boolean; partialTex
   );
 }
 
-// ── Hybrid Live Clinical Reasoning Typing Indicator ─────────────────────────
+// ── Unified Sleek Live Clinical Reasoning Typing Indicator ───────────────────
 function TypingIndicatorBubble({ c }: { c: any }) {
   const dot1 = useRef(new Animated.Value(0.3)).current;
   const dot2 = useRef(new Animated.Value(0.3)).current;
   const dot3 = useRef(new Animated.Value(0.3)).current;
+  const fadeAnim = useRef(new Animated.Value(1)).current;
+  const auraScale = useRef(new Animated.Value(1)).current;
+
   const [statusIdx, setStatusIdx] = useState(0);
 
   const STAGES = [
-    "🫀 Ingesting physiological vitals...",
-    "🔍 Searching clinical knowledge base...",
-    "✨ Synthesizing personalized answer...",
-    "📊 Evaluating health risk baselines...",
+    "Analyzing physiological vitals",
+    "Searching clinical knowledge base",
+    "Synthesizing personalized answer",
+    "Evaluating health risk baselines",
   ];
 
   useEffect(() => {
+    // 1. Staggered 3-Dot Wave Pulse
     const animateDot = (anim: Animated.Value, delay: number) => {
       return Animated.sequence([
         Animated.delay(delay),
@@ -781,35 +785,94 @@ function TypingIndicatorBubble({ c }: { c: any }) {
     const a1 = animateDot(dot1, 0);
     const a2 = animateDot(dot2, 120);
     const a3 = animateDot(dot3, 240);
-
     a1.start();
     a2.start();
     a3.start();
 
+    // 2. Breathing Avatar Aura
+    const auraLoop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(auraScale, {
+          toValue: 1.25,
+          duration: 850,
+          useNativeDriver: true,
+        }),
+        Animated.timing(auraScale, {
+          toValue: 1.0,
+          duration: 850,
+          useNativeDriver: true,
+        }),
+      ])
+    );
+    auraLoop.start();
+
+    // 3. Smooth Stage Text Cross-Fade
     const interval = setInterval(() => {
-      setStatusIdx((prev) => (prev + 1) % STAGES.length);
-    }, 1100);
+      Animated.timing(fadeAnim, {
+        toValue: 0.1,
+        duration: 180,
+        useNativeDriver: true,
+      }).start(() => {
+        setStatusIdx((prev) => (prev + 1) % STAGES.length);
+        Animated.timing(fadeAnim, {
+          toValue: 1,
+          duration: 220,
+          useNativeDriver: true,
+        }).start();
+      });
+    }, 1400);
 
     return () => {
       a1.stop();
       a2.stop();
       a3.stop();
+      auraLoop.stop();
       clearInterval(interval);
     };
   }, []);
 
   return (
     <View style={styles.typingRow}>
-      <View style={[styles.avatar, { backgroundColor: `${c.accent}15`, borderColor: c.accent }]}>
-        <Ionicons name="sparkles" size={14} color={c.accent} />
+      {/* Avatar with Breathing Aura Ring */}
+      <View style={styles.avatarAuraWrap}>
+        <Animated.View
+          style={[
+            styles.auraRing,
+            {
+              backgroundColor: `${c.accent}25`,
+              transform: [{ scale: auraScale }],
+            },
+          ]}
+        />
+        <View style={[styles.avatar, { backgroundColor: `${c.accent}15`, borderColor: c.accent }]}>
+          <Ionicons name="sparkles" size={14} color={c.accent} />
+        </View>
       </View>
 
-      <View style={[styles.typingCard, { backgroundColor: c.card, borderColor: c.border }]}>
-        {/* Animated 3-Dots Wave */}
-        <View style={styles.dotsRow}>
+      {/* Unified Sleek Status Bubble */}
+      <View
+        style={[
+          styles.unifiedTypingCard,
+          {
+            backgroundColor: c.card,
+            borderColor: `${c.accent}40`,
+          },
+        ]}
+      >
+        <Animated.Text
+          style={[
+            styles.unifiedTypingTxt,
+            { color: c.text, opacity: fadeAnim },
+          ]}
+          numberOfLines={1}
+        >
+          {STAGES[statusIdx]}
+        </Animated.Text>
+
+        <View style={styles.inlineDotsRow}>
           <Animated.View
             style={[
-              styles.dot,
+              styles.inlineDot,
               {
                 backgroundColor: c.accent,
                 opacity: dot1,
@@ -819,7 +882,7 @@ function TypingIndicatorBubble({ c }: { c: any }) {
           />
           <Animated.View
             style={[
-              styles.dot,
+              styles.inlineDot,
               {
                 backgroundColor: c.accent,
                 opacity: dot2,
@@ -829,7 +892,7 @@ function TypingIndicatorBubble({ c }: { c: any }) {
           />
           <Animated.View
             style={[
-              styles.dot,
+              styles.inlineDot,
               {
                 backgroundColor: c.accent,
                 opacity: dot3,
@@ -838,11 +901,6 @@ function TypingIndicatorBubble({ c }: { c: any }) {
             ]}
           />
         </View>
-
-        {/* Dynamic Micro-Status Tag */}
-        <Text style={[styles.typingStatusText, { color: c.sub }]}>
-          {STAGES[statusIdx]}
-        </Text>
       </View>
     </View>
   );
@@ -2758,37 +2816,52 @@ const styles = StyleSheet.create({
     marginTop: 3,
   },
 
-  // Hybrid Live Typing Indicator
+  // Unified Sleek Typing Indicator
   typingRow: {
     flexDirection: "row",
-    alignItems: "flex-end",
-    gap: 8,
-    marginVertical: 8,
-    paddingHorizontal: 4,
+    alignItems: "center",
+    gap: 10,
+    marginVertical: 10,
+    paddingHorizontal: 6,
   },
-  typingCard: {
+  avatarAuraWrap: {
+    position: "relative",
+    alignItems: "center",
+    justifyContent: "center",
+    width: 32,
+    height: 32,
+  },
+  auraRing: {
+    position: "absolute",
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+  },
+  unifiedTypingCard: {
+    flexDirection: "row",
+    alignItems: "center",
     paddingHorizontal: 14,
-    paddingVertical: 10,
+    paddingVertical: 9,
     borderRadius: 18,
     borderBottomLeftRadius: 4,
     borderWidth: 1,
-    gap: 6,
-    maxWidth: "80%",
+    gap: 8,
+    maxWidth: "84%",
   },
-  dotsRow: {
+  unifiedTypingTxt: {
+    fontSize: 12.5,
+    fontWeight: "500",
+    letterSpacing: 0.15,
+  },
+  inlineDotsRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 6,
-    height: 16,
+    gap: 3.5,
+    marginLeft: 1,
   },
-  dot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-  },
-  typingStatusText: {
-    fontSize: 11,
-    fontWeight: "500",
-    letterSpacing: 0.1,
+  inlineDot: {
+    width: 5,
+    height: 5,
+    borderRadius: 2.5,
   },
 });
