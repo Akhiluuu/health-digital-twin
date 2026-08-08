@@ -1736,7 +1736,7 @@ export default function AIHealthScreen() {
                 <View style={styles.welcomeStatusRow}>
                   <View style={[styles.welcomeStatusDot, { backgroundColor: connected ? "#10b981" : "#f59e0b" }]} />
                   <Text style={[styles.welcomeStatusTxt, { color: connected ? "#10b981" : "#f59e0b" }]}>
-                    {connected ? "Brain Engine v5 Online" : "Local Twin Mode"}
+                    {connected ? "Brain Engine Online" : "Local Twin Mode"}
                   </Text>
                 </View>
               </View>
@@ -1934,7 +1934,7 @@ export default function AIHealthScreen() {
               <Ionicons name="sparkles" size={16} color={c.accent} />
             </View>
             <View>
-              <Text style={[styles.headerTitle, { color: c.text }]}>AI Health Assistant</Text>
+              <Text style={[styles.headerTitle, { color: c.text }]}>Digital Twin Assistant</Text>
               <TouchableOpacity
                 style={styles.headerStatusRow}
                 onPress={() => setShowTwinContext(true)}
@@ -1942,7 +1942,7 @@ export default function AIHealthScreen() {
               >
                 <View style={[styles.headerStatusDot, { backgroundColor: connected ? "#10b981" : "#f59e0b" }]} />
                 <Text style={[styles.headerStatusText, { color: connected ? "#10b981" : "#f59e0b" }]}>
-                  {connected ? "Twin Connected" : "Local Engine"}
+                  {connected ? "Brain Engine Online" : "Local Twin Mode"}
                 </Text>
                 <Ionicons name="chevron-down" size={10} color={c.sub} />
               </TouchableOpacity>
