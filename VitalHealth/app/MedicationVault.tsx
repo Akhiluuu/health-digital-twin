@@ -1,20 +1,15 @@
-// app/MedicationVault.tsx
-// ─────────────────────────────────────────────────────────────────
-// Reworked Medication Vault Screen Controller
-// Decomposed monolithic file into clean, modular components.
-// ─────────────────────────────────────────────────────────────────
-
-import React, { useState, useEffect, useCallback, useMemo } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   Alert,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
+  ScrollView,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Haptics from "expo-haptics";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { LinearGradient } from "expo-linear-gradient";
@@ -28,9 +23,7 @@ import { useFamily } from "../context/FamilyContext";
 import { useProfile } from "../context/ProfileContext";
 import { useBiogearsTwin } from "../context/BiogearsTwinContext";
 import { log } from "../utils/logger";
-import { getLocalDateString } from "../utils/twinUtils";
-import * as FileSystem from "expo-file-system/legacy";
-import * as Sharing from "expo-sharing";
+import Header from "./components/Header";
 
 // API
 import {
@@ -66,7 +59,6 @@ interface MedicineMeta {
   biogearsSimLinked: boolean;
 }
 
-// Clinically reviewed default data for standard medications
 const CLINICAL_FALLBACKS: Record<string, Partial<MedicineMeta>> = {
   metformin: {
     brand: "Glucophage",
@@ -177,10 +169,11 @@ const DEFAULT_META: MedicineMeta = {
 
 export default function MedicationVault() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { theme } = useTheme();
   const c = colors[theme];
 
-  // Context hook calls
+  // Context hooks
   const {
     medicines,
     removeMedicine,
@@ -214,7 +207,6 @@ export default function MedicationVault() {
     }
   }, []);
 
-  // Load and cache medication metadata on load
   useEffect(() => {
     reloadMedicines();
     markReadByCategory("medication");
@@ -230,7 +222,6 @@ export default function MedicationVault() {
         if (raw) {
           cached[med.id] = JSON.parse(raw);
         } else {
-          // Resolve clinical default based on name
           const lowercaseName = med.name.toLowerCase();
           let matchedKey = "";
           for (const key of Object.keys(CLINICAL_FALLBACKS)) {
@@ -253,104 +244,51 @@ export default function MedicationVault() {
   }, [medicines]);
 
   useEffect(() => {
-    loadMetadata();
+    if (medicines.length > 0) {
+      loadMetadata();
+    }
   }, [medicines, loadMetadata]);
 
-  // Log Dose Action & Run Simulation Trigger
+  // Handlers
   const handleLogDose = async (med: Medicine, status: "taken" | "missed") => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     await setMedicineStatus(med.id, status);
-
-    const meta = metadataCache[med.id] || {};
-    if (status === "taken" && meta.biogearsSimLinked) {
-      // Trigger background BioGears Digital Twin calibration
-      runSimulation().catch((err) => {
-        log("BioGears simulation sync error:", err);
-      });
+    if (status === "taken") {
+      runSimulation();
     }
   };
 
   const handleDelayDose = async (med: Medicine) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    Alert.alert("Snoozed", `Dose of ${med.name} delayed by 15 minutes.`);
+    Alert.alert("Snooze Reminder", `Reminding you to take ${med.name} in 15 minutes.`);
   };
 
-  // Add Medication Save Wizard handler
   const handleAddMedication = async (details: any) => {
     try {
-      const now = new Date();
-      const timesToSave: string[] = details.times && details.times.length > 0 ? details.times : [details.time];
+      const type = details.form.toLowerCase();
+      const timestamp = Date.now();
 
-      for (const timeStr of timesToSave) {
-        const [h, m] = timeStr.split(":");
-        const timestamp = new Date(
-          now.getFullYear(),
-          now.getMonth(),
-          now.getDate(),
-          Number(h),
-          Number(m)
-        ).getTime();
+      await addMedicine(
+        details.name,
+        details.dose,
+        type,
+        details.time,
+        timestamp,
+        details.meal,
+        details.frequency,
+        details.startDate,
+        details.endDateMode === "ongoing" ? "ongoing" : details.endDate,
+        1
+      );
 
-        const finalEndDate = details.endDateMode === "ongoing" ? "ongoing" : details.endDate || getLocalDateString();
-
-        const newId = await addMedicine(
-          details.name.trim(),
-          details.dose.trim(),
-          details.form.toLowerCase(),
-          timeStr,
-          timestamp,
-          details.meal,
-          details.frequency,
-          details.startDate,
-          finalEndDate,
-          1, // reminders enabled
-          details.reviewInterval,
-          null, // calculated automatically by DB
-          "Started"
-        );
-
-        // Save custom metadata to cache
-        if (newId) {
-          const colorMap: Record<string, string> = {
-            tablet: "#3b82f6",
-            capsule: "#ec4899",
-            injection: "#10b981",
-            drops: "#eab308",
-            inhaler: "#8b5cf6",
-          };
-
-          const customMeta: MedicineMeta = {
-            brand: details.brand.trim() || "Generic",
-            genericName: details.generic.trim() || details.name.trim(),
-            strength: details.strength.trim() || details.dose.trim(),
-            doctor: CLINICAL_FALLBACKS[details.name.toLowerCase()]?.doctor || "Primary Care Physician",
-            hospital: CLINICAL_FALLBACKS[details.name.toLowerCase()]?.hospital || "VitalHealth Clinic",
-            purpose: CLINICAL_FALLBACKS[details.name.toLowerCase()]?.purpose || "General Therapy",
-            sideEffects: CLINICAL_FALLBACKS[details.name.toLowerCase()]?.sideEffects || "Consult doctor.",
-            warnings: CLINICAL_FALLBACKS[details.name.toLowerCase()]?.warnings || "Take as directed.",
-            storage: CLINICAL_FALLBACKS[details.name.toLowerCase()]?.storage || "Store at room temp.",
-            interactions: CLINICAL_FALLBACKS[details.name.toLowerCase()]?.interactions || "None noted.",
-            priority: "Important",
-            refillCount: Number(details.refillCount) || 3,
-            inventoryCount: Number(details.inventoryCount) || 30,
-            color: colorMap[details.form.toLowerCase()] || "#3b82f6",
-            shape: details.form.toLowerCase(),
-            diseaseLinked: details.diseaseLinked,
-            biogearsSimLinked: true,
-          };
-          await AsyncStorage.setItem(`@medicine_meta_${newId}`, JSON.stringify(customMeta));
-        }
-      }
-
-      await loadMetadata();
-      Alert.alert("Success", `${details.name} schedule configured.`);
       setActivePage("dashboard");
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch (err) {
-      log("Error saving medicine from wizard:", err);
+      log("Error adding medicine:", err);
+      Alert.alert("Error", "Failed to save medication to schedule.");
     }
   };
 
-  // OCR Prescription Scan trigger
   const handleStartOCRScan = async () => {
     try {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -390,116 +328,7 @@ export default function MedicationVault() {
     router.push("/settings-export-summary" as any);
   };
 
-  // Header Component
-  const renderHeader = () => {
-    const titleMap: Record<ActivePage, string> = {
-      dashboard: "Today's Regimen",
-      medications: "My Cabinet",
-      add: "Add Medication",
-      detail: "Medication Detail",
-    };
-
-    return (
-      <LinearGradient
-        colors={colors[theme].headerGradient}
-        style={styles.headerContainer}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-      >
-        <View style={styles.headerRow}>
-          {activePage !== "dashboard" ? (
-            <TouchableOpacity
-              style={styles.backButton}
-              onPress={() => {
-                setActivePage("dashboard");
-                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-              }}
-            >
-              <Ionicons name="arrow-back" size={24} color="#ffffff" />
-            </TouchableOpacity>
-          ) : (
-            <View style={styles.avatarContainer}>
-              <View style={[styles.avatarBadge, { backgroundColor: c.accent }]}>
-                <Text style={styles.avatarBadgeText}>
-                  {activeProfile?.firstName?.charAt(0) || selfProfile?.firstName?.charAt(0) || "U"}
-                </Text>
-              </View>
-              <View style={{ marginLeft: 8 }}>
-                <Text style={styles.headerGreeting}>
-                  {activeProfile?.firstName || selfProfile?.firstName || "Patient"}
-                </Text>
-                <Text style={styles.headerSub}>
-                  {isSwitched ? "Care Profile" : "Primary Twin"}
-                </Text>
-              </View>
-            </View>
-          )}
-
-          <Text style={styles.headerTitle}>{titleMap[activePage]}</Text>
-
-          <View style={styles.headerRightButtons}>
-            {(activePage === "dashboard" || activePage === "medications") && (
-              <>
-                <TouchableOpacity
-                  style={styles.actionIconButton}
-                  onPress={() => {
-                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                    router.push("/MedicineHistory" as any);
-                  }}
-                >
-                  <Ionicons name="time-outline" size={24} color="#ffffff" />
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.actionIconButton}
-                  onPress={() => {
-                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                    setActivePage("add");
-                  }}
-                >
-                  <Ionicons name="add-circle-outline" size={24} color="#ffffff" />
-                </TouchableOpacity>
-              </>
-            )}
-          </View>
-        </View>
-      </LinearGradient>
-    );
-  };
-
-  // Bottom Navigation Bar Component
-  const renderBottomNav = () => {
-    if (activePage === "add") return null;
-
-    const tabs: Array<{ id: ActivePage; icon: string; label: string }> = [
-      { id: "dashboard", icon: "calendar-outline", label: "Regimen" },
-      { id: "medications", icon: "medical-outline", label: "Cabinet" },
-    ];
-
-    return (
-      <View style={[styles.bottomNavContainer, { backgroundColor: c.card, borderTopColor: c.border }]}>
-        {tabs.map((tab) => {
-          const isActive = activePage === tab.id;
-          return (
-            <TouchableOpacity
-              key={tab.id}
-              style={styles.navTab}
-              onPress={() => {
-                setActivePage(tab.id);
-                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-              }}
-            >
-              <Ionicons name={tab.icon as any} size={22} color={isActive ? c.accent : c.sub} />
-              <Text style={[styles.navLabel, { color: isActive ? c.accent : c.sub, fontWeight: isActive ? "700" : "400" }]}>
-                {tab.label}
-              </Text>
-            </TouchableOpacity>
-          );
-        })}
-      </View>
-    );
-  };
-
-  // Main Page Switcher Router
+  // Main Page Router
   const renderBody = () => {
     switch (activePage) {
       case "dashboard":
@@ -567,114 +396,170 @@ export default function MedicationVault() {
     }
   };
 
+  const isDark = theme === "dark";
+
   return (
-    <SafeAreaView style={[styles.safeArea, { backgroundColor: c.bg }]}>
-      {renderHeader()}
-      <View style={{ flex: 1 }}>
-        {renderBody()}
-        {(activePage === "dashboard" || activePage === "medications") && (
-          <TouchableOpacity
-            style={[styles.fabButton, { backgroundColor: c.accent }]}
-            onPress={() => {
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-              setActivePage("add");
-            }}
-          >
-            <Ionicons name="add" size={28} color="#ffffff" />
-          </TouchableOpacity>
-        )}
+    <LinearGradient
+      colors={isDark ? ["#0b1329", "#080c1a"] : ["#f8fafc", "#f1f5f9", "#e0f2fe"]}
+      style={{ flex: 1 }}
+    >
+      {/* Universal Global Header */}
+      <Header
+        title="Medication Vault"
+        showBack={activePage !== "dashboard"}
+        onBack={() => {
+          if (activePage !== "dashboard") {
+            setActivePage("dashboard");
+          } else {
+            router.back();
+          }
+        }}
+      />
+
+      {/* Ambient Background Glow Orbs */}
+      <View pointerEvents="none" style={styles.orbsContainer}>
+        <View style={[styles.orb, { backgroundColor: "#38bdf81e", top: 80, right: -60, width: 260, height: 260, borderRadius: 130 }]} />
+        <View style={[styles.orb, { backgroundColor: "#a78bfa18", top: 320, left: -90, width: 280, height: 280, borderRadius: 140 }]} />
       </View>
-      {renderBottomNav()}
-    </SafeAreaView>
+
+      {/* Top Segmented Sub-Navigation Bar & Action Controls */}
+      <View style={[styles.mainContentContainer, { paddingTop: 60 + insets.top }]}>
+        {activePage !== "add" && activePage !== "detail" && (
+          <View style={styles.topSegmentContainer}>
+            <View style={[styles.segmentCapsule, { backgroundColor: c.card, borderColor: c.border }]}>
+              <TouchableOpacity
+                style={[
+                  styles.segmentTab,
+                  activePage === "dashboard" && { backgroundColor: c.accent },
+                ]}
+                onPress={() => {
+                  setActivePage("dashboard");
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                }}
+              >
+                <Ionicons
+                  name="calendar"
+                  size={15}
+                  color={activePage === "dashboard" ? "#ffffff" : c.sub}
+                />
+                <Text
+                  style={[
+                    styles.segmentTabText,
+                    { color: activePage === "dashboard" ? "#ffffff" : c.sub },
+                  ]}
+                >
+                  Regimen
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.segmentTab,
+                  activePage === "medications" && { backgroundColor: c.accent },
+                ]}
+                onPress={() => {
+                  setActivePage("medications");
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                }}
+              >
+                <Ionicons
+                  name="medical"
+                  size={15}
+                  color={activePage === "medications" ? "#ffffff" : c.sub}
+                />
+                <Text
+                  style={[
+                    styles.segmentTabText,
+                    { color: activePage === "medications" ? "#ffffff" : c.sub },
+                  ]}
+                >
+                  Cabinet
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Quick Action Pills */}
+            <View style={{ flexDirection: "row", gap: 8 }}>
+              <TouchableOpacity
+                style={[styles.headerActionButton, { backgroundColor: c.card, borderColor: c.border }]}
+                onPress={handleExportReport}
+              >
+                <Ionicons name="document-text-outline" size={16} color={c.accent} />
+                <Text style={[styles.headerActionText, { color: c.accent }]}>Report</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.headerActionButton, { backgroundColor: c.accent, borderColor: c.accent }]}
+                onPress={() => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  setActivePage("add");
+                }}
+              >
+                <Ionicons name="add" size={16} color="#ffffff" />
+                <Text style={[styles.headerActionText, { color: "#ffffff" }]}>Add</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
+
+        <View style={{ flex: 1 }}>
+          {renderBody()}
+        </View>
+      </View>
+    </LinearGradient>
   );
 }
 
 const styles = StyleSheet.create({
-  safeArea: {
+  mainContentContainer: {
     flex: 1,
   },
-  headerContainer: {
-    paddingVertical: 16,
-    paddingHorizontal: 20,
-    borderBottomLeftRadius: 24,
-    borderBottomRightRadius: 24,
+  orbsContainer: {
+    ...StyleSheet.absoluteFillObject,
+    overflow: "hidden",
   },
-  headerRow: {
+  orb: {
+    position: "absolute",
+  },
+  topSegmentContainer: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    gap: 10,
   },
-  backButton: {
-    padding: 4,
-  },
-  avatarContainer: {
+  segmentCapsule: {
     flexDirection: "row",
-    alignItems: "center",
-  },
-  avatarBadge: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  avatarBadgeText: {
-    color: "#ffffff",
-    fontWeight: "700",
-    fontSize: 16,
-  },
-  headerGreeting: {
-    color: "#ffffff",
-    fontWeight: "700",
-    fontSize: 16,
-  },
-  headerSub: {
-    color: "rgba(255, 255, 255, 0.7)",
-    fontSize: 11,
-  },
-  headerTitle: {
-    color: "#ffffff",
-    fontWeight: "700",
-    fontSize: 18,
-  },
-  headerRightButtons: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  actionIconButton: {
-    marginLeft: 14,
-    padding: 4,
-  },
-  bottomNavContainer: {
-    flexDirection: "row",
-    height: 64,
-    borderTopWidth: 1,
-    paddingVertical: 8,
-    justifyContent: "space-around",
-    alignItems: "center",
-  },
-  navTab: {
-    alignItems: "center",
-    justifyContent: "center",
+    borderRadius: 20,
+    padding: 3,
+    borderWidth: 1,
     flex: 1,
   },
-  navLabel: {
-    fontSize: 10,
-    marginTop: 4,
-  },
-  fabButton: {
-    position: "absolute",
-    bottom: 24,
-    right: 24,
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    justifyContent: "center",
+  segmentTab: {
+    flex: 1,
+    flexDirection: "row",
     alignItems: "center",
-    elevation: 6,
-    shadowColor: "#000000",
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
+    justifyContent: "center",
+    paddingVertical: 8,
+    borderRadius: 17,
+    gap: 6,
+  },
+  segmentTabText: {
+    fontSize: 13,
+    fontWeight: "700",
+  },
+  headerActionButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 18,
+    borderWidth: 1,
+    gap: 4,
+  },
+  headerActionText: {
+    fontSize: 12,
+    fontWeight: "700",
   },
 });
