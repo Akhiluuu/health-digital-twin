@@ -2039,7 +2039,7 @@ export default function AIHealthScreen() {
       {/* Main Chat Stream */}
       <KeyboardAvoidingView
         style={styles.flex}
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        behavior={Platform.OS === "ios" ? "padding" : "padding"}
         keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 0}
       >
         <View style={[styles.container, { backgroundColor: c.bg }]}>
@@ -2056,7 +2056,7 @@ export default function AIHealthScreen() {
           />
 
           {/* Floating Input Bar Container */}
-          <View style={{ backgroundColor: c.bg, paddingBottom: Platform.OS === "ios" ? 20 : 12 }}>
+          <View style={{ backgroundColor: c.bg, paddingBottom: Platform.OS === "ios" ? 16 : 8 }}>
             {/* Voice Active Recording Waveform */}
             <VoiceIndicator visible={isRecording} partialText={partialVoiceText} />
 
@@ -2067,7 +2067,7 @@ export default function AIHealthScreen() {
                 style={styles.iconButton}
                 activeOpacity={0.7}
               >
-                <Ionicons name="attach" size={22} color={c.accent} />
+                <Ionicons name="attach" size={20} color={c.accent} />
               </TouchableOpacity>
 
               {/* Voice Mic Input Toggle */}
@@ -2076,24 +2076,22 @@ export default function AIHealthScreen() {
                 style={[styles.iconButton, isRecording && styles.recordingBtn]}
                 activeOpacity={0.7}
               >
-                <Ionicons name={isRecording ? "mic-off" : "mic"} size={20} color={isRecording ? "#fff" : c.sub} />
+                <Ionicons name={isRecording ? "mic-off" : "mic"} size={18} color={isRecording ? "#fff" : c.sub} />
               </TouchableOpacity>
 
-              {/* Text Input Field */}
-              <View style={[styles.inputWrapper, { backgroundColor: c.bg, borderColor: c.border }]}>
-                <TextInput
-                  ref={inputRef}
-                  value={input}
-                  onChangeText={setInput}
-                  placeholder="Ask about symptoms, vitals, meds..."
-                  placeholderTextColor={c.sub}
-                  style={[styles.input, { color: c.text }]}
-                  multiline
-                  returnKeyType="send"
-                  onSubmitEditing={sendMessage}
-                  blurOnSubmit={false}
-                />
-              </View>
+              {/* Sleek Text Input Field */}
+              <TextInput
+                ref={inputRef}
+                value={input}
+                onChangeText={setInput}
+                placeholder="Ask Digital Twin..."
+                placeholderTextColor={c.sub}
+                style={[styles.input, { color: c.text }]}
+                multiline
+                returnKeyType="send"
+                onSubmitEditing={sendMessage}
+                blurOnSubmit={false}
+              />
 
               {/* Dynamic Send Button */}
               <TouchableOpacity
@@ -2107,7 +2105,7 @@ export default function AIHealthScreen() {
                 {loading ? (
                   <ActivityIndicator color="#fff" size="small" />
                 ) : (
-                  <Ionicons name="arrow-up" size={18} color={input.trim() ? "#fff" : c.sub} />
+                  <Ionicons name="arrow-up" size={16} color={input.trim() ? "#fff" : c.sub} />
                 )}
               </TouchableOpacity>
             </View>
@@ -2446,45 +2444,39 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     paddingHorizontal: 8,
-    paddingVertical: 6,
+    paddingVertical: 4,
     borderWidth: 1,
-    borderRadius: 26,
-    marginHorizontal: 16,
-    gap: 6,
-    elevation: 3,
+    borderRadius: 24,
+    marginHorizontal: 12,
+    gap: 4,
+    minHeight: 44,
+    elevation: 2,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 6,
+    shadowOpacity: 0.05,
+    shadowRadius: 5,
   },
   iconButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     justifyContent: "center",
     alignItems: "center",
   },
   recordingBtn: {
     backgroundColor: "#ef4444",
   },
-  inputWrapper: {
-    flex: 1,
-    borderRadius: 18,
-    minHeight: 38,
-    maxHeight: 110,
-    justifyContent: "center",
-    borderWidth: 1,
-  },
   input: {
-    fontSize: 14,
-    paddingHorizontal: 12,
-    paddingTop: 8,
-    paddingBottom: 8,
+    flex: 1,
+    fontSize: 13.5,
+    paddingHorizontal: 8,
+    paddingVertical: Platform.OS === "ios" ? 8 : 4,
+    maxHeight: 100,
   },
   sendButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     justifyContent: "center",
     alignItems: "center",
   },
