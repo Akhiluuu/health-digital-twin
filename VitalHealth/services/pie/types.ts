@@ -221,6 +221,7 @@ export interface PIECandidate {
   deliveryChannel: 'push' | 'silent' | 'in_app' | 'banner';
   requiresImmediateDelivery: boolean;
   suppressIfDoNotDisturb: boolean;
+  aiRationale?: string;
 
   generatedAt: string;
 }

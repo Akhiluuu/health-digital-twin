@@ -22,7 +22,7 @@ export async function generateCircadianMentalCandidates(
   if (hour === 21 || hour === 22) {
     candidates.push({
       id: nanoid(),
-      category: 'sleep_circadian',
+      category: 'sleep',
       priority: 'medium',
       title: 'Power Down for Deep Sleep 🌙',
       body: `Hey ${name}, dimming screen lights 45 minutes before sleep boosts natural melatonin by up to 34%! 🌙`,
@@ -49,7 +49,7 @@ export async function generateCircadianMentalCandidates(
   if (hour === 20) {
     candidates.push({
       id: nanoid(),
-      category: 'stress_reset',
+      category: 'stress',
       priority: 'low',
       title: 'Mindful Evening Reflection 🌿',
       body: `Hi ${name}, take 30 seconds to reflect on today. Log a mood tag to train your mental wellness digital twin!`,
