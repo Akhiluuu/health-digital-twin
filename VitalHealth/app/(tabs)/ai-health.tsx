@@ -743,6 +743,111 @@ function VoiceIndicator({ visible, partialText }: { visible: boolean; partialTex
   );
 }
 
+// ── Hybrid Live Clinical Reasoning Typing Indicator ─────────────────────────
+function TypingIndicatorBubble({ c }: { c: any }) {
+  const dot1 = useRef(new Animated.Value(0.3)).current;
+  const dot2 = useRef(new Animated.Value(0.3)).current;
+  const dot3 = useRef(new Animated.Value(0.3)).current;
+  const [statusIdx, setStatusIdx] = useState(0);
+
+  const STAGES = [
+    "🫀 Ingesting physiological vitals...",
+    "🔍 Searching clinical knowledge base...",
+    "✨ Synthesizing personalized answer...",
+    "📊 Evaluating health risk baselines...",
+  ];
+
+  useEffect(() => {
+    const animateDot = (anim: Animated.Value, delay: number) => {
+      return Animated.sequence([
+        Animated.delay(delay),
+        Animated.loop(
+          Animated.sequence([
+            Animated.timing(anim, {
+              toValue: 1,
+              duration: 350,
+              useNativeDriver: true,
+            }),
+            Animated.timing(anim, {
+              toValue: 0.3,
+              duration: 350,
+              useNativeDriver: true,
+            }),
+          ])
+        ),
+      ]);
+    };
+
+    const a1 = animateDot(dot1, 0);
+    const a2 = animateDot(dot2, 120);
+    const a3 = animateDot(dot3, 240);
+
+    a1.start();
+    a2.start();
+    a3.start();
+
+    const interval = setInterval(() => {
+      setStatusIdx((prev) => (prev + 1) % STAGES.length);
+    }, 1100);
+
+    return () => {
+      a1.stop();
+      a2.stop();
+      a3.stop();
+      clearInterval(interval);
+    };
+  }, []);
+
+  return (
+    <View style={styles.typingRow}>
+      <View style={[styles.avatar, { backgroundColor: `${c.accent}15`, borderColor: c.accent }]}>
+        <Ionicons name="sparkles" size={14} color={c.accent} />
+      </View>
+
+      <View style={[styles.typingCard, { backgroundColor: c.card, borderColor: c.border }]}>
+        {/* Animated 3-Dots Wave */}
+        <View style={styles.dotsRow}>
+          <Animated.View
+            style={[
+              styles.dot,
+              {
+                backgroundColor: c.accent,
+                opacity: dot1,
+                transform: [{ scale: dot1 }],
+              },
+            ]}
+          />
+          <Animated.View
+            style={[
+              styles.dot,
+              {
+                backgroundColor: c.accent,
+                opacity: dot2,
+                transform: [{ scale: dot2 }],
+              },
+            ]}
+          />
+          <Animated.View
+            style={[
+              styles.dot,
+              {
+                backgroundColor: c.accent,
+                opacity: dot3,
+                transform: [{ scale: dot3 }],
+              },
+            ]}
+          />
+        </View>
+
+        {/* Dynamic Micro-Status Tag */}
+        <Text style={[styles.typingStatusText, { color: c.sub }]}>
+          {STAGES[statusIdx]}
+        </Text>
+      </View>
+    </View>
+  );
+}
+
 // ── Rich Text Parser ─────────────────────────────────────────────────────────
 function parseInlineContent(text: string, style?: any) {
   const parts: { text: string; bold?: boolean; italic?: boolean }[] = [];
@@ -1463,6 +1568,7 @@ export default function AIHealthScreen() {
 
     setMessages((prev) => [...prev, { id: genId(), text: query, sender: "user", timestamp: new Date() }]);
     setLoading(true);
+    setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 100);
 
     const baseUrl = await getAiBaseUrl();
     const history = [...historyRef.current];
@@ -1888,6 +1994,7 @@ export default function AIHealthScreen() {
             showsVerticalScrollIndicator={false}
             onTouchStart={Keyboard.dismiss}
             keyboardShouldPersistTaps="handled"
+            ListFooterComponent={loading ? <TypingIndicatorBubble c={c} /> : null}
           />
 
           {/* Floating Input Bar Container */}
@@ -2649,5 +2756,39 @@ const styles = StyleSheet.create({
   sessionTime: {
     fontSize: 9,
     marginTop: 3,
+  },
+
+  // Hybrid Live Typing Indicator
+  typingRow: {
+    flexDirection: "row",
+    alignItems: "flex-end",
+    gap: 8,
+    marginVertical: 8,
+    paddingHorizontal: 4,
+  },
+  typingCard: {
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 18,
+    borderBottomLeftRadius: 4,
+    borderWidth: 1,
+    gap: 6,
+    maxWidth: "80%",
+  },
+  dotsRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    height: 16,
+  },
+  dot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  typingStatusText: {
+    fontSize: 11,
+    fontWeight: "500",
+    letterSpacing: 0.1,
   },
 });
