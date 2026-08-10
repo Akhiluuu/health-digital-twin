@@ -1124,6 +1124,18 @@ You are a trusted healthcare companion helping users understand, manage, monitor
             if "911" not in response_text and "112" not in response_text:
                 response_text = "🚨 **Call 112 / 911 immediately. This is a medical emergency. Do not wait.**\n\n" + response_text
 
+        # Enrich response with matching clinical knowledge supplement if missing key clinical terms
+        supplements = self._clinical_knowledge_supplement(user_query)
+        if supplements:
+            added_notes = []
+            for note in supplements:
+                clean_note = note.lstrip("-* ").strip()
+                kw = clean_note.split(":")[0].replace("**", "").strip().lower()
+                if kw not in response_text.lower():
+                    added_notes.append(f"• {clean_note}")
+            if added_notes:
+                response_text += "\n\n**Clinical & Evidence Guidance:**\n" + "\n".join(added_notes)
+
         # Always ensure the doctor disclaimer is present
         disclaimer = "> 💡 *Please consult your doctor for personalized medical advice.*"
         if "consult your doctor" not in response_text.lower() and "healthcare provider" not in response_text.lower():

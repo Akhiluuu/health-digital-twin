@@ -68,7 +68,8 @@ class EmergencySafetyRouter(HealthBrainSubsystem):
                     "**🎯 Action Plan:**\n"
                     "1. **Call 112 / 911 immediately** or have someone drive you to the nearest Emergency Room.\n"
                     "2. **Do not drive yourself** if experiencing chest pain, severe shortness of breath, dizziness, or weakness.\n"
-                    "3. Stay calm and stay on the line with emergency dispatchers until help arrives.\n\n"
+                    "3. Stay calm and stay on the line with emergency dispatchers until help arrives.\n"
+                    "4. Differentiate anxiety panic surge from cardiac emergency: practice a 4-7-8 slow breathing exercise, check for chest pain/radiation, and seek immediate emergency evaluation and clinical reassurance.\n\n"
                     "> 💡 *VitalHealth Safety Guardrail | Immediate Emergency Escalation Rule*"
                 )
                 return True, triage_response, elapsed_ms
