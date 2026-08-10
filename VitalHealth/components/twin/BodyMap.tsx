@@ -98,38 +98,38 @@ export default function BodyMap({ scores, c, lastVitals, sessions = [], profile 
     switch (key) {
       case 'brain':
         return [
-          { label: 'Core Temp', value: v.core_temperature ? `${v.core_temperature.toFixed(1)} °C` : (p.biogears_resting_temp ? `${p.biogears_resting_temp} °C` : '37.0 °C'), range: '36.5 - 37.5 °C' },
-          { label: 'Mean Arterial Pressure', value: v.map ? `${Math.round(v.map)} mmHg` : '93 mmHg', range: '70 - 105 mmHg' },
+          { label: 'Core Temp', value: v.core_temperature ? `${v.core_temperature.toFixed(1)} °C` : (p.biogears_resting_temp ? `${p.biogears_resting_temp} °C` : 'Uncalibrated'), range: '36.5 - 37.5 °C' },
+          { label: 'Mean Arterial Pressure', value: v.map ? `${Math.round(v.map)} mmHg` : 'Uncalibrated', range: '70 - 105 mmHg' },
           { label: 'Cognitive Baseline', value: p.biogears_fitness_level ? (p.biogears_fitness_level === 'sedentary' ? 'Normal' : 'High') : 'Normal', range: 'Stable' },
         ];
       case 'heart':
         return [
-          { label: 'Heart Rate', value: v.heart_rate ? `${v.heart_rate} bpm` : (p.biogears_resting_hr ? `${p.biogears_resting_hr} bpm` : '72 bpm'), range: '60 - 100 bpm' },
-          { label: 'Blood Pressure', value: v.blood_pressure || (p.biogears_systolic_bp ? `${p.biogears_systolic_bp}/${p.biogears_diastolic_bp}` : '120/80'), range: '120/80 mmHg' },
-          { label: 'Cardiac Output', value: v.cardiac_output ? `${v.cardiac_output.toFixed(1)} L/min` : '5.1 L/min', range: '4.5 - 6.0 L/min' },
+          { label: 'Heart Rate', value: v.heart_rate ? `${v.heart_rate} bpm` : (p.biogears_resting_hr ? `${p.biogears_resting_hr} bpm` : 'Uncalibrated'), range: '60 - 100 bpm' },
+          { label: 'Blood Pressure', value: v.blood_pressure || (p.biogears_systolic_bp && p.biogears_diastolic_bp ? `${p.biogears_systolic_bp}/${p.biogears_diastolic_bp}` : 'Uncalibrated'), range: '120/80 mmHg' },
+          { label: 'Cardiac Output', value: v.cardiac_output ? `${v.cardiac_output.toFixed(1)} L/min` : 'Uncalibrated', range: '4.5 - 6.0 L/min' },
         ];
       case 'lungs':
         return [
-          { label: 'Oxygen Saturation (SpO₂)', value: v.spo2 ? `${v.spo2}%` : '98%', range: '95 - 100%' },
-          { label: 'Respiration Rate', value: v.respiration ? `${Math.round(v.respiration)} /min` : '14 /min', range: '12 - 20 /min' },
-          { label: 'Tidal Volume', value: v.tidal_volume ? `${Math.round(v.tidal_volume)} mL` : '500 mL', range: '400 - 600 mL' },
+          { label: 'Oxygen Saturation (SpO₂)', value: v.spo2 ? `${v.spo2}%` : 'Uncalibrated', range: '95 - 100%' },
+          { label: 'Respiration Rate', value: v.respiration ? `${Math.round(v.respiration)} /min` : 'Uncalibrated', range: '12 - 20 /min' },
+          { label: 'Tidal Volume', value: v.tidal_volume ? `${Math.round(v.tidal_volume)} mL` : 'Uncalibrated', range: '400 - 600 mL' },
         ];
       case 'liver':
         return [
-          { label: 'Blood Glucose', value: v.glucose ? `${Math.round(v.glucose)} mg/dL` : '95 mg/dL', range: '70 - 140 mg/dL' },
+          { label: 'Blood Glucose', value: v.glucose ? `${Math.round(v.glucose)} mg/dL` : 'Uncalibrated', range: '70 - 140 mg/dL' },
           { label: 'VO₂ Max Baseline', value: p.biogears_vo2max ? `${p.biogears_vo2max} ml/kg/min` : '40 ml/kg/min', range: '>35 ml/kg/min' },
           { label: 'Metabolic Output', value: v.exercise_level ? `${(v.exercise_level * 100).toFixed(0)}%` : 'Resting', range: 'Variable' },
         ];
       case 'gut':
         return [
-          { label: 'Blood Glucose (Post-Meal)', value: v.glucose ? `${Math.round(v.glucose)} mg/dL` : '95 mg/dL', range: '70 - 140 mg/dL' },
+          { label: 'Blood Glucose (Post-Meal)', value: v.glucose ? `${Math.round(v.glucose)} mg/dL` : 'Uncalibrated', range: '70 - 140 mg/dL' },
           { label: 'Digestion Load', value: v.exercise_level && v.exercise_level > 0.3 ? 'Suppressed (Exercise)' : 'Standard', range: 'Optimal' },
-          { label: 'Thermal Balance', value: v.core_temperature ? `${v.core_temperature.toFixed(1)} °C` : '37.0 °C', range: '36.5 - 37.5 °C' },
+          { label: 'Thermal Balance', value: v.core_temperature ? `${v.core_temperature.toFixed(1)} °C` : 'Uncalibrated', range: '36.5 - 37.5 °C' },
         ];
       case 'legs':
         return [
           { label: 'Muscle Exercise Level', value: v.exercise_level ? `${(v.exercise_level * 100).toFixed(0)}%` : 'Resting', range: '0 - 100%' },
-          { label: 'Stroke Volume', value: v.stroke_volume ? `${Math.round(v.stroke_volume)} mL` : '72 mL', range: '60 - 100 mL' },
+          { label: 'Stroke Volume', value: v.stroke_volume ? `${Math.round(v.stroke_volume)} mL` : 'Uncalibrated', range: '60 - 100 mL' },
           { label: 'Fitness Profile', value: p.biogears_fitness_level ? p.biogears_fitness_level.toUpperCase() : 'SEDENTARY', range: 'Active' },
         ];
       default:

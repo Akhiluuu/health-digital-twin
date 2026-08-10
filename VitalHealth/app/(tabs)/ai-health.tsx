@@ -202,8 +202,8 @@ function TwinContextSheet({
   patientCtx: any;
 }) {
   if (!visible) return null;
-  const sysBp = patientCtx?.body_measurements?.blood_pressure || "120/80 mmHg";
-  const hr = patientCtx?.body_measurements?.resting_hr || 72;
+  const sysBp = patientCtx?.body_measurements?.blood_pressure || "Uncalibrated";
+  const hr = patientCtx?.body_measurements?.resting_hr ?? null;
   const symptomsCount = patientCtx?.activeSymptoms?.length || 0;
   const medsCount = patientCtx?.medicines?.length || 0;
   const waterMl = patientCtx?.hydration?.water_intake_ml || 0;
@@ -1907,7 +1907,7 @@ export default function AIHealthScreen() {
 
       const symptomCount = activeSymptoms?.length || 0;
       const medCount = medicines?.length || 0;
-      const hrVal = lastVitals?.heart_rate || activeProfile?.biogears_resting_hr || 72;
+      const hrVal = lastVitals?.heart_rate || activeProfile?.biogears_resting_hr || null;
       const waterVal = waterIntake || 0;
 
       return (
@@ -1950,7 +1950,7 @@ export default function AIHealthScreen() {
 
               <View style={[styles.patientSnapshotPill, { backgroundColor: c.bg, borderColor: c.border }]}>
                 <Ionicons name="heart-outline" size={13} color="#ef4444" />
-                <Text style={[styles.patientSnapshotTxt, { color: c.text }]}>{hrVal} BPM</Text>
+                <Text style={[styles.patientSnapshotTxt, { color: c.text }]}>{hrVal ? `${hrVal} BPM` : "Uncalibrated"}</Text>
               </View>
 
               <View style={[styles.patientSnapshotPill, { backgroundColor: c.bg, borderColor: c.border }]}>

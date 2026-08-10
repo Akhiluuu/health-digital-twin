@@ -8,7 +8,7 @@ as an ordered event stream with goals, milestones, insights, and progress metric
 import json
 import os
 from typing import List, Dict, Any, Optional
-from datetime import datetime, date
+from datetime import datetime, date, timezone
 
 from healthbot_v4.apps.brain.core import HealthBrainSubsystem
 from healthbot_v4.shared.logger.logger import logger
@@ -183,10 +183,12 @@ class JourneyEngine(HealthBrainSubsystem):
             status, color = "Needs Attention", "red"
 
         # What changed today
-        today_events = [
-            e for e in self.timeline_engine.get_timeline(patient_id, limit=50)
-            if (datetime.utcnow() - e.timestamp).total_seconds() < 86400
-        ]
+        now_utc = datetime.now(timezone.utc)
+        today_events = []
+        for e in self.timeline_engine.get_timeline(patient_id, limit=50):
+            ts = e.timestamp.replace(tzinfo=timezone.utc) if e.timestamp.tzinfo is None else e.timestamp
+            if (now_utc - ts).total_seconds() < 86400:
+                today_events.append(e)
         whats_changed = (
             f"{len(today_events)} health events recorded today"
             if today_events else "No new events today — all stable"

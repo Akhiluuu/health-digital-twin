@@ -22,6 +22,7 @@ import {
 } from '../services/firebaseSync';
 import { getTwinId, getLocalDateString } from '../utils/twinUtils';
 import { scheduleDailyLogReminder, scheduleInactivityReminder } from '../services/notifeeService';
+import { nanoid } from '../utils/nanoid';
 import { useMedicine } from './MedicineContext';
 import { useSteps } from './StepContext';
 import type {
@@ -1740,7 +1741,7 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
   const addEvent = useCallback((event: Omit<RoutineEvent, 'id'>) => {
     const newEvent: RoutineEvent = {
       ...event,
-      id: `evt_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+      id: `evt_${Date.now()}_${nanoid(8)}`,
       // Convert wallTime → timestamp
       timestamp: wallTimeToTimestamp(event.wallTime),
     };
@@ -1843,7 +1844,7 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
 
     const remapped: RoutineEvent[] = routine.events.map(e => ({
       ...(e as RoutineEvent),
-      id: `evt_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+      id: `evt_${Date.now()}_${nanoid(8)}`,
       source: 'routine' as const,
       timestamp: (e as RoutineEvent).wallTime
         ? wallTimeToTimestamp((e as RoutineEvent).wallTime, anchorDate || new Date())
@@ -1892,7 +1893,7 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
       })
       .map(e => ({
         ...(e as RoutineEvent),
-        id: `evt_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+        id: `evt_${Date.now()}_${nanoid(8)}`,
         source: 'routine' as const,
         timestamp: (e as RoutineEvent).wallTime
           ? wallTimeToTimestamp((e as RoutineEvent).wallTime, new Date())
@@ -2191,7 +2192,7 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
 
     const newEvent: RoutineEvent = {
       ...event,
-      id: `evt_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+      id: `evt_${Date.now()}_${nanoid(8)}`,
       timestamp: wallTimeToTimestamp(event.wallTime),
     };
 
@@ -2451,7 +2452,7 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
           });
 
           catchUpEventsToStore.push({
-            id: `catchup_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+            id: `catchup_${Date.now()}_${nanoid(8)}`,
             event_type: e.event_type,
             value: e.value,
             wallTime: (e as any).wallTime || '08:00',
@@ -2572,7 +2573,7 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
       if (deMinutes > startMinutes && deMinutes <= currentMinutes) {
         candidates.push({
           ...(de as RoutineEvent),
-          id: `evt_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+          id: `evt_${Date.now()}_${nanoid(8)}`,
           wallTime: deTime,
           source: 'baseline' as const,
           timestamp: wallTimeToTimestamp(deTime, new Date()),

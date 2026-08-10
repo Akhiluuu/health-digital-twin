@@ -1910,14 +1910,14 @@ export default function TwinScreen() {
           {v ? (
             <View style={ss.vitalsGridLight}>
               {[
-                { label: 'Heart Rate', val: v.heart_rate ? Math.round(v.heart_rate) : (profile?.biogears_resting_hr ? Number(profile.biogears_resting_hr) : 72), unit: 'bpm', icon: '🫀', lo: 60, hi: 100 },
-                { label: 'Blood Pressure', val: bp.sys && bp.dia ? `${Math.round(bp.sys)}/${Math.round(bp.dia)}` : '120/80', unit: 'mmHg', icon: '🩸', lo: 90, hi: 120 },
-                { label: 'Glucose', val: v.glucose ? Math.round(v.glucose) : 95, unit: 'mg/dL', icon: '🍬', lo: 70, hi: 140 },
-                { label: 'SpO₂', val: v.spo2 ? Math.round(v.spo2) : '--', unit: '%', icon: '🫁', lo: 94, hi: 100 },
-                { label: 'Resp. Rate', val: v.respiration ? Math.round(v.respiration) : 14, unit: 'br/min', icon: '💨', lo: 12, hi: 20 },
-                { label: 'Cardiac Output', val: v.cardiac_output != null ? Number(v.cardiac_output.toFixed(1)) : 5.1, unit: 'L/min', icon: '⚡', lo: 4.5, hi: 6.5 },
-                { label: 'MAP', val: v.map != null ? Math.round(v.map!) : 93, unit: 'mmHg', icon: '📈', lo: 70, hi: 100 },
-                { label: 'Core Temp', val: v.core_temperature != null ? Number((v.core_temperature!).toFixed(1)) : ((profile as any)?.biogears_resting_temp ? Number((profile as any).biogears_resting_temp) : 37.0), unit: '°C', icon: '🌡️', lo: 36.5, hi: 37.5 },
+                { label: 'Heart Rate', val: v.heart_rate ? Math.round(v.heart_rate) : (profile?.biogears_resting_hr ? Number(profile.biogears_resting_hr) : null), unit: 'bpm', icon: '🫀', lo: 60, hi: 100 },
+                { label: 'Blood Pressure', val: bp.sys && bp.dia ? `${Math.round(bp.sys)}/${Math.round(bp.dia)}` : (profile?.biogears_systolic_bp && profile?.biogears_diastolic_bp ? `${profile.biogears_systolic_bp}/${profile.biogears_diastolic_bp}` : null), unit: 'mmHg', icon: '🩸', lo: 90, hi: 120 },
+                { label: 'Glucose', val: v.glucose ? Math.round(v.glucose) : null, unit: 'mg/dL', icon: '🍬', lo: 70, hi: 140 },
+                { label: 'SpO₂', val: v.spo2 ? Math.round(v.spo2) : null, unit: '%', icon: '🫁', lo: 94, hi: 100 },
+                { label: 'Resp. Rate', val: v.respiration ? Math.round(v.respiration) : null, unit: 'br/min', icon: '💨', lo: 12, hi: 20 },
+                { label: 'Cardiac Output', val: v.cardiac_output != null ? Number(v.cardiac_output.toFixed(1)) : null, unit: 'L/min', icon: '⚡', lo: 4.5, hi: 6.5 },
+                { label: 'MAP', val: v.map != null ? Math.round(v.map!) : null, unit: 'mmHg', icon: '📈', lo: 70, hi: 100 },
+                { label: 'Core Temp', val: v.core_temperature != null ? Number((v.core_temperature!).toFixed(1)) : ((profile as any)?.biogears_resting_temp ? Number((profile as any).biogears_resting_temp) : null), unit: '°C', icon: '🌡️', lo: 36.5, hi: 37.5 },
               ].map(({ label, val, unit, icon, lo, hi }) => {
                 const numVal = typeof val === 'number' ? val : (bp.sys || 120);
                 const isOptimal = numVal >= lo && numVal <= hi;

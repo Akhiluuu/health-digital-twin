@@ -3,6 +3,8 @@
 
 import { log, warn } from "../utils/logger";
 
+import { nanoid } from "../utils/nanoid";
+
 type LoadingCallback = (isLoading: boolean) => void;
 
 class ProfileDataOrchestrator {
@@ -16,7 +18,7 @@ class ProfileDataOrchestrator {
    * Resets all domain readiness statuses.
    */
   startSwitchTransaction(targetProfileId: string): string {
-    const token = `${targetProfileId}_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    const token = `${targetProfileId}_${Date.now()}_${nanoid(8)}`;
     this.activeSwitchToken = token;
     
     // Set all currently registered domains to loading state

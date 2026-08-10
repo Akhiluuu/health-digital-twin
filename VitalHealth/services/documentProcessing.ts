@@ -35,11 +35,13 @@ export interface ProcessingProgress {
   message: string;
 }
 
+import { nanoid } from '@/utils/nanoid';
+
 /**
- * Generate a unique document ID
+ * Generate a unique document ID using nanoid
  */
 function generateDocId(): string {
-  return `doc_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  return `doc_${nanoid(16)}`;
 }
 
 /**

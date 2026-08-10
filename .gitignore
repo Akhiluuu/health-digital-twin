@@ -91,3 +91,4 @@ firebase-adminsdk*.json
 /models/
 app-release.apk
 *.apk
+healthbot_venv/

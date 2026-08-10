@@ -130,7 +130,8 @@ export async function evaluateCandidates(
     // If the open rate for this category is extremely low (<10%), reduce frequency
     if (decision === 'approved' && cand.priority === 'low') {
       const openRate = ctx.learningEngine.openRate;
-      if (openRate < 0.15 && Math.random() > 0.3) {
+      const candidateHash = cand.id ? [...cand.id].reduce((acc, ch) => acc + ch.charCodeAt(0), 0) : 0;
+      if (openRate < 0.15 && candidateHash % 10 < 7) {
         decision = 'rejected';
         rejectReason = `High fatigue warning: user open rate is ${Math.round(openRate * 100)}%`;
       }

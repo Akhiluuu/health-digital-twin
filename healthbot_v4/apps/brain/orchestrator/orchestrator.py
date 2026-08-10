@@ -532,35 +532,35 @@ class AIOrchestrator(HealthBrainSubsystem):
 
             extra_lines = []
             if body_m and isinstance(body_m, dict):
-                h = body_m.get("height", "170 cm")
-                w = body_m.get("weight", "70 kg")
-                bmi = body_m.get("bmi", "22.5")
-                bt = body_m.get("blood_type", "O+")
-                rhr = body_m.get("resting_hr", 72)
-                bp = body_m.get("blood_pressure", "120/80 mmHg")
-                extra_lines.append(f"• BODY MEASUREMENTS & PHYSIQUE: Height {h}, Weight {w}, BMI {bmi} kg/m², Blood Type {bt}, Resting HR {rhr} bpm, BP {bp}")
+                h = body_m.get("height") or "Not recorded"
+                w = body_m.get("weight") or "Not recorded"
+                bmi = body_m.get("bmi") or "Not recorded"
+                bt = body_m.get("blood_type") or "Not recorded"
+                rhr = body_m.get("resting_hr") or "Uncalibrated"
+                bp = body_m.get("blood_pressure") or "Uncalibrated"
+                extra_lines.append(f"• BODY MEASUREMENTS & PHYSIQUE: Height {h}, Weight {w}, BMI {bmi}, Blood Type {bt}, Resting HR {rhr}, BP {bp}")
 
             # Only inject detailed BioGears simulation vitals & organ scores if retrieve_twin is planned or intent is digital twin simulation
             is_twin_query = getattr(plan, "retrieve_twin", False) or any(kw in query.lower() for kw in ["simulation", "digital twin", "biogears", "organ score", "vitals"])
             if is_twin_query and sim_v and isinstance(sim_v, dict):
-                hr_v = sim_v.get("heart_rate") or sim_v.get("heartRate") or sim_v.get("hr") or (body_m.get("resting_hr") if isinstance(body_m, dict) else 72) or 72
+                hr_v = sim_v.get("heart_rate") or sim_v.get("heartRate") or sim_v.get("hr") or body_m.get("resting_hr") or "Uncalibrated"
                 sys_bp = sim_v.get("systolic_bp") or sim_v.get("systolicBp")
                 dia_bp = sim_v.get("diastolic_bp") or sim_v.get("diastolicBp")
                 if sys_bp and dia_bp:
                     bp_v = f"{sys_bp}/{dia_bp} mmHg"
                 else:
-                    bp_v = sim_v.get("blood_pressure") or sim_v.get("bloodPressure") or (body_m.get("blood_pressure") if isinstance(body_m, dict) else "120/80 mmHg") or "120/80 mmHg"
+                    bp_v = sim_v.get("blood_pressure") or sim_v.get("bloodPressure") or body_m.get("blood_pressure") or "Uncalibrated"
                 
-                map_v = sim_v.get("map") or sim_v.get("mean_arterial_pressure") or 93.3
-                co_v = sim_v.get("cardiac_output") or sim_v.get("cardiacOutput") or 5.0
-                sv_v = sim_v.get("stroke_volume") or sim_v.get("strokeVolume") or 70.0
-                rr_v = sim_v.get("respiration") or sim_v.get("respiration_rate") or sim_v.get("respirationRate") or 14.0
-                tv_v = sim_v.get("tidal_volume") or sim_v.get("tidalVolume") or 500.0
-                ph_v = sim_v.get("arterial_ph") or sim_v.get("arterialPh") or 7.40
-                gluc_v = sim_v.get("glucose") or 96.0
-                spo2_v = sim_v.get("spo2") or sim_v.get("spO2") or 98.5
-                temp_v = sim_v.get("core_temperature") or sim_v.get("coreTemperature") or 37.0
-                extra_lines.append(f"• BIOGEARS DIGITAL TWIN VITALS: HR: {hr_v} bpm | BP: {bp_v} | MAP: {map_v} mmHg | Cardiac Output: {co_v} L/min | Stroke Volume: {sv_v} mL | Respiration: {rr_v} br/min | Tidal Volume: {tv_v} mL | Arterial pH: {ph_v} | Glucose: {gluc_v} mg/dL | SpO2: {spo2_v}% | Core Temp: {temp_v} °C")
+                map_v = sim_v.get("map") or sim_v.get("mean_arterial_pressure") or "Uncalibrated"
+                co_v = sim_v.get("cardiac_output") or sim_v.get("cardiacOutput") or "Uncalibrated"
+                sv_v = sim_v.get("stroke_volume") or sim_v.get("strokeVolume") or "Uncalibrated"
+                rr_v = sim_v.get("respiration") or sim_v.get("respiration_rate") or sim_v.get("respirationRate") or "Uncalibrated"
+                tv_v = sim_v.get("tidal_volume") or sim_v.get("tidalVolume") or "Uncalibrated"
+                ph_v = sim_v.get("arterial_ph") or sim_v.get("arterialPh") or "Uncalibrated"
+                gluc_v = sim_v.get("glucose") or "Uncalibrated"
+                spo2_v = sim_v.get("spo2") or sim_v.get("spO2") or "Uncalibrated"
+                temp_v = sim_v.get("core_temperature") or sim_v.get("coreTemperature") or "Uncalibrated"
+                extra_lines.append(f"• BIOGEARS DIGITAL TWIN VITALS: HR: {hr_v} | BP: {bp_v} | MAP: {map_v} | Cardiac Output: {co_v} | Stroke Volume: {sv_v} | Respiration: {rr_v} | Tidal Volume: {tv_v} | Arterial pH: {ph_v} | Glucose: {gluc_v} | SpO2: {spo2_v} | Core Temp: {temp_v}")
 
             if is_twin_query and organ_s and isinstance(organ_s, dict):
                 scores_dict = organ_s.get("scores") if isinstance(organ_s.get("scores"), dict) else organ_s

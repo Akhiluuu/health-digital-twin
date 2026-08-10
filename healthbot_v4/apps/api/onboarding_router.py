@@ -396,7 +396,6 @@ async def process_full_onboarding_intake(req: FullOnboardingIntakeRequest):
         )
         timeline_events_count += 1
 
-    # Timeline event for Onboarding Completion Milestone
     timeline_engine.record_event(
         req.patient_id,
         TimelineEventType.journey_milestone_reached,
@@ -412,25 +411,47 @@ async def process_full_onboarding_intake(req: FullOnboardingIntakeRequest):
     bsa = round(0.007184 * (req.height_cm ** 0.725) * (req.weight_kg ** 0.425), 2)
     bmr = round(10 * req.weight_kg + 6.25 * req.height_cm - 5 * parsed_age + (5 if bio_sex == BiologicalSex.male else -161))
 
-    # Calculate organ health scores based on vitals and conditions
-    has_cvd = any("heart" in c.lower() or "hypertension" in c.lower() for c in req.chronic_conditions)
-    has_diabetes = any("diabetes" in c.lower() for c in req.chronic_conditions)
-    has_respiratory = any("asthma" in c.lower() or "copd" in c.lower() for c in req.chronic_conditions)
+    # Calculate dynamic organ health scores based on intake vitals, BMI, and clinical history
+    has_cvd = any("heart" in c.lower() or "hypertension" in c.lower() or "cardio" in c.lower() for c in req.chronic_conditions)
+    has_diabetes = any("diabetes" in c.lower() or "glucose" in c.lower() for c in req.chronic_conditions)
+    has_respiratory = any("asthma" in c.lower() or "copd" in c.lower() or "lung" in c.lower() for c in req.chronic_conditions)
+
+    # Base organ score influenced by age and BMI
+    age_penalty = max(0.0, (parsed_age - 30) * 0.25)
+    bmi_penalty = max(0.0, (bmi - 24.9) * 0.8) if bmi > 24.9 else (max(0.0, (18.5 - bmi) * 1.0) if bmi < 18.5 else 0.0)
+
+    base_organ = max(50.0, 98.0 - age_penalty - bmi_penalty)
+
+    # Specific organ strain deductions
+    bp_strain = max(0.0, (req.systolic_bp - 120) * 0.3) if req.systolic_bp > 120 else 0.0
+    hr_strain = max(0.0, (req.resting_hr - 72) * 0.2) if req.resting_hr > 72 else 0.0
+
+    heart_score = round(max(40.0, base_organ - (15.0 if has_cvd else 0.0) - bp_strain - hr_strain), 1)
+    lung_score = round(max(40.0, base_organ - (15.0 if has_respiratory else 0.0)), 1)
+    kidney_score = round(max(40.0, base_organ - (12.0 if has_diabetes else 0.0) - (bp_strain * 0.8)), 1)
+    metabolic_score = round(max(40.0, base_organ - (20.0 if has_diabetes else 0.0) - (bmi_penalty * 1.2)), 1)
+    brain_score = round(max(40.0, base_organ - (8.0 if has_cvd else 0.0)), 1)
+    liver_score = round(max(40.0, base_organ - (bmi_penalty * 0.5)), 1)
+    gut_score = round(max(40.0, base_organ - 2.0), 1)
 
     organ_scores = {
-        "brain": 95.0 if not has_cvd else 88.0,
-        "heart": 96.0 if not has_cvd and req.resting_hr < 80 else 82.0,
-        "lungs": 94.0 if not has_respiratory else 85.0,
-        "liver": 95.0,
-        "gut": 92.0,
-        "kidneys": 96.0 if not has_diabetes else 87.0,
-        "metabolic": 95.0 if not has_diabetes else 78.0,
+        "brain": brain_score,
+        "heart": heart_score,
+        "lungs": lung_score,
+        "liver": liver_score,
+        "gut": gut_score,
+        "kidneys": kidney_score,
+        "metabolic": metabolic_score,
     }
     composite_health_score = round(sum(organ_scores.values()) / len(organ_scores), 1)
     state.current_health_score = composite_health_score
 
-    # CVD Risk Calculation
-    cvd_risk_pct = 12.5 if (has_cvd or has_diabetes or req.systolic_bp > 130) else 5.2
+    # Dynamic CVD Risk Calculation (age + SBP + HR + condition factors)
+    cvd_risk = 2.5 + (parsed_age - 20) * 0.15 + bp_strain * 0.4 + (4.0 if has_cvd else 0.0) + (3.0 if has_diabetes else 0.0)
+    cvd_risk_pct = round(max(1.0, min(65.0, cvd_risk)), 1)
+
+    # Dynamic Recovery Readiness Score based on composite score, HR, and BMI strain
+    readiness_score = int(max(40.0, min(100.0, composite_health_score - hr_strain * 0.5)))
 
     logger.info(f"✅ Digital Twin successfully initialized for {req.patient_id} with Composite Score: {composite_health_score}")
 
@@ -445,7 +466,7 @@ async def process_full_onboarding_intake(req: FullOnboardingIntakeRequest):
             "bmr_kcal_day": bmr,
             "organ_health_scores": organ_scores,
             "ten_year_cvd_risk_pct": cvd_risk_pct,
-            "recovery_readiness_score": 92,
+            "recovery_readiness_score": readiness_score,
             "knowledge_graph_nodes": nodes_created,
             "timeline_events_seeded": timeline_events_count,
             "day_1_briefing": f"Welcome to VitalHealth, {req.first_name}! Your Digital Twin is active with a baseline health score of {composite_health_score}/100. Baseline vitals and {len(req.chronic_conditions)} medical conditions are synced.",

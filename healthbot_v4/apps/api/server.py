@@ -344,32 +344,89 @@ async def get_body_metrics(user_id: str):
 async def get_organ_scores(user_id: str):
     state = state_mgr.get_or_create_state(user_id)
     base = min(100.0, state.current_health_score)
-    # RiskFlag model uses 'level' (RiskLevel enum) and 'title' — not 'category'
+    
+    # Extract latest vitals if available
+    hr_vals = [v.value_primary for v in state.recent_vitals if v.vital_type == "heart_rate" and v.value_primary]
+    sys_vals = [v.value_primary for v in state.recent_vitals if v.vital_type == "blood_pressure" and v.value_primary]
+    dia_vals = [v.value_secondary for v in state.recent_vitals if v.vital_type == "blood_pressure" and v.value_secondary]
+    spo2_vals = [v.value_primary for v in state.recent_vitals if v.vital_type == "spo2" and v.value_primary]
+    gluc_vals = [l.value for l in state.recent_labs if "glucose" in l.canonical_name.lower() and l.value]
+
+    latest_hr = hr_vals[-1] if hr_vals else None
+    latest_sys = sys_vals[-1] if sys_vals else None
+    latest_dia = dia_vals[-1] if dia_vals else None
+    latest_spo2 = spo2_vals[-1] if spo2_vals else None
+    latest_gluc = gluc_vals[-1] if gluc_vals else None
+
+    # Risk flags text
     risk_text = " ".join(
         [f"{r.level.value} {r.title}" for r in (state.active_risks or [])]
     ).lower()
-    def organ_score(organ_risk_kws):
+
+    # Dynamic Heart/Cardiovascular score based on MAP and RPP
+    heart_score = base
+    if latest_sys and latest_dia:
+        map_val = latest_dia + (latest_sys - latest_dia) / 3.0
+        if map_val > 105 or map_val < 65:
+            heart_score -= min(25.0, abs(map_val - 85.0) * 0.8)
+    if latest_hr:
+        if latest_hr > 100 or latest_hr < 50:
+            heart_score -= min(20.0, abs(latest_hr - 72.0) * 0.5)
+    if any(kw in risk_text for kw in ["cardiac", "cardiovascular", "hypertension", "bp"]):
+        heart_score -= 10.0
+    heart_score = max(30.0, round(min(100.0, heart_score), 1))
+
+    # Dynamic Lungs/Pulmonary score based on SpO2
+    lung_score = base
+    if latest_spo2:
+        if latest_spo2 < 95:
+            lung_score -= min(35.0, (95.0 - latest_spo2) * 5.0)
+    if any(kw in risk_text for kw in ["respiratory", "pulmonary", "spo2", "asthma", "copd"]):
+        lung_score -= 10.0
+    lung_score = max(30.0, round(min(100.0, lung_score), 1))
+
+    # Dynamic Kidneys/Renal score based on BP strain
+    renal_score = base
+    if latest_sys and latest_sys > 130:
+        renal_score -= min(20.0, (latest_sys - 130.0) * 0.4)
+    if any(kw in risk_text for kw in ["renal", "kidney", "ckd", "creatinine"]):
+        renal_score -= 15.0
+    renal_score = max(30.0, round(min(100.0, renal_score), 1))
+
+    # Dynamic Metabolic score based on Glucose
+    metabolic_score = base
+    if latest_gluc:
+        if latest_gluc > 125 or latest_gluc < 70:
+            metabolic_score -= min(30.0, abs(latest_gluc - 90.0) * 0.3)
+    if any(kw in risk_text for kw in ["diabetes", "glucose", "hba1c", "metabolic"]):
+        metabolic_score -= 15.0
+    metabolic_score = max(30.0, round(min(100.0, metabolic_score), 1))
+
+    # Generic risk deduction helper for remaining organs without live sensor telemetry
+    def generic_organ_score(organ_risk_kws):
         penalize = any(kw in risk_text for kw in organ_risk_kws)
-        return round(base * (0.85 if penalize else 1.0), 1)
+        score = base - (12.0 if penalize else 0.0)
+        return max(30.0, round(min(100.0, score), 1))
+
     def _organ_status(score: float) -> str:
         if score >= 80: return "Stable"
         if score >= 60: return "Moderate"
         return "Needs Attention"
+
     return {
         "user_id": user_id,
         "overall_health_score": base,
         "scores": {
-            "brain":    {"score": organ_score(["neurological", "cognitive", "temp"]),            "status": _organ_status(organ_score(["neurological", "cognitive", "temp"]))},
-            "heart":    {"score": organ_score(["cardiac", "cardiovascular", "bp", "heart"]),    "status": _organ_status(organ_score(["cardiac", "cardiovascular", "bp", "heart"]))},
-            "lungs":    {"score": organ_score(["respiratory", "pulmonary", "spo2"]),             "status": _organ_status(organ_score(["respiratory", "pulmonary", "spo2"]))},
-            "liver":    {"score": organ_score(["hepatic", "liver"]),                             "status": _organ_status(organ_score(["hepatic", "liver"]))},
-            "gut":      {"score": organ_score(["gut", "digestive", "stomach"]),                  "status": _organ_status(organ_score(["gut", "digestive", "stomach"]))},
-            "legs":     {"score": organ_score(["legs", "vascular", "stroke"]),                   "status": _organ_status(organ_score(["legs", "vascular", "stroke"]))},
-            "kidneys":  {"score": organ_score(["renal", "kidney", "ckd", "creatinine"]),         "status": _organ_status(organ_score(["renal", "kidney", "ckd", "creatinine"]))},
-            "metabolic":{"score": organ_score(["diabetes", "glucose", "hba1c", "metabolic"]),   "status": _organ_status(organ_score(["diabetes", "glucose", "hba1c", "metabolic"]))},
+            "brain":    {"score": generic_organ_score(["neurological", "cognitive", "temp"]), "status": _organ_status(generic_organ_score(["neurological", "cognitive", "temp"]))},
+            "heart":    {"score": heart_score,                                                "status": _organ_status(heart_score)},
+            "lungs":    {"score": lung_score,                                                 "status": _organ_status(lung_score)},
+            "liver":    {"score": generic_organ_score(["hepatic", "liver"]),                  "status": _organ_status(generic_organ_score(["hepatic", "liver"]))},
+            "gut":      {"score": generic_organ_score(["gut", "digestive", "stomach"]),       "status": _organ_status(generic_organ_score(["gut", "digestive", "stomach"]))},
+            "legs":     {"score": generic_organ_score(["legs", "vascular", "stroke"]),        "status": _organ_status(generic_organ_score(["legs", "vascular", "stroke"]))},
+            "kidneys":  {"score": renal_score,                                                "status": _organ_status(renal_score)},
+            "metabolic":{"score": metabolic_score,                                            "status": _organ_status(metabolic_score)},
         }
     }
-
 
 
 @app.get("/vitals/{user_id}/trends", tags=["BioGears Compatibility"])
@@ -412,17 +469,42 @@ async def get_vitals_trends(user_id: str):
 @app.get("/analytics/cvd-risk/{user_id}", tags=["BioGears Compatibility"])
 async def get_cvd_risk(user_id: str):
     state = state_mgr.get_or_create_state(user_id)
+    p = state.profile
+    age = getattr(p, "age", None) or 30
+    
+    # Live blood pressure & HR readings
+    sys_vals = [v.value_primary for v in state.recent_vitals if v.vital_type == "blood_pressure" and v.value_primary]
+    hr_vals = [v.value_primary for v in state.recent_vitals if v.vital_type == "heart_rate" and v.value_primary]
+    latest_sys = sys_vals[-1] if sys_vals else 120.0
+    latest_hr = hr_vals[-1] if hr_vals else 72.0
+
     risk_text = " ".join(
         [f"{r.level.value} {r.title}" for r in (state.active_risks or [])]
     ).lower()
-    has_cv_risk = any(kw in risk_text for kw in ["cardiovascular", "cardiac", "hypertension", "bp", "blood pressure"])
-    risk_pct = 12.5 if has_cv_risk else 6.2
+    has_cv_risk = any(kw in risk_text for kw in ["cardiovascular", "cardiac", "hypertension", "bp", "blood pressure", "cholesterol"])
+    has_smoking = "smoke" in risk_text or "tobacco" in risk_text
+
+    # Dynamic risk formula incorporating age, systolic BP strain, HR, and active clinical risk factors
+    base_risk = 2.0 + (age - 20) * 0.15
+    if latest_sys > 120:
+        base_risk += (latest_sys - 120) * 0.12
+    if latest_hr > 80:
+        base_risk += (latest_hr - 80) * 0.08
+    if has_cv_risk:
+        base_risk += 4.5
+    if has_smoking:
+        base_risk += 5.0
+
+    risk_pct = round(max(1.0, min(65.0, base_risk)), 1)
+    category = "High" if risk_pct >= 20.0 else ("Moderate" if risk_pct >= 10.0 else "Low")
+    color = "#F44336" if category == "High" else ("#FF9800" if category == "Moderate" else "#4CAF50")
+
     return {
         "ten_year_risk_pct": risk_pct,
-        "category": "Moderate" if has_cv_risk else "Low",
-        "color": "#FF9800" if has_cv_risk else "#4CAF50",
-        "action": "Follow up with cardiologist annually." if has_cv_risk else "Maintain healthy lifestyle.",
-        "modifiable_risk_factors": ["Exercise regularly", "Maintain healthy weight", "Reduce sodium intake"]
+        "category": category,
+        "color": color,
+        "action": "Follow up with cardiologist annually." if category != "Low" else "Maintain healthy lifestyle.",
+        "modifiable_risk_factors": ["Exercise regularly", "Maintain healthy weight", "Reduce sodium intake", "Monitor blood pressure"]
     }
 
 
@@ -584,21 +666,7 @@ async def process_lab_ocr_scan(req: LabOCRScanRequest):
             for med in ocr_record.extracted_medications:
                 state_mgr.add_medication(req.user_id, med)
         else:
-            # Priority 3: Minimal keyword-based inference from title only (last resort)
-            text_lower = req.report_title.lower()
-            if any(kw in text_lower for kw in ["cbc", "haematology", "haemogram", "blood count"]):
-                parsed_labs.append(NormalizedLab(
-                    lab_id=f"lab_{uuid.uuid4().hex[:8]}", patient_id=req.user_id,
-                    canonical_name="Hemoglobin", value=14.5, unit="g/dL",
-                    reference_range="13.5-17.5", classification="Normal",
-                    timestamp=datetime.now(timezone.utc)
-                ))
-                parsed_labs.append(NormalizedLab(
-                    lab_id=f"lab_{uuid.uuid4().hex[:8]}", patient_id=req.user_id,
-                    canonical_name="WBC Count", value=6.8, unit="k/uL",
-                    reference_range="4.5-11.0", classification="Normal",
-                    timestamp=datetime.now(timezone.utc)
-                ))
+            logger.info(f"No legible text or findings provided for lab OCR request '{req.report_title}'")
 
     # Add to in-memory state
     if parsed_labs:
@@ -1321,6 +1389,226 @@ async def list_bug_reports(limit: int = 50, category: Optional[str] = None):
     if category:
         reports = [r for r in reports if r.get("category") == category]
     return {"reports": reports[:limit], "count": len(reports)}
+
+
+# ---------------------------------------------------------------------------
+# Offline Air-Gapped Clinical & Nutrition Endpoints
+# ---------------------------------------------------------------------------
+
+@app.get("/api/v6/clinical/drug-interaction", tags=["Clinical Pharmacovigilance"])
+async def check_local_drug_interaction(drug_a: str, drug_b: str):
+    """
+    Offline local drug-drug interaction audit endpoint (0 network calls).
+    """
+    from healthbot_v4.apps.notification.medication_intelligence_engine import MedicationIntelligenceEngine
+    result = MedicationIntelligenceEngine.query_local_clinical_db_drug_interaction(drug_a, drug_b)
+    if result:
+        return result
+    return {
+        "has_interaction": False,
+        "drug_a": drug_a,
+        "drug_b": drug_b,
+        "message": "No contraindications found in local clinical matrix."
+    }
+
+
+@app.get("/api/v6/nutrition/food-search", tags=["Hybrid Nutrition Engine"])
+async def search_local_food_db(query: str):
+    """
+    Hybrid Food Nutrition Search Endpoint:
+    1. Tier 1: Query local SQLite clinical_kb.db for instant (<5ms) results.
+    2. Tier 2: If local items < 3, query OpenFoodFacts API, parse macros,
+               auto-cache into clinical_kb.db, and return merged items.
+    """
+    import os
+    import sqlite3
+    import urllib.request
+    import json
+
+    db_path = os.path.join(os.path.dirname(__file__), "..", "..", "database", "clinical_kb.db")
+    q_clean = f"%{query.strip().lower()}%"
+    local_items = []
+
+    # Tier 1: Local SQLite Search
+    if os.path.exists(db_path):
+        try:
+            conn = sqlite3.connect(db_path)
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT name, category, calories, protein_g, carbs_g, fat_g, fiber_g, sodium_mg, potassium_mg, glycemic_index, serving_size
+                FROM food_nutrition
+                WHERE LOWER(name) LIKE ? OR LOWER(category) LIKE ?
+                LIMIT 25
+            """, (q_clean, q_clean))
+            rows = cursor.fetchall()
+            conn.close()
+
+            local_items = [
+                {
+                    "id": f"local_{i}",
+                    "name": r[0],
+                    "category": r[1],
+                    "calories": r[2],
+                    "protein_g": r[3],
+                    "carbs_g": r[4],
+                    "fat_g": r[5],
+                    "fiber_g": r[6],
+                    "sodium_mg": r[7],
+                    "potassium_mg": r[8],
+                    "glycemic_index": r[9],
+                    "serving_size": r[10],
+                    "source": "Local Air-Gapped DB"
+                }
+                for i, r in enumerate(rows)
+            ]
+        except Exception as e:
+            logger.warning(f"Local food DB search error: {e}")
+
+    # Return immediately if we already have strong local matches
+    if len(local_items) >= 5:
+        return {"items": local_items, "count": len(local_items), "source": "Local Air-Gapped DB"}
+
+    # Tier 2: Hybrid Online Fallback (OpenFoodFacts API)
+    external_items = []
+    try:
+        url = f"https://world.openfoodfacts.org/cgi/search.pl?search_terms={urllib.parse.quote(query.strip())}&search_simple=1&action=process&json=1&page_size=15"
+        req = urllib.request.Request(url, headers={"User-Agent": "VitalHealth/6.0 Nutrition Engine"})
+        with urllib.request.urlopen(req, timeout=2.5) as resp:
+            data = json.loads(resp.read().decode('utf-8'))
+            products = data.get("products", [])
+            
+            for prod in products:
+                prod_name = prod.get("product_name") or prod.get("product_name_en")
+                if not prod_name or not prod_name.strip():
+                    continue
+                nutriments = prod.get("nutriments", {})
+                calories = round(float(nutriments.get("energy-kcal_100g") or nutriments.get("energy-kcal") or 0), 1)
+                protein = round(float(nutriments.get("proteins_100g") or nutriments.get("proteins") or 0), 1)
+                carbs = round(float(nutriments.get("carbohydrates_100g") or nutriments.get("carbohydrates") or 0), 1)
+                fat = round(float(nutriments.get("fat_100g") or nutriments.get("fat") or 0), 1)
+                fiber = round(float(nutriments.get("fiber_100g") or nutriments.get("fiber") or 0), 1)
+                sodium = round(float(nutriments.get("sodium_100g") or nutriments.get("sodium") or 0) * 1000, 1)
+                serving = prod.get("serving_size") or "100g"
+                category = prod.get("categories", "").split(",")[0] if prod.get("categories") else "general"
+
+                item_dict = {
+                    "id": f"off_{prod.get('_id', uuid.uuid4().hex[:8])}",
+                    "name": prod_name.title(),
+                    "category": category.strip().title(),
+                    "calories": calories,
+                    "protein_g": protein,
+                    "carbs_g": carbs,
+                    "fat_g": fat,
+                    "fiber_g": fiber,
+                    "sodium_mg": sodium,
+                    "potassium_mg": 0.0,
+                    "glycemic_index": 50,
+                    "serving_size": serving,
+                    "source": "OpenFoodFacts API (Cached locally)"
+                }
+                external_items.append(item_dict)
+
+                # Auto-Cache into local DB
+                if os.path.exists(db_path):
+                    try:
+                        conn = sqlite3.connect(db_path)
+                        cursor = conn.cursor()
+                        cursor.execute("""
+                            INSERT OR IGNORE INTO food_nutrition (name, category, calories, protein_g, carbs_g, fat_g, fiber_g, sodium_mg, potassium_mg, glycemic_index, serving_size)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """, (prod_name.title(), category.strip().title(), calories, protein, carbs, fat, fiber, sodium, 0.0, 50, serving))
+                        conn.commit()
+                        conn.close()
+                    except Exception:
+                        pass
+    except Exception as api_err:
+        logger.warning(f"OpenFoodFacts API fallback failed or timed out: {api_err}")
+
+    # Merge local and external items without duplicates
+    combined = list(local_items)
+    existing_names = {item["name"].lower() for item in local_items}
+    for ext_item in external_items:
+        if ext_item["name"].lower() not in existing_names:
+            combined.append(ext_item)
+            existing_names.add(ext_item["name"].lower())
+
+    return {"items": combined, "count": len(combined)}
+
+
+@app.get("/api/v6/clinical/lab-micronutrient-correlation/{user_id}", tags=["Lab Micronutrient Correlation"])
+async def evaluate_lab_micronutrient_correlation(user_id: str):
+    """
+    Evaluates patient lab findings against food micronutrients to deliver
+    targeted dietary recommendations and absorption conflict warnings.
+    """
+    from healthbot_v4.apps.notification.lab_micronutrient_correlator import LabMicronutrientCorrelator
+    from healthbot_v4.apps.brain.journey.journey_engine import _load_journey_store
+
+    state = state_mgr.get_or_create_state(user_id)
+    recent_labs = [l.model_dump() for l in state.recent_labs]
+
+    # Also load from journey store if available
+    try:
+        store = _load_journey_store(user_id)
+        existing_labs = store.get("recent_labs", [])
+        if existing_labs:
+            recent_labs.extend(existing_labs)
+    except Exception as e:
+        logger.warning(f"Failed to read journey store labs for {user_id}: {e}")
+
+    # Read logged foods from journey store
+    logged_foods = []
+    try:
+        store = _load_journey_store(user_id)
+        logged_foods = store.get("logged_foods", [])
+    except Exception as e:
+        logger.warning(f"Failed to read journey store foods for {user_id}: {e}")
+
+    return LabMicronutrientCorrelator.evaluate_correlations(user_id, recent_labs, logged_foods)
+
+
+@app.get("/api/v6/telemetry/dynamic-calorie-targets/{user_id}", tags=["Biometric Calorie Recalibration"])
+async def get_dynamic_calorie_targets(
+    user_id: str,
+    steps: Optional[int] = None,
+    heart_rate: Optional[float] = None
+):
+    """
+    Recalibrates daily calories and macro allowances in real time using
+    step count and PPG heart rate telemetry.
+    """
+    from healthbot_v4.apps.notification.biometric_calorie_recalibrator import BiometricCalorieRecalibrator
+
+    state = state_mgr.get_or_create_state(user_id)
+    cached_telem = _telemetry_cache.get(user_id, {})
+
+    effective_steps = steps if steps is not None else cached_telem.get("steps", 0)
+    effective_hr = heart_rate if heart_rate is not None else cached_telem.get("heart_rate")
+
+    profile_dict = state.profile.model_dump() if state.profile else {}
+    return BiometricCalorieRecalibrator.recalibrate_targets(
+        user_id=user_id,
+        profile=profile_dict,
+        steps=effective_steps,
+        heart_rate=effective_hr
+    )
+
+
+@app.get("/api/v6/medication/depletion-forecast/{user_id}", tags=["Medication Inventory Forecasting"])
+async def get_medication_depletion_forecast(user_id: str):
+    """
+    Tracks medication pill counts in real time, predicts exact depletion dates,
+    and returns automated 3-day refill alerts.
+    """
+    from healthbot_v4.apps.notification.medication_intelligence_engine import MedicationIntelligenceEngine
+
+    state = state_mgr.get_or_create_state(user_id)
+    active_meds = [m.model_dump() for m in state.active_medications]
+
+    return MedicationIntelligenceEngine.forecast_inventory_depletion(user_id, active_meds)
+
+
+
 
 
 

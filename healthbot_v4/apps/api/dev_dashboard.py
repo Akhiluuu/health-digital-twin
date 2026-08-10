@@ -294,7 +294,7 @@ DASHBOARD_HTML = """
 <body>
     <header>
         <div class="title-badge">
-            <h1>VitalHealth v5.0 Production Operations Dashboard</h1>
+            <h1>VitalHealth v5.0 Developer Verification Dashboard</h1>
             <span class="badge-prod">PRODUCTION CLOUD READY</span>
             <span class="badge">PROMETHEUS TELEMETRY ACTIVE</span>
         </div>

@@ -100,7 +100,7 @@ export const triggerVitalsAnomalyAlert = async (
   profileName: string = "",
   vitalName: string = "Resting Heart Rate",
   value: string = "110 bpm",
-  baseline: string = "72 bpm"
+  baseline: string = "Uncalibrated"
 ) => {
   if (!isNotifeeAvailable()) return;
   const title = await getFormattedTitle(`🫀 ${vitalName} Anomaly`, profileId, profileName);

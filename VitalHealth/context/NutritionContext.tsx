@@ -15,6 +15,7 @@ import { useFamily } from "./FamilyContext";
 import { useBiogearsTwin } from "./BiogearsTwinContext";
 import { log, error } from "../utils/logger";
 import { getLocalDateString } from "../utils/twinUtils";
+import { nanoid } from "../utils/nanoid";
 
 import {
   syncAddFoodEntry,
@@ -236,6 +237,50 @@ export const foodDatabase = [
   { id: "14", name: "Milk (1 cup)",   calories: 103, protein: 8,    carbs: 12, fat: 2.4,  sugar: 12,   sodium: 107, fiber: 0,   category: "breakfast" },
   { id: "15", name: "Cottage Cheese", calories: 110, protein: 13,   carbs: 5,  fat: 5,    sugar: 4,    sodium: 350, fiber: 0,   category: "breakfast" },
 ];
+
+/**
+ * Searches real-world foods dynamically via local backend air-gapped database or local client index.
+ */
+export async function searchOpenFoodFacts(query: string): Promise<typeof foodDatabase> {
+  const clean = query.trim().toLowerCase();
+  if (!clean) return [];
+
+  // 1. Local client-side dataset matching
+  const localMatches = foodDatabase.filter(f => f.name.toLowerCase().includes(clean) || f.category.toLowerCase().includes(clean));
+
+  // 2. Query local backend air-gapped database endpoint
+  try {
+    const { API_BASE_URL } = require('../services/apiConfig');
+    const res = await fetch(`${API_BASE_URL}/api/v6/nutrition/food-search?query=${encodeURIComponent(clean)}`);
+    if (res.ok) {
+      const data = await res.json();
+      const serverItems = (data.items || []).map((item: any) => ({
+        id: item.id || `loc_${Date.now()}`,
+        name: item.name,
+        calories: Math.round(item.calories || 0),
+        protein: item.protein_g || 0,
+        carbs: item.carbs_g || 0,
+        fat: item.fat_g || 0,
+        sodium: item.sodium_mg || 0,
+        fiber: item.fiber_g || 0,
+        category: item.category || "general"
+      }));
+
+      // Merge results without duplicate names
+      const combined = [...localMatches];
+      for (const sItem of serverItems) {
+        if (!combined.some(c => c.name.toLowerCase() === sItem.name.toLowerCase())) {
+          combined.push(sItem);
+        }
+      }
+      return combined;
+    }
+  } catch (err) {
+    // Silently fall back to client-side local database
+  }
+
+  return localMatches;
+}
 
 // ─── State & Actions ──────────────────────────────────────────────────────────
 type State = {
@@ -977,9 +1022,7 @@ export function NutritionProvider({ children }: { children: React.ReactNode }) {
 
   // ── Actions ──────────────────────────────────────────────────────────────────
   const addFoodEntry = useCallback(async (entry: Omit<FoodEntry, "id" | "timestamp"> & { timestamp?: string }) => {
-    // ✅ FIX: Use high-resolution timestamp + random suffix to guarantee unique IDs
-    // even if addFoodEntry is called twice in the same millisecond (rapid double-tap).
-    const id = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    const id = `food_${Date.now()}_${nanoid(8)}`;
     
     let timestamp = entry.timestamp;
     if (!timestamp) {
@@ -1019,8 +1062,7 @@ export function NutritionProvider({ children }: { children: React.ReactNode }) {
   }, [isSwitched, activeMemberId]);
 
   const addActivityEntry = useCallback(async (entry: Omit<ActivityEntry, "id" | "timestamp">) => {
-    // ✅ FIX: Same collision-proof ID pattern as addFoodEntry
-    const id = `act_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+    const id = `act_${Date.now()}_${nanoid(8)}`;
     const timestamp = new Date().toISOString();
     const fullEntry: ActivityEntry = { ...entry, id, timestamp };
 

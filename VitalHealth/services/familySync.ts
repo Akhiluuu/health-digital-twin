@@ -18,6 +18,7 @@ import { UserProfile } from "./profileService";
 import { FamilyMember } from "../types/FamilyMember";
 
 import { log, error } from "../utils/logger";
+import { nanoid } from "../utils/nanoid";
 
 /* ──────────────────────────────────────────────────────────────
    Linked Member Type
@@ -415,12 +416,10 @@ export async function createDependentProfile(details: {
     if (!myUid) return null;
 
     // Not a Firebase Auth UID — just a unique document ID for this person.
-    const newId = `dep_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    const newId = `dep_${Date.now()}_${nanoid(8)}`;
 
-    // Generate a truly unique Health ID / inviteCode.
-    // Mix UID + timestamp + random to eliminate collisions even if
-    // two dependents are created in the same millisecond.
-    const randomSuffix = Math.random().toString(36).slice(2, 8).toUpperCase();
+    // Generate a truly unique Health ID / inviteCode using nanoid
+    const randomSuffix = nanoid(6).toUpperCase();
     const timePart = Date.now().toString(36).toUpperCase().slice(-4);
     const uidPart = myUid.replace(/[^a-zA-Z0-9]/g, "").substring(0, 4).toUpperCase();
     const depCode = `VT-${uidPart}${timePart}-${randomSuffix.substring(0, 4)}`;

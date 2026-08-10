@@ -167,47 +167,52 @@ export interface BiogearsVitals {
 }
 
 export function sanitizeBiogearsVitals(raw?: BiogearsVitals | null): BiogearsVitals {
-  const v = raw || {};
-  const heart_rate = v.heart_rate ?? 72;
-  const blood_pressure = v.blood_pressure || '120/80';
-  let sbp = 120;
-  let dbp = 80;
+  if (!raw) {
+    return {
+      heart_rate: null as any,
+      blood_pressure: null as any,
+      map: null as any,
+      stroke_volume: null as any,
+      cardiac_output: null as any,
+      respiration: null as any,
+      tidal_volume: null as any,
+      arterial_ph: null as any,
+      glucose: null as any,
+      spo2: null as any,
+      core_temperature: null as any,
+      exercise_level: 0,
+    };
+  }
+
+  const v = raw;
+  const heart_rate = v.heart_rate ?? null;
+  const blood_pressure = v.blood_pressure || null;
+  let sbp: number | null = null;
+  let dbp: number | null = null;
   if (blood_pressure && blood_pressure.includes('/')) {
     const parts = blood_pressure.split('/');
-    sbp = parseFloat(parts[0]) || 120;
-    dbp = parseFloat(parts[1]) || 80;
+    sbp = parseFloat(parts[0]) || null;
+    dbp = parseFloat(parts[1]) || null;
   }
   
   // Mean Arterial Pressure (MAP) = DBP + (SBP - DBP) / 3
-  const calculatedMap = Math.round(dbp + (sbp - dbp) / 3);
+  const calculatedMap = (dbp !== null && sbp !== null) ? Math.round(dbp + (sbp - dbp) / 3) : null;
   const map = v.map ?? calculatedMap;
 
-  // Stroke Volume (SV) baseline ~ 70 mL
-  const stroke_volume = v.stroke_volume ?? 70;
+  const stroke_volume = v.stroke_volume ?? null;
 
   // Cardiac Output (CO) = (HR * SV) / 1000 in L/min
-  const calculatedCO = parseFloat(((heart_rate * stroke_volume) / 1000).toFixed(1));
+  const calculatedCO = (heart_rate !== null && stroke_volume !== null) 
+    ? parseFloat(((heart_rate * stroke_volume) / 1000).toFixed(1)) 
+    : null;
   const cardiac_output = v.cardiac_output ?? calculatedCO;
 
-  // Respiration Rate ~ 14 br/min
-  const respiration = v.respiration ?? 14;
-
-  // Tidal Volume ~ 500 mL
-  const tidal_volume = v.tidal_volume ?? 500;
-
-  // Arterial pH ~ 7.40
-  const arterial_ph = v.arterial_ph ?? 7.40;
-
-  // Glucose ~ 96 mg/dL
-  const glucose = v.glucose ?? 96;
-
-  // SpO2 (%) - preserve null if missing from simulation
-  const spo2 = v.spo2 !== undefined && v.spo2 !== null ? v.spo2 : null;
-
-  // Core Temperature ~ 37.0 °C
-  const core_temperature = v.core_temperature ?? 37.0;
-
-  // Exercise Level ~ 0
+  const respiration = v.respiration ?? null;
+  const tidal_volume = v.tidal_volume ?? null;
+  const arterial_ph = v.arterial_ph ?? null;
+  const glucose = v.glucose ?? null;
+  const spo2 = v.spo2 !== undefined ? v.spo2 : null;
+  const core_temperature = v.core_temperature ?? null;
   const exercise_level = v.exercise_level ?? 0;
 
   return {

@@ -448,9 +448,8 @@ export const MedicineProvider = ({
         timestamp < 1_000_000_000_000 ? timestamp * 1000 : timestamp;
 
       if (isSwitched && activeMemberId && activeMemberId !== "self") {
-        // ✅ FIX: Collision-proof ID — Date.now() alone risks collision if two medicines
-        // are added in the same millisecond (rapid saves on slow devices).
-        const medId = Date.now() * 1000 + Math.floor(Math.random() * 1000);
+        const microSecOffset = typeof performance !== "undefined" ? Math.floor((performance.now() % 1) * 1000) : 0;
+        const medId = Date.now() * 1000 + microSecOffset;
         let notifId: string | null = null;
 
         if (reminder) {
