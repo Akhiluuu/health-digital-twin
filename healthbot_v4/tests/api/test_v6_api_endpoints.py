@@ -42,3 +42,52 @@ def test_v6_hitl_tasks_endpoint():
     assert response.status_code == 200
     data = response.json()
     assert isinstance(data, list)
+
+
+def test_v6_onboarding_medical_search_endpoint():
+    # Test query for diabetes across taxonomy
+    response = client.post("/api/v6/onboarding/medical-search", json={"query": "diabetes", "category": "All", "limit": 10})
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "SUCCESS"
+    assert data["total"] > 0
+    assert len(data["results"]) > 0
+    assert any("diabetes" in r["condition"].lower() for r in data["results"])
+
+
+def test_v6_onboarding_adaptive_questions_endpoint():
+    payload = {
+        "patient_id": "PX_V6_TEST",
+        "primary_goal": "weight_loss",
+        "age": 35,
+        "sex": "female",
+        "selected_conditions": ["Type 2 Diabetes"]
+    }
+    response = client.post("/api/v6/onboarding/adaptive-questions", json=payload)
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "SUCCESS"
+    assert "categorized_taxonomy" in data
+    assert "Cardiovascular" in data["categorized_taxonomy"]
+
+
+def test_v6_onboarding_intake_endpoint():
+    payload = {
+        "patient_id": "PX_V6_TEST",
+        "first_name": "Test",
+        "last_name": "User",
+        "height_cm": 175,
+        "weight_kg": 70,
+        "resting_hr": 70,
+        "systolic_bp": 120,
+        "diastolic_bp": 80,
+        "body_fat_pct": 20,
+        "chronic_conditions": ["Hypertension", "Type 2 Diabetes"],
+        "medications": ["Metformin", "Amlodipine"]
+    }
+    response = client.post("/api/v6/onboarding/intake", json=payload)
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "SUCCESS"
+    assert data["twin_activation"]["is_calibrated"] is True
+

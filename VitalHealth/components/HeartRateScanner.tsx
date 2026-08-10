@@ -71,7 +71,7 @@ export default function HeartRateScanner({
 
   // Local component states
   const [bpm, setBpm] = useState<number>(0);
-  const [spo2, setSpo2] = useState<number>(98);
+  const [spo2, setSpo2] = useState<number>(0);
   const [confidence, setConfidence] = useState<number>(0);
   const [status, setStatus] = useState<string>("CALIBRATING");
   const [pulseWave, setPulseWave] = useState<number>(0);

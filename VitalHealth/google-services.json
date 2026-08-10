@@ -1,26 +1,36 @@
 {
   "project_info": {
-    "project_number": "1049910788509",
-    "project_id": "vitaltwin-78004",
-    "storage_bucket": "vitaltwin-78004.firebasestorage.app"
+    "project_number": "531709406873",
+    "project_id": "vital-health-2026-1e1ee",
+    "storage_bucket": "vital-health-2026-1e1ee.firebasestorage.app"
   },
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:1049910788509:android:ddc475543029a3be78af74",
+        "mobilesdk_app_id": "1:531709406873:android:7b6b2319da9cf8f6fa9208",
         "android_client_info": {
-          "package_name": "com.monish2005.vitaltwin"
+          "package_name": "com.monish2005.vitalhealth"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "531709406873-icvsp7ij305bgujeio3cquu6gmr8ap4o.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
-          "current_key": "AIzaSyCCZXNV-yrEfflOrdHwcPWKR5XsnaLmKg0"
+          "current_key": "AIzaSyCkmBfcZ2OXIeI5q8fOTQ9D8TZbziP4v6I"
         }
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "531709406873-icvsp7ij305bgujeio3cquu6gmr8ap4o.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
         }
       }
     }

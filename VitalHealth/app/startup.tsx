@@ -2,7 +2,6 @@ import { useRouter } from "expo-router";
 import { useEffect } from "react";
 import { ActivityIndicator, View } from "react-native";
 
-import { isLoggedIn } from "../services/authStorage";
 import { getProfile, saveProfile } from "../services/profileStorage";
 import { auth } from "../services/firebase";
 import { fetchProfile } from "../services/profileService";
@@ -14,18 +13,15 @@ export default function Startup() {
     let isMounted = true;
     const checkApp = async () => {
       // 1. Wait for Firebase Auth to initialize and restore session.
-      // We give auth up to 2 seconds to resolve before falling back to
-      // auth.currentUser. This prevents false-null returns from a race.
       const user = await new Promise<any>((resolve) => {
         let settled = false;
         const timer = setTimeout(() => {
           if (!settled) {
             settled = true;
             unsubscribe();
-            // Fallback: read synchronous currentUser (may be null on cold start)
             resolve(auth.currentUser);
           }
-        }, 2000);
+        }, 1800);
 
         const unsubscribe = auth.onAuthStateChanged((u) => {
           if (!settled) {
@@ -39,21 +35,20 @@ export default function Startup() {
 
       if (!isMounted) return;
 
-      // 2. If not logged in, go to welcome screen
-      const localLoggedIn = await isLoggedIn();
-      if (!user && !localLoggedIn) {
+      // 2. If not logged in, go straight to welcome ("Get Started") screen
+      if (!user) {
         router.replace("/welcome");
         return;
       }
 
-      // 3. Check if we have a local cached profile
+      // 3. Check for local cached profile
       let profile = await getProfile();
 
-      // 4. If not found locally but logged in, try to restore from Firestore
-      if (!profile && user) {
+      // 4. If not found locally but user is logged in, attempt restore from Firestore
+      if ((!profile || (!profile.firstName && !profile.name)) && user) {
         try {
           const remoteProfile = await fetchProfile(user.uid);
-          if (remoteProfile && remoteProfile.firstName) {
+          if (remoteProfile && (remoteProfile.firstName || remoteProfile.name)) {
             profile = remoteProfile;
             await saveProfile(remoteProfile);
           }
@@ -65,10 +60,11 @@ export default function Startup() {
       if (!isMounted) return;
 
       // 5. Route based on profile completion status
-      if (!profile || !profile.firstName) {
-        router.replace("/onboarding/personal");
-      } else {
+      const hasCompletedProfile = profile && (profile.firstName || profile.name);
+      if (hasCompletedProfile) {
         router.replace("/(tabs)");
+      } else {
+        router.replace("/onboarding/personal");
       }
     };
 
@@ -81,9 +77,9 @@ export default function Startup() {
       flex: 1,
       justifyContent: "center",
       alignItems: "center",
-      backgroundColor: "#ffffff"
+      backgroundColor: "#040a14"
     }}>
-      <ActivityIndicator size="large" color="#0ea5e9" />
+      <ActivityIndicator size="large" color="#3b82f6" />
     </View>
   );
 }

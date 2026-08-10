@@ -1913,7 +1913,7 @@ export default function TwinScreen() {
                 { label: 'Heart Rate', val: v.heart_rate ? Math.round(v.heart_rate) : (profile?.biogears_resting_hr ? Number(profile.biogears_resting_hr) : 72), unit: 'bpm', icon: '🫀', lo: 60, hi: 100 },
                 { label: 'Blood Pressure', val: bp.sys && bp.dia ? `${Math.round(bp.sys)}/${Math.round(bp.dia)}` : '120/80', unit: 'mmHg', icon: '🩸', lo: 90, hi: 120 },
                 { label: 'Glucose', val: v.glucose ? Math.round(v.glucose) : 95, unit: 'mg/dL', icon: '🍬', lo: 70, hi: 140 },
-                { label: 'SpO₂', val: v.spo2 ? Math.round(v.spo2) : 98, unit: '%', icon: '🫁', lo: 94, hi: 100 },
+                { label: 'SpO₂', val: v.spo2 ? Math.round(v.spo2) : '--', unit: '%', icon: '🫁', lo: 94, hi: 100 },
                 { label: 'Resp. Rate', val: v.respiration ? Math.round(v.respiration) : 14, unit: 'br/min', icon: '💨', lo: 12, hi: 20 },
                 { label: 'Cardiac Output', val: v.cardiac_output != null ? Number(v.cardiac_output.toFixed(1)) : 5.1, unit: 'L/min', icon: '⚡', lo: 4.5, hi: 6.5 },
                 { label: 'MAP', val: v.map != null ? Math.round(v.map!) : 93, unit: 'mmHg', icon: '📈', lo: 70, hi: 100 },

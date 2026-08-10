@@ -1,14 +1,17 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { auth, db } from "../../services/firebase";
-import { doc, updateDoc } from "firebase/firestore";
+import { doc, setDoc } from "firebase/firestore";
 import * as BiogearsAPI from "../../services/biogears";
 import { buildDefaultRoutine } from "../../services/onboardingRoutineBuilder";
 import { getTwinId } from "../../utils/twinUtils";
+import { submitFullOnboardingIntake, clearOnboardingDraft, DigitalTwinActivationResult } from "../../services/onboardingService";
 import React, { useEffect, useRef, useState } from "react";
 import {
   Animated,
   Easing,
+  Modal,
+  ActivityIndicator,
   ScrollView,
   StyleSheet,
   Text,
@@ -18,7 +21,6 @@ import {
 
 import { useTheme } from "../../context/ThemeContext";
 import { colors as globalColors } from "../../theme/colors";
-// ✅ STEP 1: ADD FIREBASE IMPORT
 import { saveProfile } from "../../services/profileService";
 
 export default function Review() {
@@ -26,7 +28,8 @@ export default function Review() {
   const params  = useLocalSearchParams();
   const { theme } = useTheme();
 
-  const c = globalColors[theme];
+  const activeTheme = theme === "light" ? "light" : "dark";
+  const c = globalColors[activeTheme] || globalColors.dark;
   const colors = {
     background: c.bg,
     card: c.card,
@@ -40,6 +43,8 @@ export default function Review() {
   const [signupName,  setSignupName]  = useState("");
   const [signupEmail, setSignupEmail] = useState("");
   const [saving,      setSaving]      = useState(false);
+  const [activationStep, setActivationStep] = useState("Calibrating BioGears Physiological Engine...");
+  const [activationResult, setActivationResult] = useState<DigitalTwinActivationResult | null>(null);
   const [generatedRoutine, setGeneratedRoutine] = useState<any>(null);
   
   const [habits, setHabits] = useState<any>(null);
@@ -203,7 +208,7 @@ export default function Review() {
               foodHabits: { ...habitsObj.foodHabits, dietType: customDiet },
             };
             await AsyncStorage.setItem(`@onboarding_habits_${user.uid}`, JSON.stringify(updatedHabits));
-            await updateDoc(doc(db, "users", user.uid), { habits: updatedHabits });
+            await setDoc(doc(db, "users", user.uid), { habits: updatedHabits }, { merge: true });
 
             const heightVal = parseFloat(String(profileData.height || '').replace(/[^0-9.]/g, '')) || 175;
             const weightVal = parseFloat(String(profileData.weight || '').replace(/[^0-9.]/g, '')) || 70;
@@ -222,13 +227,61 @@ export default function Review() {
       }
 
       console.log("✅ Profile saved to Firebase:", profileData);
-      router.replace("/");
+
+      // ── 🚀 DYNAMIC HEALTH OS INGESTION & DIGITAL TWIN ACTIVATION CEREMONY ──
+      setActivationStep("1/3 Calibrating BioGears Engine & Baseline Vitals...");
+      const hVal = parseFloat(String(params.height || '175').replace(/[^0-9.]/g, '')) || 175;
+      const wVal = parseFloat(String(params.weight || '70').replace(/[^0-9.]/g, '')) || 70;
+
+      let condsList: string[] = [];
+      if (params.selectedConditions) {
+        try { condsList = JSON.parse(params.selectedConditions as string); } catch {}
+      }
+
+      let familyList: any[] = [];
+      if (params.selectedFamily) {
+        try {
+          const parsed = JSON.parse(params.selectedFamily as string);
+          familyList = parsed.map((c: string) => ({ relation: "Family", condition: c }));
+        } catch {}
+      }
+
+      const intakeRes = await submitFullOnboardingIntake({
+        patient_id: user?.uid || "guest",
+        first_name: profileData.firstName,
+        last_name: profileData.lastName,
+        email,
+        phone: profileData.phone,
+        date_of_birth: profileData.dateOfBirth,
+        gender: profileData.gender,
+        primary_goal: (params.primaryGoal as string) || "wellness",
+        height_cm: hVal,
+        weight_kg: wVal,
+        blood_group: profileData.bloodGroup,
+        resting_hr: restingHR,
+        systolic_bp: systolicBP,
+        diastolic_bp: diastolicBP,
+        body_fat_pct: bodyFatPct,
+        allergies: profileData.allergies,
+        chronic_conditions: condsList,
+        family_history: familyList,
+        medications: profileData.medications,
+        surgeries: params.surgeries ? (params.surgeries as string).split(",").map((s: string) => s.trim()) : [],
+        habits: habits || {},
+      });
+
+      setActivationStep("2/3 Seeding Health Knowledge Graph & Timeline...");
+      await new Promise((r) => setTimeout(r, 600));
+
+      setActivationStep("3/3 BioGears Digital Twin Operational!");
+      await new Promise((r) => setTimeout(r, 500));
+
+      setActivationResult(intakeRes.twin_activation);
+      await clearOnboardingDraft();
 
     } catch (error) {
-      console.log("Error:", error);
+      console.log("Error during intake setup:", error);
       router.replace("/");
-    } finally {
-      setSaving(false);
     }
   };
 
@@ -257,23 +310,50 @@ export default function Review() {
 
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
 
-        {/* Header */}
-        <View style={styles.header}>
-          <View style={[styles.iconBadge, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <Text style={styles.iconEmoji}>🎉</Text>
-          </View>
-          <Text style={[styles.title, { color: colors.text }]}>You're all set!</Text>
-          <Text style={[styles.subtitle, { color: colors.subText }]}>
-            Review your profile before we personalise your health dashboard
-          </Text>
-        </View>
-
-        {/* Progress */}
+        {/* Progress & Twin Calibration Header */}
         <View style={styles.progressRow}>
           <View style={[styles.progressTrack, { backgroundColor: colors.border }]}>
-            <View style={[styles.progressFill, { backgroundColor: colors.headerGradient[0] }]} />
+            <View style={[styles.progressFill, { width: "100%", backgroundColor: colors.headerGradient[0] }]} />
           </View>
-          <Text style={[styles.progressLabel, { color: colors.subText }]}>Complete ✓</Text>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+            <Text style={{ fontSize: 11, fontWeight: "800", color: colors.headerGradient[0] }}>⚡ TWIN CALIBRATION 100% READY</Text>
+          </View>
+        </View>
+
+        {/* AI Guide Conversational Box */}
+        <View style={{
+          backgroundColor: colors.card,
+          borderRadius: 16,
+          padding: 14,
+          marginBottom: 20,
+          borderWidth: 1,
+          borderColor: colors.headerGradient[0] + "40",
+          flexDirection: "row",
+          alignItems: "center",
+          gap: 12,
+          shadowColor: colors.headerGradient[0],
+          shadowOffset: { width: 0, height: 2 },
+          shadowOpacity: 0.1,
+          shadowRadius: 6,
+          elevation: 2,
+        }}>
+          <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: colors.headerGradient[0] + "20", alignItems: "center", justifyContent: "center" }}>
+            <Text style={{ fontSize: 24 }}>🚀</Text>
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={{ fontSize: 11, fontWeight: "800", color: colors.headerGradient[0], letterSpacing: 0.5, textTransform: "uppercase" }}>Activation Ready</Text>
+            <Text style={{ fontSize: 13, color: colors.text, fontWeight: "600", marginTop: 2, lineHeight: 18 }}>
+              All baseline vitals, history, and daily habits captured! Tap below to start your Digital Twin Activation Ceremony.
+            </Text>
+          </View>
+        </View>
+
+        {/* Header */}
+        <View style={styles.header}>
+          <Text style={[styles.title, { color: colors.text }]}>Clinical Intake Summary</Text>
+          <Text style={[styles.subtitle, { color: colors.subText }]}>
+            Verify your baseline metrics before launching your Health OS dashboard
+          </Text>
         </View>
 
         {/* Personal Information */}
@@ -347,6 +427,52 @@ export default function Review() {
             <Row label="Activity"  icon="⚡" value={params.activity  as string} />
           </View>
         )}
+
+        {/* ── DIGITAL TWIN ORGAN ACTIVATION CEREMONY BADGES ──────────────── */}
+        <View style={[styles.sectionCard, { backgroundColor: colors.card, borderColor: colors.headerGradient[0] + "60", borderWidth: 1.5 }]}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionIcon}>⚡</Text>
+
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.sectionTitle, { color: colors.headerGradient[0], fontWeight: "800" }]}>BioGears Organ Systems Ready</Text>
+              <Text style={{ fontSize: 11, color: colors.subText }}>Physiological engines calibrated for activation</Text>
+            </View>
+            <View style={{ backgroundColor: colors.headerGradient[0], paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10 }}>
+              <Text style={{ fontSize: 10, fontWeight: "800", color: "#fff" }}>4/4 UNLOCKED</Text>
+            </View>
+          </View>
+
+          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 4 }}>
+            {[
+              { title: "Cardiovascular", emoji: "🫀", metric: "BP & HR Baseline", color: "#ef4444" },
+              { title: "Metabolic / TDEE", emoji: "⚡", metric: "BMR & Glycemic", color: "#f59e0b" },
+              { title: "Respiratory", emoji: "🫁", metric: "O2 & Lung Volume", color: "#3b82f6" },
+              { title: "Circadian / Sleep", emoji: "🧠", metric: "HRV & Rest Cycle", color: "#8b5cf6" },
+            ].map(sys => (
+              <View
+                key={sys.title}
+                style={{
+                  flex: 1,
+                  minWidth: 140,
+                  backgroundColor: colors.background,
+                  borderRadius: 12,
+                  padding: 10,
+                  borderWidth: 1,
+                  borderColor: sys.color + "40",
+                  flexDirection: "row",
+                  alignItems: "center",
+                  gap: 10,
+                }}
+              >
+                <Text style={{ fontSize: 22 }}>{sys.emoji}</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 12, fontWeight: "700", color: colors.text }}>{sys.title}</Text>
+                  <Text style={{ fontSize: 10, color: sys.color, fontWeight: "600" }}>✓ {sys.metric}</Text>
+                </View>
+              </View>
+            ))}
+          </View>
+        </View>
 
         {/* Digital Twin Routine Preview */}
         {generatedRoutine && (
@@ -454,6 +580,58 @@ export default function Review() {
           </Text>
           {!saving && <Text style={styles.finishBtnArrow}></Text>}
         </TouchableOpacity>
+
+        {/* Digital Twin Activation Ceremony Modal */}
+        <Modal visible={saving} transparent animationType="fade">
+          <View style={{ flex: 1, backgroundColor: "rgba(15,23,42,0.88)", justifyContent: "center", alignItems: "center", padding: 24 }}>
+            <View style={{ backgroundColor: colors.card, borderRadius: 24, padding: 28, width: "100%", maxWidth: 360, alignItems: "center", borderWidth: 1.5, borderColor: colors.accent }}>
+              <View style={{ width: 72, height: 72, borderRadius: 36, backgroundColor: colors.accent + "20", alignItems: "center", justifyContent: "center", marginBottom: 16 }}>
+                {activationResult ? (
+                  <Text style={{ fontSize: 36 }}>⚡</Text>
+                ) : (
+                  <ActivityIndicator size="large" color={colors.accent} />
+                )}
+              </View>
+              <Text style={{ fontSize: 20, fontWeight: "800", color: colors.text, textAlign: "center", marginBottom: 8 }}>
+                {activationResult ? "Digital Twin Calibrated!" : "Digital Twin Activation"}
+              </Text>
+              <Text style={{ fontSize: 13, color: colors.subText, textAlign: "center", marginBottom: 20, lineHeight: 18 }}>
+                {activationStep}
+              </Text>
+
+              {activationResult && (
+                <View style={{ backgroundColor: colors.background, borderRadius: 16, padding: 16, width: "100%", marginBottom: 20 }}>
+                  <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                    <Text style={{ fontSize: 11, fontWeight: "700", color: colors.subText }}>BASELINE COMPOSITE SCORE</Text>
+                    <Text style={{ fontSize: 22, fontWeight: "900", color: colors.accent }}>
+                      {activationResult.composite_health_score}/100
+                    </Text>
+                  </View>
+                  <View style={{ flexDirection: "row", gap: 12, marginBottom: 8, marginTop: 4 }}>
+                    <Text style={{ fontSize: 11, color: colors.text, fontWeight: "600" }}>BMI: {activationResult.bmi}</Text>
+                    <Text style={{ fontSize: 11, color: colors.text, fontWeight: "600" }}>BMR: {activationResult.bmr_kcal_day} kcal</Text>
+                    <Text style={{ fontSize: 11, color: colors.text, fontWeight: "600" }}>10yr CVD: {activationResult.ten_year_cvd_risk_pct}%</Text>
+                  </View>
+                  <Text style={{ fontSize: 11, color: colors.subText, lineHeight: 16 }}>
+                    {activationResult.day_1_briefing}
+                  </Text>
+                </View>
+              )}
+
+              {activationResult && (
+                <TouchableOpacity
+                  style={{ backgroundColor: colors.accent, borderRadius: 14, paddingVertical: 14, width: "100%", alignItems: "center" }}
+                  onPress={() => {
+                    setSaving(false);
+                    router.replace("/");
+                  }}
+                >
+                  <Text style={{ color: "#fff", fontSize: 15, fontWeight: "700" }}>Launch Health OS Dashboard →</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          </View>
+        </Modal>
 
       </ScrollView>
     </View>

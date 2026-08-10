@@ -201,8 +201,8 @@ export function sanitizeBiogearsVitals(raw?: BiogearsVitals | null): BiogearsVit
   // Glucose ~ 96 mg/dL
   const glucose = v.glucose ?? 96;
 
-  // SpO2 ~ 98.5%
-  const spo2 = v.spo2 ?? 98.5;
+  // SpO2 (%) - preserve null if missing from simulation
+  const spo2 = v.spo2 !== undefined && v.spo2 !== null ? v.spo2 : null;
 
   // Core Temperature ~ 37.0 °C
   const core_temperature = v.core_temperature ?? 37.0;
@@ -989,4 +989,19 @@ export async function updateProfileMetadata(userId: string, data: Record<string,
     body: JSON.stringify(data),
   }, 15_000);
 }
+
+/**
+ * Permanently delete a Digital Twin and all its server-side data from the BioGears engine backend
+ */
+export async function deleteProfile(userId: string): Promise<{ status: string; message: string }> {
+  try {
+    return await apiFetch(`/profiles/${encodeURIComponent(userId)}`, {
+      method: 'DELETE',
+    }, 15_000);
+  } catch (err) {
+    warn(`⚠️ BioGears deleteProfile warning for ${userId}:`, err);
+    return { status: 'error', message: String(err) };
+  }
+}
+
 

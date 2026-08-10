@@ -189,7 +189,28 @@ export async function submitBugReport(
   const finalCat = payload.category || "ui";
   const finalSev = payload.severity || "medium";
 
-  // 1. Primary Option: Dispatch to Backend Server API endpoint (/api/v1/bug-reports)
+  // 1. Direct Webhook Dispatch (Discord / Slack)
+  const customWebhook = await AsyncStorage.getItem(STORAGE_KEY_WEBHOOK);
+  const webhookUrl = (customWebhook && customWebhook.trim()) || DEFAULT_DISCORD_WEBHOOK_URL;
+  let webhookSuccess = false;
+
+  if (webhookUrl && webhookUrl.trim().startsWith("http")) {
+    try {
+      const body = formatWebhookPayload(payload, diag);
+      const res = await fetch(webhookUrl.trim(), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (res.ok) {
+        webhookSuccess = true;
+      }
+    } catch (err) {
+      console.warn("Direct Webhook submit failed:", err);
+    }
+  }
+
+  // 2. Primary / Sync Dispatch to Backend Server API endpoint (/api/v1/bug-reports)
   let rawServerUrl = "";
   try {
     rawServerUrl = await getBiogearsBaseUrl();
@@ -218,41 +239,24 @@ export async function submitBugReport(
         }),
       });
 
-      if (res.ok) {
+      if (res.ok || webhookSuccess) {
         return {
           success: true,
-          method: "server",
-          message: "Bug report submitted successfully to backend server!",
+          method: webhookSuccess ? "webhook" : "server",
+          message: "Bug report submitted successfully!",
         };
       }
     } catch (err) {
-      console.warn("Backend server bug submit failed, trying Webhook/Email fallback:", err);
+      console.warn("Backend server bug submit failed:", err);
     }
   }
 
-  // 2. Secondary Option: Custom Webhook (Discord / Slack)
-  const customWebhook = await AsyncStorage.getItem(STORAGE_KEY_WEBHOOK);
-  const webhookUrl = (customWebhook && customWebhook.trim()) || DEFAULT_DISCORD_WEBHOOK_URL;
-
-  if (webhookUrl && webhookUrl.trim().startsWith("http")) {
-    try {
-      const body = formatWebhookPayload(payload, diag);
-      const res = await fetch(webhookUrl.trim(), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-
-      if (res.ok) {
-        return {
-          success: true,
-          method: "webhook",
-          message: "Bug report submitted successfully to beta team!",
-        };
-      }
-    } catch (err) {
-      console.warn("Webhook submit failed, using email fallback:", err);
-    }
+  if (webhookSuccess) {
+    return {
+      success: true,
+      method: "webhook",
+      message: "Bug report submitted successfully to beta team!",
+    };
   }
 
   // 3. Fallback Option: Native Email

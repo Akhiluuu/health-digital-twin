@@ -1,7 +1,9 @@
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { doc, updateDoc } from "firebase/firestore";
+import { doc, setDoc } from "firebase/firestore";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useEffect, useRef, useState } from "react";
 import {
+  Alert,
   Animated,
   Easing,
   KeyboardAvoidingView,
@@ -128,7 +130,8 @@ export default function Medical() {
     restingHR?: string; systolicBP?: string; diastolicBP?: string; bodyFatPct?: string;
   }>();
 
-  const c = globalColors[theme];
+  const activeTheme = theme === "light" ? "light" : "dark";
+  const c = globalColors[activeTheme] || globalColors.dark;
   const colors = {
     background: c.bg, card: c.card, text: c.text, subText: c.sub, border: c.border,
     inputBg: c.inputBg, inputBorder: c.border, inputFocusedBorder: c.focusBorder,
@@ -173,9 +176,6 @@ export default function Medical() {
   const allergiesY = useRef(0);
 
   const goNext = async () => {
-    const user = auth.currentUser;
-    if (!user) { alert("User not logged in"); return; }
-
     const h  = parseFloat(height);
     const w  = parseFloat(weight);
     const hr = parseFloat(restingHR);
@@ -183,39 +183,61 @@ export default function Medical() {
     const dp = parseFloat(diastolicBP);
     const bf = parseFloat(bodyFatPct);
 
-    if (!height || !weight || !bloodGroup) { alert("Please fill required fields (height, weight, blood group)"); return; }
-    if (isNaN(h) || h < 50  || h > 300)   { alert("Enter a valid height (50–300 cm)"); return; }
-    if (isNaN(w) || w < 5   || w > 500)   { alert("Enter a valid weight (5–500 kg)"); return; }
-    if (isNaN(hr) || hr < 20 || hr > 300) { alert("Enter a valid resting heart rate (20–300 bpm)"); return; }
-    if (isNaN(sp) || sp < 60 || sp > 300) { alert("Enter a valid systolic blood pressure (60–300 mmHg)"); return; }
-    if (isNaN(dp) || dp < 30 || dp > 200) { alert("Enter a valid diastolic blood pressure (30–200 mmHg)"); return; }
-    if (dp >= sp)                          { alert("Diastolic BP must be lower than Systolic BP"); return; }
-    if (isNaN(bf) || bf < 1  || bf > 80)  { alert("Enter a valid body fat percentage (1–80%)"); return; }
+    if (!height || !weight || !bloodGroup) { Alert.alert("Required Fields", "Please fill required fields (height, weight, blood group)"); return; }
+    if (isNaN(h) || h < 50  || h > 300)   { Alert.alert("Invalid Input", "Enter a valid height (50–300 cm)"); return; }
+    if (isNaN(w) || w < 5   || w > 500)   { Alert.alert("Invalid Input", "Enter a valid weight (5–500 kg)"); return; }
+    if (isNaN(hr) || hr < 20 || hr > 300) { Alert.alert("Invalid Input", "Enter a valid resting heart rate (20–300 bpm)"); return; }
+    if (isNaN(sp) || sp < 60 || sp > 300) { Alert.alert("Invalid Input", "Enter a valid systolic blood pressure (60–300 mmHg)"); return; }
+    if (isNaN(dp) || dp < 30 || dp > 200) { Alert.alert("Invalid Input", "Enter a valid diastolic blood pressure (30–200 mmHg)"); return; }
+    if (dp >= sp)                          { Alert.alert("Invalid Input", "Diastolic BP must be lower than Systolic BP"); return; }
+    if (isNaN(bf) || bf < 1  || bf > 80)  { Alert.alert("Invalid Input", "Enter a valid body fat percentage (1–80%)"); return; }
+
+    const targetParams = {
+      signupName: params.signupName, signupEmail: params.signupEmail, firstName: params.firstName,
+      lastName: params.lastName, phone: params.phone, dateOfBirth: params.dateOfBirth, gender: params.gender,
+      primaryGoal: (params as any).primaryGoal || "wellness",
+      height: String(Math.round(h)), weight: String(Math.round(w)), bloodGroup, allergies,
+      restingHR: String(hr), systolicBP: String(sp), diastolicBP: String(dp), bodyFatPct: String(bf),
+    };
 
     try {
-      await updateDoc(doc(db, "users", user.uid), {
+      const user = auth.currentUser;
+      const uid = user ? user.uid : "guest";
+
+      const medicalData = {
         medical: {
           height: String(Math.round(h)), weight: String(Math.round(w)), bloodGroup, allergies,
           restingHR: hr, systolicBP: sp, diastolicBP: dp, bodyFatPct: bf,
         },
-        // Write biogears_ fields directly so they are available at calibration time
         biogears_resting_hr:   hr,
         biogears_systolic_bp:  sp,
         biogears_diastolic_bp: dp,
         biogears_body_fat:     bf / 100.0,
         updatedAt: new Date().toISOString(),
-      });
+      };
+
+      try {
+        await AsyncStorage.setItem(`@onboarding_medical_${uid}`, JSON.stringify(medicalData));
+      } catch (e) {}
+
+      if (user) {
+        try {
+          await setDoc(doc(db, "users", user.uid), medicalData, { merge: true });
+        } catch (fsErr) {
+          console.warn("Firestore medical save warning:", fsErr);
+        }
+      }
+
       router.push({
         pathname: "/onboarding/habits",
-        params: {
-          signupName: params.signupName, signupEmail: params.signupEmail, firstName: params.firstName,
-          lastName: params.lastName, phone: params.phone, dateOfBirth: params.dateOfBirth, gender: params.gender,
-          height: String(Math.round(h)), weight: String(Math.round(w)), bloodGroup, allergies,
-          restingHR: String(hr), systolicBP: String(sp), diastolicBP: String(dp), bodyFatPct: String(bf),
-        },
+        params: targetParams,
       });
     } catch (error: any) {
-      alert(error.message);
+      console.error("[Medical] goNext error:", error);
+      router.push({
+        pathname: "/onboarding/habits",
+        params: targetParams,
+      });
     }
   };
 
@@ -243,20 +265,48 @@ export default function Medical() {
           <Animated.View pointerEvents="none" style={[styles.orb, styles.orb2, { backgroundColor: colors.orb2, transform: [{ translateY: orb2Y }], opacity: theme === "light" ? 0.06 : 0.08 }]} />
           <Animated.View pointerEvents="none" style={[styles.orb, styles.orb3, { backgroundColor: colors.orb3, transform: [{ translateY: orb3Y }], opacity: theme === "light" ? 0.07 : 0.09 }]} />
 
+          {/* Twin Calibration Progress Header */}
           <View style={styles.progressRow}>
             <View style={[styles.progressTrack, { backgroundColor: colors.progressTrackBg }]}>
-              <View style={[styles.progressFill, { width: "50%", backgroundColor: colors.progressFillBg }]} />
+              <View style={[styles.progressFill, { width: "50%", backgroundColor: accent }]} />
             </View>
-            <Text style={[styles.progressLabel, { color: colors.progressLabelText }]}>Step 2 of 4</Text>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+              <Text style={{ fontSize: 11, fontWeight: "800", color: accent }}>⚡ TWIN CALIBRATION 50%</Text>
+            </View>
+          </View>
+
+          {/* AI Guide Conversational Box */}
+          <View style={{
+            backgroundColor: colors.card,
+            borderRadius: 16,
+            padding: 14,
+            marginBottom: 20,
+            borderWidth: 1,
+            borderColor: accent + "40",
+            flexDirection: "row",
+            alignItems: "center",
+            gap: 12,
+            shadowColor: accent,
+            shadowOffset: { width: 0, height: 2 },
+            shadowOpacity: 0.1,
+            shadowRadius: 6,
+            elevation: 2,
+          }}>
+            <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: accent + "20", alignItems: "center", justifyContent: "center" }}>
+              <Text style={{ fontSize: 24 }}>🩺</Text>
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 11, fontWeight: "800", color: accent, letterSpacing: 0.5, textTransform: "uppercase" }}>BioGears Physiological Calibration</Text>
+              <Text style={{ fontSize: 13, color: colors.titleText, fontWeight: "600", marginTop: 2, lineHeight: 18 }}>
+                As you adjust your measurements, watch your Digital Twin calculate your live BMI, BMR, and cardiac baselines below!
+              </Text>
+            </View>
           </View>
 
           <View style={styles.header}>
-            <View style={[styles.iconBadge, { backgroundColor: colors.iconBadgeBg }]}>
-              <Text style={styles.iconEmoji}>🩺</Text>
-            </View>
-            <Text style={[styles.title, { color: colors.titleText }]}>Medical Info</Text>
+            <Text style={[styles.title, { color: colors.titleText }]}>Vitals & Biometrics Calibration</Text>
             <Text style={[styles.subtitle, { color: colors.subtitleText }]}>
-              Your body measurements and vitals help us calibrate your digital twin precisely
+              Your body measurements and vitals calibrate your BioGears digital twin engine
             </Text>
           </View>
 
@@ -331,17 +381,51 @@ export default function Medical() {
             </View>
           </View>
 
-          {canContinue && (
-            <View style={[styles.summaryCard, { backgroundColor: colors.card, borderColor: accent + "40" }]}>
-              <Text style={[styles.summaryTitle, { color: colors.labelText }]}>✅ Looking good!</Text>
-              <Text style={[styles.summaryLine, { color: colors.subText }]}>
-                {height} cm · {weight} kg · {bodyFatPct}% fat · Blood {bloodGroup}
-              </Text>
-              <Text style={[styles.summaryLine, { color: colors.subText }]}>
-                HR {restingHR} bpm · BP {systolicBP}/{diastolicBP} mmHg
-              </Text>
-            </View>
-          )}
+          {canContinue && (() => {
+            const hM = parseFloat(height) / 100.0;
+            const wK = parseFloat(weight);
+            const calcBmi = (wK / (hM * hM)).toFixed(1);
+            const calcBsa = (0.007184 * Math.pow(parseFloat(height), 0.725) * Math.pow(wK, 0.425)).toFixed(2);
+            const calcBmr = Math.round(10 * wK + 6.25 * parseFloat(height) - 5 * 30 + 5);
+            const sbp = parseFloat(systolicBP);
+            const dbp = parseFloat(diastolicBP);
+            const bpStatus = sbp < 120 && dbp < 80 ? "Optimal" : sbp < 130 ? "Elevated" : "Hypertension Risk";
+
+            return (
+              <View style={[styles.summaryCard, { backgroundColor: colors.card, borderColor: accent + "60", borderWidth: 1.5 }]}>
+                <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                    <Text style={{ fontSize: 16 }}>🧬</Text>
+                    <Text style={[styles.summaryTitle, { color: colors.labelText, marginBottom: 0 }]}>
+                      Live Digital Twin Baseline
+                    </Text>
+                  </View>
+                  <View style={{ backgroundColor: accent + "20", paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 }}>
+                    <Text style={{ color: accent, fontSize: 10, fontWeight: "700" }}>AUTO CALIBRATED</Text>
+                  </View>
+                </View>
+
+                <View style={{ flexDirection: "row", justifyContent: "space-between", backgroundColor: colors.inputBg, padding: 12, borderRadius: 12, marginBottom: 8 }}>
+                  <View>
+                    <Text style={{ fontSize: 10, color: colors.subText, fontWeight: "700", textTransform: "uppercase" }}>Calculated BMI</Text>
+                    <Text style={{ fontSize: 16, fontWeight: "800", color: colors.text, marginTop: 2 }}>{calcBmi}</Text>
+                  </View>
+                  <View>
+                    <Text style={{ fontSize: 10, color: colors.subText, fontWeight: "700", textTransform: "uppercase" }}>Est. BMR Burn</Text>
+                    <Text style={{ fontSize: 16, fontWeight: "800", color: colors.text, marginTop: 2 }}>{calcBmr} <Text style={{ fontSize: 10 }}>kcal/d</Text></Text>
+                  </View>
+                  <View style={{ alignItems: "flex-end" }}>
+                    <Text style={{ fontSize: 10, color: colors.subText, fontWeight: "700", textTransform: "uppercase" }}>Heart Status</Text>
+                    <Text style={{ fontSize: 13, fontWeight: "800", color: bpStatus === "Optimal" ? "#22c55e" : "#f59e0b", marginTop: 4 }}>{bpStatus}</Text>
+                  </View>
+                </View>
+
+                <Text style={{ fontSize: 11, color: colors.subText, lineHeight: 16 }}>
+                  BSA: {calcBsa} m² · Body Fat: {bodyFatPct}% · Blood: {bloodGroup} · Resting HR: {restingHR} bpm
+                </Text>
+              </View>
+            );
+          })()}
 
           <TouchableOpacity
             style={[styles.nextBtn, { backgroundColor: canContinue ? colors.nextBtnBg : colors.inputBorder }]}

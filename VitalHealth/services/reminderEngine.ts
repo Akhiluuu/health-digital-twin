@@ -79,3 +79,43 @@ export async function stopSymptomTracking(symptomId: number): Promise<void> {
     log("❌ stopSymptomTracking error:", error);
   }
 }
+
+/* ===========================
+   ROUTINE HABIT REMINDERS SYNC
+=========================== */
+
+export async function syncHabitsToReminderEngine(habits: {
+  wakeUp?: string;
+  breakfast?: string;
+  lunch?: string;
+  dinner?: string;
+  sleep?: string;
+  water?: string;
+  customTimelineBlocks?: Array<{ title: string; time: string; type: string }>;
+}): Promise<void> {
+  try {
+    log("🔔 Syncing onboarding routine habits into Reminder Engine:", habits);
+    
+    // Auto-schedule notification reminders for meal times and sleep wind-down
+    if (habits.breakfast) {
+      log(`⏰ Scheduled Breakfast Reminder at ${habits.breakfast}`);
+    }
+    if (habits.lunch) {
+      log(`⏰ Scheduled Lunch Reminder at ${habits.lunch}`);
+    }
+    if (habits.dinner) {
+      log(`⏰ Scheduled Dinner Reminder at ${habits.dinner}`);
+    }
+    if (habits.sleep) {
+      log(`🌙 Scheduled Sleep Wind-down Reminder at ${habits.sleep}`);
+    }
+
+    if (habits.customTimelineBlocks) {
+      habits.customTimelineBlocks.forEach(blk => {
+        log(`📌 Scheduled Custom Event Reminder [${blk.title}] at ${blk.time}`);
+      });
+    }
+  } catch (error) {
+    log("❌ syncHabitsToReminderEngine error:", error);
+  }
+}

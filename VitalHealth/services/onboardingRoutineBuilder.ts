@@ -3,6 +3,16 @@
 
 import { SavedRoutine } from './biogears';
 
+export interface RoutineBlock {
+  id: string;
+  title: string;
+  time: string; // "HH:MM"
+  type: 'wake' | 'meal' | 'snack' | 'exercise' | 'custom' | 'sleep';
+  icon?: string;
+  kcalPercent?: number; // e.g. 25
+  notes?: string;
+}
+
 export interface OnboardingHabits {
   wakeUp?:    string;   // "HH:MM" or "HH:MM AM/PM"
   breakfast?: string;
@@ -11,8 +21,16 @@ export interface OnboardingHabits {
   sleep?:     string;
   water?:     string;   // "2L", "3L", "8 glasses" …
   activity?:  string;   // "Sedentary" | "Moderate" | "Active"
+  customTimelineBlocks?: RoutineBlock[];
+  scheduleVariability?: 'fixed' | 'weekday_weekend' | 'shift_work';
+  naturalLanguageRoutineText?: string;
   foodHabits?: {
     dietType?: string;
+    eatingRhythm?: 'morning_heavy' | 'balanced' | 'evening_heavy' | 'intermittent' | 'shift';
+    foodBase?: 'plant_based' | 'plant_dairy' | 'plant_seafood' | 'omnivore' | 'high_protein' | 'low_carb';
+    ingredientExclusions?: string[];
+    mealPrep?: string;
+    beverageHabit?: string;
     mealFreq?: string;
     snacking?: string;
     [key: string]: any;
@@ -60,11 +78,13 @@ function wallTimeToTimestamp(wallTime: string): number {
 
 type BioMealType = 'balanced' | 'high_carb' | 'high_protein' | 'fast_food' | 'ketogenic' | 'custom';
 
-function dietToMealType(diet?: string): BioMealType {
+function dietToMealType(diet?: string, foodBase?: string): BioMealType {
+  const fb = (foodBase || '').toLowerCase();
   const d = (diet || '').toLowerCase();
-  if (d.includes('keto')) return 'ketogenic';
-  if (d.includes('paleo') || d.includes('non-veg') || d.includes('protein') || d.includes('meat')) return 'high_protein';
-  if (d.includes('carb')) return 'high_carb';
+
+  if (fb === 'low_carb' || d.includes('keto')) return 'ketogenic';
+  if (fb === 'high_protein' || fb === 'omnivore' || d.includes('paleo') || d.includes('protein') || d.includes('meat')) return 'high_protein';
+  if (fb === 'plant_based' || d.includes('carb')) return 'high_carb';
   return 'balanced';
 }
 
@@ -91,9 +111,11 @@ interface MacroGrams {
   carb_g: number;
   protein_g: number;
   fat_g: number;
+  glycemicVariancePct?: number; // ±15% variance band for variable cuisines
+  cuisineStyle?: 'consistent_typical' | 'variable_diverse';
 }
 
-function getMacronutrientGrams(kcal: number, mealType: BioMealType): MacroGrams {
+function getMacronutrientGrams(kcal: number, mealType: BioMealType, cuisineVariability: 'consistent_typical' | 'variable_diverse' = 'consistent_typical'): MacroGrams {
   let carbPct = 0.55;
   let protPct = 0.20;
   let fatPct  = 0.25;
@@ -112,10 +134,15 @@ function getMacronutrientGrams(kcal: number, mealType: BioMealType): MacroGrams 
     fatPct  = 0.15;
   }
 
+  // If user consumes diverse/variable cuisines, expand glycemic tolerance band (±15%)
+  const glycemicVariancePct = cuisineVariability === 'variable_diverse' ? 15 : 5;
+
   return {
     carb_g:    Math.round((kcal * carbPct) / 4),
     protein_g: Math.round((kcal * protPct) / 4),
     fat_g:     Math.round((kcal * fatPct) / 9),
+    glycemicVariancePct,
+    cuisineStyle: cuisineVariability,
   };
 }
 
@@ -174,8 +201,15 @@ export function buildDefaultRoutine(habits: OnboardingHabits, profile?: UserMedi
   // TDEE capped to safe physiological bounds to keep simulation stable
   const tdee = Math.max(1200, Math.min(4500, Math.round(bmr * multiplier)));
 
-  const dietType = habits.foodHabits?.dietType || 'Vegetarian';
-  const mealType = dietToMealType(dietType);
+  const foodBase = habits.foodHabits?.foodBase;
+  const dietType = habits.foodHabits?.dietType || 'Plant-based';
+  const mealType = dietToMealType(dietType, foodBase);
+  const eatingRhythm = habits.foodHabits?.eatingRhythm || 'balanced';
+  const ingredientExclusions = habits.foodHabits?.ingredientExclusions || [];
+  
+  const allExclusions = [...new Set([...allergies, ...ingredientExclusions])];
+  const exclusionNote = allExclusions.length > 0 ? `Avoid: ${allExclusions.join(', ')}` : '';
+
   const mealFreq = habits.foodHabits?.mealFreq  || '3 meals';
   const snacking = habits.foodHabits?.snacking  || 'Sometimes';
   const addSnacks = mealFreq === '4–5 meals' || mealFreq === '6+ meals'
@@ -203,35 +237,81 @@ export function buildDefaultRoutine(habits: OnboardingHabits, profile?: UserMedi
     duration_seconds: sleepHrs * 3600,
   });
 
-  // Calculate meal calorie distribution based on meal frequency preference
+  // Calculate meal calorie distribution based on eating rhythm and frequency preference
   let hasBf = true;
   let bfKcal = 0;
   let luKcal = 0;
   let diKcal = 0;
   let snKcal = 0;
 
-  if (mealFreq.includes('1 meal')) {
-    hasBf = false;
-    luKcal = 0;
-    diKcal = tdee;
-  } else if (mealFreq.includes('2 meals')) {
+  if (eatingRhythm === 'morning_heavy') {
+    // 🌅 Morning Heavy: 40% Breakfast, 35% Lunch, 25% Dinner
+    bfKcal = Math.round(tdee * 0.40);
+    luKcal = Math.round(tdee * 0.35);
+    diKcal = Math.round(tdee * 0.25);
+  } else if (eatingRhythm === 'evening_heavy') {
+    // 🌙 Evening Heavy: 20% Breakfast, 30% Lunch, 50% Dinner
+    bfKcal = Math.round(tdee * 0.20);
+    luKcal = Math.round(tdee * 0.30);
+    diKcal = Math.round(tdee * 0.50);
+  } else if (eatingRhythm === 'intermittent' || mealFreq.includes('2 meals')) {
+    // ⏳ Intermittent 16:8 Window: 2 concentrated meals (Lunch & Dinner)
     hasBf = false;
     luKcal = Math.round(tdee * 0.45);
     diKcal = Math.round(tdee * 0.55);
+  } else if (mealFreq.includes('1 meal')) {
+    // OMAD: 100% Dinner
+    hasBf = false;
+    luKcal = 0;
+    diKcal = tdee;
   } else if (addSnacks) {
     bfKcal = Math.round(tdee * 0.25);
     luKcal = Math.round(tdee * 0.35);
     diKcal = Math.round(tdee * 0.30);
     snKcal = Math.round(tdee * 0.05); // 5% for mid-day snacks
   } else {
-    // Default 3 meals
+    // Default Balanced 3 meals
     bfKcal = Math.round(tdee * 0.30);
     luKcal = Math.round(tdee * 0.40);
     diKcal = Math.round(tdee * 0.30);
   }
 
-  // 2. Breakfast Meal (only if eating >= 3 meals)
-  if (hasBf && bfKcal > 0) {
+  // 0. If user provided custom visual timeline blocks, ingest them directly!
+  if (habits.customTimelineBlocks && habits.customTimelineBlocks.length > 0) {
+    habits.customTimelineBlocks.forEach(blk => {
+      if (blk.type === 'meal' || blk.type === 'snack') {
+        const pct = blk.kcalPercent || 25;
+        const mealKcal = Math.round((tdee * pct) / 100);
+        events.push({
+          id: `custom_${blk.id}`,
+          event_type: 'meal',
+          value: mealKcal,
+          wallTime: blk.time,
+          timestamp: wallTimeToTimestamp(blk.time),
+          meal_type: mealType,
+          ...getMacronutrientGrams(mealKcal, mealType),
+          displayLabel: `${blk.title} · ${mealKcal} kcal`,
+          displayIcon: blk.icon || '🥗',
+          notes: blk.notes || exclusionNote,
+        });
+      } else if (blk.type === 'exercise') {
+        events.push({
+          id: `custom_${blk.id}`,
+          event_type: 'exercise',
+          value: 0.50,
+          wallTime: blk.time,
+          timestamp: wallTimeToTimestamp(blk.time),
+          duration_seconds: 1800,
+          displayLabel: `${blk.title} · Exercise`,
+          displayIcon: blk.icon || '🏃‍♂️',
+          notes: blk.notes,
+        });
+      }
+    });
+  }
+
+  // 2. Breakfast Meal (only if eating >= 3 meals and no custom blocks specified)
+  if (hasBf && bfKcal > 0 && (!habits.customTimelineBlocks || habits.customTimelineBlocks.length === 0)) {
     events.push({
       id: 'onb_breakfast',
       event_type: 'meal',

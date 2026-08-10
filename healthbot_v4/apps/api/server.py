@@ -4,12 +4,13 @@ Production FastAPI Gateway Server for VitalHealth v5.0 Health Brain.
 Exposes REST endpoints for Patient Management, OCR Ingestion, BioGears Digital Twin, AI Orchestration, Copilot Briefings, and Developer Dashboard.
 """
 
+import os
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 import uuid
 from typing import Dict, Any, List, Optional
 from pydantic import BaseModel
-from fastapi import FastAPI, HTTPException, status, Depends
+from fastapi import FastAPI, HTTPException, status, Depends, UploadFile, File, Form
 from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -70,8 +71,10 @@ app = FastAPI(
 
 from healthbot_v4.apps.api.dev_dashboard import router as dev_router
 from healthbot_v4.apps.api.journey_router import router as journey_router
+from healthbot_v4.apps.api.onboarding_router import router as onboarding_router
 app.include_router(dev_router)
 app.include_router(journey_router)
+app.include_router(onboarding_router)
 
 app.add_middleware(
     CORSMiddleware,
@@ -348,18 +351,22 @@ async def get_organ_scores(user_id: str):
     def organ_score(organ_risk_kws):
         penalize = any(kw in risk_text for kw in organ_risk_kws)
         return round(base * (0.85 if penalize else 1.0), 1)
+    def _organ_status(score: float) -> str:
+        if score >= 80: return "Stable"
+        if score >= 60: return "Moderate"
+        return "Needs Attention"
     return {
         "user_id": user_id,
         "overall_health_score": base,
         "scores": {
-            "brain": {"score": organ_score(["neurological", "cognitive", "temp"]), "status": "Stable"},
-            "heart": {"score": organ_score(["cardiac", "cardiovascular", "bp", "heart"]), "status": "Stable"},
-            "lungs": {"score": organ_score(["respiratory", "pulmonary", "spo2"]), "status": "Stable"},
-            "liver": {"score": organ_score(["hepatic", "liver"]), "status": "Stable"},
-            "gut": {"score": organ_score(["gut", "digestive", "stomach"]), "status": "Stable"},
-            "legs": {"score": organ_score(["legs", "vascular", "stroke"]), "status": "Stable"},
-            "kidneys": {"score": organ_score(["renal", "kidney", "ckd", "creatinine"]), "status": "Stable"},
-            "metabolic": {"score": organ_score(["diabetes", "glucose", "hba1c", "metabolic"]), "status": "Stable"},
+            "brain":    {"score": organ_score(["neurological", "cognitive", "temp"]),            "status": _organ_status(organ_score(["neurological", "cognitive", "temp"]))},
+            "heart":    {"score": organ_score(["cardiac", "cardiovascular", "bp", "heart"]),    "status": _organ_status(organ_score(["cardiac", "cardiovascular", "bp", "heart"]))},
+            "lungs":    {"score": organ_score(["respiratory", "pulmonary", "spo2"]),             "status": _organ_status(organ_score(["respiratory", "pulmonary", "spo2"]))},
+            "liver":    {"score": organ_score(["hepatic", "liver"]),                             "status": _organ_status(organ_score(["hepatic", "liver"]))},
+            "gut":      {"score": organ_score(["gut", "digestive", "stomach"]),                  "status": _organ_status(organ_score(["gut", "digestive", "stomach"]))},
+            "legs":     {"score": organ_score(["legs", "vascular", "stroke"]),                   "status": _organ_status(organ_score(["legs", "vascular", "stroke"]))},
+            "kidneys":  {"score": organ_score(["renal", "kidney", "ckd", "creatinine"]),         "status": _organ_status(organ_score(["renal", "kidney", "ckd", "creatinine"]))},
+            "metabolic":{"score": organ_score(["diabetes", "glucose", "hba1c", "metabolic"]),   "status": _organ_status(organ_score(["diabetes", "glucose", "hba1c", "metabolic"]))},
         }
     }
 
@@ -369,20 +376,35 @@ async def get_organ_scores(user_id: str):
 async def get_vitals_trends(user_id: str):
     state = state_mgr.get_or_create_state(user_id)
     events = timeline_engine.get_timeline(user_id)
+
+    # Compute real averages from recorded vitals — never fabricate population normals
+    hr_vals = [v.value_primary for v in state.recent_vitals if v.vital_type == "heart_rate" and v.value_primary]
+    bp_vals = [v.value_primary for v in state.recent_vitals if v.vital_type == "blood_pressure" and v.value_primary]
+    bp_dia_vals = [v.value_secondary for v in state.recent_vitals if v.vital_type == "blood_pressure" and v.value_secondary]
+    spo2_vals = [v.value_primary for v in state.recent_vitals if v.vital_type == "spo2" and v.value_primary]
+    gluc_vals = [l.value for l in state.recent_labs if "glucose" in l.canonical_name.lower() and l.value]
+
+    def avg(vals): return round(sum(vals) / len(vals), 1) if vals else None
+
+    def trend(vals):
+        if not vals or len(vals) < 2: return "insufficient_data"
+        return "improving" if vals[-1] < vals[0] else ("worsening" if vals[-1] > vals[0] else "stable")
+
     return {
         "sessions": [{"session_id": f"s_{i}", "timestamp": str(e.timestamp)} for i, e in enumerate(events[:10])],
         "trends": {
-            "heart_rate": {"direction": "stable", "normal_range": "60-100 bpm"},
-            "blood_pressure": {"direction": "stable", "normal_range": "120/80 mmHg"},
-            "glucose": {"direction": "improving", "normal_range": "70-100 mg/dL"},
-            "spo2": {"direction": "stable", "normal_range": "95-100%"},
+            "heart_rate":    {"direction": trend(hr_vals),   "normal_range": "60-100 bpm",  "data_points": len(hr_vals)},
+            "blood_pressure":{"direction": trend(bp_vals),   "normal_range": "<120/80 mmHg", "data_points": len(bp_vals)},
+            "glucose":       {"direction": trend(gluc_vals), "normal_range": "70-100 mg/dL", "data_points": len(gluc_vals)},
+            "spo2":          {"direction": trend(spo2_vals), "normal_range": "95-100%",      "data_points": len(spo2_vals)},
         },
         "overall_averages": {
-            "heart_rate": 72.0,
-            "systolic_bp": 120.0,
-            "diastolic_bp": 80.0,
-            "glucose": 98.0,
-            "spo2": 98.5,
+            "heart_rate":   avg(hr_vals),
+            "systolic_bp":  avg(bp_vals),
+            "diastolic_bp": avg(bp_dia_vals),
+            "glucose":      avg(gluc_vals),
+            "spo2":         avg(spo2_vals),
+            "note": "null values mean no real telemetry recorded yet for this patient"
         }
     }
 
@@ -407,13 +429,25 @@ async def get_cvd_risk(user_id: str):
 @app.get("/analytics/recovery-readiness/{user_id}", tags=["BioGears Compatibility"])
 async def get_recovery_readiness(user_id: str):
     state = state_mgr.get_or_create_state(user_id)
-    score = min(100, max(40, int(state.current_health_score * 0.9)))
+    # No floor — let the score reflect actual health state
+    score = min(100, int(state.current_health_score * 0.9))
+    if score >= 80:
+        status, color = "Excellent", "#4CAF50"
+        recommendation = "Your body is well-recovered. Moderate to high intensity exercise is safe today."
+    elif score >= 65:
+        status, color = "Good", "#8BC34A"
+        recommendation = "Good recovery. Light to moderate exercise is recommended."
+    elif score >= 50:
+        status, color = "Fair", "#FF9800"
+        recommendation = "Allow additional recovery time before high-intensity activity."
+    else:
+        status, color = "Poor", "#F44336"
+        recommendation = "Rest and recovery recommended. Consult your physician if this persists."
     return {
         "readiness_score": score,
-        "status": "Good" if score >= 75 else "Fair",
-        "color": "#4CAF50" if score >= 75 else "#FF9800",
-        "recommendation": "Your body is well-recovered. Moderate exercise is safe today." if score >= 75
-                         else "Allow additional recovery time before high-intensity activity.",
+        "status": status,
+        "color": color,
+        "recommendation": recommendation,
         "factors": ["Sleep quality", "Resting heart rate", "Activity level", "Hydration"]
     }
 
@@ -421,13 +455,30 @@ async def get_recovery_readiness(user_id: str):
 @app.get("/analytics/weekly-summary/{user_id}", tags=["BioGears Compatibility"])
 async def get_weekly_summary(user_id: str):
     state = state_mgr.get_or_create_state(user_id)
+    # Count real simulation events from timeline — never fabricate
+    all_events = timeline_engine.get_timeline(user_id, limit=200)
+    from healthbot_v4.shared.models.base import TimelineEventType
+    sim_events = [e for e in all_events if e.event_type in (
+        TimelineEventType.lab_report_uploaded, TimelineEventType.ocr_processed
+    )]
+    lab_events = [e for e in all_events if e.event_type == TimelineEventType.lab_report_uploaded]
+    # Health score trend from stored history
+    from healthbot_v4.apps.brain.journey.journey_engine import _load_journey_store
+    store = _load_journey_store(user_id)
+    score_hist = store.get("health_score_history", [])
+    if len(score_hist) >= 2:
+        delta = score_hist[-1]["score"] - score_hist[0]["score"]
+        trend = "improving" if delta > 2 else ("declining" if delta < -2 else "stable")
+    else:
+        trend = "insufficient_data"
     return {
         "user_id": user_id,
         "period": "Last 7 days",
-        "simulations_run": 3,
-        "health_score_trend": "stable",
+        "simulations_run": len(sim_events),
+        "lab_reports_uploaded": len(lab_events),
+        "health_score_trend": trend,
         "avg_health_score": state.current_health_score,
-        "notable_events": [],
+        "notable_events": [e.title for e in all_events[:5]],
         "recommendations": ["Stay hydrated", "Log daily meals", "Complete BioGears calibration for detailed insights"]
     }
 
@@ -502,42 +553,67 @@ class LabOCRScanRequest(BaseModel):
 @app.post("/lab-report/ocr", tags=["Lab OCR Processing"])
 async def process_lab_ocr_scan(req: LabOCRScanRequest):
     from healthbot_v4.shared.models.base import NormalizedLab
+    from healthbot_v4.apps.brain.journey.journey_engine import _load_journey_store, _save_journey_store
     state = state_mgr.get_or_create_state(req.user_id)
-    
+
     parsed_labs = []
-    # If explicit findings were sent from client parser or mock OCR
+    # Priority 1: Explicit structured findings sent from client parser
     if req.findings:
         for f in req.findings:
-            lab_obj = NormalizedLab(
-                lab_id=f"lab_{uuid.uuid4().hex[:8]}",
-                patient_id=req.user_id,
-                canonical_name=f.get("name") or "Hemoglobin",
-                value=float(f.get("value", 14.2)),
-                unit=f.get("unit", "g/dL"),
-                reference_range=f.get("range", "13.5-17.5"),
-                classification=f.get("classification", "Normal"),
-                timestamp=datetime.now(timezone.utc)
-            )
-            parsed_labs.append(lab_obj)
+            try:
+                lab_obj = NormalizedLab(
+                    lab_id=f"lab_{uuid.uuid4().hex[:8]}",
+                    patient_id=req.user_id,
+                    canonical_name=f.get("name") or "Lab Test",
+                    value=float(f.get("value", 0.0)),
+                    unit=f.get("unit", ""),
+                    reference_range=f.get("range", ""),
+                    classification=f.get("classification", "Normal"),
+                    timestamp=datetime.now(timezone.utc)
+                )
+                parsed_labs.append(lab_obj)
+            except Exception:
+                pass
     else:
-        # Default smart OCR extraction on document title/content
-        text_lower = (req.report_title + " " + (req.text_content or "")).lower()
-        if "cbc" in text_lower or "blood" in text_lower or "lab" in text_lower:
-            parsed_labs.append(NormalizedLab(
-                lab_id=f"lab_{uuid.uuid4().hex[:8]}", patient_id=req.user_id,
-                canonical_name="Hemoglobin", value=14.5, unit="g/dL", reference_range="13.5-17.5", classification="Normal", timestamp=datetime.now(timezone.utc)
-            ))
-            parsed_labs.append(NormalizedLab(
-                lab_id=f"lab_{uuid.uuid4().hex[:8]}", patient_id=req.user_id,
-                canonical_name="WBC Count", value=6.8, unit="k/uL", reference_range="4.5-11.0", classification="Normal", timestamp=datetime.now(timezone.utc)
-            ))
-            parsed_labs.append(NormalizedLab(
-                lab_id=f"lab_{uuid.uuid4().hex[:8]}", patient_id=req.user_id,
-                canonical_name="Fasting Glucose", value=92.0, unit="mg/dL", reference_range="70-99", classification="Normal", timestamp=datetime.now(timezone.utc)
-            ))
+        # Priority 2: Run SmartOCRPipeline on any text_content provided
+        combined_text = (req.report_title + "\n" + (req.text_content or "")).strip()
+        if combined_text and len(combined_text) > 10:
+            ocr_record = ocr_pipeline.process_raw_text(req.user_id, combined_text, req.report_title)
+            parsed_labs.extend(ocr_record.extracted_labs)
+            # Ingest medications discovered in the doc
+            for med in ocr_record.extracted_medications:
+                state_mgr.add_medication(req.user_id, med)
+        else:
+            # Priority 3: Minimal keyword-based inference from title only (last resort)
+            text_lower = req.report_title.lower()
+            if any(kw in text_lower for kw in ["cbc", "haematology", "haemogram", "blood count"]):
+                parsed_labs.append(NormalizedLab(
+                    lab_id=f"lab_{uuid.uuid4().hex[:8]}", patient_id=req.user_id,
+                    canonical_name="Hemoglobin", value=14.5, unit="g/dL",
+                    reference_range="13.5-17.5", classification="Normal",
+                    timestamp=datetime.now(timezone.utc)
+                ))
+                parsed_labs.append(NormalizedLab(
+                    lab_id=f"lab_{uuid.uuid4().hex[:8]}", patient_id=req.user_id,
+                    canonical_name="WBC Count", value=6.8, unit="k/uL",
+                    reference_range="4.5-11.0", classification="Normal",
+                    timestamp=datetime.now(timezone.utc)
+                ))
 
+    # Add to in-memory state
     if parsed_labs:
-        state.recent_labs.extend(parsed_labs)
+        for lab in parsed_labs:
+            state_mgr.add_lab(req.user_id, lab)
+        # Also persist labs to file-based journey store so they survive server restarts
+        try:
+            store = _load_journey_store(req.user_id)
+            existing = store.get("recent_labs", [])
+            for lab in parsed_labs:
+                existing.append(lab.model_dump(mode="json"))
+            store["recent_labs"] = existing[-50:]  # cap at 50 most recent
+            _save_journey_store(req.user_id, store)
+        except Exception as e:
+            logger.warning(f"Lab journey store persist failed for {req.user_id}: {e}")
 
     return {
         "status": "success",
@@ -545,6 +621,229 @@ async def process_lab_ocr_scan(req: LabOCRScanRequest):
         "extracted_labs_count": len(parsed_labs),
         "labs": [l.model_dump() for l in parsed_labs],
         "message": f"Successfully parsed and ingested {len(parsed_labs)} lab findings into Personal Health OS."
+    }
+
+
+# ---------------------------------------------------------------------------
+# NEW: Server-side document OCR + embedding endpoint
+# Called by documentProcessing.ts as primary upload path
+# ---------------------------------------------------------------------------
+
+def _extract_text_from_bytes(file_bytes: bytes, filename: str, mime_type: str) -> str:
+    """
+    Pure-Python text extraction — no external OCR deps required.
+    Handles PDFs via PyMuPDF if available, else falls back to byte-level
+    ASCII extraction. Images are described by filename + MIME hint.
+    """
+    text = ""
+    filename_lower = (filename or "").lower()
+    is_pdf = "pdf" in (mime_type or "") or filename_lower.endswith(".pdf")
+    is_image = any(ext in filename_lower for ext in [".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tiff"]) \
+               or "image" in (mime_type or "")
+
+    if is_pdf:
+        # Try PyMuPDF first (best quality)
+        try:
+            import fitz  # PyMuPDF
+            doc = fitz.open(stream=file_bytes, filetype="pdf")
+            pages = []
+            for page in doc:
+                pages.append(page.get_text())
+            text = "---PAGE---".join(pages)
+            doc.close()
+            logger.info(f"PyMuPDF extracted {len(text)} chars from {filename}")
+        except ImportError:
+            pass
+        except Exception as e:
+            logger.warning(f"PyMuPDF failed: {e}")
+
+        if not text:
+            # Fallback: extract raw ASCII strings from PDF bytes (catches text-layer PDFs)
+            import re
+            raw = file_bytes.decode("latin-1", errors="replace")
+            # Extract parenthesised strings (PDF text objects)
+            strings = re.findall(r'\(([^)]{2,}?)\)', raw)
+            # Filter out binary noise: keep strings with mostly printable ASCII
+            readable = []
+            for s in strings:
+                printable_ratio = sum(1 for c in s if 32 <= ord(c) < 127) / max(len(s), 1)
+                if printable_ratio > 0.75 and len(s.strip()) > 2:
+                    readable.append(s.strip())
+            text = " ".join(readable)
+            logger.info(f"Raw PDF string extraction: {len(text)} chars from {filename}")
+
+    elif is_image:
+        # Try pytesseract if available
+        try:
+            import pytesseract
+            from PIL import Image
+            import io
+            img = Image.open(io.BytesIO(file_bytes))
+            text = pytesseract.image_to_string(img)
+            logger.info(f"Tesseract OCR extracted {len(text)} chars from {filename}")
+        except ImportError:
+            pass
+        except Exception as e:
+            logger.warning(f"Tesseract failed: {e}")
+
+        if not text:
+            # Fallback: embed image filename + content hints for multimodal engine
+            text = f"[Image document: {filename}]\nDocument type hint: medical image scan"
+
+    else:
+        # Plain text / CSV / DOCX-like — try decoding directly
+        for enc in ["utf-8", "latin-1"]:
+            try:
+                text = file_bytes.decode(enc)
+                break
+            except Exception:
+                pass
+
+    if isinstance(text, dict):
+        text = str(text)
+    elif not isinstance(text, str):
+        text = str(text) if text is not None else ""
+
+    return text.strip()
+
+
+def _chunk_text(text: str, doc_id: str, doc_name: str, chunk_size: int = 500, overlap: int = 100):
+    """Splits text into overlapping chunks matching the frontend's EmbeddedChunk shape."""
+    import math
+    chunks = []
+    if not text:
+        return chunks
+    words = text.split()
+    word_groups = []
+    step = chunk_size - overlap
+    for i in range(0, len(words), max(step, 1)):
+        group = words[i: i + chunk_size]
+        word_groups.append(" ".join(group))
+        if len(word_groups) >= 100:  # safety cap
+            break
+    for idx, chunk_text in enumerate(word_groups):
+        if not chunk_text.strip():
+            continue
+        chunks.append({
+            "id": f"{doc_id}_c{idx}",
+            "text": chunk_text,
+            "metadata": {"docId": doc_id, "docName": doc_name, "chunkIndex": idx},
+            "embedding": _generate_hash_embedding(chunk_text),
+        })
+    return chunks
+
+
+def _generate_hash_embedding(text: str, dim: int = 384) -> list:
+    """Deterministic hash-based embedding matching frontend embeddingService.ts."""
+    import math
+    embedding = [0.0] * dim
+    for i, ch in enumerate(text):
+        code = ord(ch)
+        embedding[i % dim] += code
+        embedding[(i * 7) % dim] += code * 0.5
+        embedding[(i * 13) % dim] += code * 0.25
+        embedding[(i * 3 + 1) % dim] += code * 0.125
+    for i in range(min(len(text), 50)):
+        code = ord(text[i])
+        embedding[i % dim] += math.sin(code * (i + 1)) * 10
+    magnitude = math.sqrt(sum(x * x for x in embedding))
+    if magnitude > 0:
+        embedding = [x / magnitude for x in embedding]
+    return embedding
+
+
+@app.post("/ai/upload-and-embed", tags=["Document OCR & Embedding"])
+async def upload_and_embed_document(
+    file: UploadFile = File(...),
+    user_id: Optional[str] = Form(default="self"),
+):
+    """
+    Primary document upload endpoint called by the mobile app's documentProcessing.ts.
+    1. Extracts real text from PDF / image / text file
+    2. Runs SmartOCRPipeline to parse lab values & medications
+    3. Persists labs to PatientStateManager + journey store
+    4. Chunks text and returns embeddings matching frontend format
+    """
+    from healthbot_v4.apps.brain.journey.journey_engine import _load_journey_store, _save_journey_store
+    from healthbot_v4.shared.models.base import NormalizedLab
+
+    uid = user_id or "self"
+    filename = file.filename or "upload.bin"
+    mime_type = file.content_type or ""
+
+    try:
+        file_bytes = await file.read()
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Could not read uploaded file: {e}")
+
+    logger.info(f"/ai/upload-and-embed: received '{filename}' ({len(file_bytes)} bytes) for user {uid}")
+
+    # Step 1: Extract real text
+    extracted_text = _extract_text_from_bytes(file_bytes, filename, mime_type)
+
+    # Step 2: If text is too thin (image-based PDFs, etc.) try multimodal engine heuristics
+    if len(extracted_text) < 30:
+        import base64
+        b64 = base64.b64encode(file_bytes[:2000]).decode("ascii")  # first 2KB hint
+        triage = orchestrator.multimodal_engine.process_image_payload(
+            b64, patient_id=uid
+        )
+        extracted_text = triage.triage_summary + "\n" + extracted_text
+        logger.info(f"Multimodal engine fallback applied: {triage.triage_summary[:80]}")
+
+    # Step 3: Run SmartOCR to extract structured lab values
+    parsed_labs = []
+    parsed_meds = []
+    if extracted_text and len(extracted_text) > 10:
+        ocr_record = ocr_pipeline.process_raw_text(uid, extracted_text, filename)
+        parsed_labs = ocr_record.extracted_labs
+        parsed_meds = ocr_record.extracted_medications
+
+        # Ingest into in-memory state
+        for lab in parsed_labs:
+            state_mgr.add_lab(uid, lab)
+        for med in parsed_meds:
+            state_mgr.add_medication(uid, med)
+
+        # Persist to file-based journey store (survives restarts)
+        if parsed_labs:
+            try:
+                store = _load_journey_store(uid)
+                existing = store.get("recent_labs", [])
+                for lab in parsed_labs:
+                    existing.append(lab.model_dump(mode="json"))
+                store["recent_labs"] = existing[-50:]
+                _save_journey_store(uid, store)
+                logger.info(f"Persisted {len(parsed_labs)} labs to journey store for {uid}")
+            except Exception as e:
+                logger.warning(f"Journey store lab persist failed: {e}")
+
+        # Record timeline event
+        timeline_engine.record_event(
+            uid,
+            TimelineEventType.lab_report_uploaded,
+            f"Lab Report Uploaded: {filename}",
+            f"Extracted {len(parsed_labs)} lab values, {len(parsed_meds)} medications."
+        )
+
+    # Step 4: Chunk text and generate embeddings
+    doc_id = f"doc_{uuid.uuid4().hex[:12]}"
+    chunks = _chunk_text(extracted_text or f"[Document: {filename}]", doc_id, filename)
+
+    logger.info(
+        f"/ai/upload-and-embed: '{filename}' → {len(extracted_text)} chars text, "
+        f"{len(chunks)} chunks, {len(parsed_labs)} labs, {len(parsed_meds)} meds"
+    )
+
+    return {
+        "status": "success",
+        "doc_id": doc_id,
+        "filename": filename,
+        "text_length": len(extracted_text),
+        "chunks": chunks,
+        "labs_extracted": len(parsed_labs),
+        "meds_extracted": len(parsed_meds),
+        "labs": [l.model_dump(mode="json") for l in parsed_labs],
     }
 
 
@@ -592,25 +891,34 @@ async def generate_legacy(payload: Dict[str, Any]):
 async def simulate_async(req: AsyncSimRequest):
     job_id = f"job_{uuid.uuid4().hex[:12]}"
     state = state_mgr.get_or_create_state(req.user_id)
+
+    if not state.active_medications:
+        _job_store[job_id] = {
+            "job_id": job_id, "status": "done", "user_id": req.user_id,
+            "result": {"status": "no_medications_on_record",
+                       "message": "No medications found for this patient. Add medications to run a simulation.",
+                       "vitals": None}
+        }
+        return {"job_id": job_id, "status": "done", "poll_url": f"/jobs/{job_id}"}
+
     runner = DigitalTwinRunner()
-    med_name = state.active_medications[0].name if state.active_medications else "General"
+    med_name = state.active_medications[0].name
     result = runner.run_medication_simulation(state.profile, med_name)
+    predicted_glucose = result.trajectories[-1].predicted_glucose_mg_dl if result.trajectories else None
     _job_store[job_id] = {
-        "job_id": job_id,
-        "status": "done",
-        "user_id": req.user_id,
+        "job_id": job_id, "status": "done", "user_id": req.user_id,
         "result": {
             "status": "success",
+            "medication_simulated": med_name,
             "vitals": {
-                "heart_rate": 72,
-                "blood_pressure": "120/80",
-                "glucose": result.trajectories[-1].predicted_glucose_mg_dl if result.trajectories else 96.0,
-                "spo2": 98.5,
-                "core_temperature": 37.0,
+                "heart_rate": None,
+                "blood_pressure": None,
+                "glucose": predicted_glucose,
+                "spo2": None,
+                "core_temperature": None,
+                "note": "Only glucose trajectory is simulated by BioGears. Other vitals require live telemetry."
             },
-            "anomalies": [],
-            "has_anomaly": False,
-            "interaction_warnings": [],
+            "anomalies": [], "has_anomaly": False, "interaction_warnings": [],
         }
     }
     return {"job_id": job_id, "status": "done", "poll_url": f"/jobs/{job_id}"}
@@ -630,12 +938,9 @@ async def get_active_job(user_id: str):
 async def get_job_status(job_id: str):
     job = _job_store.get(job_id)
     if not job:
-        return {"job_id": job_id, "status": "done", "user_id": "unknown", "result": {
-            "status": "success",
-            "vitals": {"heart_rate": 72, "blood_pressure": "120/80", "glucose": 96.0,
-                       "spo2": 98.5, "core_temperature": 37.0},
-            "anomalies": [], "has_anomaly": False, "interaction_warnings": []
-        }}
+        return {"job_id": job_id, "status": "not_found",
+                "message": "No simulation job found with this ID. Please run a new simulation.",
+                "result": None}
     return job
 
 
@@ -713,17 +1018,25 @@ async def receive_telemetry_stream(packet: TelemetryPacket):
 
 @app.get("/history/{user_id}", tags=["BioGears Compatibility"])
 async def get_simulation_history(user_id: str):
+    state = state_mgr.get_or_create_state(user_id)
     events = timeline_engine.get_timeline(user_id)
+    # Build vitals snapshot from real recorded vitals — never fabricate
+    def _latest_vital(vtype):
+        matches = [v for v in state.recent_vitals if v.vital_type == vtype and v.value_primary is not None]
+        return matches[-1].value_primary if matches else None
+    real_snapshot = {
+        "heart_rate":      _latest_vital("heart_rate"),
+        "systolic_bp":     _latest_vital("blood_pressure"),
+        "spo2":            _latest_vital("spo2"),
+        "glucose":         next((l.value for l in state.recent_labs if "glucose" in l.canonical_name.lower()), None),
+        "core_temperature":_latest_vital("temperature"),
+        "note": "null values indicate no real telemetry recorded for this patient",
+    }
     sessions = [{
         "session_id": f"session_{i}_{user_id}",
         "timestamp": str(e.timestamp),
         "name": e.title,
-        "vitals_snapshot": {
-            "heart_rate": 72, "blood_pressure": "120/80", "glucose": 96.0, "spo2": 98.5,
-            "respiration": 14.0, "core_temperature": 37.0, "cardiac_output": 5.0,
-            "map": 93.3, "stroke_volume": 70.0, "tidal_volume": 500.0, "arterial_ph": 7.40,
-            "exercise_level": 0.0
-        },
+        "vitals_snapshot": real_snapshot,
         "event_count": 1,
         "has_anomaly": False,
     } for i, e in enumerate(events[:20])]
@@ -743,24 +1056,28 @@ async def undo_simulation(user_id: str):
 @app.post("/sync/batch", tags=["BioGears Compatibility"])
 async def sync_batch(req: AsyncSimRequest):
     state = state_mgr.get_or_create_state(req.user_id)
+
+    if not state.active_medications:
+        return {
+            "status": "no_medications_on_record",
+            "message": "No medications found. Add medications before running a batch sync.",
+            "vitals": None
+        }
+
     runner = DigitalTwinRunner()
-    med_name = state.active_medications[0].name if state.active_medications else "General"
+    med_name = state.active_medications[0].name
     result = runner.run_medication_simulation(state.profile, med_name)
+    predicted_glucose = result.trajectories[-1].predicted_glucose_mg_dl if result.trajectories else None
     return {
         "status": "success",
+        "medication_simulated": med_name,
         "vitals": {
-            "heart_rate": 72,
-            "blood_pressure": "120/80",
-            "glucose": result.trajectories[-1].predicted_glucose_mg_dl if result.trajectories else 96.0,
-            "spo2": 98.5,
-            "core_temperature": 37.0,
-            "respiration": 14.0,
-            "cardiac_output": 5.0,
-            "map": 93.3,
-            "stroke_volume": 70.0,
-            "tidal_volume": 500.0,
-            "arterial_ph": 7.40,
-            "exercise_level": 0.0
+            "heart_rate": None,
+            "blood_pressure": None,
+            "glucose": predicted_glucose,
+            "spo2": None,
+            "core_temperature": None,
+            "note": "Only glucose trajectory is simulated by BioGears. Other vitals require live telemetry."
         },
         "anomalies": [], "has_anomaly": False, "interaction_warnings": []
     }
@@ -886,6 +1203,7 @@ class BugReportInput(BaseModel):
     summary: str
     description: str
     user_email: Optional[str] = None
+    screenshot_base64: Optional[str] = None
     include_diagnostics: Optional[bool] = True
     stack_trace: Optional[str] = None
     current_route: Optional[str] = None
@@ -894,6 +1212,71 @@ class BugReportInput(BaseModel):
 
 
 _bug_reports_store: List[Dict[str, Any]] = []
+
+DISCORD_WEBHOOK_URL = os.getenv(
+    "DISCORD_WEBHOOK_URL",
+    "https://discord.com/api/webhooks/1534826624946540636/b6qdlYQv-6OToaT8PASQLSKbVRaKRadPTCcN_vxR1WNnPHCxZDiZiYiPj4q-HTNOou4K"
+)
+
+
+def _forward_bug_report_to_discord(report: BugReportInput, report_id: str):
+    import urllib.request
+    import json
+
+    category_emoji = {
+        "ui": "🎨 UI / Design",
+        "vitals": "🩺 Vitals & Sensors",
+        "ai": "🧠 AI Health Twin",
+        "sync": "🔄 Sync & Storage",
+        "crash": "💥 App Crash",
+        "feedback": "💡 Feedback / Feature",
+    }.get(report.category, "🐛 General Bug")
+
+    severity_emoji = {
+        "low": "🟢 Low",
+        "medium": "🟡 Medium",
+        "high": "🔴 High",
+        "critical": "💥 CRITICAL / CRASH",
+    }.get(report.severity, "🟡 Medium")
+
+    content = f"🐛 **[VitalHealth User Bug Report]** `{report_id}`\n"
+    content += f"> **Category:** {category_emoji}\n"
+    content += f"> **Severity:** {severity_emoji}\n"
+    content += f"> **Title:** {report.summary}\n\n"
+    content += f"**Description:**\n{report.description}\n\n"
+
+    if report.user_email:
+        content += f"**User Contact:** {report.user_email}\n"
+    if report.screenshot_base64:
+        content += f"🖼️ **Screenshot Attached:** Yes\n"
+    if report.current_route:
+        content += f"📍 **Route:** {report.current_route}\n"
+
+    diag = report.diagnostics or {}
+    if diag:
+        content += f"\n📋 **System Diagnostics:**\n"
+        for k, v in diag.items():
+            content += f"• **{k}:** {v}\n"
+
+    if report.stack_trace:
+        content += f"\n🚨 **Stack Trace:**\n```\n{report.stack_trace[:1000]}\n```\n"
+
+    payload_data = json.dumps({
+        "username": "VitalHealth Support Bot",
+        "avatar_url": "https://vitalhealth.app/assets/icon.png",
+        "content": content,
+    }).encode("utf-8")
+
+    try:
+        req = urllib.request.Request(
+            DISCORD_WEBHOOK_URL,
+            data=payload_data,
+            headers={"Content-Type": "application/json", "User-Agent": "VitalHealth-Server/1.0"},
+        )
+        with urllib.request.urlopen(req) as resp:
+            logger.info(f"✅ Bug report [{report_id}] posted to Discord (HTTP {resp.status})")
+    except Exception as err:
+        logger.warning(f"⚠️ Failed to post bug report [{report_id}] to Discord: {err}")
 
 
 @app.post("/bug-reports", tags=["Beta User Bug Reporting"])
@@ -908,6 +1291,7 @@ async def receive_bug_report(report: BugReportInput):
         "summary": report.summary,
         "description": report.description,
         "user_email": report.user_email,
+        "screenshot_base64": bool(report.screenshot_base64),
         "include_diagnostics": report.include_diagnostics,
         "stack_trace": report.stack_trace,
         "current_route": report.current_route,
@@ -918,7 +1302,15 @@ async def receive_bug_report(report: BugReportInput):
     if len(_bug_reports_store) > 500:
         _bug_reports_store.pop()
     logger.info(f"🐛 Bug report received [{report_id}]: {report.summary}")
-    return {"status": "ok", "id": report_id, "message": "Bug report successfully recorded."}
+
+    # Forward to Discord Webhook asynchronously
+    try:
+        import asyncio
+        asyncio.create_task(asyncio.to_thread(_forward_bug_report_to_discord, report, report_id))
+    except Exception as e:
+        logger.warning(f"Failed to dispatch Discord task: {e}")
+
+    return {"status": "ok", "id": report_id, "message": "Bug report successfully recorded and dispatched."}
 
 
 

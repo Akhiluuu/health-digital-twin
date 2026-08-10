@@ -70,7 +70,7 @@ export default function PPGMeasurementScreen({
 
   const prevStatusRef = useRef<OperationalStatus>("CALIBRATING");
   const isCompletedRef = useRef(false);
-  const finalValuesRef = useRef({ bpm: 0, spo2: 98, confidence: 0, snr: -10 });
+  const finalValuesRef = useRef({ bpm: 0, spo2: 0, confidence: 0, snr: -10 });
 
   // Skeleton shimmer during calibration
   useEffect(() => {
@@ -173,7 +173,7 @@ export default function PPGMeasurementScreen({
       setProgressSecs(nextProgress * TOTAL_SECS);
 
       if (nextBpm > 0) {
-        finalValuesRef.current = { bpm: nextBpm, spo2: nextSpo2 > 0 ? nextSpo2 : 98, confidence: nextConf, snr: nextSnr };
+        finalValuesRef.current = { bpm: nextBpm, spo2: nextSpo2 > 0 ? nextSpo2 : (finalValuesRef.current.spo2 || 0), confidence: nextConf, snr: nextSnr };
       }
 
       if (nextStatus !== prevStatusRef.current) {
@@ -194,7 +194,7 @@ export default function PPGMeasurementScreen({
     const unsubDone = onHeartRateDone((event) => {
       handleComplete(
         event.bpm ?? 0,
-        event.spo2 ?? 98,
+        event.spo2 ?? 0,
         event.confidence ?? 0,
         event.snr ?? 0
       );
@@ -234,7 +234,7 @@ export default function PPGMeasurementScreen({
 
   const handleRestart = () => {
     isCompletedRef.current = false;
-    finalValuesRef.current = { bpm: 0, spo2: 98, confidence: 0, snr: -10 };
+    finalValuesRef.current = { bpm: 0, spo2: 0, confidence: 0, snr: -10 };
     setProgressSecs(0);
     setBpm(0);
     setSpo2(0);

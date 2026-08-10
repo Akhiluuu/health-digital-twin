@@ -41,6 +41,7 @@ export interface UserProfile {
   };
 
   // Flat fields for backward compatibility with existing code
+  name?: string;
   firstName?: string;
   lastName?: string;
   email?: string;

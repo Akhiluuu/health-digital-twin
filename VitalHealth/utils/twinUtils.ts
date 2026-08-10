@@ -8,6 +8,16 @@ import { UserProfile } from '../services/profileService';
 export function getTwinId(profile: Partial<UserProfile> | null): string {
   if (!profile) return 'temp_user';
 
+  // 1. Prioritize Firebase UID to guarantee account isolation across different emails
+  const rawUid = profile.uid || (profile as any).id;
+  if (rawUid) {
+    const cleanUid = String(rawUid).replace(/[^a-zA-Z0-9_\-\.]/g, "");
+    if (cleanUid.length > 0) {
+      return cleanUid;
+    }
+  }
+
+  // 2. Fallback to name + phone if UID is not available yet
   const fNameStr = String(profile.firstName || "").trim().toLowerCase().replace(/[^a-z0-9]/g, "");
   const lNameStr = String(profile.lastName || "").trim().toLowerCase().replace(/[^a-z0-9]/g, "");
   const phoneDigits = String(profile.phone || "").replace(/\D/g, "");
@@ -17,8 +27,7 @@ export function getTwinId(profile: Partial<UserProfile> | null): string {
     return `${fNameStr}_${lNameStr}_${phoneExt}`;
   }
 
-  // Fallback to Firebase UID if available, otherwise temp_user
-  return (profile as any).uid || 'temp_user';
+  return 'temp_user';
 }
 
 /**

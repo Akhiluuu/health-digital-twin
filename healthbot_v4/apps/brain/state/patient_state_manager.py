@@ -16,6 +16,7 @@ from healthbot_v4.shared.models.base import (
     NormalizedLab,
     NormalizedMedication,
     NormalizedVital,
+    NormalizedCondition,
     RiskFlag,
     RiskLevel,
 )
@@ -107,6 +108,13 @@ class PatientStateManager(HealthBrainSubsystem):
     def add_medication(self, patient_id: str, med: NormalizedMedication) -> PatientState:
         state = self.get_or_create_state(patient_id)
         state.active_medications.insert(0, med)
+        state.last_updated = datetime.now(timezone.utc)
+        self._sync_to_redis(state)
+        return state
+
+    def add_condition(self, patient_id: str, condition: NormalizedCondition) -> PatientState:
+        state = self.get_or_create_state(patient_id)
+        state.current_conditions.insert(0, condition)
         state.last_updated = datetime.now(timezone.utc)
         self._sync_to_redis(state)
         return state

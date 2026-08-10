@@ -10,6 +10,7 @@ import { log } from "../utils/logger";
 
 export interface UserProfile {
   uid?: string;
+  name?: string;
   firstName: string;
   lastName: string;
   email: string;

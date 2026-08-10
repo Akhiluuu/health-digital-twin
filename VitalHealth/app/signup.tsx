@@ -99,15 +99,13 @@ export default function SignUp() {
     danger: c.danger,
   };
 
-  const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
 
-  const [confirmFocused, setConfirmFocused] = useState(false);
-  const [nameFocused, setNameFocused] = useState(false);
   const [emailFocused, setEmailFocused] = useState(false);
   const [passFocused, setPassFocused] = useState(false);
+  const [confirmFocused, setConfirmFocused] = useState(false);
 
   const [showPass, setShowPass] = useState(false);
   const [showConfirmPass, setShowConfirmPass] = useState(false);
@@ -158,11 +156,6 @@ export default function SignUp() {
   }, []);
 
   const createAccount = async () => {
-    if (!name.trim()) {
-      Alert.alert("Error", "Please enter your full name");
-      return;
-    }
-
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email)) {
       Alert.alert("Error", "Please enter a valid email address");
@@ -184,24 +177,16 @@ export default function SignUp() {
     let userCredential;
     try {
       userCredential = await createUserWithEmailAndPassword(auth, email.trim(), password);
-      await updateAuthProfile(userCredential.user, { displayName: name.trim() });
-
-      const user = userCredential.user;
-      await createUserProfile(user.uid, {
-        name: name.trim(),
-        email: email.trim(),
-        createdAt: new Date().toISOString(),
-      });
     } catch (firebaseError: any) {
       setLoading(false);
       let errorMessage = "An error occurred during registration. Please try again.";
       if (firebaseError.code === "auth/email-already-in-use" || firebaseError.message?.includes("email-already-in-use")) {
-        errorMessage = "This email address is already registered. Please sign in instead, or tap 'Forgot Password' on the login screen if you need to reset your password.";
+        errorMessage = "This email address is already registered. Please sign in instead.";
       } else if (firebaseError.code === "auth/invalid-email" || firebaseError.message?.includes("invalid-email")) {
         errorMessage = "Please enter a valid email address.";
       } else if (firebaseError.code === "auth/weak-password" || firebaseError.message?.includes("weak-password")) {
-        errorMessage = "Your password is too weak. Please use at least 6 characters.";
-      } else if (firebaseError.code === "auth/network-request-failed" || firebaseError.message?.includes("network-request-failed")) {
+        errorMessage = "Your password is too weak. Please use at least 8 characters.";
+      } else if (firebaseError.code === "auth/network-request-failed") {
         errorMessage = "Network connection failed. Please check your internet connection.";
       }
       Alert.alert("Registration Failed", errorMessage, [{ text: "OK" }]);
@@ -212,18 +197,15 @@ export default function SignUp() {
       "signupName", "signupEmail", "userProfile",
       "myInviteCode", "familyMembers", "activeMemberId", "appSettings",
     ]);
-    await AsyncStorage.setItem("signupName", name.trim());
     await AsyncStorage.setItem("signupEmail", email.trim());
 
     await setLoggedIn();
-
-    sendWelcomeEmail(name.trim(), email.trim());
-
     setLoading(false);
 
+    // Pass email to personal screen — name will be entered there (once)
     router.replace({
       pathname: "/onboarding/personal",
-      params: { signupName: name.trim(), signupEmail: email.trim() },
+      params: { signupName: "", signupEmail: email.trim() },
     });
   };
 
@@ -268,29 +250,6 @@ export default function SignUp() {
             <View style={[styles.stepActive, { backgroundColor: colors.headerGradient[0] }]} />
             <View style={[styles.stepInactive, { backgroundColor: colors.border }]} />
             <View style={[styles.stepInactive, { backgroundColor: colors.border }]} />
-          </View>
-
-          {/* NAME */}
-          <View style={styles.fieldWrapper}>
-            <Text style={[styles.fieldLabel, { color: colors.subText }]}>Full Name</Text>
-            <View
-              style={[
-                styles.inputWrapper,
-                { backgroundColor: colors.card, borderColor: colors.border },
-                nameFocused && { borderColor: colors.headerGradient[0] },
-              ]}
-            >
-              <Text style={[styles.inputIcon, { color: colors.subText }]}>👤</Text>
-              <TextInput
-                placeholder="John Doe"
-                placeholderTextColor={colors.subText}
-                value={name}
-                onChangeText={setName}
-                style={[styles.input, { color: colors.text }]}
-                onFocus={() => setNameFocused(true)}
-                onBlur={() => setNameFocused(false)}
-              />
-            </View>
           </View>
 
           {/* EMAIL */}

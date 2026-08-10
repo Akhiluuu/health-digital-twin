@@ -1,7 +1,13 @@
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { doc, updateDoc } from "firebase/firestore";
+import { doc, setDoc } from "firebase/firestore";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { auth, db } from "../../services/firebase";
+import { sendWelcomeEmail } from "../../services/emailService";
+import { createUserProfile } from "../../services/userService";
+import { updateProfile as updateAuthProfile } from "firebase/auth";
 import { useEffect, useRef, useState } from "react";
 import {
+  Alert,
   Animated,
   Dimensions,
   Easing,
@@ -18,7 +24,7 @@ import {
 import Svg, { Path, Rect, Circle, Line } from "react-native-svg";
 import { useTheme } from "../../context/ThemeContext";
 import { colors as globalColors } from "../../theme/colors";
-import { auth, db } from "../../services/firebase";
+
 
 const { width: SCREEN_W } = Dimensions.get('window');
 // Calendar modal inner padding (20 on each side in calStyles.overlay + 20 inside the sheet)
@@ -352,7 +358,8 @@ export default function Personal() {
   const router = useRouter();
   const { theme } = useTheme();
 
-  const c = globalColors[theme];
+  const activeTheme = theme === "light" ? "light" : "dark";
+  const c = globalColors[activeTheme] || globalColors.dark;
   const colors = {
     bg:             c.bg,
     card:           c.card,
@@ -378,11 +385,25 @@ export default function Personal() {
     signupEmail: string;
   }>();
 
-  const [firstName,   setFirstName]   = useState("");
-  const [lastName,    setLastName]    = useState("");
+  const [firstName,   setFirstName]   = useState(() => {
+    // Auto-split signupName into first/last so user doesn't type it twice
+    if (signupName) {
+      const parts = signupName.trim().split(" ");
+      return parts[0] || "";
+    }
+    return "";
+  });
+  const [lastName,    setLastName]    = useState(() => {
+    if (signupName) {
+      const parts = signupName.trim().split(" ");
+      return parts.slice(1).join(" ") || "";
+    }
+    return "";
+  });
   const [phone,       setPhone]       = useState("");
   const [dateOfBirth, setDateOfBirth] = useState("");
   const [gender,      setGender]      = useState("");
+  const [primaryGoal, setPrimaryGoal] = useState("wellness");
   const [showCal,     setShowCal]     = useState(false);
 
   const [firstFocused, setFirstFocused] = useState(false);
@@ -420,31 +441,72 @@ export default function Personal() {
   }, []);
 
   const handleNext = async () => {
-    const user = auth.currentUser;
-    if (!user) { alert("User not logged in"); return; }
-
     if (!firstName.trim() || !lastName.trim() || !phone.trim() || !dateOfBirth.trim() || !gender.trim()) {
-      alert("Please fill all fields");
+      Alert.alert("Required Fields", "Please fill all required fields");
       return;
     }
 
     const dobRegex = /^[0-9]{4}-[0-9]{2}-[0-9]{2}$/;
     if (!dobRegex.test(dateOfBirth)) {
-      alert("Please select a valid date of birth");
+      Alert.alert("Invalid Input", "Please select a valid date of birth");
       return;
     }
 
     try {
-      await updateDoc(doc(db, "users", user.uid), {
-        firstName, lastName, phone, dateOfBirth, gender,
+      const user = auth.currentUser;
+      const uid = user ? user.uid : "guest";
+
+      const personalData = {
+        firstName, lastName, phone, dateOfBirth, gender, primaryGoal,
         updatedAt: new Date().toISOString(),
-      });
+      };
+
+      try {
+        await AsyncStorage.setItem(`@onboarding_personal_${uid}`, JSON.stringify(personalData));
+      } catch (e) {}
+
+      if (user) {
+        try {
+          await setDoc(doc(db, "users", user.uid), personalData, { merge: true });
+        } catch (fsErr) {
+          console.warn("Firestore personal save warning:", fsErr);
+        }
+      }
+
+      const fullName = `${firstName.trim()} ${lastName.trim()}`.trim();
+
+      // Store the resolved name for downstream screens and welcome email
+      try {
+        await AsyncStorage.setItem("signupName", fullName);
+      } catch (e) {}
+
+      if (user) {
+        try {
+          // Update Firebase Auth display name
+          await updateAuthProfile(user, { displayName: fullName });
+          // Create/update user profile record
+          await createUserProfile(user.uid, {
+            name: fullName,
+            email: signupEmail || user.email || "",
+            createdAt: new Date().toISOString(),
+          });
+        } catch (e) {
+          console.warn("Profile setup warning:", e);
+        }
+        // Fire welcome email (non-blocking)
+        sendWelcomeEmail(fullName, signupEmail || user.email || "");
+      }
+
       router.push({
         pathname: "/onboarding/medical",
-        params: { signupName, signupEmail, firstName, lastName, phone, dateOfBirth, gender },
+        params: { signupName: fullName, signupEmail, firstName, lastName, phone, dateOfBirth, gender, primaryGoal },
       });
     } catch (error: any) {
-      alert(error.message);
+      console.error("[Personal] handleNext error:", error);
+      router.push({
+        pathname: "/onboarding/medical",
+        params: { signupName, signupEmail, firstName, lastName, phone, dateOfBirth, gender, primaryGoal },
+      });
     }
   };
 
@@ -485,26 +547,106 @@ export default function Personal() {
           contentContainerStyle={styles.inner}
         >
 
-          {/* Progress */}
+          {/* Progress & Twin Calibration Bar */}
           <View style={styles.progressRow}>
             <View style={[styles.progressTrack, { backgroundColor: colors.progressBg }]}>
-              <View style={[styles.progressFill, { width: "33%", backgroundColor: colors.accent }]} />
+              <View style={[styles.progressFill, { width: "25%", backgroundColor: colors.accent }]} />
             </View>
-            <Text style={[styles.progressLabel, { color: colors.subText }]}>Step 1 of 3</Text>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+              <Text style={{ fontSize: 11, fontWeight: "800", color: colors.accent }}>⚡ TWIN CALIBRATION 25%</Text>
+            </View>
+          </View>
+
+          {/* AI Guide Conversational Box */}
+          <View style={{
+            backgroundColor: colors.card,
+            borderRadius: 16,
+            padding: 14,
+            marginBottom: 20,
+            borderWidth: 1,
+            borderColor: colors.accent + "40",
+            flexDirection: "row",
+            alignItems: "center",
+            gap: 12,
+            shadowColor: colors.accent,
+            shadowOffset: { width: 0, height: 2 },
+            shadowOpacity: 0.1,
+            shadowRadius: 6,
+            elevation: 2,
+          }}>
+            <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: colors.accent + "20", alignItems: "center", justifyContent: "center" }}>
+              <Text style={{ fontSize: 24 }}>🤖</Text>
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 11, fontWeight: "800", color: colors.accent, letterSpacing: 0.5, textTransform: "uppercase" }}>AI Twin Companion</Text>
+              <Text style={{ fontSize: 13, color: colors.text, fontWeight: "600", marginTop: 2, lineHeight: 18 }}>
+                {firstName ? `Great to meet you, ${firstName}! ` : "Welcome! "}What is your primary health goal for this calibration?
+              </Text>
+            </View>
           </View>
 
           {/* Header */}
           <View style={styles.header}>
-            <View style={[styles.iconBadge, { backgroundColor: colors.card, borderColor: colors.border }]}>
-              <Text style={styles.iconEmoji}>👤</Text>
-            </View>
-            <Text style={[styles.title, { color: colors.text }]}>Personal Info</Text>
+            <Text style={[styles.title, { color: colors.text }]}>Personal Profile Calibration</Text>
             <Text style={[styles.subtitle, { color: colors.subText }]}>
-              Enter your personal details to get started
+              Seeding baseline demographics into your Health OS engine
             </Text>
-            <Text style={[styles.privacyNote, { color: colors.subText }]}>
-              Including DOB for age-specific health insights
+          </View>
+
+          {/* Interactive Primary Goal Selector */}
+          <View style={styles.fieldWrapper}>
+            <Text style={[styles.fieldLabel, { color: colors.text }]}>Choose Primary Health Milestone</Text>
+            <Text style={{ fontSize: 12, color: colors.subText, marginBottom: 12 }}>
+              Your selection dynamically tunes BioGears engine algorithms and questionnaire cards.
             </Text>
+            <View style={{ gap: 10 }}>
+              {[
+                { id: "wellness", label: "General Wellness & Vitality", emoji: "🌿", desc: "Optimize sleep, daily energy, and baseline organ resilience." },
+                { id: "chronic_management", label: "Chronic Care & Condition Tracking", emoji: "🩺", desc: "Manage diabetes, hypertension, or cardiac monitoring." },
+                { id: "athletic", label: "Athletic Performance & HRV", emoji: "⚡", desc: "Track VO2 max, muscle recovery, and stamina metrics." },
+                { id: "weight_loss", label: "Body Recomposition & Weight Loss", emoji: "🔥", desc: "Calibrate BMR, metabolic rate, and daily caloric balance." },
+              ].map((g) => {
+                const isSel = primaryGoal === g.id;
+                return (
+                  <TouchableOpacity
+                    key={g.id}
+                    onPress={() => setPrimaryGoal(g.id)}
+                    activeOpacity={0.85}
+                    style={{
+                      padding: 14,
+                      borderRadius: 16,
+                      borderWidth: isSel ? 2 : 1,
+                      borderColor: isSel ? colors.accent : colors.border,
+                      backgroundColor: isSel ? colors.accent + "15" : colors.card,
+                      flexDirection: "row",
+                      alignItems: "center",
+                      gap: 12,
+                    }}
+                  >
+                    <View style={{
+                      width: 44, height: 44, borderRadius: 14,
+                      backgroundColor: isSel ? colors.accent : colors.inputBg,
+                      alignItems: "center", justifyContent: "center"
+                    }}>
+                      <Text style={{ fontSize: 22 }}>{g.emoji}</Text>
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ fontSize: 14, fontWeight: "700", color: isSel ? colors.accent : colors.text }}>
+                        {g.label}
+                      </Text>
+                      <Text style={{ fontSize: 11, color: colors.subText, marginTop: 2, lineHeight: 15 }}>
+                        {g.desc}
+                      </Text>
+                    </View>
+                    {isSel && (
+                      <View style={{ width: 22, height: 22, borderRadius: 11, backgroundColor: colors.accent, alignItems: "center", justifyContent: "center" }}>
+                        <Text style={{ color: "#fff", fontSize: 12, fontWeight: "900" }}>✓</Text>
+                      </View>
+                    )}
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
           </View>
 
           {/* First Name */}

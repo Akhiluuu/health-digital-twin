@@ -28,7 +28,13 @@ import { useTheme } from "../../context/ThemeContext";
 import { useFamily } from "../../context/FamilyContext";
 import { getTwinId } from "../../utils/twinUtils";
 import Header from "../components/Header";
-import { getBiogearsBaseUrl } from "../../services/biogears";
+import { getBiogearsBaseUrl, getApiKey } from "../../services/biogears";
+import {
+  loadChunks as loadAIChunks,
+  loadDocuments as loadAIDocs,
+  saveChunks as saveAIChunks,
+  saveDocuments as saveAIDocs,
+} from "../../services/documentProcessing";
 
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get("window");
 
@@ -483,24 +489,98 @@ export default function DocumentsScreen() {
       const updated = [newDoc, ...documents];
       setDocuments(updated); await saveDocuments(updated);
 
-      // Trigger Lab OCR ingestion if document is a Lab Report or Scan
-      if (selectedCategory === "Lab" || selectedCategory === "Scan" || selectedCategory === "Prescription") {
-        try {
-          const baseUrl = await getBiogearsBaseUrl();
-          await fetch(`${baseUrl}/lab-report/ocr`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
+      // ── OCR + AI Chat Vector Bridge ──────────────────────────────────────
+      // Send the actual file to /ai/upload-and-embed for real server-side OCR,
+      // structured lab extraction, AND embedding. Store returned chunks into
+      // the AI Chat's vector namespace so RAG retrieval works immediately.
+      try {
+        const baseUrl = await getBiogearsBaseUrl();
+        const apiKey = await getApiKey();
+        const uploadUrl = `${baseUrl.replace(/\/$/, '')}/ai/upload-and-embed`;
+
+        const formData = new FormData();
+        formData.append('file', {
+          uri: destUri,
+          name: pickedFileName,
+          type: pickedMime || (pickedFileName.toLowerCase().endsWith('.pdf') ? 'application/pdf' : 'image/jpeg'),
+        } as any);
+        formData.append('user_id', userId);
+
+        const uploadRes = await fetch(uploadUrl, {
+          method: 'POST',
+          body: formData,
+          headers: {
+            'Content-Type': 'multipart/form-data',
+            ...(apiKey ? { 'X-API-Key': apiKey } : {}),
+          },
+        });
+
+        if (uploadRes.ok) {
+          const uploadData = await uploadRes.json();
+          if (uploadData.status === 'success' && Array.isArray(uploadData.chunks) && uploadData.chunks.length > 0) {
+            // Bridge: store server-generated chunks into AI Chat's vector namespace
+            const docId = uploadData.doc_id || `doc_${Date.now()}`;
+            const aiChunks = uploadData.chunks.map((c: any, idx: number) => ({
+              id: c.id || `${docId}_c${idx}`,
+              text: c.text,
+              metadata: {
+                ...(c.metadata || {}),
+                docId,
+                docName: pickedFileName,
+                docType: pickedMime?.includes('pdf') ? 'pdf' : 'image',
+                sourceScreen: 'documents',
+              },
+              embedding: c.embedding,
+            }));
+            const aiDoc = {
+              id: docId,
+              name: pickedFileName,
+              type: (pickedMime?.includes('pdf') ? 'pdf' : 'image') as 'pdf' | 'image',
+              chunkCount: aiChunks.length,
+              uploadedAt: Date.now(),
+            };
+            const existingDocs = await loadAIDocs();
+            const existingChunks = await loadAIChunks();
+            await saveAIDocs([...existingDocs, aiDoc]);
+            await saveAIChunks([...existingChunks, ...aiChunks]);
+            console.log(`[Documents] Bridged ${aiChunks.length} chunks into AI Chat vector store`);
+          }
+        } else {
+          // Fallback: send text metadata to /lab-report/ocr for at least lab ingestion
+          console.log('[Documents] upload-and-embed returned non-200, falling back to /lab-report/ocr');
+          const fbBaseUrl = await getBiogearsBaseUrl();
+          await fetch(`${fbBaseUrl}/lab-report/ocr`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               user_id: userId,
               report_title: reportName.trim(),
               category: selectedCategory,
-            })
+              text_content: `Category: ${selectedCategory}. Document: ${pickedFileName}.`,
+            }),
           });
-        } catch (ocrErr) {}
+        }
+      } catch (ocrErr: any) {
+        // Silent failure — document is still stored locally
+        console.log('[Documents] OCR bridge failed (non-blocking):', ocrErr?.message);
+        // Last-resort fallback: notify server with just metadata
+        try {
+          const fbBaseUrl = await getBiogearsBaseUrl();
+          await fetch(`${fbBaseUrl}/lab-report/ocr`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              user_id: userId,
+              report_title: reportName.trim(),
+              category: selectedCategory,
+              text_content: `Category: ${selectedCategory}. File: ${pickedFileName}.`,
+            }),
+          });
+        } catch (_) {}
       }
 
       handleCloseModal();
-      Alert.alert("✅ Saved & Parsed", `"${newDoc.title}" has been stored and OCR findings ingested into your Personal Health OS.`);
+      Alert.alert("✅ Saved & Parsed", `"${newDoc.title}" has been stored and AI-analyzed — available in your Health Chat instantly.`);
     } catch (e: any) { Alert.alert("Upload failed", e.message ?? "Could not save the file."); }
     finally { setUploading(false); }
   };

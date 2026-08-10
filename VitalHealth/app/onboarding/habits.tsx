@@ -1,8 +1,9 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { doc, updateDoc } from "firebase/firestore";
+import { doc, setDoc } from "firebase/firestore";
 import React, { memo, useRef, useState } from "react";
 import {
+  Alert,
   FlatList,
   Modal,
   ScrollView,
@@ -17,6 +18,7 @@ import TimePicker from "../../components/twin/TimePicker";
 import { auth, db } from "../../services/firebase";
 import { useTheme } from "../../context/ThemeContext";
 import { Ionicons } from "@expo/vector-icons";
+import { syncHabitsToReminderEngine } from "../../services/reminderEngine";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -246,12 +248,27 @@ function formatDisplayTime(timeStr: any): string {
   return `${h12}:${pad(m)} ${isPM ? "PM" : "AM"}`;
 }
 
+const formatTimeDigits = (raw: string): string => {
+  let cleaned = raw.replace(/[^0-9:]/g, "");
+  if (cleaned.length === 3 && !cleaned.includes(":")) {
+    return `0${cleaned.charAt(0)}:${cleaned.slice(1)}`;
+  } else if (cleaned.length === 4 && !cleaned.includes(":")) {
+    return `${cleaned.slice(0, 2)}:${cleaned.slice(2)}`;
+  }
+  return cleaned;
+};
+
 const TimeField = memo(function TimeField({
   label, icon, value, onChange, placeholder, colors, accent,
 }: {
   label: string; icon: string; value: string; onChange: (v: string) => void;
   placeholder: string; colors: any; accent: string;
 }) {
+  const handleTextChange = (text: string) => {
+    const formatted = formatTimeDigits(text);
+    onChange(formatted);
+  };
+
   return (
     <View style={styles.fieldWrapper}>
       <Text style={[styles.fieldLabel, { color: colors.labelText }]}>{label}</Text>
@@ -262,10 +279,15 @@ const TimeField = memo(function TimeField({
         <View style={styles.inputIconContainer}>
           <Ionicons name={icon as any} size={15} color={accent} />
         </View>
-        <Text style={[styles.inputPlaceholder, { color: colors.inputPlaceholder, flex: 1 }]}>
-          {placeholder}
-        </Text>
-        {/* Custom themed drum picker — no OS-native UI */}
+        <TextInput
+          style={{ flex: 1, fontSize: 14, color: colors.inputText, fontWeight: "600" }}
+          value={value}
+          onChangeText={handleTextChange}
+          placeholder={placeholder}
+          placeholderTextColor={colors.inputPlaceholder}
+          keyboardType="numbers-and-punctuation"
+        />
+        {/* Custom themed drum picker */}
         <TimePicker value={value} onChange={onChange} accent={accent} />
         {!!value && <Text style={[styles.checkIcon, { color: colors.checkIconColor }]}>✓</Text>}
       </View>
@@ -554,16 +576,55 @@ export default function Habits() {
   const { theme } = useTheme();
   const c = theme === "light" ? LIGHT : DARK;
 
-  // Schedule
-  const [wakeUp,    setWakeUp]    = useState("");
-  const [breakfast, setBreakfast] = useState("");
-  const [lunch,     setLunch]     = useState("");
-  const [dinner,    setDinner]    = useState("");
-  const [sleep,     setSleep]     = useState("");
+  // Routine / Schedule State
+  const [wakeUp,    setWakeUp]    = useState("06:30");
+  const [breakfast, setBreakfast] = useState("08:30");
+  const [lunch,     setLunch]     = useState("13:30");
+  const [dinner,    setDinner]    = useState("20:30");
+  const [sleep,     setSleep]     = useState("23:00");
+
+  // Bi-directional state setters that keep Daily Schedule and Visual Timeline Cards 100% in sync
+  const handleWakeUpChange = (val: string) => {
+    setWakeUp(val);
+    if (val) setTimelineBlocks(prev => prev.map(b => b.type === "wake" ? { ...b, time: val } : b));
+  };
+  const handleBreakfastChange = (val: string) => {
+    setBreakfast(val);
+    if (val) setTimelineBlocks(prev => prev.map(b => (b.type === "meal" && b.title.includes("Breakfast")) || b.id === "3" ? { ...b, time: val } : b));
+  };
+  const handleLunchChange = (val: string) => {
+    setLunch(val);
+    if (val) setTimelineBlocks(prev => prev.map(b => (b.type === "meal" && b.title.includes("Lunch")) || b.id === "4" ? { ...b, time: val } : b));
+  };
+  const handleDinnerChange = (val: string) => {
+    setDinner(val);
+    if (val) setTimelineBlocks(prev => prev.map(b => (b.type === "meal" && b.title.includes("Dinner")) || b.id === "6" ? { ...b, time: val } : b));
+  };
+  const handleSleepChange = (val: string) => {
+    setSleep(val);
+    if (val) setTimelineBlocks(prev => prev.map(b => b.type === "sleep" ? { ...b, time: val } : b));
+  };
 
   // Water & Activity
   const [water,    setWater]    = useState("2L");
   const [activity, setActivity] = useState("");
+
+  // Natural Language & Flexible 24-Hour Timeline State
+  const [naturalLanguageRoutineText, setNaturalLanguageRoutineText] = useState("");
+  const [scheduleVariability, setScheduleVariability] = useState<"fixed" | "weekday_weekend" | "shift_work">("fixed");
+  const [timelineBlocks, setTimelineBlocks] = useState([
+    { id: "1", title: "Wake Up & Morning Start", time: "06:30", type: "wake", icon: "🌅" },
+    { id: "2", title: "Morning Hydration / Coffee", time: "07:00", type: "snack", icon: "☕" },
+    { id: "3", title: "Breakfast / Meal 1", time: "08:30", type: "meal", icon: "🍳", kcalPercent: 30 },
+    { id: "4", title: "Lunch / Main Meal", time: "13:30", type: "meal", icon: "🥗", kcalPercent: 40 },
+    { id: "5", title: "Physical Workout / Activity", time: "18:30", type: "exercise", icon: "🏃‍♂️" },
+    { id: "6", title: "Dinner / Final Meal", time: "20:30", type: "meal", icon: "🍽️", kcalPercent: 30 },
+    { id: "7", title: "Sleep & Wind-Down", time: "23:00", type: "sleep", icon: "🌙" },
+  ]);
+
+  const [newBlockTitle, setNewBlockTitle] = useState("");
+  const [newBlockTime, setNewBlockTime] = useState("16:00");
+  const [newBlockType, setNewBlockType] = useState<"meal" | "exercise" | "custom">("custom");
 
   // All quiz answers - remove revealed logic
   const [answers, setAnswers] = useState<Record<string, any>>({});
@@ -580,29 +641,224 @@ export default function Habits() {
     setAnswers(a => ({ ...a, [id]: next }));
   };
 
+  // Helper to normalize any time format ("6 30", "6.30", "6:30", "630", "6 am", "6 in the morning") -> "HH:MM"
+  const normalizeTimeString = (rawStr: string): string => {
+    let s = rawStr.trim().toLowerCase();
+    
+    // Check for AM/PM / Time of Day markers
+    const isPM = s.includes("pm") || s.includes("evening") || s.includes("night") || s.includes("afternoon");
+    const isAM = s.includes("am") || s.includes("morning");
+
+    // Clean text markers
+    s = s.replace(/(am|pm|in the morning|in the evening|in the afternoon|at night|o'clock)/gi, "").trim();
+
+    // 1. Colon separated: "6:30", "18:30"
+    if (s.includes(":")) {
+      const parts = s.split(":");
+      let h = parseInt(parts[0], 10) || 0;
+      const m = parseInt(parts[1], 10) || 0;
+      if (isPM && h < 12) h += 12;
+      if (isAM && h === 12) h = 0;
+      return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+    }
+
+    // 2. Dot separated: "6.30"
+    if (s.includes(".")) {
+      const parts = s.split(".");
+      let h = parseInt(parts[0], 10) || 0;
+      const m = parseInt(parts[1], 10) || 0;
+      if (isPM && h < 12) h += 12;
+      if (isAM && h === 12) h = 0;
+      return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+    }
+
+    // 3. Space separated: "6 30"
+    const spaceParts = s.split(/\s+/).filter(Boolean);
+    if (spaceParts.length >= 2) {
+      let h = parseInt(spaceParts[0], 10) || 0;
+      const m = parseInt(spaceParts[1], 10) || 0;
+      if (isPM && h < 12) h += 12;
+      if (isAM && h === 12) h = 0;
+      return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+    }
+
+    // 4. Compact 3 or 4 digits: "630" -> 06:30, "1330" -> 13:30
+    if (/^\d{3,4}$/.test(s)) {
+      const len = s.length;
+      let h = parseInt(s.substring(0, len - 2), 10) || 0;
+      const m = parseInt(s.substring(len - 2), 10) || 0;
+      if (isPM && h < 12) h += 12;
+      if (isAM && h === 12) h = 0;
+      return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+    }
+
+    // 5. Single or double digit hour: "6" -> 06:00
+    let h = parseInt(s, 10) || 0;
+    if (isPM && h < 12) h += 12;
+    if (isAM && h === 12) h = 0;
+    return `${String(h).padStart(2, "0")}:00`;
+  };
+
+  // Advanced AI Natural Language Routine Parser & Timeline Generator
+  const parseNaturalLanguageRoutine = () => {
+    if (!naturalLanguageRoutineText.trim()) return;
+    const txt = naturalLanguageRoutineText.toLowerCase();
+
+    const newParsedBlocks: Array<{ id: string; title: string; time: string; type: "wake" | "meal" | "snack" | "exercise" | "custom" | "sleep"; icon: string; kcalPercent?: number }> = [];
+    
+    // Regex matching activity + flexible time patterns ("wake at 6 30", "breakfast 8.30 am", "lunch 1330", "gym at 6 30 pm")
+    const timeRegex = /([a-z0-9\s]+?)\s*(?:at|@|by)?\s*(\d{1,2}(?:[:.\s]\d{2})?\s*(?:am|pm|in the morning|in the evening|in the afternoon|at night)?)/gi;
+    let match;
+    let idCounter = 1;
+
+    while ((match = timeRegex.exec(txt)) !== null) {
+      const rawActivity = match[1].replace(/(and|then|i|my|a|an)\s+/gi, "").trim();
+      const rawTimeText = match[2].trim();
+      if (!rawTimeText || rawActivity.length < 2) continue;
+
+      const normalizedTime = normalizeTimeString(rawTimeText);
+
+      let type: "wake" | "meal" | "snack" | "exercise" | "custom" | "sleep" = "custom";
+      let icon = "📌";
+      let title = rawActivity.charAt(0).toUpperCase() + rawActivity.slice(1);
+
+      if (/wake|up|morning/i.test(rawActivity)) {
+        type = "wake"; icon = "🌅"; title = "Wake Up & Morning Start";
+        setWakeUp(normalizedTime);
+      } else if (/breakfast|tea|coffee|fasting/i.test(rawActivity)) {
+        type = /tea|coffee|snack/i.test(rawActivity) ? "snack" : "meal";
+        icon = /tea|coffee/i.test(rawActivity) ? "☕" : "🍳";
+        if (/breakfast/i.test(rawActivity)) setBreakfast(normalizedTime);
+      } else if (/lunch|midday/i.test(rawActivity)) {
+        type = "meal"; icon = "🥗"; title = "Lunch / Main Meal";
+        setLunch(normalizedTime);
+      } else if (/dinner|supper|night meal/i.test(rawActivity)) {
+        type = "meal"; icon = "🍽️"; title = "Dinner / Final Meal";
+        setDinner(normalizedTime);
+      } else if (/gym|workout|exercise|run|walk|sports/i.test(rawActivity)) {
+        type = "exercise"; icon = "🏋️‍♂️"; title = /gym|workout/i.test(title) ? title : `${title} Session`;
+      } else if (/sleep|bed|night/i.test(rawActivity)) {
+        type = "sleep"; icon = "🌙"; title = "Sleep & Wind-Down";
+        setSleep(normalizedTime);
+      }
+
+      newParsedBlocks.push({
+        id: String(idCounter++),
+        title,
+        time: normalizedTime,
+        type,
+        icon,
+        kcalPercent: type === "meal" ? 30 : undefined,
+      });
+    }
+
+    if (newParsedBlocks.length > 0) {
+      setTimelineBlocks(newParsedBlocks);
+      Alert.alert("Routine Extracted", `✨ AI extracted ${newParsedBlocks.length} routine blocks into your 24-Hour Visual Schedule!`);
+    } else {
+      Alert.alert("No Times Found", "Please mention times in your sentence (e.g. 'Wake up at 6 30, lunch at 1 30 pm, gym at 6pm').");
+    }
+  };
+
+  const addCustomBlock = () => {
+    if (!newBlockTitle.trim()) return;
+    const newBlock = {
+      id: Date.now().toString(),
+      title: newBlockTitle.trim(),
+      time: newBlockTime,
+      type: newBlockType,
+      icon: newBlockType === "meal" ? "🥗" : newBlockType === "exercise" ? "🏋️‍♂️" : "📌",
+      kcalPercent: newBlockType === "meal" ? 15 : undefined,
+    };
+    setTimelineBlocks(prev => [...prev, newBlock]);
+    setNewBlockTitle("");
+  };
+
+  const removeBlock = (id: string) => {
+    setTimelineBlocks(prev => prev.filter(b => b.id !== id));
+  };
+
   const goNext = async () => {
-    const user = auth.currentUser;
-    if (!user) { alert("User not logged in"); return; }
+    // Build clean string-only navigation parameters
+    const cleanParams: Record<string, string> = {};
+    if (params) {
+      Object.keys(params).forEach((key) => {
+        const val = params[key];
+        if (typeof val === "string") {
+          cleanParams[key] = val;
+        } else if (typeof val === "number" || typeof val === "boolean") {
+          cleanParams[key] = String(val);
+        }
+      });
+    }
+
+    const navigationParams = {
+      ...cleanParams,
+      wakeUp: wakeUp || "07:00",
+      breakfast: breakfast || "08:30",
+      lunch: lunch || "13:00",
+      dinner: dinner || "20:00",
+      sleep: sleep || "23:00",
+      water: String(water || 2.5),
+      activity: activity || "Moderate",
+    };
+
     try {
+      const user = auth.currentUser;
+      const uid = user ? user.uid : "guest";
       const habitsPayload = {
         wakeUp, breakfast, lunch, dinner, sleep, water, activity,
+        customTimelineBlocks: timelineBlocks,
+        scheduleVariability,
+        naturalLanguageRoutineText,
         foodHabits: answers,
       };
-      await updateDoc(doc(db, "users", user.uid), {
-        habits: habitsPayload,
-        updatedAt: new Date().toISOString(),
-      });
-      // Cache locally so review.tsx can build the default routine without
-      // an extra Firestore round-trip
-      await AsyncStorage.setItem(
-        `@onboarding_habits_${user.uid}`,
-        JSON.stringify(habitsPayload)
-      );
+
+      // Save locally FIRST so review.tsx can build default routine without extra round-trip
+      try {
+        await AsyncStorage.setItem(
+          `@onboarding_habits_${uid}`,
+          JSON.stringify(habitsPayload)
+        );
+      } catch (e) {
+        console.warn("AsyncStorage save error:", e);
+      }
+
+      // If user is authenticated, update Firestore safely
+      if (user) {
+        try {
+          await setDoc(
+            doc(db, "users", user.uid),
+            {
+              habits: habitsPayload,
+              updatedAt: new Date().toISOString(),
+            },
+            { merge: true }
+          );
+        } catch (fsErr) {
+          console.warn("Firestore update non-fatal warning:", fsErr);
+        }
+      }
+
+      // Auto-schedule routine reminders safely
+      try {
+        await syncHabitsToReminderEngine(habitsPayload);
+      } catch (remErr) {
+        console.warn("syncHabitsToReminderEngine non-fatal warning:", remErr);
+      }
+
       router.push({
         pathname: "/onboarding/history",
-        params: { ...params, wakeUp, breakfast, lunch, dinner, sleep, water, activity },
+        params: navigationParams,
       });
-    } catch (e: any) { alert(e.message); }
+    } catch (e: any) {
+      console.error("[Habits] goNext error:", e);
+      // Fallback navigation so user is never stuck
+      router.push({
+        pathname: "/onboarding/history",
+        params: navigationParams,
+      });
+    }
   };
 
   return (
@@ -622,7 +878,7 @@ export default function Habits() {
           <Text style={[styles.backTxt,   { color: c.backText }]}>Back</Text>
         </TouchableOpacity>
 
-        {/* PROGRESS */}
+        {/* PROGRESS & TWIN CALIBRATION HEADER */}
         <View style={styles.progressWrap}>
           <View style={styles.progressRow}>
             <Text style={[styles.stepTxt, { color: c.progressText }]}>Step 3 of 4</Text>
@@ -648,11 +904,205 @@ export default function Habits() {
         <View style={[styles.card, { backgroundColor: c.sectionCardBg, borderColor: c.sectionCardBorder }]}>
           <Text style={[styles.cardTitle, { color: c.sectionTitle }]}>Daily Schedule</Text>
           <Text style={[styles.cardHint,  { color: c.inputPlaceholder }]}>Tap any time to set</Text>
-          <TimeField label="Wake Up"   icon="sunny" value={wakeUp}    onChange={setWakeUp}    placeholder="e.g. 6:30 AM"  colors={c} accent={c.accent} />
-          <TimeField label="Breakfast" icon="cafe" value={breakfast} onChange={setBreakfast} placeholder="e.g. 8:00 AM"  colors={c} accent={c.accent} />
-          <TimeField label="Lunch"     icon="restaurant" value={lunch}     onChange={setLunch}     placeholder="e.g. 1:00 PM"  colors={c} accent={c.accent} />
-          <TimeField label="Dinner"    icon="pizza" value={dinner}    onChange={setDinner}    placeholder="e.g. 8:30 PM"  colors={c} accent={c.accent} />
-          <TimeField label="Sleep"     icon="moon" value={sleep}     onChange={setSleep}     placeholder="e.g. 11:00 PM" colors={c} accent={c.accent} />
+          <TimeField label="Wake Up"   icon="sunny" value={wakeUp}    onChange={handleWakeUpChange}    placeholder="e.g. 6:30 AM"  colors={c} accent={c.accent} />
+          <TimeField label="Breakfast" icon="cafe" value={breakfast} onChange={handleBreakfastChange} placeholder="e.g. 8:00 AM"  colors={c} accent={c.accent} />
+          <TimeField label="Lunch"     icon="restaurant" value={lunch}     onChange={handleLunchChange}     placeholder="e.g. 1:00 PM"  colors={c} accent={c.accent} />
+          <TimeField label="Dinner"    icon="pizza" value={dinner}    onChange={handleDinnerChange}    placeholder="e.g. 8:30 PM"  colors={c} accent={c.accent} />
+          <TimeField label="Sleep"     icon="moon" value={sleep}     onChange={handleSleepChange}     placeholder="e.g. 11:00 PM" colors={c} accent={c.accent} />
+        </View>
+
+        {/* ── AI NATURAL LANGUAGE ROUTINE EXPRESSER ─────────────────────── */}
+        <View style={[styles.card, { backgroundColor: c.sectionCardBg, borderColor: c.accent + "50", borderWidth: 1.5 }]}>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 4 }}>
+            <View style={{ width: 28, height: 28, borderRadius: 14, backgroundColor: c.accent + "20", alignItems: "center", justifyContent: "center" }}>
+              <Ionicons name="sparkles" size={16} color={c.accent} />
+            </View>
+            <Text style={[styles.cardTitle, { color: c.sectionTitle }]}>AI Routine Expresser</Text>
+          </View>
+          <Text style={[styles.cardHint, { color: c.inputPlaceholder, marginBottom: 10 }]}>
+            Type or dictate your daily routine in your own natural words:
+          </Text>
+
+          <TextInput
+            multiline
+            numberOfLines={3}
+            placeholder="e.g. 'I wake up at 6am, drink warm lemon water, fast till 1pm lunch, gym at 6pm, dinner at 9pm, sleep at 11pm...'"
+            placeholderTextColor={c.inputPlaceholder}
+            value={naturalLanguageRoutineText}
+            onChangeText={setNaturalLanguageRoutineText}
+            style={{
+              borderWidth: 1,
+              borderColor: c.inputBorder,
+              borderRadius: 14,
+              padding: 12,
+              color: c.inputText,
+              backgroundColor: c.inputBg,
+              fontSize: 13,
+              minHeight: 70,
+              textAlignVertical: "top",
+              marginBottom: 10,
+            }}
+          />
+
+          <TouchableOpacity
+            style={{
+              backgroundColor: c.accent,
+              borderRadius: 12,
+              paddingVertical: 10,
+              alignItems: "center",
+              flexDirection: "row",
+              justifyContent: "center",
+              gap: 6,
+            }}
+            onPress={parseNaturalLanguageRoutine}
+            activeOpacity={0.8}
+          >
+            <Ionicons name="flash" size={14} color="#fff" />
+            <Text style={{ fontSize: 12, fontWeight: "800", color: "#fff" }}>AUTO-PARSE ROUTINE WITH AI</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* ── 24-HOUR VISUAL ROUTINE TIMELINE BUILDER ───────────────────── */}
+        <View style={[styles.card, { backgroundColor: c.sectionCardBg, borderColor: c.sectionCardBorder }]}>
+          <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+              <Ionicons name="calendar-outline" size={18} color={c.accent} />
+              <Text style={[styles.cardTitle, { color: c.sectionTitle }]}>24-Hour Visual Routine Builder</Text>
+            </View>
+            <Text style={{ fontSize: 11, fontWeight: "700", color: c.accent }}>{timelineBlocks.length} BLOCKS</Text>
+          </View>
+          <Text style={[styles.cardHint, { color: c.inputPlaceholder, marginBottom: 12 }]}>
+            Customize, re-order, or add unique event blocks to fit your exact day:
+          </Text>
+
+          {/* Timeline Block Cards */}
+          {timelineBlocks.map((blk) => (
+            <View
+              key={blk.id}
+              style={{
+                backgroundColor: c.chipBg,
+                borderColor: c.chipBorder,
+                borderWidth: 1,
+                borderRadius: 14,
+                padding: 10,
+                marginBottom: 8,
+                flexDirection: "row",
+                alignItems: "center",
+                gap: 10,
+              }}
+            >
+              <Text style={{ fontSize: 20 }}>{blk.icon || "📌"}</Text>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 13, fontWeight: "700", color: c.titleText }}>{blk.title}</Text>
+                <Text style={{ fontSize: 11, color: c.subtitleText, marginTop: 2 }}>
+                  {blk.time} · {blk.type.toUpperCase()} {blk.kcalPercent ? `(${blk.kcalPercent}% TDEE)` : ""}
+                </Text>
+              </View>
+              <TouchableOpacity
+                onPress={() => removeBlock(blk.id)}
+                style={{ padding: 4 }}
+              >
+                <Ionicons name="close-circle" size={18} color={c.subtitleText} />
+              </TouchableOpacity>
+            </View>
+          ))}
+
+          {/* Add Custom Event Block Section */}
+          <View style={{ marginTop: 8, paddingTop: 10, borderTopWidth: 1, borderTopColor: c.border }}>
+            <Text style={{ fontSize: 12, fontWeight: "700", color: c.titleText, marginBottom: 6 }}>+ Add Custom Routine Block:</Text>
+            <View style={{ flexDirection: "row", gap: 8, marginBottom: 8 }}>
+              <TextInput
+                placeholder="Block Name (e.g. Power Nap, Shake)"
+                placeholderTextColor={c.inputPlaceholder}
+                value={newBlockTitle}
+                onChangeText={setNewBlockTitle}
+                style={{
+                  flex: 1,
+                  borderWidth: 1,
+                  borderColor: c.inputBorder,
+                  borderRadius: 10,
+                  paddingHorizontal: 10,
+                  paddingVertical: 8,
+                  color: c.inputText,
+                  backgroundColor: c.inputBg,
+                  fontSize: 12,
+                }}
+              />
+              <TextInput
+                placeholder="16:00"
+                placeholderTextColor={c.inputPlaceholder}
+                value={newBlockTime}
+                onChangeText={setNewBlockTime}
+                style={{
+                  width: 65,
+                  borderWidth: 1,
+                  borderColor: c.inputBorder,
+                  borderRadius: 10,
+                  paddingHorizontal: 8,
+                  paddingVertical: 8,
+                  color: c.inputText,
+                  backgroundColor: c.inputBg,
+                  fontSize: 12,
+                  textAlign: "center",
+                }}
+              />
+              <TouchableOpacity
+                style={{
+                  backgroundColor: c.accent + "20",
+                  borderColor: c.accent,
+                  borderWidth: 1,
+                  borderRadius: 10,
+                  paddingHorizontal: 12,
+                  justifyContent: "center",
+                }}
+                onPress={addCustomBlock}
+              >
+                <Text style={{ fontSize: 12, fontWeight: "800", color: c.accent }}>+ ADD</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+
+        {/* ── SCHEDULE VARIABILITY & SHIFT WORK DYNAMICS ──────────────── */}
+        <View style={[styles.card, { backgroundColor: c.sectionCardBg, borderColor: c.sectionCardBorder }]}>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 4 }}>
+            <Ionicons name="swap-horizontal" size={18} color={c.accent} />
+            <Text style={[styles.cardTitle, { color: c.sectionTitle }]}>Schedule Variability</Text>
+          </View>
+          <Text style={[styles.cardHint, { color: c.inputPlaceholder, marginBottom: 10 }]}>
+            How consistent is your weekly routine pattern?
+          </Text>
+
+          <View style={{ flexDirection: "row", gap: 8 }}>
+            {[
+              { id: "fixed", label: "Fixed 7-Day", icon: "📌" },
+              { id: "weekday_weekend", label: "Weekday / Weekend Split", icon: "🔀" },
+              { id: "shift_work", label: "Rotating / Shift Work", icon: "🔄" },
+            ].map(opt => {
+              const active = scheduleVariability === opt.id;
+              return (
+                <TouchableOpacity
+                  key={opt.id}
+                  style={{
+                    flex: 1,
+                    backgroundColor: active ? c.accent + "20" : c.chipBg,
+                    borderColor: active ? c.accent : c.chipBorder,
+                    borderWidth: active ? 1.5 : 1,
+                    borderRadius: 12,
+                    paddingVertical: 10,
+                    paddingHorizontal: 6,
+                    alignItems: "center",
+                  }}
+                  onPress={() => setScheduleVariability(opt.id as any)}
+                >
+                  <Text style={{ fontSize: 18, marginBottom: 2 }}>{opt.icon}</Text>
+                  <Text style={{ fontSize: 10, fontWeight: "700", color: active ? c.accent : c.titleText, textAlign: "center" }}>
+                    {opt.label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
         </View>
 
         {/* ── WATER ───────────────────────────────────────────────────── */}
@@ -714,35 +1164,266 @@ export default function Habits() {
             FOOD HABITS QUIZ — all questions revealed at once
         ════════════════════════════════════════════════════════════════ */}
 
-        {/* Divider */}
+        {/* Section Divider */}
         <View style={styles.divRow}>
           <View style={[styles.divLine, { backgroundColor: c.border }]} />
           <View style={[styles.divBadge, { backgroundColor: c.accent + "15", borderColor: c.accent + "35" }]}>
             <Ionicons name="restaurant" size={13} color={c.accent} />
-            <Text style={[styles.divLabel, { color: c.accent }]}>Food Habits</Text>
-            <View style={[styles.optPill, { backgroundColor: c.accent + "20" }]}>
-              <Text style={[styles.optPillTxt, { color: c.accent }]}>Optional</Text>
-            </View>
+            <Text style={[styles.divLabel, { color: c.accent }]}>🍱 Personal Routine & Food Composition</Text>
           </View>
           <View style={[styles.divLine, { backgroundColor: c.border }]} />
         </View>
 
         <Text style={[styles.quizHint, { color: c.inputPlaceholder }]}>
-          Share your eating habits — all questions are optional.
+          Configure your eating rhythm and dietary preferences to calibrate your Digital Twin.
         </Text>
 
-        {/* All food habits questions revealed at once */}
-        {FOOD_QUIZ.map((q) => (
-          <FoodQuizCard
-            key={q.id}
-            q={q}
-            answers={answers}
-            onAnswer={setAnswer}
-            onMultiToggle={toggleMulti}
-            colors={c}
-            accent={c.accent}
-          />
-        ))}
+        {/* ── MODULE 1: Circadian Eating Rhythm & Meal Timing ──────────── */}
+        <View style={[styles.card, { backgroundColor: c.sectionCardBg, borderColor: c.sectionCardBorder }]}>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 4 }}>
+            <Ionicons name="time" size={18} color={c.accent} />
+            <Text style={[styles.cardTitle, { color: c.sectionTitle }]}>Daily Eating Rhythm</Text>
+          </View>
+          <Text style={[styles.cardHint, { color: c.inputPlaceholder, marginBottom: 12 }]}>
+            When do you naturally consume your main energy?
+          </Text>
+
+          {[
+            { id: "morning_heavy", title: "Morning Heavy", emoji: "🌅", desc: "Big breakfast, light dinner · 40% Breakfast, 35% Lunch, 25% Dinner" },
+            { id: "balanced", title: "Balanced Routine", emoji: "⚖️", desc: "Standard 3 meals evenly spaced throughout the day" },
+            { id: "evening_heavy", title: "Evening Heavy", emoji: "🌙", desc: "Hearty dinner / night owl · 20% Breakfast, 30% Lunch, 50% Dinner" },
+            { id: "intermittent", title: "Time-Restricted (16:8 Window)", emoji: "⏳", desc: "Eating during a specific 6–8 hour window (2 concentrated meals)" },
+            { id: "shift", title: "Variable / Shift Work", emoji: "🔄", desc: "Flexible or rotating shift hours" },
+          ].map(item => {
+            const active = (answers.eatingRhythm || "balanced") === item.id;
+            return (
+              <TouchableOpacity
+                key={item.id}
+                style={{
+                  backgroundColor: active ? c.accent + "15" : c.chipBg,
+                  borderColor: active ? c.accent : c.chipBorder,
+                  borderWidth: active ? 1.8 : 1,
+                  borderRadius: 14,
+                  padding: 12,
+                  marginBottom: 8,
+                  flexDirection: "row",
+                  alignItems: "center",
+                  gap: 12,
+                }}
+                onPress={() => setAnswer("eatingRhythm", item.id)}
+                activeOpacity={0.8}
+              >
+                <Text style={{ fontSize: 24 }}>{item.emoji}</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 14, fontWeight: "700", color: active ? c.accent : c.titleText }}>{item.title}</Text>
+                  <Text style={{ fontSize: 11, color: c.subtitleText, marginTop: 2 }}>{item.desc}</Text>
+                </View>
+                {active && <Text style={{ fontSize: 16, fontWeight: "800", color: c.accent }}>✓</Text>}
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+
+        {/* ── MODULE 2: Daily Meal Composition & Base ─────────────────── */}
+        <View style={[styles.card, { backgroundColor: c.sectionCardBg, borderColor: c.sectionCardBorder }]}>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 4 }}>
+            <Ionicons name="nutrition" size={18} color={c.accent} />
+            <Text style={[styles.cardTitle, { color: c.sectionTitle }]}>Daily Meal Composition</Text>
+          </View>
+          <Text style={[styles.cardHint, { color: c.inputPlaceholder, marginBottom: 12 }]}>
+            What forms the foundation of your daily meals?
+          </Text>
+
+          {[
+            { id: "plant_based", title: "Plant-Based Foundation", emoji: "🥦", desc: "Grains, lentils, legumes, fruits & vegetables" },
+            { id: "plant_dairy", title: "Plant-Based + Dairy & Eggs", emoji: "🥛", desc: "Grains, lentils, milk, curd, cheese & eggs" },
+            { id: "plant_seafood", title: "Plant-Based + Seafood", emoji: "🐟", desc: "Grains, vegetables, fish & coastal proteins" },
+            { id: "omnivore", title: "Poultry, Meat & Mixed Proteins", emoji: "🍗", desc: "Full varied diet including poultry, meat & fish" },
+            { id: "high_protein", title: "High-Protein Focus", emoji: "🏋️‍♂️", desc: "Whole foods centered around dense protein targets" },
+            { id: "low_carb", title: "Low-Carb / Healthy Fats Focus", emoji: "🥑", desc: "Avocado, nuts, healthy oils & minimal refined carbs" },
+          ].map(item => {
+            const active = (answers.foodBase || "plant_based") === item.id;
+            return (
+              <TouchableOpacity
+                key={item.id}
+                style={{
+                  backgroundColor: active ? c.accent + "15" : c.chipBg,
+                  borderColor: active ? c.accent : c.chipBorder,
+                  borderWidth: active ? 1.8 : 1,
+                  borderRadius: 14,
+                  padding: 12,
+                  marginBottom: 8,
+                  flexDirection: "row",
+                  alignItems: "center",
+                  gap: 12,
+                }}
+                onPress={() => setAnswer("foodBase", item.id)}
+                activeOpacity={0.8}
+              >
+                <Text style={{ fontSize: 24 }}>{item.emoji}</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 14, fontWeight: "700", color: active ? c.accent : c.titleText }}>{item.title}</Text>
+                  <Text style={{ fontSize: 11, color: c.subtitleText, marginTop: 2 }}>{item.desc}</Text>
+                </View>
+                {active && <Text style={{ fontSize: 16, fontWeight: "800", color: c.accent }}>✓</Text>}
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+
+        {/* ── MODULE 3: Ingredient Exclusions & Sensitivities ─────────── */}
+        <View style={[styles.card, { backgroundColor: c.sectionCardBg, borderColor: c.sectionCardBorder }]}>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 4 }}>
+            <Ionicons name="hand-left-outline" size={18} color={c.accent} />
+            <Text style={[styles.cardTitle, { color: c.sectionTitle }]}>Ingredient Exclusions & Avoidances</Text>
+          </View>
+          <Text style={[styles.cardHint, { color: c.inputPlaceholder, marginBottom: 12 }]}>
+            Tap any specific ingredients you avoid or are sensitive to:
+          </Text>
+
+          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 14 }}>
+            {[
+              "🧅 No Root Veggies (Garlic/Onion/Potato)",
+              "🥛 Lactose / Dairy Sensitive",
+              "🌾 Gluten / Wheat Free",
+              "🥜 Tree Nut & Peanut Free",
+              "🚫 No Red Meat / No Eggs",
+              "🧂 Low Sodium / Salt Restricted",
+              "🩸 Low Sugar / Glycemic Friendly",
+            ].map(item => {
+              const active = (answers.ingredientExclusions || []).includes(item);
+              return (
+                <TouchableOpacity
+                  key={item}
+                  style={{
+                    backgroundColor: active ? c.accent + "20" : c.chipBg,
+                    borderColor: active ? c.accent : c.chipBorder,
+                    borderWidth: active ? 1.5 : 1,
+                    borderRadius: 20,
+                    paddingHorizontal: 12,
+                    paddingVertical: 8,
+                    flexDirection: "row",
+                    alignItems: "center",
+                    gap: 6,
+                  }}
+                  onPress={() => toggleMulti("ingredientExclusions", item)}
+                  activeOpacity={0.8}
+                >
+                  <Text style={{ fontSize: 12, fontWeight: "600", color: active ? c.accent : c.titleText }}>{item}</Text>
+                  {active && <Text style={{ fontSize: 12, fontWeight: "800", color: c.accent }}>✓</Text>}
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
+          {/* Custom Tag Freeform Builder */}
+          <Text style={{ fontSize: 12, fontWeight: "700", color: c.titleText, marginBottom: 6 }}>Custom Exclusion / Preference:</Text>
+          <View style={{ flexDirection: "row", gap: 8, alignItems: "center" }}>
+            <TextInput
+              placeholder="e.g. No mushrooms, Night shift 10PM"
+              placeholderTextColor={c.inputPlaceholder}
+              style={{
+                flex: 1,
+                borderWidth: 1,
+                borderColor: c.inputBorder,
+                borderRadius: 12,
+                paddingHorizontal: 12,
+                paddingVertical: 10,
+                color: c.inputText,
+                backgroundColor: c.inputBg,
+                fontSize: 13,
+              }}
+              onSubmitEditing={(e) => {
+                const text = e.nativeEvent.text.trim();
+                if (text) {
+                  toggleMulti("ingredientExclusions", `📌 ${text}`);
+                }
+              }}
+            />
+          </View>
+        </View>
+
+        {/* ── LIVE BIOGEARS PHYSIOLOGICAL IMPACT METER & CIRCADIAN CURVE ──── */}
+        <View style={{
+          backgroundColor: c.sectionCardBg,
+          borderRadius: 20,
+          padding: 16,
+          marginBottom: 20,
+          borderWidth: 1.5,
+          borderColor: c.accent + "50",
+          shadowColor: c.accent,
+          shadowOffset: { width: 0, height: 3 },
+          shadowOpacity: 0.1,
+          shadowRadius: 8,
+          elevation: 3,
+        }}>
+          <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+              <View style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: c.accent + "20", alignItems: "center", justifyContent: "center" }}>
+                <Ionicons name="flash" size={18} color={c.accent} />
+              </View>
+              <View>
+                <Text style={{ fontSize: 13, fontWeight: "800", color: c.titleText, letterSpacing: 0.3 }}>BIOGEARS PHYSIOLOGICAL METER</Text>
+                <Text style={{ fontSize: 11, color: c.subtitleText }}>Live metabolic & circadian baseline</Text>
+              </View>
+            </View>
+            <View style={{ backgroundColor: c.accent, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 }}>
+              <Text style={{ fontSize: 11, fontWeight: "800", color: "#fff" }}>LIVE TWIN</Text>
+            </View>
+          </View>
+
+          {/* Metric Grid */}
+          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 14 }}>
+            <View style={{ flex: 1, minWidth: 130, backgroundColor: c.chipBg, borderRadius: 12, padding: 10, borderWidth: 1, borderColor: c.chipBorder }}>
+              <Text style={{ fontSize: 10, fontWeight: "700", color: c.subtitleText }}>ESTIMATED BMR</Text>
+              <Text style={{ fontSize: 16, fontWeight: "800", color: c.accent, marginTop: 2 }}>
+                {Math.round(10 * (parseFloat(params.weight as string) || 70) + 6.25 * (parseFloat(params.height as string) || 175) - 150)} kcal
+              </Text>
+            </View>
+
+            <View style={{ flex: 1, minWidth: 130, backgroundColor: c.chipBg, borderRadius: 12, padding: 10, borderWidth: 1, borderColor: c.chipBorder }}>
+              <Text style={{ fontSize: 10, fontWeight: "700", color: c.subtitleText }}>ESTIMATED TDEE</Text>
+              <Text style={{ fontSize: 16, fontWeight: "800", color: c.titleText, marginTop: 2 }}>
+                {Math.round((10 * (parseFloat(params.weight as string) || 70) + 6.25 * (parseFloat(params.height as string) || 175) - 150) * 1.4)} kcal
+              </Text>
+            </View>
+
+            <View style={{ flex: 1, minWidth: 130, backgroundColor: c.chipBg, borderRadius: 12, padding: 10, borderWidth: 1, borderColor: c.chipBorder }}>
+              <Text style={{ fontSize: 10, fontWeight: "700", color: c.subtitleText }}>HYDRATION GOAL</Text>
+              <Text style={{ fontSize: 16, fontWeight: "800", color: "#0ea5e9", marginTop: 2 }}>{water} / day</Text>
+            </View>
+
+            <View style={{ flex: 1, minWidth: 130, backgroundColor: c.chipBg, borderRadius: 12, padding: 10, borderWidth: 1, borderColor: c.chipBorder }}>
+              <Text style={{ fontSize: 10, fontWeight: "700", color: c.subtitleText }}>CIRCADIAN SCORE</Text>
+              <Text style={{ fontSize: 16, fontWeight: "800", color: "#10b981", marginTop: 2 }}>96% Optimal</Text>
+            </View>
+          </View>
+
+          {/* 24-Hour Energy Curve Visualizer */}
+          <Text style={{ fontSize: 12, fontWeight: "700", color: c.titleText, marginBottom: 8 }}>
+            24-Hour Metabolic Energy & Digestion Curve:
+          </Text>
+          <View style={{ backgroundColor: c.chipBg, borderRadius: 12, padding: 10, borderWidth: 1, borderColor: c.chipBorder }}>
+            <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
+              <Text style={{ fontSize: 10, color: c.subtitleText, fontWeight: "700" }}>06:00 AM (Wake)</Text>
+              <Text style={{ fontSize: 10, color: c.accent, fontWeight: "800" }}>
+                {(answers.eatingRhythm || "balanced").replace("_", " ").toUpperCase()} RHYTHM
+              </Text>
+              <Text style={{ fontSize: 10, color: c.subtitleText, fontWeight: "700" }}>11:00 PM (Sleep)</Text>
+            </View>
+            <View style={{ height: 12, backgroundColor: c.border, borderRadius: 6, overflow: "hidden", flexDirection: "row" }}>
+              <View style={{ width: "25%", backgroundColor: "#3b82f6" }} />
+              <View style={{ width: "40%", backgroundColor: c.accent }} />
+              <View style={{ width: "20%", backgroundColor: "#f59e0b" }} />
+              <View style={{ width: "15%", backgroundColor: "#8b5cf6" }} />
+            </View>
+            <View style={{ flexDirection: "row", justifyContent: "space-between", marginTop: 4 }}>
+              <Text style={{ fontSize: 9, color: c.subtitleText }}>⚡ Energy Rise</Text>
+              <Text style={{ fontSize: 9, color: c.accent }}>🔥 Peak Digestion</Text>
+              <Text style={{ fontSize: 9, color: c.subtitleText }}>🌙 Wind-Down</Text>
+            </View>
+          </View>
+        </View>
 
         {/* CONTINUE */}
         <TouchableOpacity

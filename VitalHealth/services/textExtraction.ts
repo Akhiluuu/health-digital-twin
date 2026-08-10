@@ -139,14 +139,11 @@ export function cleanExtractedText(text: string): string {
  * @param uri - Document URI
  * @returns Extracted text
  */
-export async function extractTextFromPDF(_uri: string): Promise<string> {
-  // This is a placeholder - PDF text extraction requires additional libraries
-  // In production, use expo-pdf-reader or similar
-  
-  log('[TextExtraction] PDF extraction not fully implemented');
-  
-  // Return placeholder for now
-  return `[PDF document]\nNote: Full PDF text extraction requires additional integration.`;
+export async function extractTextFromPDF(_uri: string): Promise<string | null> {
+  // PDF text extraction requires server-side processing via /ai/upload-and-embed
+  // Returning null so callers fall through to server-side OCR correctly
+  log('[TextExtraction] PDF extraction requires server-side processing. Returning null.');
+  return null;
 }
 
 /**

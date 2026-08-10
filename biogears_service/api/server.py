@@ -473,8 +473,8 @@ def _build_vitals_from_df(df: pd.DataFrame) -> dict:
         if sv is None: sv = 70.0
         if co is None: co = round((hr * sv) / 1000.0, 2)
         if rr is None: rr = 14.0
-        if spo2 is None: spo2 = 0.985
-        elif spo2 < 1.5: spo2 = spo2 * 100.0 # Normalize 0-1 scale to percentage
+        if spo2 is not None and spo2 < 1.5:
+            spo2 = spo2 * 100.0 # Normalize 0-1 scale to percentage
         if tv is None: tv = 500.0
         if ph is None: ph = 7.40
         if temp is None: temp = 37.0
@@ -486,7 +486,7 @@ def _build_vitals_from_df(df: pd.DataFrame) -> dict:
             "blood_pressure":   f"{int(sys_bp)}/{int(dia_bp)}",
             "glucose":          round(gluc, 2),
             "respiration":      round(rr, 1),
-            "spo2":             round(spo2, 1),
+            "spo2":             round(spo2, 1) if spo2 is not None else None,
             "core_temperature": round(temp, 2),
             "cardiac_output":   round(co, 2),
             # ── Extended Vitals ─────────────────────────────────────────

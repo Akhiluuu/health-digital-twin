@@ -104,6 +104,13 @@ type EvidenceBundleMeta = {
   conflicts_detected?: number;
 };
 
+type AttachmentMeta = {
+  name: string;
+  type: "pdf" | "image";
+  chunkCount: number;
+  labsFound?: number;
+};
+
 type Message = {
   id: string;
   text: string;
@@ -111,6 +118,7 @@ type Message = {
   timestamp: Date;
   evidenceBundle?: EvidenceBundleMeta;
   followups?: string[];
+  attachment?: AttachmentMeta;
 };
 
 type Doc = {
@@ -128,6 +136,7 @@ type SerializedMessage = {
   timestamp: number;
   evidenceBundle?: EvidenceBundleMeta;
   followups?: string[];
+  attachment?: AttachmentMeta;
 };
 
 type ChatSession = {
@@ -1464,7 +1473,7 @@ export default function AIHealthScreen() {
     };
   }, [currentUserId]);
 
-  // Focus: Auto-connect server check (Health check ONLY — do not reset messages)
+  // Focus: Auto-connect server check + reload vector chunks from storage (so new uploads in Documents tab are instantly ready in Chat)
   useFocusEffect(
     React.useCallback(() => {
       (async () => {
@@ -1475,6 +1484,12 @@ export default function AIHealthScreen() {
         } catch {
           setConnected(false);
         }
+        try {
+          const d = await loadDocuments();
+          const ch = await loadChunks();
+          setDocs(d);
+          setAllChunks(ch);
+        } catch (_) {}
       })();
     }, [])
   );
@@ -1548,32 +1563,84 @@ export default function AIHealthScreen() {
   };
 
   // Build Patient Context Payload
+  // IMPORTANT: All unknown/missing fields return null or "not specified".
+  // The AI is instructed to ask the user to complete their profile for missing fields.
+  // No default clinical values (age, weight, blood type, vitals) are fabricated.
   const getPatientContextPayload = () => {
     const profileName = activeProfile
-      ? `${activeProfile.firstName || ""} ${activeProfile.lastName || ""}`.trim()
+      ? `${activeProfile.firstName || ""} ${activeProfile.lastName || ""}`.trim() || null
       : profile
-      ? `${profile.firstName || ""} ${profile.lastName || ""}`.trim()
-      : "Patient";
-    const pAge = activeProfile?.dateOfBirth
-      ? Math.floor((Date.now() - new Date(activeProfile.dateOfBirth).getTime()) / 31557600000)
-      : ageYears || (profile as any)?.ageYears || 30;
-    const pGender = activeProfile?.gender || profile?.gender || "not specified";
-    const pHeight = activeProfile?.height || profile?.height || "170 cm";
-    const pWeight = activeProfile?.weight || profile?.weight || "70 kg";
-    const pBloodType =
+      ? `${profile.firstName || ""} ${profile.lastName || ""}`.trim() || null
+      : null;
+
+    // Age: derive from DOB if available, else from stored ageYears, else null
+    const rawDob = activeProfile?.dateOfBirth || (profile as any)?.dateOfBirth;
+    const pAge: number | null = rawDob
+      ? Math.floor((Date.now() - new Date(rawDob).getTime()) / 31557600000)
+      : (ageYears || (profile as any)?.ageYears || null);
+
+    const pGender: string | null = activeProfile?.gender || profile?.gender || null;
+
+    // Height/Weight: only use real stored values, never default to 170/70
+    const pHeight: string | null = activeProfile?.height || profile?.height || null;
+    const pWeight: string | null = activeProfile?.weight || profile?.weight || null;
+
+    // Blood type: only use if explicitly set in profile
+    const pBloodType: string | null =
       (activeProfile as any)?.bloodType ||
       (profile as any)?.bloodType ||
       activeProfile?.bloodGroup ||
       profile?.bloodGroup ||
-      "O+";
-    const pBmi =
-      (profile as any)?.bmi ||
-      (pWeight && pHeight
-        ? (parseFloat(String(pWeight)) / Math.pow(parseFloat(String(pHeight)) / 100, 2)).toFixed(1)
-        : "22.5");
+      null;
+
+    // BMI: only calculate when both height and weight are real values
+    let pBmi: string | null = (profile as any)?.bmi || null;
+    if (!pBmi && pWeight && pHeight) {
+      const wNum = parseFloat(String(pWeight));
+      const hNum = parseFloat(String(pHeight));
+      if (!isNaN(wNum) && !isNaN(hNum) && hNum > 0) {
+        pBmi = (wNum / Math.pow(hNum / 100, 2)).toFixed(1);
+      }
+    }
+
+    // Resting HR: use real telemetry or profile value, never fabricate 72
+    const pRestingHr: number | null =
+      lastVitals?.heart_rate ||
+      activeProfile?.biogears_resting_hr ||
+      (profile as any)?.resting_hr ||
+      null;
+
+    // Blood pressure: only from real telemetry or profile
+    let pBP: string | null = null;
+    if (lastVitals && ((lastVitals as any).systolic_bp || (lastVitals as any).diastolic_bp)) {
+      pBP = `${(lastVitals as any).systolic_bp}/${(lastVitals as any).diastolic_bp} mmHg`;
+    } else if (activeProfile?.biogears_systolic_bp) {
+      pBP = `${activeProfile.biogears_systolic_bp}/${activeProfile.biogears_diastolic_bp || "?"} mmHg`;
+    }
+
+    // Cognitive: only include real assessment data — no default scores
+    const hasCogData = cogSessions && cogSessions.length > 0;
+    const cogPayload = hasCogData
+      ? {
+          cognitive_age: cognitiveAge || pAge,
+          overall_score: cogSessions![0]?.overallScore ?? null,
+          domain_scores: cogSessions![0]?.domainScores || null,
+          test_results: cogSessions![0]?.testResults || [],
+          streak_days: cogStreak || 0,
+          domain_trends: getDomainTrends ? getDomainTrends() : null,
+        }
+      : {
+          cognitive_age: null,
+          overall_score: null,
+          domain_scores: null,
+          test_results: [],
+          streak_days: 0,
+          domain_trends: null,
+          note: "No cognitive assessments completed yet. Ask user to take a brain health test.",
+        };
 
     return {
-      patient_name: profileName,
+      patient_name: profileName || "Patient (name not set)",
       isSwitched: isSwitched,
       age: pAge,
       gender: pGender,
@@ -1582,26 +1649,18 @@ export default function AIHealthScreen() {
         weight: pWeight,
         bmi: pBmi,
         blood_type: pBloodType,
-        resting_hr: lastVitals?.heart_rate || activeProfile?.biogears_resting_hr || 72,
-        blood_pressure: lastVitals
-          ? `${(lastVitals as any).systolic_bp || 120}/${(lastVitals as any).diastolic_bp || 80} mmHg`
-          : activeProfile?.biogears_systolic_bp
-          ? `${activeProfile.biogears_systolic_bp}/${activeProfile.biogears_diastolic_bp || 80} mmHg`
-          : "120/80 mmHg",
+        resting_hr: pRestingHr,
+        blood_pressure: pBP,
       },
-      cognitive_assessment: {
-        cognitive_age: cognitiveAge || pAge,
-        overall_score: cogSessions?.[0]?.overallScore ?? (cogSessions?.length > 0 ? 82 : 80),
-        domain_scores: cogSessions?.[0]?.domainScores || {
-          attention: 80,
-          memory: 85,
-          processingSpeed: 78,
-          executiveFunction: 84,
-        },
-        test_results: cogSessions?.[0]?.testResults || [],
-        streak_days: cogStreak || 0,
-        domain_trends: getDomainTrends ? getDomainTrends() : null,
+      profile_completeness: {
+        has_age: pAge !== null,
+        has_height: pHeight !== null,
+        has_weight: pWeight !== null,
+        has_blood_type: pBloodType !== null,
+        has_vitals: lastVitals !== null && lastVitals !== undefined,
+        has_cognitive: hasCogData,
       },
+      cognitive_assessment: cogPayload,
       simulation_vitals: lastVitals || null,
       vitals: lastVitals || null,
       organ_scores: organScores || null,
@@ -1618,10 +1677,10 @@ export default function AIHealthScreen() {
       activeSymptoms: activeSymptoms || [],
       historySymptoms: historySymptoms || [],
       biogearsProfile: {
-        resting_hr: activeProfile?.biogears_resting_hr,
-        systolic_bp: activeProfile?.biogears_systolic_bp,
-        diastolic_bp: activeProfile?.biogears_diastolic_bp,
-        fitness_level: activeProfile?.biogears_fitness_level,
+        resting_hr: activeProfile?.biogears_resting_hr || null,
+        systolic_bp: activeProfile?.biogears_systolic_bp || null,
+        diastolic_bp: activeProfile?.biogears_diastolic_bp || null,
+        fitness_level: activeProfile?.biogears_fitness_level || null,
       },
     };
   };
@@ -1746,9 +1805,72 @@ export default function AIHealthScreen() {
       setAllChunks(updatedChunks);
       await saveDocuments(updatedDocs);
       await saveChunks(updatedChunks);
+
+      // Bridge: also ingest extracted text into backend PatientStateManager for lab parsing
+      // This ensures the evidence bundle reflects the uploaded document data
+      let labsFound = 0;
+      try {
+        const baseUrl = await getAiBaseUrl();
+        const apiKey = await getApiKey();
+        // Assemble the text from top chunks for OCR ingestion
+        const topText = newChunks.slice(0, 10).map((c) => c.text).join("\n");
+        const ocrRes = await fetch(`${baseUrl}/lab-report/ocr`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...(apiKey ? { "X-API-Key": apiKey } : {}),
+          },
+          body: JSON.stringify({
+            user_id: currentUserId,
+            report_title: newDoc.name,
+            category: type === "pdf" ? "Lab" : "Scan",
+            text_content: topText,
+          }),
+        });
+        if (ocrRes.ok) {
+          const ocrData = await ocrRes.json();
+          labsFound = ocrData.extracted_labs_count || 0;
+        }
+      } catch (_) {
+        // Non-blocking — vector chunks are already stored
+      }
+
+      const labMsg = labsFound > 0 ? ` ${labsFound} lab value${labsFound > 1 ? "s" : ""} detected & ingested.` : " AI chat can now reference this document.";
+
+      // Visual ChatGPT/Gemini attachment card in chat stream
+      const userAttachmentMsg: Message = {
+        id: genId(),
+        text: `Uploaded Document: **${newDoc.name}**`,
+        sender: "user",
+        timestamp: new Date(),
+        attachment: {
+          name: newDoc.name,
+          type: type,
+          chunkCount: newDoc.chunkCount,
+          labsFound: labsFound,
+        },
+      };
+
+      const aiConfirmMsg: Message = {
+        id: genId(),
+        text: `📄 I've processed and indexed **${newDoc.name}** into vector search memory (${newDoc.chunkCount} searchable chunks).${
+          labsFound > 0 ? `\n\n🧪 **${labsFound} clinical lab test${labsFound > 1 ? "s" : ""}** were parsed and synced directly into your Digital Twin profile.` : ""
+        }\n\nWhat would you like to know about this report?`,
+        sender: "ai",
+        timestamp: new Date(),
+        followups: [
+          `Summarize ${newDoc.name}`,
+          `Are there any abnormal values in ${newDoc.name}?`,
+          `What key health metrics were found in this report?`,
+        ],
+      };
+
+      setMessages((prev) => [...prev, userAttachmentMsg, aiConfirmMsg]);
+      setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 100);
+
       Alert.alert(
-        "✅ Document Embedded",
-        `"${newDoc.name}" processed on-device. ${newDoc.chunkCount} vector chunks indexed.`
+        "✅ Document Processed",
+        `"${newDoc.name}" — ${newDoc.chunkCount} chunks indexed.${labMsg}`
       );
     } catch (e: any) {
       Alert.alert("Error", e.message || "Failed to process document");
@@ -1757,6 +1879,7 @@ export default function AIHealthScreen() {
       setProcessingProgress(null);
     }
   };
+
 
   // Render Item for Chat Message List
   const renderMessage = ({ item }: { item: Message }) => {
@@ -1883,6 +2006,58 @@ export default function AIHealthScreen() {
             },
           ]}
         >
+          {/* Visual Document Attachment Card */}
+          {item.attachment && (
+            <View
+              style={[
+                styles.attachmentCard,
+                {
+                  backgroundColor: isUser ? "rgba(0,0,0,0.18)" : c.bg,
+                  borderColor: isUser ? "rgba(255,255,255,0.3)" : c.border,
+                },
+              ]}
+            >
+              <View
+                style={[
+                  styles.attachmentIconWrap,
+                  { backgroundColor: isUser ? "rgba(255,255,255,0.2)" : `${c.accent}15` },
+                ]}
+              >
+                <Ionicons
+                  name={item.attachment.type === "pdf" ? "document-text" : "image"}
+                  size={20}
+                  color={isUser ? "#ffffff" : c.accent}
+                />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.attachmentName, { color: isUser ? "#ffffff" : c.text }]} numberOfLines={1}>
+                  {item.attachment.name}
+                </Text>
+                <Text style={[styles.attachmentMetaTxt, { color: isUser ? "rgba(255,255,255,0.8)" : c.sub }]}>
+                  {item.attachment.type.toUpperCase()} • {item.attachment.chunkCount} chunks
+                </Text>
+              </View>
+              <View
+                style={[
+                  styles.attachmentStatusBadge,
+                  {
+                    backgroundColor:
+                      item.attachment.labsFound && item.attachment.labsFound > 0
+                        ? "rgba(16, 185, 129, 0.25)"
+                        : "rgba(255,255,255,0.2)",
+                  },
+                ]}
+              >
+                <Ionicons name="checkmark-circle" size={13} color={isUser ? "#ffffff" : "#10b981"} />
+                <Text style={[styles.attachmentStatusTxt, { color: isUser ? "#ffffff" : "#10b981" }]}>
+                  {item.attachment.labsFound && item.attachment.labsFound > 0
+                    ? `${item.attachment.labsFound} Labs`
+                    : "Indexed"}
+                </Text>
+              </View>
+            </View>
+          )}
+
           {/* Clinical Evidence Card */}
           {!isUser && item.evidenceBundle && <EvidenceCard bundle={item.evidenceBundle} c={c} theme={theme} />}
 
@@ -2861,5 +3036,43 @@ const styles = StyleSheet.create({
     width: 5,
     height: 5,
     borderRadius: 2.5,
+  },
+
+  // Visual Attachment Card (ChatGPT / Gemini Style)
+  attachmentCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    padding: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+    marginBottom: 8,
+  },
+  attachmentIconWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: 9,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  attachmentName: {
+    fontSize: 13,
+    fontWeight: "700",
+  },
+  attachmentMetaTxt: {
+    fontSize: 10.5,
+    marginTop: 2,
+  },
+  attachmentStatusBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  attachmentStatusTxt: {
+    fontSize: 10,
+    fontWeight: "700",
   },
 });

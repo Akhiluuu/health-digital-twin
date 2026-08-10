@@ -849,7 +849,9 @@ export default function Spo2Screen() {
             <Text style={[styles.resultsHeaderLabel, { color: c.sub }]}>MEASUREMENT COMPLETE</Text>
 
             <View style={styles.resultBpmContainer}>
-              <Text style={[styles.resultBpmValue, { color: c.accent }]}>{Math.round(finalResult.spo2 ?? 98)}</Text>
+              <Text style={[styles.resultBpmValue, { color: c.accent }]}>
+                {finalResult.spo2 && finalResult.spo2 > 0 ? Math.round(finalResult.spo2) : "--"}
+              </Text>
               <View style={{ marginLeft: 8 }}>
                 <Text style={[styles.resultBpmUnit, { color: c.accent }]}>%</Text>
                 <Text style={[styles.resultBpmLabel, { color: c.sub }]}>Blood Oxygen</Text>

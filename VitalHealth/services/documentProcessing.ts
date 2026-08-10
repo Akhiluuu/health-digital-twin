@@ -323,62 +323,50 @@ export async function processDocument(
 
 async function extractTextFromPDFDocument(uri: string, name: string): Promise<string> {
   log('[DocProcessing] Extracting text from PDF:', name);
-  
-  // Placeholder: In production, use:
-  // - expo-extract-text
-  // - react-native-pdf-extractor
-  // - Or send to server for extraction
-  
-  // For demo, return sample medical document text
-  // This would be replaced with actual extracted text
-  return `
-Patient Name: John Doe
-Date: ${new Date().toLocaleDateString()}
 
-Medical History:
-- Hypertension diagnosed in 2020
-- Type 2 Diabetes Mellitus
-- Current medications:
-  - Metformin 500mg twice daily
-  - Lisinopril 10mg once daily
-  - Aspirin 81mg once daily
+  // Attempt 1: Try to read raw file content as text (works for text-based PDFs in some environments)
+  try {
+    const FileSystem = await import('expo-file-system/legacy');
+    const raw = await (FileSystem as any).readAsStringAsync(uri, { encoding: 'base64' });
+    if (raw && raw.length > 10) {
+      // Decode base64 to latin-1 string and extract printable ASCII runs (PDF text objects)
+      const decoded = atob(raw.substring(0, Math.min(raw.length, 50000)));
+      const matches = decoded.match(/\(([^)]{2,200})\)/g) || [];
+      const readable = matches
+        .map((m: string) => m.slice(1, -1).trim())
+        .filter((s: string) => {
+          const ratio = [...s].filter(c => c.charCodeAt(0) >= 32 && c.charCodeAt(0) < 127).length / Math.max(s.length, 1);
+          return ratio > 0.75 && s.length > 2;
+        });
+      const extracted = readable.join(' ').replace(/\s+/g, ' ').trim();
+      if (extracted.length > 30) {
+        log(`[DocProcessing] Extracted ${extracted.length} chars from PDF ${name}`);
+        return `Document: ${name}\n\n${extracted}`;
+      }
+    }
+  } catch (readErr: any) {
+    log('[DocProcessing] Direct PDF read failed:', readErr?.message);
+  }
 
-Lab Results (Latest):
-- Blood Glucose (Fasting): 126 mg/dL (Normal: 70-100)
-- HbA1c: 7.2% (Target: <7%)
-- Blood Pressure: 138/85 mmHg
-- Total Cholesterol: 210 mg/dL
-- LDL: 130 mg/dL
-- HDL: 45 mg/dL
-
-Physician Notes:
-Patient shows improved glycemic control with current medication regimen.
-Continue current treatment plan. Follow up in 3 months.
-Recommend dietary modifications and regular exercise.
-  `.trim();
+  // Fallback: Return document metadata so the server OCR pipeline can use it
+  return `Medical document uploaded: ${name}\nCategory: Lab Report\nDate: ${new Date().toLocaleDateString()}\nPlease analyze this document.`;
 }
 
 async function extractTextFromImageDocument(uri: string, name: string): Promise<string> {
   log('[DocProcessing] Extracting text from image:', name);
-  
-  // Placeholder: In production, use:
-  // - react-native-mlkit-ocr
-  // - expo-ml-kit (if available)
-  // - Or send to server for OCR
-  
-  // For demo, return sample prescription text
-  return `
-Prescription
 
-Medication: Amoxicillin 500mg
-Dosage: Three times daily
-Duration: 7 days
-Instructions: Take with food
+  // Attempt 1: Read image as base64 and send length hint
+  try {
+    const FileSystem = await import('expo-file-system/legacy');
+    const info = await (FileSystem as any).getInfoAsync(uri, { size: true });
+    const sizeKb = info.size ? Math.round(info.size / 1024) : 0;
+    // Return metadata hint for server processing
+    return `Medical image document: ${name} (${sizeKb} KB)\nImage type: ${name.split('.').pop()?.toUpperCase() || 'JPEG'}\nDate: ${new Date().toLocaleDateString()}\nPlease analyze this medical image.`;
+  } catch (readErr: any) {
+    log('[DocProcessing] Image info read failed:', readErr?.message);
+  }
 
-Prescribed for: Respiratory infection
-Date: ${new Date().toLocaleDateString()}
-Physician: Dr. Smith
-  `.trim();
+  return `Medical image uploaded: ${name}\nDate: ${new Date().toLocaleDateString()}\nPlease analyze this document.`;
 }
 
 /**

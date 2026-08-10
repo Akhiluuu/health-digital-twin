@@ -371,25 +371,29 @@ class AIOrchestrator(HealthBrainSubsystem):
                 for m in raw_meds:
                     if isinstance(m, dict):
                         m_name = m.get("name") or m.get("medicineName") or m.get("title") or m.get("medication_name") or "Medication"
-                        m_dose_str = str(m.get("dose") or m.get("dose_quantity") or m.get("dosage") or "500mg")
+                        m_dose_str = str(m.get("dose") or m.get("dose_quantity") or m.get("dosage") or "")
                         m_type = m.get("type") or m.get("dosage_form") or m.get("form") or "Tablet"
-                        m_time = m.get("time") or m.get("frequency") or m.get("schedule") or "daily"
+                        m_time = m.get("time") or m.get("frequency") or m.get("schedule") or "Not specified"
 
-                        num_dose = 500.0
-                        digits = "".join([c for c in m_dose_str if c.isdigit() or c == '.'])
-                        if digits:
-                            try:
-                                num_dose = float(digits)
-                            except ValueError:
-                                pass
+                        # Extract numeric dose only from real value — never fabricate 500mg
+                        num_dose = 0.0
+                        dose_label = "Dose not specified"
+                        if m_dose_str:
+                            digits = "".join([c for c in m_dose_str if c.isdigit() or c == '.'])
+                            if digits:
+                                try:
+                                    num_dose = float(digits)
+                                    dose_label = m_dose_str
+                                except ValueError:
+                                    pass
 
                         try:
                             state.active_medications.append(
                                 NormalizedMedication(
                                     name=m_name,
                                     dose_quantity=num_dose,
-                                    dosage_form=f"{m_dose_str} ({m_type})",
-                                    frequency=m_time if m_time else "daily",
+                                    dosage_form=dose_label if num_dose > 0 else f"Dose not specified ({m_type})",
+                                    frequency=m_time,
                                     is_active=True
                                 )
                             )
@@ -399,9 +403,9 @@ class AIOrchestrator(HealthBrainSubsystem):
                         state.active_medications.append(
                             NormalizedMedication(
                                 name=m.strip(),
-                                dose_quantity=500.0,
-                                dosage_form="Tablet",
-                                frequency="daily",
+                                dose_quantity=0.0,
+                                dosage_form="Dose unknown",
+                                frequency="Not specified",
                                 is_active=True
                             )
                         )
@@ -423,21 +427,25 @@ class AIOrchestrator(HealthBrainSubsystem):
                 for m in saved_meds:
                     if isinstance(m, dict) and (m.get("name") or m.get("medicineName")):
                         m_name = m.get("name") or m.get("medicineName") or "Medication"
-                        m_dose_str = str(m.get("dose") or m.get("dose_quantity") or "500mg")
+                        m_dose_str = str(m.get("dose") or m.get("dose_quantity") or "")
                         m_type = str(m.get("type") or m.get("dosage_form") or "Tablet")
-                        m_time = str(m.get("time") or m.get("frequency") or "daily")
-                        num_dose = 500.0
-                        digits = "".join([c for c in m_dose_str if c.isdigit() or c == '.'])
-                        if digits:
-                            try:
-                                num_dose = float(digits)
-                            except ValueError:
-                                pass
+                        m_time = str(m.get("time") or m.get("frequency") or "Not specified")
+                        # Only extract a numeric dose if the source data actually contains one
+                        num_dose = 0.0
+                        dose_label = "Dose not specified"
+                        if m_dose_str:
+                            digits = "".join([c for c in m_dose_str if c.isdigit() or c == '.'])
+                            if digits:
+                                try:
+                                    num_dose = float(digits)
+                                    dose_label = m_dose_str
+                                except ValueError:
+                                    pass
                         state.active_medications.append(
                             NormalizedMedication(
                                 name=m_name,
                                 dose_quantity=num_dose,
-                                dosage_form=f"{m_dose_str} ({m_type})",
+                                dosage_form=dose_label if num_dose > 0 else f"Dose not specified ({m_type})",
                                 frequency=m_time,
                                 is_active=True
                             )
@@ -446,12 +454,40 @@ class AIOrchestrator(HealthBrainSubsystem):
                         state.active_medications.append(
                             NormalizedMedication(
                                 name=m.strip(),
-                                dose_quantity=500.0,
-                                dosage_form="Tablet",
-                                frequency="daily",
+                                dose_quantity=0.0,
+                                dosage_form="Dose unknown",
+                                frequency="Not specified",
                                 is_active=True
                             )
                         )
+            except Exception:
+                pass
+
+        # Fallback to journey store if recent_labs is empty (survives server restarts)
+        if not state.recent_labs:
+            try:
+                from healthbot_v4.apps.brain.journey.journey_engine import _load_journey_store
+                from healthbot_v4.shared.models.base import NormalizedLab
+                store = _load_journey_store(patient_id)
+                saved_labs = store.get("recent_labs") or []
+                for lab_dict in saved_labs:
+                    if not isinstance(lab_dict, dict):
+                        continue
+                    try:
+                        lab = NormalizedLab(
+                            lab_id=lab_dict.get("lab_id") or f"lab_{patient_id[:6]}",
+                            patient_id=patient_id,
+                            canonical_name=lab_dict.get("canonical_name") or lab_dict.get("name") or "Lab Test",
+                            value=float(lab_dict.get("value", 0.0)),
+                            unit=lab_dict.get("unit", ""),
+                            reference_range=lab_dict.get("reference_range", ""),
+                            classification=lab_dict.get("classification", "Normal"),
+                        )
+                        state.recent_labs.append(lab)
+                    except Exception:
+                        pass
+                if state.recent_labs:
+                    logger.info(f"Loaded {len(state.recent_labs)} persisted labs from journey store for {patient_id}")
             except Exception:
                 pass
 

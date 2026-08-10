@@ -74,6 +74,7 @@ import { UserProfile, updateProfile as firebaseUpdateProfile } from "../services
 import { FamilyMember } from "../types/FamilyMember";
 import { buildDefaultRoutine } from "../services/onboardingRoutineBuilder";
 import * as BiogearsAPI from "../services/biogears";
+import { submitFullOnboardingIntake } from "../services/onboardingService";
 import Header from "./components/Header";
 
 const { width } = Dimensions.get("window");
@@ -617,6 +618,40 @@ export default function ProfileScreen() {
         } catch (routineErr) {
           console.log('[Profile] Routine update error (non-fatal):', routineErr);
         }
+
+        // ── 🚀 Sync clinical profile update directly with Health OS backend ──
+        try {
+          const heightVal = parseFloat(String(newProfile.height || '175').replace(/[^0-9.]/g, '')) || 175;
+          const weightVal = parseFloat(String(newProfile.weight || '70').replace(/[^0-9.]/g, '')) || 70;
+          await submitFullOnboardingIntake({
+            patient_id: uid,
+            first_name: newProfile.firstName || "Patient",
+            last_name: newProfile.lastName || "User",
+            email: newProfile.email,
+            phone: newProfile.phone,
+            date_of_birth: newProfile.dateOfBirth,
+            gender: newProfile.gender,
+            primary_goal: "wellness",
+            height_cm: heightVal,
+            weight_kg: weightVal,
+            blood_group: newProfile.bloodGroup,
+            resting_hr: newProfile.biogears_resting_hr || 72,
+            systolic_bp: newProfile.biogears_systolic_bp || 120,
+            diastolic_bp: newProfile.biogears_diastolic_bp || 80,
+            body_fat_pct: (newProfile.biogears_body_fat || 0.2) * 100,
+            allergies: newProfile.allergies || [],
+            chronic_conditions: [
+              ...(newProfile.biogears_has_type1_diabetes ? ["Type 1 Diabetes"] : []),
+              ...(newProfile.biogears_has_type2_diabetes ? ["Type 2 Diabetes"] : []),
+              ...(newProfile.biogears_has_anemia ? ["Chronic Anemia"] : []),
+              ...(newProfile.biogears_is_smoker ? ["Smoker (COPD)"] : []),
+            ],
+            medications: newProfile.medications || [],
+          });
+          console.log('[Profile] ✅ Synced updated profile with Health OS Backend & Knowledge Graph');
+        } catch (syncErr) {
+          console.log('[Profile] Health OS Backend sync warning (non-fatal):', syncErr);
+        }
       }
     } catch (e) {
       console.log("❌ saveProfileData error:", e);
@@ -654,10 +689,18 @@ export default function ProfileScreen() {
 
       const uid = user.uid;
 
-      // 2. Delete Firestore Data
+      // 2. Delete BioGears Digital Twin from backend server
+      try {
+        const twinId = getTwinId(safeProfile);
+        await BiogearsAPI.deleteProfile(twinId);
+      } catch (bgErr) {
+        console.log("⚠️ BioGears backend profile deletion warning:", bgErr);
+      }
+
+      // 3. Delete Firestore Data
       await deleteUserFirestoreData(uid);
 
-      // 3. Delete Firebase Auth User
+      // 4. Delete Firebase Auth User
       await deleteUser(user);
 
       // 4. Success! Clear everything local and redirect

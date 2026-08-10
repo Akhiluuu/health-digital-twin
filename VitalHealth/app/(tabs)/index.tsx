@@ -874,6 +874,14 @@ export default function HomeScreen() {
         {/* ── QUICK ACTIONS HUB (DATA ENTRY) ── */}
         <View style={styles.sectionHeaderRow}>
           <Text style={[styles.sectionTitle, { color: c.text }]}>Quick Health Log</Text>
+          <TouchableOpacity
+            onPress={() => router.push({ pathname: "/(tabs)/history" } as any)}
+            style={{ flexDirection: "row", alignItems: "center", gap: 4 }}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="time-outline" size={15} color={c.accent} />
+            <Text style={[styles.sectionLink, { color: c.accent }]}>History</Text>
+          </TouchableOpacity>
         </View>
         <View style={styles.quickGrid}>
           <TouchableOpacity
