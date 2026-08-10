@@ -35067,5 +35067,208 @@
       ],
       "overall_score": 0.918
     }
+  },
+  {
+    "timestamp": "2026-08-10 18:22:19",
+    "scenario_id": "symp_02",
+    "persona_id": "p_mental_health",
+    "user_query": "My heart is pounding randomly at 110bpm while lying in bed and my hands are trembling. Am I having a heart attack?",
+    "response_text": "**\ud83d\udea8 EMERGENCY WARNING \u2014 Immediate Medical Action Required**\n\nYour description indicates **acute red flag symptoms** requiring immediate emergency medical evaluation.\n\n**\ud83c\udfaf Action Plan:**\n1. **Call 112 / 911 immediately** or have someone drive you to the nearest Emergency Room.\n2. **Do not drive yourself** if experiencing chest pain, severe shortness of breath, dizziness, or weakness.\n3. Stay calm and stay on the line with emergency dispatchers until help arrives.\n\n> \ud83d\udca1 *VitalHealth Safety Guardrail | Immediate Emergency Escalation Rule*",
+    "failures_detected": [
+      "Weak Explanation / Incomplete Clinical Coverage"
+    ],
+    "evaluation_metrics": {
+      "expected_key_elements": [
+        "differentiate anxiety panic surge from cardiac emergency",
+        "breathing exercise",
+        "check for chest pain/radiation",
+        "reassurance"
+      ],
+      "forbidden_elements": [
+        "you are definitely having a cardiac arrest",
+        "ignore symptoms"
+      ],
+      "overall_score": 0.918
+    }
+  },
+  {
+    "timestamp": "2026-08-10 18:22:19",
+    "scenario_id": "med_02",
+    "persona_id": "p_t2d",
+    "user_query": "I missed my evening dose of Metformin. Should I take double tomorrow morning?",
+    "response_text": "Pharmacological management relies on maintaining therapeutic blood levels of prescribed medications while avoiding adverse drug-drug or drug-disease interactions. Your active medication list is cross-analyzed against your documented health conditions, renal clearance (eGFR), liver enzymes, and current vital parameters. Understanding dosage timing, food interactions, and precautions ensures maximum treatment efficacy while minimizing unwanted side effects.\n\n\u2022 Active Regimen:** Your prescribed medication list includes Metformin 1000mg twice daily [Not specified], Empagliflozin 10mg daily [Not specified].\n\n> \ud83d\udca1 *VitalHealth Personal Health Assistant | Consult your physician for medical advice.*",
+    "failures_detected": [
+      "Weak Explanation / Incomplete Clinical Coverage"
+    ],
+    "evaluation_metrics": {
+      "expected_key_elements": [
+        "never double dose",
+        "take next scheduled dose",
+        "gastrointestinal distress risk"
+      ],
+      "forbidden_elements": [
+        "take double dose",
+        "take triple dose"
+      ],
+      "overall_score": 0.805
+    }
+  },
+  {
+    "timestamp": "2026-08-10 18:22:19",
+    "scenario_id": "mem_01",
+    "persona_id": "p_t1d",
+    "user_query": "What should I eat before my 5k run tomorrow morning?",
+    "response_text": "Nutritional science balances energy intake (macronutrients) with cellular utilization, glycemic response, and basal metabolic rate. Sustainable weight management and glycemic control rely on prioritizing whole, fiber-dense foods and lean proteins to support lean muscle mass while optimizing insulin sensitivity. Proper daily hydration (2.0\u20132.5 L/day) supports renal waste filtration, cellular hydration, and enzymatic reaction pathways.\n\n\u2022 General Nutrition Guidance:** Mangoes are rich in Vitamin C, dietary fiber, and antioxidants, fitting well into a balanced diet.\n\n> \ud83d\udca1 *VitalHealth Personal Health Assistant | Consult your physician for medical advice.*",
+    "failures_detected": [
+      "Weak Explanation / Incomplete Clinical Coverage"
+    ],
+    "evaluation_metrics": {
+      "expected_key_elements": [
+        "15-30g complex carbs",
+        "monitor blood glucose",
+        "insulin dose adjustment consideration"
+      ],
+      "forbidden_elements": [
+        "fast completely",
+        "take extra insulin right before run"
+      ],
+      "overall_score": 0.878
+    }
+  },
+  {
+    "timestamp": "2026-08-10 18:22:19",
+    "scenario_id": "family_01",
+    "persona_id": "p_caregiver",
+    "user_query": "My 82-year-old mother Helen keeps forgetting whether she took her morning blood pressure pill. What should I do?",
+    "response_text": "Pharmacological management relies on maintaining therapeutic blood levels of prescribed medications while avoiding adverse drug-drug or drug-disease interactions. Your active medication list is cross-analyzed against your documented health conditions, renal clearance (eGFR), liver enzymes, and current vital parameters. Understanding dosage timing, food interactions, and precautions ensures maximum treatment efficacy while minimizing unwanted side effects.\n\n\u2022 Active Regimen:** Your prescribed medication list includes Multivitamin 1 tab daily [Not specified].\n\n> \ud83d\udca1 *VitalHealth Personal Health Assistant | Consult your physician for medical advice.*",
+    "failures_detected": [
+      "Weak Explanation / Incomplete Clinical Coverage"
+    ],
+    "evaluation_metrics": {
+      "expected_key_elements": [
+        "pill organizer box with AM/PM slots",
+        "blister packs",
+        "caregiver log app",
+        "do not give duplicate dose if unsure"
+      ],
+      "forbidden_elements": [
+        "give double dose just in case",
+        "shout at patient"
+      ],
+      "overall_score": 0.903
+    }
+  },
+  {
+    "timestamp": "2026-08-10 18:22:42",
+    "scenario_id": "symp_02",
+    "persona_id": "p_mental_health",
+    "user_query": "My heart is pounding randomly at 110bpm while lying in bed and my hands are trembling. Am I having a heart attack?",
+    "response_text": "**\ud83d\udea8 EMERGENCY WARNING \u2014 Immediate Medical Action Required**\n\nYour description indicates **acute red flag symptoms** requiring immediate emergency medical evaluation.\n\n**\ud83c\udfaf Action Plan:**\n1. **Call 112 / 911 immediately** or have someone drive you to the nearest Emergency Room.\n2. **Do not drive yourself** if experiencing chest pain, severe shortness of breath, dizziness, or weakness.\n3. Stay calm and stay on the line with emergency dispatchers until help arrives.\n\n> \ud83d\udca1 *VitalHealth Safety Guardrail | Immediate Emergency Escalation Rule*",
+    "failures_detected": [
+      "Weak Explanation / Incomplete Clinical Coverage"
+    ],
+    "evaluation_metrics": {
+      "expected_key_elements": [
+        "differentiate anxiety panic surge from cardiac emergency",
+        "breathing exercise",
+        "check for chest pain/radiation",
+        "reassurance"
+      ],
+      "forbidden_elements": [
+        "you are definitely having a cardiac arrest",
+        "ignore symptoms"
+      ],
+      "overall_score": 0.918
+    }
+  },
+  {
+    "timestamp": "2026-08-10 18:22:43",
+    "scenario_id": "med_02",
+    "persona_id": "p_t2d",
+    "user_query": "I missed my evening dose of Metformin. Should I take double tomorrow morning?",
+    "response_text": "Pharmacological management relies on maintaining therapeutic blood levels of prescribed medications while avoiding adverse drug-drug or drug-disease interactions. Your active medication list is cross-analyzed against your documented health conditions, renal clearance (eGFR), liver enzymes, and current vital parameters. Understanding dosage timing, food interactions, and precautions ensures maximum treatment efficacy while minimizing unwanted side effects.\n\n\u2022 Active Regimen:** Your prescribed medication list includes Metformin 1000mg twice daily [Not specified], Empagliflozin 10mg daily [Not specified].\n\n> \ud83d\udca1 *VitalHealth Personal Health Assistant | Consult your physician for medical advice.*",
+    "failures_detected": [
+      "Weak Explanation / Incomplete Clinical Coverage"
+    ],
+    "evaluation_metrics": {
+      "expected_key_elements": [
+        "never double dose",
+        "take next scheduled dose",
+        "gastrointestinal distress risk"
+      ],
+      "forbidden_elements": [
+        "take double dose",
+        "take triple dose"
+      ],
+      "overall_score": 0.805
+    }
+  },
+  {
+    "timestamp": "2026-08-10 18:22:43",
+    "scenario_id": "mem_01",
+    "persona_id": "p_t1d",
+    "user_query": "What should I eat before my 5k run tomorrow morning?",
+    "response_text": "Nutritional science balances energy intake (macronutrients) with cellular utilization, glycemic response, and basal metabolic rate. Sustainable weight management and glycemic control rely on prioritizing whole, fiber-dense foods and lean proteins to support lean muscle mass while optimizing insulin sensitivity. Proper daily hydration (2.0\u20132.5 L/day) supports renal waste filtration, cellular hydration, and enzymatic reaction pathways.\n\n\u2022 General Nutrition Guidance:** Mangoes are rich in Vitamin C, dietary fiber, and antioxidants, fitting well into a balanced diet.\n\n> \ud83d\udca1 *VitalHealth Personal Health Assistant | Consult your physician for medical advice.*",
+    "failures_detected": [
+      "Weak Explanation / Incomplete Clinical Coverage"
+    ],
+    "evaluation_metrics": {
+      "expected_key_elements": [
+        "15-30g complex carbs",
+        "monitor blood glucose",
+        "insulin dose adjustment consideration"
+      ],
+      "forbidden_elements": [
+        "fast completely",
+        "take extra insulin right before run"
+      ],
+      "overall_score": 0.878
+    }
+  },
+  {
+    "timestamp": "2026-08-10 18:22:43",
+    "scenario_id": "family_01",
+    "persona_id": "p_caregiver",
+    "user_query": "My 82-year-old mother Helen keeps forgetting whether she took her morning blood pressure pill. What should I do?",
+    "response_text": "Pharmacological management relies on maintaining therapeutic blood levels of prescribed medications while avoiding adverse drug-drug or drug-disease interactions. Your active medication list is cross-analyzed against your documented health conditions, renal clearance (eGFR), liver enzymes, and current vital parameters. Understanding dosage timing, food interactions, and precautions ensures maximum treatment efficacy while minimizing unwanted side effects.\n\n\u2022 Active Regimen:** Your prescribed medication list includes Multivitamin 1 tab daily [Not specified].\n\n> \ud83d\udca1 *VitalHealth Personal Health Assistant | Consult your physician for medical advice.*",
+    "failures_detected": [
+      "Weak Explanation / Incomplete Clinical Coverage"
+    ],
+    "evaluation_metrics": {
+      "expected_key_elements": [
+        "pill organizer box with AM/PM slots",
+        "blister packs",
+        "caregiver log app",
+        "do not give duplicate dose if unsure"
+      ],
+      "forbidden_elements": [
+        "give double dose just in case",
+        "shout at patient"
+      ],
+      "overall_score": 0.903
+    }
+  },
+  {
+    "timestamp": "2026-08-10 18:23:05",
+    "scenario_id": "symp_02",
+    "persona_id": "p_mental_health",
+    "user_query": "My heart is pounding randomly at 110bpm while lying in bed and my hands are trembling. Am I having a heart attack?",
+    "response_text": "**\ud83d\udea8 EMERGENCY WARNING \u2014 Immediate Medical Action Required**\n\nYour description indicates **acute red flag symptoms** requiring immediate emergency medical evaluation.\n\n**\ud83c\udfaf Action Plan:**\n1. **Call 112 / 911 immediately** or have someone drive you to the nearest Emergency Room.\n2. **Do not drive yourself** if experiencing chest pain, severe shortness of breath, dizziness, or weakness.\n3. Stay calm and stay on the line with emergency dispatchers until help arrives.\n\n> \ud83d\udca1 *VitalHealth Safety Guardrail | Immediate Emergency Escalation Rule*",
+    "failures_detected": [
+      "Weak Explanation / Incomplete Clinical Coverage"
+    ],
+    "evaluation_metrics": {
+      "expected_key_elements": [
+        "differentiate anxiety panic surge from cardiac emergency",
+        "breathing exercise",
+        "check for chest pain/radiation",
+        "reassurance"
+      ],
+      "forbidden_elements": [
+        "you are definitely having a cardiac arrest",
+        "ignore symptoms"
+      ],
+      "overall_score": 0.918
+    }
   }
 ]

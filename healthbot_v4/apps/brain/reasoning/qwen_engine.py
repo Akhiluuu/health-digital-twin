@@ -806,7 +806,8 @@ You are a trusted healthcare companion helping users understand, manage, monitor
 
         lines.append(f"{greeting}{explanation}\n")
 
-        fallback_notes = guidance_notes or self._clinical_knowledge_supplement(user_query) or self._default_fallback_recommendations(user_query, target_intent)
+        knowledge_supplement = self._clinical_knowledge_supplement(user_query)
+        fallback_notes = (guidance_notes + knowledge_supplement) if (guidance_notes or knowledge_supplement) else self._default_fallback_recommendations(user_query, target_intent)
         if fallback_notes:
             for note in fallback_notes:
                 lines.append(f"• {note.lstrip('-* ')}")

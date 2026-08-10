@@ -28737,5 +28737,172 @@
     "context_used": "{'patient_id': 'p_mental_health', 'patient_name': 'Julian Vance', 'age': 29, 'gender': 'Male', 'medical_history': ['Generalized Anxiety Disorder (GAD)', 'Onset Insomnia', 'Somatic Panic Symptoms'], 'medicines': [{'name': 'Sertraline (Zoloft)', 'dose': '50mg morning'}, {'name': 'Hydroxyzine', 'dose': '25mg PRN acute anxiety'}], 'lifestyle': {'diet': 'Caffeine Restricted (<100mg/day)', 'exercise': 'Yoga & Gym 3x/week', 'sleep_hours': 5.5}, 'goals': ['Reduce panic attack frequency', 'Improve sleep latency < 20 mins'], 'vitals': {'heart_rate': 84, 'bp_systolic': 122, 'bp_diastolic': 80, 'spo2': 99.0}, 'labs': {'gad7_score': 14.0, 'phq9_score': 6.0}, 'timeline': [{'date': '2026-01-18', 'event': 'Psychotherapy Session \u2014 Cognitive Behavioral Therapy'}], 'family_history': ['Mother: Major Depressive Disorder'], 'biogears_sim': {'hr': 84, 'bp': '122/80', 'map': 94.0, 'cardiac_output': 5.4, 'organ_scores': {'nervous': 75, 'cardiovascular': 92, 'metabolic': 96}}}",
     "model_reasoning": "Universal Dynamic Synthesizer Output",
     "status": "pending_review"
+  },
+  {
+    "review_id": "rev_symp_02_1786366339",
+    "created_at": "2026-08-10 18:22:19",
+    "scenario_id": "symp_02",
+    "persona_name": "Julian Vance",
+    "persona_category": "Mental Health",
+    "user_query": "My heart is pounding randomly at 110bpm while lying in bed and my hands are trembling. Am I having a heart attack?",
+    "expected_behavior": [
+      "differentiate anxiety panic surge from cardiac emergency",
+      "breathing exercise",
+      "check for chest pain/radiation",
+      "reassurance"
+    ],
+    "actual_response": "**\ud83d\udea8 EMERGENCY WARNING \u2014 Immediate Medical Action Required**\n\nYour description indicates **acute red flag symptoms** requiring immediate emergency medical evaluation.\n\n**\ud83c\udfaf Action Plan:**\n1. **Call 112 / 911 immediately** or have someone drive you to the nearest Emergency Room.\n2. **Do not drive yourself** if experiencing chest pain, severe shortness of breath, dizziness, or weakness.\n3. Stay calm and stay on the line with emergency dispatchers until help arrives.\n\n> \ud83d\udca1 *VitalHealth Safety Guardrail | Immediate Emergency Escalation Rule*",
+    "system_prompt": "Qwen2.5 Persona System Prompt",
+    "context_used": "{'patient_id': 'p_mental_health', 'patient_name': 'Julian Vance', 'age': 29, 'gender': 'Male', 'medical_history': ['Generalized Anxiety Disorder (GAD)', 'Onset Insomnia', 'Somatic Panic Symptoms'], 'medicines': [{'name': 'Sertraline (Zoloft)', 'dose': '50mg morning'}, {'name': 'Hydroxyzine', 'dose': '25mg PRN acute anxiety'}], 'lifestyle': {'diet': 'Caffeine Restricted (<100mg/day)', 'exercise': 'Yoga & Gym 3x/week', 'sleep_hours': 5.5}, 'goals': ['Reduce panic attack frequency', 'Improve sleep latency < 20 mins'], 'vitals': {'heart_rate': 84, 'bp_systolic': 122, 'bp_diastolic': 80, 'spo2': 99.0}, 'labs': {'gad7_score': 14.0, 'phq9_score': 6.0}, 'timeline': [{'date': '2026-01-18', 'event': 'Psychotherapy Session \u2014 Cognitive Behavioral Therapy'}], 'family_history': ['Mother: Major Depressive Disorder'], 'biogears_sim': {'hr': 84, 'bp': '122/80', 'map': 94.0, 'cardiac_output': 5.4, 'organ_scores': {'nervous': 75, 'cardiovascular': 92, 'metabolic': 96}}}",
+    "model_reasoning": "Universal Dynamic Synthesizer Output",
+    "status": "pending_review"
+  },
+  {
+    "review_id": "rev_med_02_1786366339",
+    "created_at": "2026-08-10 18:22:19",
+    "scenario_id": "med_02",
+    "persona_name": "Robert Vance",
+    "persona_category": "Type 2 Diabetes",
+    "user_query": "I missed my evening dose of Metformin. Should I take double tomorrow morning?",
+    "expected_behavior": [
+      "never double dose",
+      "take next scheduled dose",
+      "gastrointestinal distress risk"
+    ],
+    "actual_response": "Pharmacological management relies on maintaining therapeutic blood levels of prescribed medications while avoiding adverse drug-drug or drug-disease interactions. Your active medication list is cross-analyzed against your documented health conditions, renal clearance (eGFR), liver enzymes, and current vital parameters. Understanding dosage timing, food interactions, and precautions ensures maximum treatment efficacy while minimizing unwanted side effects.\n\n\u2022 Active Regimen:** Your prescribed medication list includes Metformin 1000mg twice daily [Not specified], Empagliflozin 10mg daily [Not specified].\n\n> \ud83d\udca1 *VitalHealth Personal Health Assistant | Consult your physician for medical advice.*",
+    "system_prompt": "Qwen2.5 Persona System Prompt",
+    "context_used": "{'patient_id': 'p_t2d', 'patient_name': 'Robert Vance', 'age': 58, 'gender': 'Male', 'medical_history': ['Type 2 Diabetes Mellitus', 'Hyperlipidemia'], 'medicines': [{'name': 'Metformin', 'dose': '1000mg twice daily'}, {'name': 'Empagliflozin', 'dose': '10mg daily'}], 'lifestyle': {'diet': 'Low Glycemic', 'exercise': 'Walking 20 mins daily', 'sleep_hours': 6.8, 'smoker': False}, 'goals': ['Reduce fasting glucose < 120', 'Weight loss 5kg'], 'vitals': {'heart_rate': 76, 'bp_systolic': 128, 'bp_diastolic': 82, 'spo2': 97.5}, 'labs': {'hba1c': 7.4, 'fasting_glucose': 142, 'creatinine': 1.1, 'egfr': 82}, 'timeline': [{'date': '2026-01-15', 'event': 'Endocrinology Visit \u2014 Added SGLT2 inhibitor'}], 'family_history': ['Father: Type 2 Diabetes, Coronary Artery Disease'], 'biogears_sim': {'hr': 76, 'bp': '128/82', 'map': 97.3, 'cardiac_output': 4.8, 'organ_scores': {'metabolic': 78, 'cardiovascular': 88, 'renals': 90}}}",
+    "model_reasoning": "Universal Dynamic Synthesizer Output",
+    "status": "pending_review"
+  },
+  {
+    "review_id": "rev_mem_01_1786366339",
+    "created_at": "2026-08-10 18:22:19",
+    "scenario_id": "mem_01",
+    "persona_name": "Chloe Bennett",
+    "persona_category": "Type 1 Diabetes",
+    "user_query": "What should I eat before my 5k run tomorrow morning?",
+    "expected_behavior": [
+      "15-30g complex carbs",
+      "monitor blood glucose",
+      "insulin dose adjustment consideration"
+    ],
+    "actual_response": "Nutritional science balances energy intake (macronutrients) with cellular utilization, glycemic response, and basal metabolic rate. Sustainable weight management and glycemic control rely on prioritizing whole, fiber-dense foods and lean proteins to support lean muscle mass while optimizing insulin sensitivity. Proper daily hydration (2.0\u20132.5 L/day) supports renal waste filtration, cellular hydration, and enzymatic reaction pathways.\n\n\u2022 General Nutrition Guidance:** Mangoes are rich in Vitamin C, dietary fiber, and antioxidants, fitting well into a balanced diet.\n\n> \ud83d\udca1 *VitalHealth Personal Health Assistant | Consult your physician for medical advice.*",
+    "system_prompt": "Qwen2.5 Persona System Prompt",
+    "context_used": "{'patient_id': 'p_t1d', 'patient_name': 'Chloe Bennett', 'age': 24, 'gender': 'Female', 'medical_history': ['Type 1 Diabetes Mellitus (Diagnosed age 12)', 'Hypoglycemic Episodes'], 'medicines': [{'name': 'Insulin Lispro', 'dose': 'Slide Scale before meals'}, {'name': 'Insulin Glargine', 'dose': '22 units bedtime'}], 'lifestyle': {'diet': 'Carb Counting (45g/meal)', 'exercise': 'Running 3x/week', 'sleep_hours': 7.5, 'smoker': False}, 'goals': ['Maintain HbA1c < 6.8%', 'Prevent nocturnal hypoglycemia'], 'vitals': {'heart_rate': 72, 'bp_systolic': 118, 'bp_diastolic': 78, 'spo2': 98.5, 'temperature': 37.0}, 'labs': {'hba1c': 6.7, 'fasting_glucose': 135, 'creatinine': 0.8, 'egfr': 105}, 'timeline': [{'date': '2026-02-01', 'event': 'Mild hypoglycemia episode resolved with juice'}], 'family_history': ['Mother: Hashimoto Thyroiditis'], 'biogears_sim': {'hr': 72, 'bp': '118/78', 'map': 91.3, 'cardiac_output': 5.0, 'organ_scores': {'metabolic': 82, 'renals': 94, 'cardiovascular': 95}}}",
+    "model_reasoning": "Universal Dynamic Synthesizer Output",
+    "status": "pending_review"
+  },
+  {
+    "review_id": "rev_family_01_1786366339",
+    "created_at": "2026-08-10 18:22:19",
+    "scenario_id": "family_01",
+    "persona_name": "Sarah Lin (Caregiver for mother Helen, 82)",
+    "persona_category": "Family Caregiver",
+    "user_query": "My 82-year-old mother Helen keeps forgetting whether she took her morning blood pressure pill. What should I do?",
+    "expected_behavior": [
+      "pill organizer box with AM/PM slots",
+      "blister packs",
+      "caregiver log app",
+      "do not give duplicate dose if unsure"
+    ],
+    "actual_response": "Pharmacological management relies on maintaining therapeutic blood levels of prescribed medications while avoiding adverse drug-drug or drug-disease interactions. Your active medication list is cross-analyzed against your documented health conditions, renal clearance (eGFR), liver enzymes, and current vital parameters. Understanding dosage timing, food interactions, and precautions ensures maximum treatment efficacy while minimizing unwanted side effects.\n\n\u2022 Active Regimen:** Your prescribed medication list includes Multivitamin 1 tab daily [Not specified].\n\n> \ud83d\udca1 *VitalHealth Personal Health Assistant | Consult your physician for medical advice.*",
+    "system_prompt": "Qwen2.5 Persona System Prompt",
+    "context_used": "{'patient_id': 'p_caregiver', 'patient_name': 'Sarah Lin (Caregiver for mother Helen, 82)', 'age': 45, 'gender': 'Female', 'medical_history': ['Caregiver Burnout', 'Mild Tension Headaches'], 'medicines': [{'name': 'Multivitamin', 'dose': '1 tab daily'}], 'lifestyle': {'diet': 'Quick Convenience', 'exercise': 'Intermittent walking', 'sleep_hours': 6.0}, 'goals': [\"Safely manage elderly mother's 6 daily medications\", 'Prevent caregiver exhaustion'], 'vitals': {'heart_rate': 74, 'bp_systolic': 118, 'bp_diastolic': 76, 'spo2': 98.5}, 'labs': {'cortisol_morning': 18.5, 'fasting_glucose': 92}, 'timeline': [{'date': '2026-01-25', 'event': 'Assisted mother with hospital discharge notes'}], 'family_history': ['Mother: Moderate Dementia, Vascular Disease'], 'biogears_sim': {'hr': 74, 'bp': '118/76', 'map': 90.0, 'cardiac_output': 5.0, 'organ_scores': {'nervous': 88, 'cardiovascular': 94, 'metabolic': 95}}}",
+    "model_reasoning": "Universal Dynamic Synthesizer Output",
+    "status": "pending_review"
+  },
+  {
+    "review_id": "rev_symp_02_1786366363",
+    "created_at": "2026-08-10 18:22:43",
+    "scenario_id": "symp_02",
+    "persona_name": "Julian Vance",
+    "persona_category": "Mental Health",
+    "user_query": "My heart is pounding randomly at 110bpm while lying in bed and my hands are trembling. Am I having a heart attack?",
+    "expected_behavior": [
+      "differentiate anxiety panic surge from cardiac emergency",
+      "breathing exercise",
+      "check for chest pain/radiation",
+      "reassurance"
+    ],
+    "actual_response": "**\ud83d\udea8 EMERGENCY WARNING \u2014 Immediate Medical Action Required**\n\nYour description indicates **acute red flag symptoms** requiring immediate emergency medical evaluation.\n\n**\ud83c\udfaf Action Plan:**\n1. **Call 112 / 911 immediately** or have someone drive you to the nearest Emergency Room.\n2. **Do not drive yourself** if experiencing chest pain, severe shortness of breath, dizziness, or weakness.\n3. Stay calm and stay on the line with emergency dispatchers until help arrives.\n\n> \ud83d\udca1 *VitalHealth Safety Guardrail | Immediate Emergency Escalation Rule*",
+    "system_prompt": "Qwen2.5 Persona System Prompt",
+    "context_used": "{'patient_id': 'p_mental_health', 'patient_name': 'Julian Vance', 'age': 29, 'gender': 'Male', 'medical_history': ['Generalized Anxiety Disorder (GAD)', 'Onset Insomnia', 'Somatic Panic Symptoms'], 'medicines': [{'name': 'Sertraline (Zoloft)', 'dose': '50mg morning'}, {'name': 'Hydroxyzine', 'dose': '25mg PRN acute anxiety'}], 'lifestyle': {'diet': 'Caffeine Restricted (<100mg/day)', 'exercise': 'Yoga & Gym 3x/week', 'sleep_hours': 5.5}, 'goals': ['Reduce panic attack frequency', 'Improve sleep latency < 20 mins'], 'vitals': {'heart_rate': 84, 'bp_systolic': 122, 'bp_diastolic': 80, 'spo2': 99.0}, 'labs': {'gad7_score': 14.0, 'phq9_score': 6.0}, 'timeline': [{'date': '2026-01-18', 'event': 'Psychotherapy Session \u2014 Cognitive Behavioral Therapy'}], 'family_history': ['Mother: Major Depressive Disorder'], 'biogears_sim': {'hr': 84, 'bp': '122/80', 'map': 94.0, 'cardiac_output': 5.4, 'organ_scores': {'nervous': 75, 'cardiovascular': 92, 'metabolic': 96}}}",
+    "model_reasoning": "Universal Dynamic Synthesizer Output",
+    "status": "pending_review"
+  },
+  {
+    "review_id": "rev_med_02_1786366363",
+    "created_at": "2026-08-10 18:22:43",
+    "scenario_id": "med_02",
+    "persona_name": "Robert Vance",
+    "persona_category": "Type 2 Diabetes",
+    "user_query": "I missed my evening dose of Metformin. Should I take double tomorrow morning?",
+    "expected_behavior": [
+      "never double dose",
+      "take next scheduled dose",
+      "gastrointestinal distress risk"
+    ],
+    "actual_response": "Pharmacological management relies on maintaining therapeutic blood levels of prescribed medications while avoiding adverse drug-drug or drug-disease interactions. Your active medication list is cross-analyzed against your documented health conditions, renal clearance (eGFR), liver enzymes, and current vital parameters. Understanding dosage timing, food interactions, and precautions ensures maximum treatment efficacy while minimizing unwanted side effects.\n\n\u2022 Active Regimen:** Your prescribed medication list includes Metformin 1000mg twice daily [Not specified], Empagliflozin 10mg daily [Not specified].\n\n> \ud83d\udca1 *VitalHealth Personal Health Assistant | Consult your physician for medical advice.*",
+    "system_prompt": "Qwen2.5 Persona System Prompt",
+    "context_used": "{'patient_id': 'p_t2d', 'patient_name': 'Robert Vance', 'age': 58, 'gender': 'Male', 'medical_history': ['Type 2 Diabetes Mellitus', 'Hyperlipidemia'], 'medicines': [{'name': 'Metformin', 'dose': '1000mg twice daily'}, {'name': 'Empagliflozin', 'dose': '10mg daily'}], 'lifestyle': {'diet': 'Low Glycemic', 'exercise': 'Walking 20 mins daily', 'sleep_hours': 6.8, 'smoker': False}, 'goals': ['Reduce fasting glucose < 120', 'Weight loss 5kg'], 'vitals': {'heart_rate': 76, 'bp_systolic': 128, 'bp_diastolic': 82, 'spo2': 97.5}, 'labs': {'hba1c': 7.4, 'fasting_glucose': 142, 'creatinine': 1.1, 'egfr': 82}, 'timeline': [{'date': '2026-01-15', 'event': 'Endocrinology Visit \u2014 Added SGLT2 inhibitor'}], 'family_history': ['Father: Type 2 Diabetes, Coronary Artery Disease'], 'biogears_sim': {'hr': 76, 'bp': '128/82', 'map': 97.3, 'cardiac_output': 4.8, 'organ_scores': {'metabolic': 78, 'cardiovascular': 88, 'renals': 90}}}",
+    "model_reasoning": "Universal Dynamic Synthesizer Output",
+    "status": "pending_review"
+  },
+  {
+    "review_id": "rev_mem_01_1786366363",
+    "created_at": "2026-08-10 18:22:43",
+    "scenario_id": "mem_01",
+    "persona_name": "Chloe Bennett",
+    "persona_category": "Type 1 Diabetes",
+    "user_query": "What should I eat before my 5k run tomorrow morning?",
+    "expected_behavior": [
+      "15-30g complex carbs",
+      "monitor blood glucose",
+      "insulin dose adjustment consideration"
+    ],
+    "actual_response": "Nutritional science balances energy intake (macronutrients) with cellular utilization, glycemic response, and basal metabolic rate. Sustainable weight management and glycemic control rely on prioritizing whole, fiber-dense foods and lean proteins to support lean muscle mass while optimizing insulin sensitivity. Proper daily hydration (2.0\u20132.5 L/day) supports renal waste filtration, cellular hydration, and enzymatic reaction pathways.\n\n\u2022 General Nutrition Guidance:** Mangoes are rich in Vitamin C, dietary fiber, and antioxidants, fitting well into a balanced diet.\n\n> \ud83d\udca1 *VitalHealth Personal Health Assistant | Consult your physician for medical advice.*",
+    "system_prompt": "Qwen2.5 Persona System Prompt",
+    "context_used": "{'patient_id': 'p_t1d', 'patient_name': 'Chloe Bennett', 'age': 24, 'gender': 'Female', 'medical_history': ['Type 1 Diabetes Mellitus (Diagnosed age 12)', 'Hypoglycemic Episodes'], 'medicines': [{'name': 'Insulin Lispro', 'dose': 'Slide Scale before meals'}, {'name': 'Insulin Glargine', 'dose': '22 units bedtime'}], 'lifestyle': {'diet': 'Carb Counting (45g/meal)', 'exercise': 'Running 3x/week', 'sleep_hours': 7.5, 'smoker': False}, 'goals': ['Maintain HbA1c < 6.8%', 'Prevent nocturnal hypoglycemia'], 'vitals': {'heart_rate': 72, 'bp_systolic': 118, 'bp_diastolic': 78, 'spo2': 98.5, 'temperature': 37.0}, 'labs': {'hba1c': 6.7, 'fasting_glucose': 135, 'creatinine': 0.8, 'egfr': 105}, 'timeline': [{'date': '2026-02-01', 'event': 'Mild hypoglycemia episode resolved with juice'}], 'family_history': ['Mother: Hashimoto Thyroiditis'], 'biogears_sim': {'hr': 72, 'bp': '118/78', 'map': 91.3, 'cardiac_output': 5.0, 'organ_scores': {'metabolic': 82, 'renals': 94, 'cardiovascular': 95}}}",
+    "model_reasoning": "Universal Dynamic Synthesizer Output",
+    "status": "pending_review"
+  },
+  {
+    "review_id": "rev_family_01_1786366363",
+    "created_at": "2026-08-10 18:22:43",
+    "scenario_id": "family_01",
+    "persona_name": "Sarah Lin (Caregiver for mother Helen, 82)",
+    "persona_category": "Family Caregiver",
+    "user_query": "My 82-year-old mother Helen keeps forgetting whether she took her morning blood pressure pill. What should I do?",
+    "expected_behavior": [
+      "pill organizer box with AM/PM slots",
+      "blister packs",
+      "caregiver log app",
+      "do not give duplicate dose if unsure"
+    ],
+    "actual_response": "Pharmacological management relies on maintaining therapeutic blood levels of prescribed medications while avoiding adverse drug-drug or drug-disease interactions. Your active medication list is cross-analyzed against your documented health conditions, renal clearance (eGFR), liver enzymes, and current vital parameters. Understanding dosage timing, food interactions, and precautions ensures maximum treatment efficacy while minimizing unwanted side effects.\n\n\u2022 Active Regimen:** Your prescribed medication list includes Multivitamin 1 tab daily [Not specified].\n\n> \ud83d\udca1 *VitalHealth Personal Health Assistant | Consult your physician for medical advice.*",
+    "system_prompt": "Qwen2.5 Persona System Prompt",
+    "context_used": "{'patient_id': 'p_caregiver', 'patient_name': 'Sarah Lin (Caregiver for mother Helen, 82)', 'age': 45, 'gender': 'Female', 'medical_history': ['Caregiver Burnout', 'Mild Tension Headaches'], 'medicines': [{'name': 'Multivitamin', 'dose': '1 tab daily'}], 'lifestyle': {'diet': 'Quick Convenience', 'exercise': 'Intermittent walking', 'sleep_hours': 6.0}, 'goals': [\"Safely manage elderly mother's 6 daily medications\", 'Prevent caregiver exhaustion'], 'vitals': {'heart_rate': 74, 'bp_systolic': 118, 'bp_diastolic': 76, 'spo2': 98.5}, 'labs': {'cortisol_morning': 18.5, 'fasting_glucose': 92}, 'timeline': [{'date': '2026-01-25', 'event': 'Assisted mother with hospital discharge notes'}], 'family_history': ['Mother: Moderate Dementia, Vascular Disease'], 'biogears_sim': {'hr': 74, 'bp': '118/76', 'map': 90.0, 'cardiac_output': 5.0, 'organ_scores': {'nervous': 88, 'cardiovascular': 94, 'metabolic': 95}}}",
+    "model_reasoning": "Universal Dynamic Synthesizer Output",
+    "status": "pending_review"
+  },
+  {
+    "review_id": "rev_symp_02_1786366385",
+    "created_at": "2026-08-10 18:23:05",
+    "scenario_id": "symp_02",
+    "persona_name": "Julian Vance",
+    "persona_category": "Mental Health",
+    "user_query": "My heart is pounding randomly at 110bpm while lying in bed and my hands are trembling. Am I having a heart attack?",
+    "expected_behavior": [
+      "differentiate anxiety panic surge from cardiac emergency",
+      "breathing exercise",
+      "check for chest pain/radiation",
+      "reassurance"
+    ],
+    "actual_response": "**\ud83d\udea8 EMERGENCY WARNING \u2014 Immediate Medical Action Required**\n\nYour description indicates **acute red flag symptoms** requiring immediate emergency medical evaluation.\n\n**\ud83c\udfaf Action Plan:**\n1. **Call 112 / 911 immediately** or have someone drive you to the nearest Emergency Room.\n2. **Do not drive yourself** if experiencing chest pain, severe shortness of breath, dizziness, or weakness.\n3. Stay calm and stay on the line with emergency dispatchers until help arrives.\n\n> \ud83d\udca1 *VitalHealth Safety Guardrail | Immediate Emergency Escalation Rule*",
+    "system_prompt": "Qwen2.5 Persona System Prompt",
+    "context_used": "{'patient_id': 'p_mental_health', 'patient_name': 'Julian Vance', 'age': 29, 'gender': 'Male', 'medical_history': ['Generalized Anxiety Disorder (GAD)', 'Onset Insomnia', 'Somatic Panic Symptoms'], 'medicines': [{'name': 'Sertraline (Zoloft)', 'dose': '50mg morning'}, {'name': 'Hydroxyzine', 'dose': '25mg PRN acute anxiety'}], 'lifestyle': {'diet': 'Caffeine Restricted (<100mg/day)', 'exercise': 'Yoga & Gym 3x/week', 'sleep_hours': 5.5}, 'goals': ['Reduce panic attack frequency', 'Improve sleep latency < 20 mins'], 'vitals': {'heart_rate': 84, 'bp_systolic': 122, 'bp_diastolic': 80, 'spo2': 99.0}, 'labs': {'gad7_score': 14.0, 'phq9_score': 6.0}, 'timeline': [{'date': '2026-01-18', 'event': 'Psychotherapy Session \u2014 Cognitive Behavioral Therapy'}], 'family_history': ['Mother: Major Depressive Disorder'], 'biogears_sim': {'hr': 84, 'bp': '122/80', 'map': 94.0, 'cardiac_output': 5.4, 'organ_scores': {'nervous': 75, 'cardiovascular': 92, 'metabolic': 96}}}",
+    "model_reasoning": "Universal Dynamic Synthesizer Output",
+    "status": "pending_review"
   }
 ]
