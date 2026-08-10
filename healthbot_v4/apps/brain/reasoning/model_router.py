@@ -8,12 +8,16 @@ based on query complexity, multi-condition history, and system queue depth.
 import time
 import re
 from typing import Dict, Any, Optional, Tuple
+from pydantic import BaseModel
 from healthbot_v4.apps.brain.core import HealthBrainSubsystem
 from healthbot_v4.shared.logger.logger import logger
 
 
-class RoutingDecision(BaseModel if 'BaseModel' in globals() else object):
-    pass
+class RoutingDecision(BaseModel):
+    target_model: str
+    complexity_score: int
+    reason: str
+    routing_latency_ms: float
 
 
 class MultiModelRouter(HealthBrainSubsystem):
