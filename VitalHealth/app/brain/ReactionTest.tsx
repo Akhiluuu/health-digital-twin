@@ -18,6 +18,7 @@ import {
 import Svg, { Circle, Line } from "react-native-svg";
 import { useTheme } from "../../context/ThemeContext";
 import { GameResult } from "./brainEngine";
+import { useStackBackHandler } from "../../hooks/useStackBackHandler";
 
 const { width: W, height: H } = Dimensions.get("window");
 const ROUNDS = 10;
@@ -29,6 +30,7 @@ type Props = {
 };
 
 export default function MotorPraxisTest({ onDone }: Props) {
+  useStackBackHandler();
   const { theme } = useTheme();
   const isDark = theme === "dark";
 

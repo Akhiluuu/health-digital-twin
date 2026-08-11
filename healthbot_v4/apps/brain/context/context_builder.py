@@ -108,8 +108,8 @@ class ContextBudgeter(HealthBrainSubsystem):
             total_token_estimate=token_est,
         )
 
-    def build_budgeted_context(self, patient_state: Any, query: str = "") -> BudgetedContext:
-        """Helper building a complete BudgetedContext given a patient state and query."""
+    def build_budgeted_context(self, patient_state: Any, query: str = "", rag_context: str = "") -> BudgetedContext:
+        """Helper building a complete BudgetedContext given a patient state, query, and optional RAG context."""
         from healthbot_v4.apps.brain.copilot.clinical_snapshot import ClinicalSnapshotEngine
         from healthbot_v4.apps.brain.reasoning.retrieval_planner import ContextRetrievalPlanner
         from healthbot_v4.apps.brain.reasoning.clinical_intent import ClinicalIntentEngine
@@ -118,7 +118,7 @@ class ContextBudgeter(HealthBrainSubsystem):
             snapshot = ClinicalSnapshotEngine().generate_snapshot(patient_state)
             intent = ClinicalIntentEngine().classify_intent(query if query else "general health query")
             plan = ContextRetrievalPlanner().create_retrieval_plan(intent, patient_state)
-            return self.assemble_context(patient_state, snapshot, plan)
+            return self.assemble_context(patient_state, snapshot, plan, rag_context=rag_context)
         except Exception as e:
             logger.warning(f"Fallback budgeted context build due to: {e}")
             p_id = getattr(patient_state, "patient_id", "patient-unknown")
@@ -128,12 +128,13 @@ class ContextBudgeter(HealthBrainSubsystem):
                 master_summary_block=f"PATIENT SUMMARY: {p_id}",
                 active_risks_block="ACTIVE CLINICAL RISKS: None",
                 retrieval_plan_block=f"RETRIEVAL PLAN: Intent-filtered context for query '{query}'",
+                rag_retrieval_block=f"UPLOADED DOCUMENT CONTEXT:\n{rag_context}" if rag_context else "CLINICAL REFERENCE: None",
                 total_token_estimate=120,
             )
 
-    def build_context(self, query: str = "", state: Any = None, history: Optional[list] = None) -> BudgetedContext:
+    def build_context(self, query: str = "", state: Any = None, history: Optional[list] = None, rag_context: Optional[str] = None) -> BudgetedContext:
         """Standardized interface for PHOS orchestrator and reasoning pipelines."""
-        return self.build_budgeted_context(state, query)
+        return self.build_budgeted_context(state, query, rag_context=rag_context or "")
 
 
 # Backward compatibility alias

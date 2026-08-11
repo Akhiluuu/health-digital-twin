@@ -11,6 +11,7 @@ import {
 import { useRouter } from "expo-router";
 import Header from "./components/Header";
 import { useTheme } from "../context/ThemeContext";
+import { useStackBackHandler } from "../hooks/useStackBackHandler";
 
 const FEATURES = [
   {
@@ -78,6 +79,7 @@ function FadeIn({ delay = 0, children }: { delay?: number; children: React.React
 }
 
 export default function About() {
+  useStackBackHandler();
   const router = useRouter();
   const { theme } = useTheme();
   const dark = theme === "dark";

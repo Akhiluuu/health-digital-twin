@@ -17,8 +17,10 @@ import { getJourneyTimeline, JourneyTimelineEvent } from "../services/journeySer
 
 import { useFamily } from "../context/FamilyContext";
 import { getTwinId } from "../utils/twinUtils";
+import { useStackBackHandler } from "../hooks/useStackBackHandler";
 
 export default function JourneyTimelineScreen() {
+  useStackBackHandler();
   const router = useRouter();
   const { theme } = useTheme();
   const { activeProfile } = useFamily();

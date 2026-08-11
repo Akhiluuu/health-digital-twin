@@ -21,6 +21,7 @@ import { colors } from "../theme/colors";
 import Header from "./components/Header";
 import { fetchMedicineHistoryFromFirebase } from "../services/firebaseSync";
 import { useFamily } from "../context/FamilyContext";
+import { useStackBackHandler } from "../hooks/useStackBackHandler";
 
 ///////////////////////////////////////////////////////////
 
@@ -41,6 +42,7 @@ const HISTORY_STORAGE_KEY = "medicine_history";
 ///////////////////////////////////////////////////////////
 
 export default function MedicineHistory() {
+  useStackBackHandler();
   const router = useRouter();
   const { theme } = useTheme();
   const c = colors[theme];

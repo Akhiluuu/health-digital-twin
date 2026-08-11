@@ -1699,14 +1699,29 @@ export default function AIHealthScreen() {
 
     try {
       let topChunks: string[] = [];
+      let scoredResults: Array<{ chunk: { id: string; text: string; embedding: number[]; metadata?: any }; score: number }> = [];
       if (allChunks.length > 0) {
         const qEmb = await generateEmbedding(query);
-        topChunks = retrieveTopKChunks(qEmb, allChunks, TOP_K).map((r) => r.chunk.text);
+        scoredResults = retrieveTopKChunks(qEmb, allChunks, TOP_K);
+        // Filter out low-similarity chunks unless query explicitly references a document
+        const MIN_SCORE = 0.05;
+        const queryLower = query.toLowerCase();
+        const docKeywords = docs.map(d => d.name.toLowerCase().split(".")[0]).filter(Boolean);
+        const isDocQuery = docKeywords.some(kw => queryLower.includes(kw)) ||
+          ["report", "document", "lab", "result", "uploaded", "scan", "summarize", "analyze", "values", "findings", "abnormal"].some(kw => queryLower.includes(kw));
+        // For explicit doc queries, include all top results. Otherwise filter by score.
+        const filteredResults = isDocQuery ? scoredResults : scoredResults.filter(r => r.score >= MIN_SCORE);
+        topChunks = filteredResults.map(r => r.chunk.text);
       }
       const apiKey = await getApiKey();
 
       let aiReply = "";
       let evidenceBundleData: EvidenceBundleMeta | undefined = undefined;
+
+      // Format retrieved document chunks as a readable RAG context block for the LLM
+      const finalRagContext = topChunks.length > 0
+        ? topChunks.map((c, i) => `[Doc Chunk ${i + 1}]: ${c}`).join("\n\n")
+        : undefined;
 
       try {
         const brainRes = await fetch(`${baseUrl}/api/v5/brain/query`, {
@@ -1721,6 +1736,7 @@ export default function AIHealthScreen() {
             query,
             active_symptoms: activeSymptoms || [],
             patient_context: patientCtx,
+            rag_context: finalRagContext,
           }),
         });
         if (brainRes.ok) {
@@ -1798,6 +1814,7 @@ export default function AIHealthScreen() {
         chunkSize: 500,
         chunkOverlap: 100,
         onProgress: setProcessingProgress,
+        userId: currentUserId,  // Pass real user ID so OCR labs are stored under correct patient
       });
       const updatedDocs = [...docs, newDoc];
       const updatedChunks = [...allChunks, ...newChunks];

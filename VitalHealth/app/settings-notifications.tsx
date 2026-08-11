@@ -13,8 +13,10 @@ import { useTheme } from "../context/ThemeContext";
 import { colors as globalColors } from "../theme/colors";
 import TimePicker from "../components/twin/TimePicker";
 import { scheduleDailyLogReminder, initOrSyncRoutineReminders } from "../services/notifeeService";
+import { useStackBackHandler } from "../hooks/useStackBackHandler";
 
 export default function Notifications() {
+  useStackBackHandler();
   const { theme } = useTheme();
 
   const colors = globalColors[theme];

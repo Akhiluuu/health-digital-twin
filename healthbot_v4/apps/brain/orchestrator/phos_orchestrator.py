@@ -97,6 +97,7 @@ class PHOSOrchestrator:
         conversation_history: Optional[List[Dict[str, str]]] = None,
         active_symptoms: Optional[List[Any]] = None,
         patient_context: Optional[Dict[str, Any]] = None,
+        rag_context: Optional[str] = None,
     ) -> PHOSResponsePayload:
         start_time = time.time()
         patient_id = state.patient_id
@@ -165,6 +166,7 @@ class PHOSOrchestrator:
             query=query,
             state=state,
             history=conversation_history or [],
+            rag_context=rag_context,
         )
         reasoning_res = self.qwen_engine.generate_reasoning_response(
             context=budgeted_context,

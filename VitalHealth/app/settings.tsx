@@ -15,8 +15,10 @@ import { useRouter } from "expo-router";
 
 import { useTheme } from "../context/ThemeContext";
 import { colors as globalColors } from "../theme/colors";
+import { useStackBackHandler } from "../hooks/useStackBackHandler";
 
 export default function SettingsScreen() {
+  useStackBackHandler();
   const router = useRouter();
   const { theme, toggleTheme } = useTheme();
 

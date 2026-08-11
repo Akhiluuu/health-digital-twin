@@ -100,6 +100,7 @@ class QueryRequest(BaseModel):
     query: str
     active_symptoms: Optional[List[Any]] = None
     patient_context: Optional[Dict[str, Any]] = None
+    rag_context: Optional[str] = None  # On-device retrieved document chunks (RAG from uploaded reports)
 
 
 class OCRUploadRequest(BaseModel):
@@ -190,6 +191,7 @@ async def process_query(req: QueryRequest):
         req.query,
         active_symptoms=req.active_symptoms,
         patient_context=req.patient_context,
+        rag_context=req.rag_context,
     )
 
 
@@ -201,6 +203,7 @@ async def process_explainable_query(req: QueryRequest):
         req.query,
         active_symptoms=req.active_symptoms,
         patient_context=req.patient_context,
+        rag_context=req.rag_context,
     )
     return {
         "patient_id": req.patient_id,
@@ -256,6 +259,7 @@ async def process_phos_query(req: QueryRequest):
         state=state,
         active_symptoms=req.active_symptoms,
         patient_context=req.patient_context,
+        rag_context=req.rag_context,
     )
     return response_payload.to_full_contract()
 
@@ -986,12 +990,16 @@ async def biogears_query(payload: Dict[str, Any]):
 async def generate_legacy(payload: Dict[str, Any]):
     user_id = payload.get("patient_id") or payload.get("user_id") or "self"
     query = payload.get("query") or ""
+    # Merge legacy 'chunks' list into rag_context string for backward compatibility
+    legacy_chunks = payload.get("chunks") or []
+    rag_context = "\n\n".join(legacy_chunks) if legacy_chunks else payload.get("rag_context") or None
     res = await orchestrator.process_patient_query(
         user_id,
         "sess_generate",
         query,
         active_symptoms=payload.get("active_symptoms"),
         patient_context=payload.get("patient_context"),
+        rag_context=rag_context,
     )
     return {"status": "success", "response": res.response_text, "response_text": res.response_text}
 

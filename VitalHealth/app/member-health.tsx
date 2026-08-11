@@ -11,12 +11,14 @@ import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { useFamily } from "../context/FamilyContext";
 import { FamilyMember } from "../types/FamilyMember";
+import { useStackBackHandler } from "../hooks/useStackBackHandler";
 import {
   fetchMemberHealthData,
   subscribeToMemberHealth,
 } from "../services/familySync";
 
 export default function MemberHealthScreen() {
+  useStackBackHandler();
   const params = useLocalSearchParams<{
     userId?: string | string[];
     name?: string | string[];

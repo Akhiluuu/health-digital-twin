@@ -32,6 +32,7 @@ import NBackTest from "./NBackTest";
 import SymbolMatchTest from "./SymbolMatchTest";
 import TrailMakingTest from "./TrailMakingTest";
 import TaskSwitchingTest from "./TaskSwitchingTest";
+import { useStackBackHandler } from "../../hooks/useStackBackHandler";
 
 const { width: W } = Dimensions.get("window");
 
@@ -152,6 +153,7 @@ const getTestDomain = (gameId: string): keyof typeof DOMAINS => {
 };
 
 export default function BrainLab() {
+  useStackBackHandler();
   const router = useRouter();
   const { theme } = useTheme();
   const { profile } = useProfile();

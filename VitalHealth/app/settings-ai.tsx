@@ -20,6 +20,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useTheme } from "../context/ThemeContext";
 import { colors } from "../theme/colors";
 import { getCentralAiBaseUrl } from "../constants/Config";
+import { useStackBackHandler } from "../hooks/useStackBackHandler";
 
 const KEY_SERVER_IP   = "@hai_server_ip";
 const KEY_SERVER_PORT = "@hai_server_port";
@@ -28,6 +29,7 @@ const DEFAULT_PORT    = "8000";
 type TestStatus = "idle" | "testing" | "ok" | "fail";
 
 export default function AIServerConfigScreen() {
+  useStackBackHandler();
   const { theme } = useTheme();
   const c = colors[theme];
   const router = useRouter();

@@ -25,6 +25,7 @@ import { getTwinId } from "../../utils/twinUtils";
 import { useFamily } from "../../context/FamilyContext";
 import { useTheme } from "../../context/ThemeContext";
 import { colors } from "../../theme/colors";
+import { useStackBackHandler } from "../../hooks/useStackBackHandler";
 
 const MONTHS = [
   { label: "January", value: "01" },
@@ -57,6 +58,7 @@ const monthLabel = (value: string) => MONTHS.find((m) => m.value === value)?.lab
 type PickerType = null | "year" | "month" | "day" | "bloodGroup";
 
 export default function AddMemberScreen() {
+  useStackBackHandler();
   const { theme } = useTheme();
   const c = colors[theme];
   const { refreshMembers } = useFamily();

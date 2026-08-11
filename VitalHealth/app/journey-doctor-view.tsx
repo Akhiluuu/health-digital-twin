@@ -15,8 +15,10 @@ import { getDoctorView, DoctorView } from "../services/journeyService";
 
 import { useFamily } from "../context/FamilyContext";
 import { getTwinId } from "../utils/twinUtils";
+import { useStackBackHandler } from "../hooks/useStackBackHandler";
 
 export default function DoctorViewScreen() {
+  useStackBackHandler();
   const router = useRouter();
   const { theme } = useTheme();
   const { activeProfile } = useFamily();

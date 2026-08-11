@@ -20,6 +20,7 @@ import { colors as globalColors } from "../../theme/colors";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { FamilyMember } from "../../types/FamilyMember";
+import { useStackBackHandler } from "../../hooks/useStackBackHandler";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -130,6 +131,7 @@ function MemberCard({
 // ─── Main Screen ──────────────────────────────────────────────────────────────
 
 export default function FamilyHealthScreen() {
+  useStackBackHandler();
   const { theme } = useTheme();
   const c = globalColors[theme];
   const { members, isLoaded, refreshMembers } = useFamily();

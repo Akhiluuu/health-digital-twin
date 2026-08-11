@@ -13,10 +13,12 @@ import { useSymptoms } from "../context/SymptomContext";
 import { useTheme } from "../context/ThemeContext";
 import { useThemeAlert } from "../context/ThemeAlertContext";
 import { saveFollowUpAnswers } from "../database/symptomDB";
+import { useStackBackHandler } from "../hooks/useStackBackHandler";
 
 ///////////////////////////////////////////////////////////
 
 export default function Followup() {
+  useStackBackHandler();
   const router = useRouter();
   const { theme } = useTheme();
   const { showAlert } = useThemeAlert();

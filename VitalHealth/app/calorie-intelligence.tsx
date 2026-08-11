@@ -32,6 +32,7 @@ import { useFamily } from "../context/FamilyContext";
 import { doc, setDoc, onSnapshot } from "firebase/firestore";
 import { db } from "../services/firebase";
 import { getUserId } from "../services/firebaseSync";
+import { useStackBackHandler } from "../hooks/useStackBackHandler";
 
 const { width } = Dimensions.get("window");
 
@@ -207,6 +208,7 @@ const mpr = StyleSheet.create({
 // MAIN SCREEN
 // ─────────────────────────────────────────────────────────────────────────────
 export default function CalorieIntelligenceScreen() {
+  useStackBackHandler();
   const router  = useRouter();
   const { theme } = useTheme();
   

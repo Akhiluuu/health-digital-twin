@@ -24,6 +24,7 @@ import { useProfile } from "../context/ProfileContext";
 import { useSteps } from "../context/StepContext";
 import { useTheme } from "../context/ThemeContext";
 import { useFamily } from "../context/FamilyContext";
+import { useStackBackHandler } from "../hooks/useStackBackHandler";
 
 
 // ── Circular ring ──────────────────────────────────────────────────────────────
@@ -86,6 +87,7 @@ const getZone = (steps: number, goal: number) => {
 
 // ── Screen ─────────────────────────────────────────────────────────────────────
 export default function StepIntelligenceScreen() {
+  useStackBackHandler();
   const router    = useRouter();
   const { theme } = useTheme();
 

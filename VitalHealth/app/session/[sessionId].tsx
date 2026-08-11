@@ -12,6 +12,7 @@ import { useBiogearsTwin } from '../../context/BiogearsTwinContext';
 import { useTheme } from '../../context/ThemeContext';
 import { colors as themeColors } from '../../theme/colors';
 import * as BiogearsAPI from '../../services/biogears';
+import { useStackBackHandler } from "../../hooks/useStackBackHandler";
 
 const { width: W } = Dimensions.get('window');
 
@@ -30,6 +31,7 @@ function VitalRow({ label, value, unit, normal, icon }: any) {
 }
 
 export default function SessionDetailScreen() {
+  useStackBackHandler();
   const { sessionId } = useLocalSearchParams<{ sessionId: string }>();
   const router = useRouter();
   const { theme } = useTheme();

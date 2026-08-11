@@ -496,9 +496,6 @@ export default function DocumentsScreen() {
         dateMs: now.getTime(), category: selectedCategory!, doctor: "Uploaded by you",
         localUri: destUri, originalName: pickedFileName, mimeType: pickedMime, sizeKb: pickedSizeKb,
       };
-      const updated = [newDoc, ...documents];
-      setDocuments(updated); await saveDocuments(updated);
-
       // ── OCR + AI Chat Vector Bridge ──────────────────────────────────────
       // Send the actual file to /ai/upload-and-embed for real server-side OCR,
       // structured lab extraction, AND embedding. Store returned chunks into
@@ -520,7 +517,6 @@ export default function DocumentsScreen() {
           method: 'POST',
           body: formData,
           headers: {
-            'Content-Type': 'multipart/form-data',
             ...(apiKey ? { 'X-API-Key': apiKey } : {}),
           },
         });
@@ -611,6 +607,11 @@ export default function DocumentsScreen() {
           });
         } catch (_) {}
       }
+
+      // Persist the document along with any OCR-extracted labs to state & AsyncStorage
+      const updated = [newDoc, ...documents];
+      setDocuments(updated);
+      await saveDocuments(updated);
 
       handleCloseModal();
       Alert.alert("✅ Saved & Parsed", `"${newDoc.title}" has been stored and AI-analyzed — available in your Health Chat instantly.`);

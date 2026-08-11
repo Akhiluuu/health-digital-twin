@@ -484,7 +484,13 @@ You are a trusted healthcare companion helping users understand, manage, monitor
 # SAFETY & EMERGENCIES
 - Never diagnose with certainty, prescribe medications, or recommend prescription dosages.
 - Emergency rule: If symptoms suggest chest pain, difficulty breathing, stroke, severe bleeding, or suicidal thoughts, start immediately with emergency helpline advice (112 / 911).
-- End clinical responses with: `> 💡 *VitalHealth Personal Health Assistant | Consult your physician for medical advice.*`"""
+- End clinical responses with: `> 💡 *VitalHealth Personal Health Assistant | Consult your physician for medical advice.*`
+
+# UPLOADED DOCUMENT ANALYSIS
+- If the user message contains a `<clinical_guidelines>` block, it contains **verbatim text extracted from an uploaded medical report** (lab report, blood test, scan, etc.).
+- You MUST base your analysis on the actual values found in that block. Reference specific biomarker names, values, units, and any flagged abnormal results.
+- Do NOT say "no lab reports found" or "no documents available" when a `<clinical_guidelines>` block is present.
+- If a `<clinical_guidelines>` block is present and the user asks to summarize or analyze a report, extract and discuss the key findings directly from that block."""
 
         return system_prompt
 
@@ -509,16 +515,23 @@ You are a trusted healthcare companion helping users understand, manage, monitor
             if turn.get("role") in ("user", "assistant") and turn.get("content"):
                 messages.append({"role": turn["role"], "content": turn["content"]})
 
-        # Build user message — evidence bundle takes priority over addendum
+        # Always build context addendum — this carries uploaded document RAG content
+        # (rag_retrieval_block) which MUST be visible to the LLM regardless of whether
+        # an evidence bundle is also present.
+        context_addendum = self._build_context_addendum(context, intent)
+
+        # Build user message — evidence bundle provides structured telemetry,
+        # context addendum provides RAG document text. Both are injected together.
         if evidence_bundle is not None:
             try:
                 bundle_block = evidence_bundle.to_prompt_block()
-                user_content = f"{bundle_block}\n\nPatient Question: {user_query}"
+                if context_addendum:
+                    user_content = f"{context_addendum}\n\n{bundle_block}\n\nPatient Question: {user_query}"
+                else:
+                    user_content = f"{bundle_block}\n\nPatient Question: {user_query}"
             except Exception:
-                context_addendum = self._build_context_addendum(context, intent)
                 user_content = f"{context_addendum}\n\n{user_query}" if context_addendum else user_query
         else:
-            context_addendum = self._build_context_addendum(context, intent)
             user_content = f"{context_addendum}\n\n{user_query}" if context_addendum else user_query
 
         messages.append({"role": "user", "content": user_content})
@@ -533,7 +546,7 @@ You are a trusted healthcare companion helping users understand, manage, monitor
         if context.longitudinal_block and "Stable history" not in context.longitudinal_block:
             parts.append(f"<trends>{context.longitudinal_block}</trends>")
         if context.rag_retrieval_block and "CLINICAL REFERENCE: None" not in context.rag_retrieval_block:
-            parts.append(f"<clinical_guidelines intent=\"{intent}\">{context.rag_retrieval_block[:600]}</clinical_guidelines>")
+            parts.append(f"<clinical_guidelines intent=\"{intent}\">{context.rag_retrieval_block[:3000]}</clinical_guidelines>")
         if context.simulation_block and "PHYSIOLOGICAL SIMULATION: None" not in context.simulation_block:
             parts.append(f"<digital_twin_data>{context.simulation_block[:400]}</digital_twin_data>")
         if context.master_summary_block and len(context.master_summary_block) > 20:

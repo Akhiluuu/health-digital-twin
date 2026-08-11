@@ -414,6 +414,7 @@ export default function RootLayout() {
                               gestureEnabled: true,
                               gestureDirection: 'horizontal',
                               fullScreenGestureEnabled: true,
+                              customAnimationOnGesture: true,
                             }}
                           >
                             {/* Authentication & Startup */}

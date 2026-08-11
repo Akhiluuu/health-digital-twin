@@ -19,8 +19,10 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { Symptom, useSymptoms } from "../context/SymptomContext";
 import { useTheme } from "../context/ThemeContext";
 import { colors } from "../theme/colors";
+import { useStackBackHandler } from "../hooks/useStackBackHandler";
 
 export default function SymptomHistory() {
+  useStackBackHandler();
   const router = useRouter();
   const { theme } = useTheme();
   const { historySymptoms, removeSymptom, clearHistory } = useSymptoms();

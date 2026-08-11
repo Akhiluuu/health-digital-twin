@@ -76,6 +76,7 @@ import { buildDefaultRoutine } from "../services/onboardingRoutineBuilder";
 import * as BiogearsAPI from "../services/biogears";
 import { submitFullOnboardingIntake } from "../services/onboardingService";
 import Header from "./components/Header";
+import { useStackBackHandler } from "../hooks/useStackBackHandler";
 
 const { width } = Dimensions.get("window");
 
@@ -361,6 +362,7 @@ function DatePickerModal({
 // ─── Main Screen ─────────────────────────────────────────────────────────────
 
 export default function ProfileScreen() {
+  useStackBackHandler();
   const router = useRouter();
   const { theme, toggleTheme } = useTheme();
 

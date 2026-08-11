@@ -18,6 +18,7 @@ import { useTheme } from "../context/ThemeContext";
 import { useSymptoms } from "../context/SymptomContext"; // ✅ Added
 
 import { queryPHOSEngine } from "../services/biogears";
+import { useStackBackHandler } from "../hooks/useStackBackHandler";
 
 interface Message {
   id: string;
@@ -26,6 +27,7 @@ interface Message {
 }
 
 export default function SymptomChat() {
+  useStackBackHandler();
   const router = useRouter();
   const { query } = useLocalSearchParams<{ query?: string }>();
   const { theme } = useTheme();

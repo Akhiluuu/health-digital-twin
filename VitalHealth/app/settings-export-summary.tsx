@@ -32,8 +32,10 @@ import {
 } from "../utils/doctorSummaryPdfBuilder";
 import { exportFhirR4Json, buildFhirR4Bundle } from "../utils/fhirExporter";
 import { log } from "../utils/logger";
+import { useStackBackHandler } from "../hooks/useStackBackHandler";
 
 export default function SettingsExportSummaryScreen() {
+  useStackBackHandler();
   const router = useRouter();
   const { theme } = useTheme();
   const c = colors[theme];

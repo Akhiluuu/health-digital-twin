@@ -5,8 +5,10 @@ import { Stack } from "expo-router";
 import BackupRestoreScreen from "../screens/BackupRestoreScreen";
 import { useTheme } from "../context/ThemeContext";
 import { colors } from "../theme/colors";
+import { useStackBackHandler } from "../hooks/useStackBackHandler";
 
 export default function BackupRestorePage() {
+  useStackBackHandler();
   const { theme } = useTheme();
   const c = colors[theme];
 

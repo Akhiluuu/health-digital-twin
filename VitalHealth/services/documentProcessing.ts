@@ -184,12 +184,13 @@ export async function processDocument(
     chunkSize?: number;
     chunkOverlap?: number;
     onProgress?: (progress: ProcessingProgress) => void;
+    userId?: string;  // Patient ID for server-side OCR lab ingestion
   } = {}
 ): Promise<{
   document: Document;
   chunks: EmbeddedChunk[];
 }> {
-  const { chunkSize = 500, chunkOverlap = 100, onProgress } = options;
+  const { chunkSize = 500, chunkOverlap = 100, onProgress, userId } = options;
   
   const updateProgress = (stage: ProcessingProgress['stage'], progress: number, message: string) => {
     if (onProgress) {
@@ -210,12 +211,18 @@ export async function processDocument(
       name: document.name,
       type: document.mimeType || (document.type === 'pdf' ? 'application/pdf' : 'image/jpeg'),
     } as any);
+    // Always pass user_id so OCR labs are ingested under the correct patient
+    if (userId) {
+      formData.append('user_id', userId);
+    }
 
     const response = await fetch(uploadUrl, {
       method: 'POST',
       body: formData,
+      // NOTE: Do NOT set Content-Type manually for FormData — React Native sets
+      // 'multipart/form-data; boundary=xxx' automatically. Manual override breaks
+      // server-side Form field parsing (user_id would always default to "self").
       headers: {
-        'Content-Type': 'multipart/form-data',
         ...(apiKey ? { 'X-API-Key': apiKey } : {}),
       },
     });

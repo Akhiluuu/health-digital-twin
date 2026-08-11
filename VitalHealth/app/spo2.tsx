@@ -36,6 +36,7 @@ import { useNotifications } from "../context/NotificationContext";
 import { doc, setDoc, onSnapshot, collection, addDoc, serverTimestamp, query, orderBy, limit } from "firebase/firestore";
 import { db } from "../services/firebase";
 import { getUserId } from "../services/firebaseSync";
+import { useStackBackHandler } from "../hooks/useStackBackHandler";
 
 // 🔹 Native SpO2 Module Imports
 import {
@@ -79,6 +80,7 @@ const formatTime = (iso: string) => {
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export default function Spo2Screen() {
+  useStackBackHandler();
   const router = useRouter();
   const navigation = useNavigation();
   const { theme } = useTheme();

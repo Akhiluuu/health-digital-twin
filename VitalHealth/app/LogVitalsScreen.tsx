@@ -36,8 +36,10 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { doc, setDoc } from "firebase/firestore";
 import { db } from "../services/firebase";
 import { getUserId } from "../services/firebaseSync";
+import { useStackBackHandler } from "../hooks/useStackBackHandler";
 
 export default function LogVitalsScreen() {
+  useStackBackHandler();
   const router = useRouter();
   const params = useLocalSearchParams<{ id?: string }>();
   const recordId = params.id;

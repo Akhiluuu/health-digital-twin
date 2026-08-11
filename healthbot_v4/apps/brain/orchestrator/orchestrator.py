@@ -203,6 +203,7 @@ class AIOrchestrator(HealthBrainSubsystem):
         active_symptoms: Optional[List[Any]] = None,
         patient_context: Optional[Dict[str, Any]] = None,
         image_payload: Optional[str] = None,
+        rag_context: Optional[str] = None,
     ) -> OrchestratorResponse:
         logger.info(f"AIOrchestrator processing query for patient {patient_id} in session {session_id}")
 
@@ -601,7 +602,14 @@ class AIOrchestrator(HealthBrainSubsystem):
 
         master_summary = self.summary_engine.build_master_summary(state)
 
-        rag_context = self.rag_service.retrieve_context(patient_id, query) if plan.retrieve_rag else ""
+        server_rag_context = self.rag_service.retrieve_context(patient_id, query) if plan.retrieve_rag else ""
+        # Merge: client-side document chunks (rag_context) take priority; append server RAG if also available
+        if rag_context and rag_context.strip():
+            combined_rag = f"UPLOADED DOCUMENT CONTEXT:\n{rag_context.strip()}"
+            if server_rag_context:
+                combined_rag += f"\n\nCLINICAL REFERENCE:\n{server_rag_context}"
+        else:
+            combined_rag = server_rag_context
 
         # 5a. OTM — collect structured evidence bundle from all relevant modules
         evidence_bundle = self.otm.collect_evidence(
@@ -620,7 +628,7 @@ class AIOrchestrator(HealthBrainSubsystem):
             plan,
             longitudinal_res=longitudinal_res,
             master_summary=master_summary,
-            rag_context=rag_context,
+            rag_context=combined_rag,
             sim_context=sim_context,
         )
 

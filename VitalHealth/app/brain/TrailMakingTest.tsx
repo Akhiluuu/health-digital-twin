@@ -18,6 +18,7 @@ import Svg, { Line, Circle, G, Text as SvgText } from "react-native-svg";
 import Slider from "@react-native-community/slider";
 import { useTheme } from "../../context/ThemeContext";
 import { GameResult } from "./brainEngine";
+import { useStackBackHandler } from "../../hooks/useStackBackHandler";
 
 const { width: W } = Dimensions.get("window");
 const TOTAL_STIMULI = 12;
@@ -29,6 +30,7 @@ type Props = {
 };
 
 export default function LineOrientationTest({ onDone }: Props) {
+  useStackBackHandler();
   const { theme } = useTheme();
   const isDark = theme === "dark";
 

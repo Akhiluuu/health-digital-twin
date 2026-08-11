@@ -57,6 +57,7 @@ import {
 import { registerTwin } from "../../services/biogears";
 import { getTwinId } from "../../utils/twinUtils";
 import { FamilyMember } from "../../types/FamilyMember";
+import { useStackBackHandler } from "../../hooks/useStackBackHandler";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -189,6 +190,7 @@ function InfoRow({
 // ─── Main Screen ──────────────────────────────────────────────────────────────
 
 export default function MemberDetailsScreen() {
+  useStackBackHandler();
   const { theme } = useTheme();
   const c = globalColors[theme];
 

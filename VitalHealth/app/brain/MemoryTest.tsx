@@ -18,6 +18,7 @@ import {
 import Svg, { Path, Polygon, Circle, Ellipse, Defs, LinearGradient, Stop, G, Line } from "react-native-svg";
 import { useTheme } from "../../context/ThemeContext";
 import { GameResult } from "./brainEngine";
+import { useStackBackHandler } from "../../hooks/useStackBackHandler";
 
 const { width: W } = Dimensions.get("window");
 type Phase = "instructions" | "learning" | "testing" | "done";
@@ -79,6 +80,7 @@ type Props = {
 };
 
 export default function VisualObjectLearningTest({ onDone }: Props) {
+  useStackBackHandler();
   const { theme } = useTheme();
   const isDark = theme === "dark";
 

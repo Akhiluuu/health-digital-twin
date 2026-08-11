@@ -25,6 +25,7 @@ import { useTheme } from "../context/ThemeContext";
 import { useBiogearsTwin } from "../context/BiogearsTwinContext";
 import { useFamily } from "../context/FamilyContext";
 import TimePicker from "../components/twin/TimePicker";
+import { useStackBackHandler } from "../hooks/useStackBackHandler";
 
 // ─── MET table ───────────────────────────────────────────────────────────────
 // MET (Metabolic Equivalent of Task) values per activity per intensity level
@@ -192,6 +193,7 @@ const ACTIVITY_COLORS: Record<string, string> = {
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 export default function ActivityLab() {
+  useStackBackHandler();
   const router  = useRouter();
   const { theme } = useTheme();
   const { weightKg: parentWeight } = useProfile();

@@ -24,8 +24,10 @@ import { useMedicine } from "../context/MedicineContext";
 import { log, error } from "../utils/logger";
 import { useTheme } from "./../context/ThemeContext";
 import { colors } from "./../theme/colors";
+import { useStackBackHandler } from "../hooks/useStackBackHandler";
 
 export default function AddMedicine() {
+  useStackBackHandler();
   const router = useRouter();
   const { addMedicine } = useMedicine();
 

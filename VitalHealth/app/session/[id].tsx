@@ -16,6 +16,7 @@ import Header from '../components/Header';
 import { BlurView } from 'expo-blur';
 
 import { sanitizeBiogearsVitals } from '../../services/biogears';
+import { useStackBackHandler } from "../../hooks/useStackBackHandler";
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -25,6 +26,7 @@ const { width: SCREEN_WIDTH } = Dimensions.get('window');
  * Replaces the "Old UI" raw data view with a premium, organized command center.
  */
 export default function SessionDetailScreen() {
+  useStackBackHandler();
   const { id } = useLocalSearchParams();
   const router = useRouter();
   const { theme } = useTheme();

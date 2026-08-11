@@ -4,8 +4,10 @@ import React from "react";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import BugReportModal from "../components/BugReportModal";
 import { BugCategory } from "../services/bugReportService";
+import { useStackBackHandler } from "../hooks/useStackBackHandler";
 
 export default function ReportBugScreen() {
+  useStackBackHandler();
   const router = useRouter();
   const params = useLocalSearchParams();
 

@@ -18,6 +18,7 @@ import { useRouter } from "expo-router";
 import { useTheme } from "../context/ThemeContext";
 import { useBiogearsTwin } from "../context/BiogearsTwinContext";
 import { scheduleRoutineReminder, cancelRoutineReminder } from "../services/notifeeService";
+import { useStackBackHandler } from "../hooks/useStackBackHandler";
 
 const STORAGE_KEY = "vt_rest_reminders";
 
@@ -27,6 +28,7 @@ type Alarm = {
 };
 
 export default function RestScreen() {
+  useStackBackHandler();
   const router = useRouter();
   const { theme } = useTheme();
   const { addEvent } = useBiogearsTwin();

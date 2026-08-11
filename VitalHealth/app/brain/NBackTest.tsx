@@ -18,6 +18,7 @@ import {
 import Svg, { Path, Circle, G, Polygon, Rect } from "react-native-svg";
 import { useTheme } from "../../context/ThemeContext";
 import { GameResult } from "./brainEngine";
+import { useStackBackHandler } from "../../hooks/useStackBackHandler";
 
 const { width: W } = Dimensions.get("window");
 const TOTAL_STIMULI = 62;
@@ -31,6 +32,7 @@ type Props = {
 };
 
 export default function Fractal2Back({ onDone }: Props) {
+  useStackBackHandler();
   const { theme } = useTheme();
   const isDark = theme === "dark";
 

@@ -17,6 +17,7 @@ import { colors } from "../theme/colors";
 import { useFamily } from "../context/FamilyContext";
 import { getAllVitalsRecords, VitalsRecord } from "../database/vitalsDB";
 import { log } from "../utils/logger";
+import { useStackBackHandler } from "../hooks/useStackBackHandler";
 
 interface GroupedRecords {
   date: string;
@@ -24,6 +25,7 @@ interface GroupedRecords {
 }
 
 export default function VitalsHistoryScreen() {
+  useStackBackHandler();
   const router = useRouter();
   const navigation = useNavigation();
   const { theme } = useTheme();

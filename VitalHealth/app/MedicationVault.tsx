@@ -25,6 +25,7 @@ import { useProfile } from "../context/ProfileContext";
 import { useBiogearsTwin } from "../context/BiogearsTwinContext";
 import { log } from "../utils/logger";
 import Header from "./components/Header";
+import { useStackBackHandler } from "../hooks/useStackBackHandler";
 
 // API
 import {
@@ -192,6 +193,17 @@ export default function MedicationVault() {
   // Navigation & Details States
   const [activePage, setActivePage] = useState<ActivePage>("dashboard");
   const [selectedMedicine, setSelectedMedicine] = useState<Medicine | null>(null);
+
+  useStackBackHandler(
+    useCallback(() => {
+      if (selectedMedicine || activePage !== "dashboard") {
+        setSelectedMedicine(null);
+        setActivePage("dashboard");
+        return true;
+      }
+      return false;
+    }, [activePage, selectedMedicine])
+  );
 
   // Metadata Cache
   const [metadataCache, setMetadataCache] = useState<Record<number, MedicineMeta>>({});

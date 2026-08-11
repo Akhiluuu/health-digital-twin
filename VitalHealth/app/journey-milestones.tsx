@@ -16,8 +16,10 @@ import { getJourneyMilestones, HealthMilestone } from "../services/journeyServic
 
 import { useFamily } from "../context/FamilyContext";
 import { getTwinId } from "../utils/twinUtils";
+import { useStackBackHandler } from "../hooks/useStackBackHandler";
 
 export default function JourneyMilestonesScreen() {
+  useStackBackHandler();
   const router = useRouter();
   const { theme } = useTheme();
   const { activeProfile } = useFamily();

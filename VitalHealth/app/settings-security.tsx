@@ -10,6 +10,7 @@ import { colors as globalColors } from "../theme/colors";
 
 // Firebase
 import { auth } from "../services/firebase";
+import { useStackBackHandler } from "../hooks/useStackBackHandler";
 import {
   sendPasswordResetEmail,
   updatePassword,
@@ -18,6 +19,7 @@ import {
 } from "firebase/auth";
 
 export default function Security() {
+  useStackBackHandler();
   const { theme } = useTheme();
 
   const [modalVisible, setModalVisible] = useState(false);

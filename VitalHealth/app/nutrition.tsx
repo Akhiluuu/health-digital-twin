@@ -33,6 +33,7 @@ import {
 } from "../context/NutritionContext";
 import { useTheme } from "../context/ThemeContext";
 import { useThemeAlert } from "../context/ThemeAlertContext";
+import { useStackBackHandler } from "../hooks/useStackBackHandler";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 export interface CsvFoodItem {
@@ -604,6 +605,7 @@ const GOAL = 2000;
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 export default function NutritionScreen() {
+  useStackBackHandler();
   const router = useRouter();
   const { theme } = useTheme();
   const { showAlert, showToast } = useThemeAlert();

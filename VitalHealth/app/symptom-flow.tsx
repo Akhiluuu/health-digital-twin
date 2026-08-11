@@ -15,10 +15,12 @@ import {
 import { useTheme } from "../context/ThemeContext";
 import { SymptomAnalysis, symptomDB, SymptomOption } from "../data/symptomData";
 import { useSymptoms } from "../context/SymptomContext";
+import { useStackBackHandler } from "../hooks/useStackBackHandler";
 
 
 
 export default function SymptomFlow() {
+  useStackBackHandler();
   const router = useRouter();
   const params = useLocalSearchParams<{
   type?: string | string[];

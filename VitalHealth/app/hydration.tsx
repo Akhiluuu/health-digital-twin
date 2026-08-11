@@ -30,6 +30,7 @@ import {
 } from "../services/hydrationNotification";
 import { isExpoGo } from "../utils/expoGo";
 import { HydrationEntry } from "../database/hydrationHistoryDB";
+import { useStackBackHandler } from "../hooks/useStackBackHandler";
 
 const REMINDER_STORAGE_KEY = "hydration_reminder_settings";
 
@@ -73,6 +74,7 @@ const formatRelativeTime = (timestamp: number): string => {
 // MAIN SCREEN
 ///////////////////////////////////////////////////////////
 export default function HydrationScreen() {
+  useStackBackHandler();
   const router = useRouter();
   const { theme } = useTheme();
   const { showAlert, showToast } = useThemeAlert();

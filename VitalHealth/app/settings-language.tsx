@@ -9,6 +9,7 @@ import {
 import Header from "./components/Header";
 import { useTheme } from "../context/ThemeContext";
 import { colors as globalColors } from "../theme/colors";
+import { useStackBackHandler } from "../hooks/useStackBackHandler";
 
 const langs = [
   "English",
@@ -20,6 +21,7 @@ const langs = [
 ];
 
 export default function Language() {
+  useStackBackHandler();
   const { theme } = useTheme();
 
   const [selected, setSelected] =

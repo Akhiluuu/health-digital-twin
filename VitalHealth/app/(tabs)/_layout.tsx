@@ -14,13 +14,41 @@ export default function TabLayout() {
 
   useEffect(() => {
     const onBackPress = () => {
-      if (pathname === "/" || pathname === "/(tabs)" || pathname === "/(tabs)/" || pathname === "/(tabs)/index") {
+      // Only intercept if we are literally on the Journey tab root.
+      // Every other pathname (sub-screens pushed onto the stack, or other
+      // tabs) must return false so the Stack navigator handles the back
+      // gesture natively — giving us proper Android predictive-back.
+      const isJourneyRoot =
+        pathname === "/" ||
+        pathname === "/(tabs)" ||
+        pathname === "/(tabs)/" ||
+        pathname === "/(tabs)/index";
+
+      if (isJourneyRoot) {
         BackHandler.exitApp();
         return true;
-      } else if (["/history", "/twin", "/documents", "/ai-health", "/insights"].includes(pathname)) {
+      }
+
+      // For other tabs (twin, documents, ai-health) pressing the hardware
+      // back button should switch back to the Journey tab.
+      const isOtherTab = [
+        "/twin",
+        "/(tabs)/twin",
+        "/documents",
+        "/(tabs)/documents",
+        "/ai-health",
+        "/(tabs)/ai-health",
+        "/insights",
+        "/(tabs)/insights",
+      ].includes(pathname);
+
+      if (isOtherTab) {
         router.navigate("/(tabs)");
         return true;
       }
+
+      // Any other screen (MedicationVault, hydration, etc.) — let the
+      // Stack navigator's native back gesture handle it.
       return false;
     };
     const subscription = BackHandler.addEventListener("hardwareBackPress", onBackPress);

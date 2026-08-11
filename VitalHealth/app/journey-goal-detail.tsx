@@ -15,8 +15,10 @@ import { getJourneyGoals, HealthGoal } from "../services/journeyService";
 
 import { useFamily } from "../context/FamilyContext";
 import { getTwinId } from "../utils/twinUtils";
+import { useStackBackHandler } from "../hooks/useStackBackHandler";
 
 export default function JourneyGoalDetailScreen() {
+  useStackBackHandler();
   const router = useRouter();
   const params = useLocalSearchParams();
   const { theme } = useTheme();

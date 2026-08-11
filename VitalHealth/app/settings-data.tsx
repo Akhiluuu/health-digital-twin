@@ -11,8 +11,10 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import Header from "./components/Header";
 import { useTheme } from "../context/ThemeContext";
 import { colors as globalColors } from "../theme/colors";
+import { useStackBackHandler } from "../hooks/useStackBackHandler";
 
 export default function DataSharing() {
+  useStackBackHandler();
   const { theme } = useTheme();
   const colors = globalColors[theme];
 

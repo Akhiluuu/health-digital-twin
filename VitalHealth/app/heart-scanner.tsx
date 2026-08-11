@@ -39,6 +39,7 @@ import { getUserId } from "../services/firebaseSync";
 import { doc, setDoc, collection, addDoc, serverTimestamp, query, orderBy, limit, onSnapshot } from "firebase/firestore";
 import { addVitalsRecord } from "../database/vitalsDB";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { useStackBackHandler } from "../hooks/useStackBackHandler";
 
 // Import native bridge
 import {
@@ -61,6 +62,7 @@ const { width } = Dimensions.get("window");
 const WAVEFORM_POINTS = 80;
 
 export default function HeartScannerScreen() {
+  useStackBackHandler();
   const router = useRouter();
   const { theme } = useTheme();
   const c = colors[theme];

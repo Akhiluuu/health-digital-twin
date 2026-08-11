@@ -22,10 +22,12 @@ import { useNotifications } from "../context/NotificationContext";
 import { useFamily } from "../context/FamilyContext";
 import { useTheme } from "../context/ThemeContext";
 import { colors as globalColors } from "../theme/colors";
+import { useStackBackHandler } from "../hooks/useStackBackHandler";
 
 type TabType = "active" | "unread" | "archived" | "settings";
 
 export default function NotificationCenter() {
+  useStackBackHandler();
   const router = useRouter();
   const { theme } = useTheme();
   const colors = globalColors[theme];

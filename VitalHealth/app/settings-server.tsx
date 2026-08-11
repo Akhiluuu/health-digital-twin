@@ -18,6 +18,7 @@ import { Stack } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useTheme } from "../context/ThemeContext";
 import { colors } from "../theme/colors";
+import { useStackBackHandler } from "../hooks/useStackBackHandler";
 import {
   getBiogearsBaseUrl,
   setBiogearsBaseUrl,
@@ -32,6 +33,7 @@ import {
 type TestStatus = "idle" | "testing" | "ok" | "fail";
 
 export default function ServerConfigScreen() {
+  useStackBackHandler();
   const { theme } = useTheme();
   const c = colors[theme];
 

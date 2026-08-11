@@ -14,6 +14,7 @@ import {
 import { useRouter } from "expo-router";
 import Header from "./components/Header";
 import { useTheme } from "../context/ThemeContext";
+import { useStackBackHandler } from "../hooks/useStackBackHandler";
 
 if (Platform.OS === "android") {
   UIManager.setLayoutAnimationEnabledExperimental?.(true);
@@ -207,6 +208,7 @@ function getColors(theme: string) {
 }
 
 export default function SettingsHelp() {
+  useStackBackHandler();
   const router = useRouter();
   const { theme } = useTheme();
   const c = getColors(theme);

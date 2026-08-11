@@ -18,6 +18,7 @@ import {
 import Svg, { Path, Circle, Rect, Polygon, G } from "react-native-svg";
 import { useTheme } from "../../context/ThemeContext";
 import { GameResult } from "./brainEngine";
+import { useStackBackHandler } from "../../hooks/useStackBackHandler";
 
 const { width: W } = Dimensions.get("window");
 const TOTAL_STIMULI = 30;
@@ -43,6 +44,7 @@ type Props = {
 };
 
 export default function AbstractMatching({ onDone }: Props) {
+  useStackBackHandler();
   const { theme } = useTheme();
   const isDark = theme === "dark";
 
