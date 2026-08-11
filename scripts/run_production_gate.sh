@@ -7,9 +7,13 @@
 set -e
 
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-PYTHON_BIN="${PROJECT_ROOT}/healthbot_venv/bin/python3"
+export PYTHONPATH="${PROJECT_ROOT}:${PYTHONPATH}"
 
-if [ ! -f "$PYTHON_BIN" ]; then
+if [ -f "${PROJECT_ROOT}/venv/bin/python3" ]; then
+    PYTHON_BIN="${PROJECT_ROOT}/venv/bin/python3"
+elif [ -f "${PROJECT_ROOT}/healthbot_venv/bin/python3" ]; then
+    PYTHON_BIN="${PROJECT_ROOT}/healthbot_venv/bin/python3"
+else
     PYTHON_BIN="python3"
 fi
 

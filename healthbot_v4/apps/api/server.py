@@ -5,6 +5,8 @@ Exposes REST endpoints for Patient Management, OCR Ingestion, BioGears Digital T
 """
 
 import os
+import urllib.parse
+import urllib.request
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 import uuid
@@ -72,9 +74,13 @@ app = FastAPI(
 from healthbot_v4.apps.api.dev_dashboard import router as dev_router
 from healthbot_v4.apps.api.journey_router import router as journey_router
 from healthbot_v4.apps.api.onboarding_router import router as onboarding_router
+from healthbot_v4.apps.notification.routers.notification_router import router as notification_router
+from healthbot_v4.apps.brain.copilot.dev_review_router import router as dev_review_router
 app.include_router(dev_router)
 app.include_router(journey_router)
 app.include_router(onboarding_router)
+app.include_router(notification_router)
+app.include_router(dev_review_router)
 
 app.add_middleware(
     CORSMiddleware,
