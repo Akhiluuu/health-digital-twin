@@ -93,3 +93,9 @@ firebase-adminsdk*.json
 app-release.apk
 *.apk
 healthbot_venv/
+med_venv
+med_venv/
+healthbot_v4/ai_acceptance/failures/
+healthbot_v4/ai_acceptance/review/
+healthbot_v4/ai_acceptance/reports/
+
