@@ -272,7 +272,7 @@ export default function VitalsHistoryScreen() {
     <View style={[styles.container, { backgroundColor: c.bg }]}>
       {/* HEADER */}
       <View style={[styles.header, { borderBottomColor: c.border }]}>
-        <TouchableOpacity onPress={() => router.back()} activeOpacity={0.7} style={styles.backButton}>
+        <TouchableOpacity onPress={() => { if (router.canGoBack()) { router.back(); } else { router.replace("/(tabs)"); } }} activeOpacity={0.7} style={styles.backButton}>
           <Ionicons name="chevron-back" size={24} color={c.text} />
         </TouchableOpacity>
         <Text style={[styles.title, { color: c.text }]}>Vitals History</Text>

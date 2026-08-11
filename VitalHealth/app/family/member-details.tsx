@@ -391,7 +391,7 @@ export default function MemberDetailsScreen() {
           text: "Switch",
           onPress: async () => {
             await switchToMember(memberUid);
-            router.back();
+            if (router.canGoBack()) { router.back(); } else { router.replace("/family"); }
           },
         },
       ]
@@ -529,7 +529,7 @@ export default function MemberDetailsScreen() {
             setLoading(true);
             try {
               await removeMember(memberUid);
-              router.back();
+              if (router.canGoBack()) { router.back(); } else { router.replace("/family"); }
             } catch (e) {
               console.log("❌ removeMember error:", e);
               Alert.alert("Error", "Could not remove member.");
@@ -617,7 +617,7 @@ export default function MemberDetailsScreen() {
           end={{ x: 1, y: 1 }}
           style={styles.headerGradient}
         >
-          <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
+          <TouchableOpacity style={styles.backBtn} onPress={() => { if (router.canGoBack()) { router.back(); } else { router.replace("/family"); } }}>
             <Ionicons name="arrow-back" size={22} color="#fff" />
           </TouchableOpacity>
 

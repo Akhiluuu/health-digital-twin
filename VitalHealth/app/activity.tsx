@@ -299,8 +299,8 @@ export default function ActivityLab() {
       "✅ Activity Logged!",
       `${selectedIcon} ${selected} — ${previewBurn} kcal burned in ${duration} min`,
       [
-        { text: "View Log", onPress: () => router.replace({ pathname: "/(tabs)/history", params: { tab: "exercise" } } as any) },
-        { text: "Done", onPress: () => router.back() },
+        { text: "View Log", onPress: () => router.push({ pathname: "/(tabs)/history", params: { tab: "exercise" } } as any) },
+        { text: "Done", onPress: () => { if (router.canGoBack()) { router.back(); } else { router.replace("/(tabs)"); } } },
       ]
     );
   };
@@ -311,7 +311,7 @@ export default function ActivityLab() {
 
       {/* ── HEADER ────────────────────────────────────────────────────────── */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()}>
+        <TouchableOpacity onPress={() => { if (router.canGoBack()) { router.back(); } else { router.replace("/(tabs)"); } }}>
           <Ionicons name="arrow-back" size={24} color={colors.text} />
         </TouchableOpacity>
         <View style={{ flex: 1 }}>

@@ -59,7 +59,7 @@ class MultimodalTriageEngine(HealthBrainSubsystem):
         self.processed_count += 1
 
         # Determine payload signature or decode text if text-encoded image
-        payload_str = str(image_base64_or_bytes)
+        payload_str = image_base64_or_bytes.decode("utf-8", errors="ignore") if isinstance(image_base64_or_bytes, bytes) else image_base64_or_bytes
         
         # Analyze content hints or simulated OCR extraction
         entities: List[ExtractedMedicalEntity] = []

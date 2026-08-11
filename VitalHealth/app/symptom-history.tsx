@@ -261,7 +261,7 @@ export default function SymptomHistory() {
         ]}
       >
         <TouchableOpacity
-          onPress={() => router.back()}
+          onPress={() => { if (router.canGoBack()) { router.back(); } else { router.replace("/(tabs)"); } }}
         >
           <Ionicons
             name="arrow-back"

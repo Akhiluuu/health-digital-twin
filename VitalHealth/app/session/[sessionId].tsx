@@ -55,7 +55,7 @@ export default function SessionDetailScreen() {
   if (!session) {
     return (
       <View style={[sd.root, { backgroundColor: c.bg }]}>
-        <TouchableOpacity style={sd.backBtn} onPress={router.back}>
+        <TouchableOpacity style={sd.backBtn} onPress={() => { if (router.canGoBack()) { router.back(); } else { router.replace("/(tabs)"); } }}>
           <Ionicons name="chevron-back" size={24} color={c.text} />
           <Text style={[sd.backTxt, { color: c.text }]}>Back</Text>
         </TouchableOpacity>
@@ -72,7 +72,7 @@ export default function SessionDetailScreen() {
     <View style={[sd.root, { backgroundColor: c.bg }]}>
       {/* Header */}
       <View style={[sd.header, { borderBottomColor: c.border }]}>
-        <TouchableOpacity onPress={router.back} style={sd.backBtn}>
+        <TouchableOpacity onPress={() => { if (router.canGoBack()) { router.back(); } else { router.replace("/(tabs)"); } }} style={sd.backBtn}>
           <Ionicons name="chevron-back" size={24} color={c.text} />
         </TouchableOpacity>
         <View style={{ flex: 1 }}>

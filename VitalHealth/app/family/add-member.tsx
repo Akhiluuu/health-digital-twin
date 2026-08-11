@@ -210,7 +210,7 @@ export default function AddMemberScreen() {
       if (success) {
         await refreshMembers();
         Alert.alert("Success", `${targetUser.firstName} has been successfully added to your family network!`, [
-          { text: "OK", onPress: () => router.back() }
+          { text: "OK", onPress: () => { if (router.canGoBack()) { router.back(); } else { router.replace("/family"); } } }
         ]);
       } else {
         Alert.alert("Error", "Failed to link profile. Make sure the ID is correct.");
@@ -296,7 +296,7 @@ export default function AddMemberScreen() {
       Alert.alert(
         "Success",
         `${depFirstName}'s profile has been created with an independent Digital Twin.\n\nHealth ID: ${inviteCode}`,
-        [{ text: "OK", onPress: () => router.back() }]
+        [{ text: "OK", onPress: () => { if (router.canGoBack()) { router.back(); } else { router.replace("/family"); } } }]
       );
     } catch (e: any) {
       console.log("❌ Create profile error:", e);

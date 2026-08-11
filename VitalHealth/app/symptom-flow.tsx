@@ -459,7 +459,7 @@ const type = Array.isArray(params.type)
 
         <TouchableOpacity
           style={[styles.actionButton, { backgroundColor: colors.card, borderColor: colors.border, borderWidth: 1 }]}
-          onPress={() => router.back()}
+          onPress={() => { if (router.canGoBack()) { router.back(); } else { router.replace("/(tabs)"); } }}
         >
           <Ionicons name="close" size={20} color={colors.sub} />
           <Text style={[styles.actionButtonText, { color: colors.sub }]}>Cancel</Text>
@@ -472,7 +472,7 @@ const type = Array.isArray(params.type)
     <View style={[styles.container, { backgroundColor: colors.bg }]}>
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()}>
+        <TouchableOpacity onPress={() => { if (router.canGoBack()) { router.back(); } else { router.replace("/(tabs)"); } }}>
           <Ionicons name="chevron-back" size={24} color={colors.text} />
         </TouchableOpacity>
         <Text style={[styles.headerTitle, { color: colors.text }]}>

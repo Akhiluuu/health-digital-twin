@@ -187,7 +187,7 @@ export default function FamilyHealthScreen() {
       >
         <TouchableOpacity
           style={styles.backBtn}
-          onPress={() => router.back()}
+          onPress={() => { if (router.canGoBack()) { router.back(); } else { router.replace("/(tabs)"); } }}
         >
           <Ionicons name="arrow-back" size={22} color="#fff" />
         </TouchableOpacity>

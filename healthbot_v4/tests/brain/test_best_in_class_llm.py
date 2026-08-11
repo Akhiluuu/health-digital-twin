@@ -52,6 +52,7 @@ async def test_emergency_safety_router_latency():
     is_emerg, triage_resp, latency_ms = router.evaluate_query(emerg_query)
 
     assert is_emerg is True, "Emergency router should flag chest pain"
+    assert triage_resp is not None, "Triage response should not be None for emergency queries"
     assert latency_ms < 2.0, f"Emergency router latency expected < 2.0ms, measured {latency_ms:.2f}ms"
     assert "Call 112 / 911" in triage_resp
 

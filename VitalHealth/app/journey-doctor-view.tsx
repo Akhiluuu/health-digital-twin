@@ -61,7 +61,7 @@ export default function DoctorViewScreen() {
     <SafeAreaView style={[styles.container, { backgroundColor: isDark ? "#0A0F1D" : "#F8FAFC" }]}>
       {/* CLINICAL HEADER */}
       <View style={[styles.header, { backgroundColor: isDark ? "#0F172A" : "#0284C7" }]}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+        <TouchableOpacity onPress={() => { if (router.canGoBack()) { router.back(); } else { router.replace("/(tabs)"); } }} style={styles.backButton}>
           <Ionicons name="arrow-back" size={24} color="#FFF" />
         </TouchableOpacity>
         <View>

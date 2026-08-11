@@ -289,7 +289,7 @@ export default function HeartScannerScreen() {
       }, activeMemberId || "self").catch(err => console.log("Failed to insert heartRate record into vitalsDB:", err));
 
       Vibration.vibrate(50);
-      router.back();
+      if (router.canGoBack()) { router.back(); } else { router.replace("/(tabs)"); }
     } catch (e) {
       console.log("Error saving reading:", e);
     } finally {
@@ -322,7 +322,7 @@ export default function HeartScannerScreen() {
   // Render helper for headers
   const renderHeader = () => (
     <View style={styles.header}>
-      <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+      <TouchableOpacity onPress={() => { if (router.canGoBack()) { router.back(); } else { router.replace("/(tabs)"); } }} style={styles.backButton}>
         <Ionicons name="chevron-back" size={24} color={c.text} />
       </TouchableOpacity>
       <Text style={[styles.headerTitle, { color: c.text }]}>Heart PPG Monitor</Text>

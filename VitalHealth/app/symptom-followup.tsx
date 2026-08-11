@@ -68,6 +68,14 @@ export default function Followup() {
           border: "#334155",
         };
 
+  const navigateBackOrHome = () => {
+    if (router.canGoBack()) {
+      router.back();
+    } else {
+      router.replace("/(tabs)");
+    }
+  };
+
   // Initial question: "I'm fine" or "Yes"
   const handleImFine = async () => {
     await resolveSymptom(symptomId);
@@ -76,7 +84,7 @@ export default function Followup() {
       title: "Recovered ✅",
       message: "Great! Symptom marked as resolved. It will remain in your history.",
       type: "success",
-      buttons: [{ text: "OK", onPress: () => router.replace("/(tabs)") }],
+      buttons: [{ text: "OK", onPress: navigateBackOrHome }],
     });
   };
 
@@ -162,21 +170,21 @@ export default function Followup() {
         title: "⚠️ Consult a Doctor",
         message: "Based on your responses, we recommend consulting a healthcare professional. Your symptoms may require medical attention.",
         type: "error",
-        buttons: [{ text: "Understood", onPress: () => router.replace("/(tabs)") }],
+        buttons: [{ text: "Understood", onPress: navigateBackOrHome }],
       });
     } else if (riskLevel === "moderate") {
       showAlert({
         title: "⚡ Monitor Closely",
         message: "Your symptoms warrant close monitoring. If they worsen, please consult a doctor.",
         type: "warning",
-        buttons: [{ text: "Keep Tracking", onPress: () => router.replace("/(tabs)") }],
+        buttons: [{ text: "Keep Tracking", onPress: navigateBackOrHome }],
       });
     } else {
       showAlert({
         title: "✅ Symptoms Improving",
         message: "Great! Your symptoms appear to be improving. Keep monitoring.",
         type: "success",
-        buttons: [{ text: "OK", onPress: () => router.replace("/(tabs)") }],
+        buttons: [{ text: "OK", onPress: navigateBackOrHome }],
       });
     }
   };
@@ -189,7 +197,7 @@ export default function Followup() {
         <View style={styles.header}>
           <TouchableOpacity 
             style={styles.backButton}
-            onPress={() => router.back()}
+            onPress={navigateBackOrHome}
           >
             <Ionicons name="chevron-back" size={24} color={colors.text} />
           </TouchableOpacity>

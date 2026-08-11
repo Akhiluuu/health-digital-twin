@@ -175,7 +175,7 @@ export default function SessionDetailScreen() {
 
         <TouchableOpacity 
            style={[styles.backButton, { backgroundColor: c.border }]}
-           onPress={() => router.back()}
+           onPress={() => { if (router.canGoBack()) { router.back(); } else { router.replace("/(tabs)"); } }}
         >
            <Text style={[styles.backButtonText, { color: c.text }]}>Close Results</Text>
         </TouchableOpacity>

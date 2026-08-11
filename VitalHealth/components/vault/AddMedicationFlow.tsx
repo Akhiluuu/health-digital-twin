@@ -8,6 +8,7 @@ import {
   Alert,
   Platform,
   Modal,
+  KeyboardAvoidingView,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
@@ -244,28 +245,36 @@ export default function AddMedicationFlow({
   };
 
   return (
-    <View style={{ flex: 1, backgroundColor: c.bg }}>
-      {/* Visual Segmented Progress Bar */}
-      <View style={styles.wizardProgressContainer}>
-        <View style={styles.wizardProgressTrack}>
-          <View
-            style={[
-              styles.wizardProgressBar,
-              { width: `${progressPct}%`, backgroundColor: c.accent },
-            ]}
-          />
+    <KeyboardAvoidingView
+      style={{ flex: 1 }}
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
+    >
+      <View style={{ flex: 1, backgroundColor: c.bg }}>
+        {/* Visual Segmented Progress Bar */}
+        <View style={styles.wizardProgressContainer}>
+          <View style={styles.wizardProgressTrack}>
+            <View
+              style={[
+                styles.wizardProgressBar,
+                { width: `${progressPct}%`, backgroundColor: c.accent },
+              ]}
+            />
+          </View>
+          <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 8 }}>
+            <Text style={{ fontSize: 11, fontWeight: "800", color: c.accent, letterSpacing: 0.5 }}>
+              STEP {step + 1} OF {totalSteps}
+            </Text>
+            <Text style={{ fontSize: 11, fontWeight: "700", color: c.sub }}>
+              {Math.round(progressPct)}% Completed
+            </Text>
+          </View>
         </View>
-        <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 8 }}>
-          <Text style={{ fontSize: 11, fontWeight: "800", color: c.accent, letterSpacing: 0.5 }}>
-            STEP {step + 1} OF {totalSteps}
-          </Text>
-          <Text style={{ fontSize: 11, fontWeight: "700", color: c.sub }}>
-            {Math.round(progressPct)}% Completed
-          </Text>
-        </View>
-      </View>
 
-      <ScrollView contentContainerStyle={styles.wizardScroll} showsVerticalScrollIndicator={false}>
+        <ScrollView
+          contentContainerStyle={styles.wizardScroll}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        >
         {/* Step 0: Method Intake Choice */}
         {step === 0 && (
           <View>
@@ -817,5 +826,6 @@ export default function AddMedicationFlow({
       {/* Datetime Pickers */}
       {renderDateTimePicker()}
     </View>
+    </KeyboardAvoidingView>
   );
 }

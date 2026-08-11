@@ -259,7 +259,7 @@ export default function SettingsExportSummaryScreen() {
         {/* Back Button */}
         <View style={styles.backWrapper}>
           <TouchableOpacity
-            onPress={() => router.back()}
+            onPress={() => { if (router.canGoBack()) { router.back(); } else { router.replace("/(tabs)"); } }}
             style={[styles.backBox, { backgroundColor: c.card, borderColor: c.border }]}
             activeOpacity={0.7}
           >

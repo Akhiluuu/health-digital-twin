@@ -77,7 +77,7 @@ export default function Header({
         {/* LEFT: Back Button or Profile Switcher Trigger */}
         {showBack ? (
           <TouchableOpacity
-            onPress={onBack || (() => router.back())}
+            onPress={onBack || (() => { if (router.canGoBack()) { router.back(); } else { router.replace("/(tabs)"); } })}
             activeOpacity={0.7}
             style={styles.backBtn}
           >

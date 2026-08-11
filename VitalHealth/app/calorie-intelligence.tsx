@@ -480,7 +480,7 @@ export default function CalorieIntelligenceScreen() {
     <View style={[s.root, { backgroundColor: colors.bg }]}>
       {/* Header */}
       <LinearGradient colors={theme === "light" ? ["#e2e8f0", "#f8fafc", "#e2e8f0"] : ["#0a0a0f", "#1a0533", "#0a0a0f"]} style={s.header}>
-        <TouchableOpacity style={[s.iconBtn, { backgroundColor: colors.border }]} onPress={() => router.back()}>
+        <TouchableOpacity style={[s.iconBtn, { backgroundColor: colors.border }]} onPress={() => { if (router.canGoBack()) { router.back(); } else { router.replace("/(tabs)"); } }}>
           <Ionicons name="arrow-back" size={22} color={colors.text} />
         </TouchableOpacity>
         <View style={{ alignItems: "center" }}>

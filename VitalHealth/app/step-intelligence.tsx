@@ -380,7 +380,7 @@ export default function StepIntelligenceScreen() {
 
       {/* Header */}
       <LinearGradient colors={colors.headerGradient} style={s.header}>
-        <TouchableOpacity style={[s.iconBtn, { backgroundColor: "rgba(255, 255, 255, 0.12)" }]} onPress={() => router.back()}>
+        <TouchableOpacity style={[s.iconBtn, { backgroundColor: "rgba(255, 255, 255, 0.12)" }]} onPress={() => { if (router.canGoBack()) { router.back(); } else { router.replace("/(tabs)"); } }}>
           <Ionicons name="arrow-back" size={22} color="#ffffff" />
         </TouchableOpacity>
         <View style={{ alignItems: "center" }}>

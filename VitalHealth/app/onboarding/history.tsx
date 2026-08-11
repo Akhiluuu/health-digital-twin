@@ -375,7 +375,7 @@ export default function History() {
           {/* Back Button */}
           <TouchableOpacity
             style={[styles.backButton, { backgroundColor: colors.backButtonBg, borderColor: colors.backButtonBorder }]}
-            onPress={() => router.back()}
+            onPress={() => { if (router.canGoBack()) { router.back(); } else { router.replace("/(tabs)"); } }}
             activeOpacity={0.8}
           >
             <Text style={[styles.backText, { color: colors.backButtonText }]}>← Back</Text>

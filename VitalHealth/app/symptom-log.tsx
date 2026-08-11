@@ -11,6 +11,8 @@ import {
   TextInput,
   Modal,
   Alert,
+  Platform,
+  KeyboardAvoidingView,
 } from "react-native";
 
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
@@ -130,7 +132,7 @@ export default function SymptomLogScreen() {
     <View style={[styles.container, { backgroundColor: colors.bg }]}>
       {/* HEADER */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()}>
+        <TouchableOpacity onPress={() => { if (router.canGoBack()) { router.back(); } else { router.replace("/(tabs)"); } }}>
           <Ionicons name="close" size={26} color={colors.text} />
         </TouchableOpacity>
 
@@ -181,90 +183,99 @@ export default function SymptomLogScreen() {
       </ScrollView>
 
       {/* MODAL FOR "OTHERS" */}
-      <Modal visible={showModal} animationType="slide" transparent>
-        <View style={styles.modalOverlay}>
-          <View
-            style={[
-              styles.modalContainer,
-              { backgroundColor: colors.card },
-            ]}
+      <Modal visible={showModal} transparent animationType="slide">
+        <KeyboardAvoidingView
+          style={styles.modalOverlay}
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+        >
+          <ScrollView
+            keyboardShouldPersistTaps="handled"
+            contentContainerStyle={{ flexGrow: 1, justifyContent: "center" }}
+            showsVerticalScrollIndicator={false}
           >
-            <Text style={[styles.modalTitle, { color: colors.text }]}>
-              Describe Your Health Issue
-            </Text>
-
-            <Text style={[styles.modalSubtitle, { color: colors.sub }]}>
-              Use your own words. Voice input can be added for hands-free narration.
-            </Text>
-
-            {/* SYMPTOM NAME INPUT */}
-            <Text style={[styles.inputLabel, { color: colors.sub }]}>
-              SYMPTOM NAME
-            </Text>
-            <TextInput
-              placeholder="e.g. Eye twitch, Chest tightness..."
-              placeholderTextColor={colors.sub}
-              value={symptomName}
-              onChangeText={setSymptomName}
+            <View
               style={[
-                styles.nameInput,
-                {
-                  color: colors.text,
-                  borderColor: colors.border,
-                  backgroundColor: colors.bg,
-                },
+                styles.modalContainer,
+                { backgroundColor: colors.card },
               ]}
-            />
+            >
+              <Text style={[styles.modalTitle, { color: colors.text }]}>
+                Describe Your Health Issue
+              </Text>
 
-            {/* SYMPTOM DESCRIPTION INPUT */}
-            <Text style={[styles.inputLabel, { color: colors.sub }]}>
-              DESCRIPTION
-            </Text>
-            <TextInput
-              placeholder="e.g. Muscle twitching in left eyelid..."
-              placeholderTextColor={colors.sub}
-              value={customSymptom}
-              onChangeText={setCustomSymptom}
-              multiline
-              style={[
-                styles.input,
-                {
-                  color: colors.text,
-                  borderColor: colors.border,
-                  backgroundColor: colors.bg,
-                },
-              ]}
-            />
+              <Text style={[styles.modalSubtitle, { color: colors.sub }]}>
+                Use your own words. Voice input can be added for hands-free narration.
+              </Text>
 
-            <View style={styles.modalButtons}>
-              <TouchableOpacity
+              {/* SYMPTOM NAME INPUT */}
+              <Text style={[styles.inputLabel, { color: colors.sub }]}>
+                SYMPTOM NAME
+              </Text>
+              <TextInput
+                placeholder="e.g. Eye twitch, Chest tightness..."
+                placeholderTextColor={colors.sub}
+                value={symptomName}
+                onChangeText={setSymptomName}
                 style={[
-                  styles.cancelButton,
-                  { borderColor: colors.border },
+                  styles.nameInput,
+                  {
+                    color: colors.text,
+                    borderColor: colors.border,
+                    backgroundColor: colors.bg,
+                  },
                 ]}
-                onPress={() => {
-                  setShowModal(false);
-                  setSymptomName("");
-                  setCustomSymptom("");
-                }}
-              >
-                <Text style={{ color: colors.text }}>Cancel</Text>
-              </TouchableOpacity>
+              />
 
-              <TouchableOpacity
+              {/* SYMPTOM DESCRIPTION INPUT */}
+              <Text style={[styles.inputLabel, { color: colors.sub }]}>
+                DESCRIPTION
+              </Text>
+              <TextInput
+                placeholder="e.g. Muscle twitching in left eyelid..."
+                placeholderTextColor={colors.sub}
+                value={customSymptom}
+                onChangeText={setCustomSymptom}
+                multiline
                 style={[
-                  styles.submitButton,
-                  { backgroundColor: colors.accent },
+                  styles.input,
+                  {
+                    color: colors.text,
+                    borderColor: colors.border,
+                    backgroundColor: colors.bg,
+                  },
                 ]}
-                onPress={handleCustomDiagnosis}
-              >
-                <Text style={styles.submitText}>
-                  Start Diagnosis
-                </Text>
-              </TouchableOpacity>
+              />
+
+              <View style={styles.modalButtons}>
+                <TouchableOpacity
+                  style={[
+                    styles.cancelButton,
+                    { borderColor: colors.border },
+                  ]}
+                  onPress={() => {
+                    setShowModal(false);
+                    setSymptomName("");
+                    setCustomSymptom("");
+                  }}
+                >
+                  <Text style={{ color: colors.text }}>Cancel</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[
+                    styles.submitButton,
+                    { backgroundColor: colors.accent },
+                  ]}
+                  onPress={handleCustomDiagnosis}
+                >
+                  <Text style={styles.submitText}>
+                    Start Diagnosis
+                  </Text>
+                </TouchableOpacity>
+              </View>
             </View>
-          </View>
-        </View>
+          </ScrollView>
+        </KeyboardAvoidingView>
       </Modal>
     </View>
   );

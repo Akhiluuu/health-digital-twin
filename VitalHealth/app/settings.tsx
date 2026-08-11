@@ -61,7 +61,7 @@ export default function SettingsScreen() {
         {/* Back Button - Styled as a padded box */}
         <View style={styles.backWrapper}>
           <TouchableOpacity
-            onPress={() => router.back()}
+            onPress={() => { if (router.canGoBack()) { router.back(); } else { router.replace("/(tabs)"); } }}
             style={[styles.backBox, { backgroundColor: colors.card, borderColor: colors.border }]}
             activeOpacity={0.7}
           >

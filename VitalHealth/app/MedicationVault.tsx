@@ -422,7 +422,7 @@ export default function MedicationVault() {
           if (activePage !== "dashboard") {
             setActivePage("dashboard");
           } else {
-            router.back();
+            if (router.canGoBack()) { router.back(); } else { router.replace("/(tabs)"); }
           }
         }}
       />

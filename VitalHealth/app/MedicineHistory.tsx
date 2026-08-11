@@ -202,7 +202,7 @@ export default function MedicineHistory() {
       <View style={styles.container}>
         {/* Header row */}
         <View style={styles.header}>
-          <TouchableOpacity onPress={() => router.back()}>
+          <TouchableOpacity onPress={() => { if (router.canGoBack()) { router.back(); } else { router.replace("/(tabs)"); } }}>
             <Ionicons name="arrow-back" size={24} color={c.text} />
           </TouchableOpacity>
 

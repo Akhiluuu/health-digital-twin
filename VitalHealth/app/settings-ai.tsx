@@ -90,7 +90,7 @@ export default function AIServerConfigScreen() {
       await AsyncStorage.setItem(KEY_SERVER_IP, ip.trim());
       await AsyncStorage.setItem(KEY_SERVER_PORT, port.trim());
       Alert.alert("✅ Saved", "AI Chatbot server settings updated.", [
-        { text: "OK", onPress: () => router.back() }
+        { text: "OK", onPress: () => { if (router.canGoBack()) { router.back(); } else { router.replace("/settings"); } } }
       ]);
     } catch {
       Alert.alert("Error", "Failed to save settings.");

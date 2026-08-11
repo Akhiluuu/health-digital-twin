@@ -54,7 +54,7 @@ export default function JourneyGoalDetailScreen() {
     return (
       <SafeAreaView style={[styles.container, { backgroundColor: isDark ? "#0A0F1D" : "#F8FAFC" }]}>
         <View style={styles.header}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+          <TouchableOpacity onPress={() => { if (router.canGoBack()) { router.back(); } else { router.replace("/(tabs)"); } }} style={styles.backButton}>
             <Ionicons name="arrow-back" size={24} color={isDark ? "#FFF" : "#0F172A"} />
           </TouchableOpacity>
           <Text style={[styles.headerTitle, { color: isDark ? "#FFF" : "#0F172A" }]}>Goal Detail</Text>
@@ -68,7 +68,7 @@ export default function JourneyGoalDetailScreen() {
     <SafeAreaView style={[styles.container, { backgroundColor: isDark ? "#0A0F1D" : "#F8FAFC" }]}>
       {/* HEADER */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+        <TouchableOpacity onPress={() => { if (router.canGoBack()) { router.back(); } else { router.replace("/(tabs)"); } }} style={styles.backButton}>
           <Ionicons name="arrow-back" size={24} color={isDark ? "#FFF" : "#0F172A"} />
         </TouchableOpacity>
         <View>

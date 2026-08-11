@@ -544,8 +544,10 @@ export default function Spo2Screen() {
           if (screenState !== "dashboard") {
             stopSpo2Measurement();
             setScreenState("dashboard");
-          } else {
+          } else if (router.canGoBack()) {
             router.back();
+          } else {
+            router.replace("/(tabs)");
           }
         }}
         style={styles.backBtn}

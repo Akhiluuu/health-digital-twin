@@ -11,6 +11,8 @@ import {
   TextInput,
   TouchableOpacity,
   View,
+  KeyboardAvoidingView,
+  Platform,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter, useLocalSearchParams } from "expo-router";
@@ -99,7 +101,7 @@ export default function LogVitalsScreen() {
         setNotes(rec.notes || "");
       } else {
         Alert.alert("Error", "Record not found.");
-        router.back();
+        if (router.canGoBack()) { router.back(); } else { router.replace("/(tabs)"); }
       }
     } catch (err) {
       error("Failed to load record:", err);
@@ -299,7 +301,7 @@ export default function LogVitalsScreen() {
         };
         await updateVitalsRecord(updatedRecord);
         Alert.alert("Success", "Vitals updated successfully.", [
-          { text: "OK", onPress: () => router.back() },
+          { text: "OK", onPress: () => { if (router.canGoBack()) { router.back(); } else { router.replace("/(tabs)"); } } },
         ]);
       } else {
         // Create Mode
@@ -337,7 +339,7 @@ export default function LogVitalsScreen() {
             try {
               await deleteVitalsRecord(recordId);
               Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-              router.back();
+              if (router.canGoBack()) { router.back(); } else { router.replace("/(tabs)"); }
             } catch (err) {
               error("Failed to delete record:", err);
               Alert.alert("Error", "Failed to delete record.");
@@ -521,11 +523,16 @@ export default function LogVitalsScreen() {
 
   // ─── RENDER FORM VIEW ───
   return (
-    <View style={[styles.container, { backgroundColor: c.bg }]}>
+    <KeyboardAvoidingView
+      style={{ flex: 1 }}
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
+      keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 20}
+    >
+      <View style={[styles.container, { backgroundColor: c.bg }]}>
       {/* HEADER */}
       <View style={[styles.header, { borderBottomColor: c.border }]}>
         <View style={styles.headerLeft}>
-          <TouchableOpacity onPress={() => router.back()} activeOpacity={0.7} style={styles.backButton}>
+          <TouchableOpacity onPress={() => { if (router.canGoBack()) { router.back(); } else { router.replace("/(tabs)"); } }} activeOpacity={0.7} style={styles.backButton}>
             <Ionicons name="chevron-back" size={24} color={c.text} />
           </TouchableOpacity>
           <View style={styles.titleWrapper}>
@@ -556,6 +563,8 @@ export default function LogVitalsScreen() {
       ) : (
         <ScrollView
           showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="interactive"
           contentContainerStyle={styles.formScroll}
         >
           {/* SECTION 1: MEASUREMENT DETAILS */}
@@ -876,6 +885,7 @@ export default function LogVitalsScreen() {
         </View>
       )}
     </View>
+    </KeyboardAvoidingView>
   );
 }
 

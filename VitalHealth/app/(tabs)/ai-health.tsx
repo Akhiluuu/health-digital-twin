@@ -2220,8 +2220,8 @@ export default function AIHealthScreen() {
       {/* Main Chat Stream */}
       <KeyboardAvoidingView
         style={styles.flex}
-        behavior={Platform.OS === "ios" ? "padding" : "padding"}
-        keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 0}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        keyboardVerticalOffset={Platform.OS === "ios" ? 90 : 80}
       >
         <View style={[styles.container, { backgroundColor: c.bg }]}>
           <FlatList

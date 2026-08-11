@@ -7,7 +7,7 @@ All detection is deterministic and clinically grounded.
 
 import uuid
 from typing import List, Dict, Any
-from datetime import datetime
+from datetime import datetime, timezone
 
 from healthbot_v4.apps.brain.core import HealthBrainSubsystem
 from healthbot_v4.shared.logger.logger import logger
@@ -231,7 +231,7 @@ class JourneyInsightsEngine(HealthBrainSubsystem):
         existing_ids = {i["insight_id"] for i in store.get("insights", [])}
 
         if current_risk_count < prev_risk_count and current_risk_count == 0:
-            iid = f"risk_cleared_{datetime.utcnow().strftime('%Y%m%d')}"
+            iid = f"risk_cleared_{datetime.now(timezone.utc).strftime('%Y%m%d')}"
             if iid not in existing_ids:
                 return [JourneyInsight(
                     insight_id=iid,

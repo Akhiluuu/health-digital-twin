@@ -231,7 +231,7 @@ export default function SignUp() {
           {/* BACK BUTTON */}
           <TouchableOpacity
             style={[styles.backButton, { backgroundColor: colors.card, borderColor: colors.border }]}
-            onPress={() => router.back()}
+            onPress={() => { if (router.canGoBack()) { router.back(); } else { router.replace("/(tabs)"); } }}
           >
             <Text style={[styles.backText, { color: colors.subText }]}>Back</Text>
           </TouchableOpacity>

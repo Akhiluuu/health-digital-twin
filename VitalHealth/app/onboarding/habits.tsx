@@ -873,7 +873,7 @@ export default function Habits() {
         bounces
       >
         {/* BACK */}
-        <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
+        <TouchableOpacity style={styles.backBtn} onPress={() => { if (router.canGoBack()) { router.back(); } else { router.replace("/(tabs)"); } }}>
           <Text style={[styles.backArrow, { color: c.backText }]}>←</Text>
           <Text style={[styles.backTxt,   { color: c.backText }]}>Back</Text>
         </TouchableOpacity>

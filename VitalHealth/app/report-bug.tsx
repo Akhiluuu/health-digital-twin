@@ -15,7 +15,7 @@ export default function ReportBugScreen() {
   return (
     <BugReportModal
       visible={true}
-      onClose={() => router.back()}
+      onClose={() => { if (router.canGoBack()) { router.back(); } else { router.replace("/settings"); } }}
       initialCategory={category}
       initialStackTrace={stackTrace}
     />

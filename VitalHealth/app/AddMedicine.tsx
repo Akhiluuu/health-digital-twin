@@ -11,6 +11,8 @@ import {
   TextInput,
   TouchableOpacity,
   View,
+  KeyboardAvoidingView,
+  Platform,
 } from "react-native";
 
 import { Ionicons } from "@expo/vector-icons";
@@ -134,7 +136,7 @@ export default function AddMedicine() {
       Alert.alert(
         "Success",
         `${name.trim()} has been added as a ${scheduleText} medicine`,
-        [{ text: "OK", onPress: () => router.back() }]
+        [{ text: "OK", onPress: () => { if (router.canGoBack()) { router.back(); } else { router.replace("/(tabs)"); } } }]
       );
 
     } catch (err) {
@@ -161,21 +163,30 @@ export default function AddMedicine() {
   };
 
   return (
-    <View style={[styles.container, { backgroundColor: c.bg }]}>
-      {/* HEADER */}
-      <View style={styles.header}>
-        <TouchableOpacity
-          style={styles.backRow}
-          onPress={() => router.back()}
-        >
-          <Ionicons name="chevron-back" size={22} color={c.text} />
-          <Text style={[styles.backText, { color: c.text }]}>
-            Back
-          </Text>
-        </TouchableOpacity>
-      </View>
+    <KeyboardAvoidingView
+      style={{ flex: 1 }}
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
+    >
+      <View style={[styles.container, { backgroundColor: c.bg }]}>
+        {/* HEADER */}
+        <View style={styles.header}>
+          <TouchableOpacity
+            style={styles.backRow}
+            onPress={() => { if (router.canGoBack()) { router.back(); } else { router.replace("/(tabs)"); } }}
+          >
+            <Ionicons name="chevron-back" size={22} color={c.text} />
+            <Text style={[styles.backText, { color: c.text }]}>
+              Back
+            </Text>
+          </TouchableOpacity>
+        </View>
 
-      <ScrollView showsVerticalScrollIndicator={false}>
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="interactive"
+          contentContainerStyle={{ paddingBottom: 120 }}
+        >
         <Text style={[styles.title, { color: c.text }]}>
           New Medication
         </Text>
@@ -448,7 +459,7 @@ export default function AddMedicine() {
         ]}
       >
         <View style={styles.bottomBar}>
-          <TouchableOpacity onPress={() => router.back()}>
+          <TouchableOpacity onPress={() => { if (router.canGoBack()) { router.back(); } else { router.replace("/(tabs)"); } }}>
             <Text style={[styles.discard, { color: c.sub }]}>
               DISCARD
             </Text>
@@ -474,7 +485,8 @@ export default function AddMedicine() {
         </View>
       </View>
     </View>
-  );
+  </KeyboardAvoidingView>
+);
 }
 
 ///////////////////////////////////////////////////////////
