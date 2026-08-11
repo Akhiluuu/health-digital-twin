@@ -5,8 +5,8 @@ Exposes REST endpoints for Patient Management, OCR Ingestion, BioGears Digital T
 """
 
 import os
-import urllib.parse
-import urllib.request
+from urllib.parse import quote
+from urllib.request import Request, urlopen
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 import uuid
@@ -1511,9 +1511,9 @@ async def search_local_food_db(query: str):
     # Tier 2: Hybrid Online Fallback (OpenFoodFacts API)
     external_items = []
     try:
-        url = f"https://world.openfoodfacts.org/cgi/search.pl?search_terms={urllib.parse.quote(query.strip())}&search_simple=1&action=process&json=1&page_size=15"
-        req = urllib.request.Request(url, headers={"User-Agent": "VitalHealth/6.0 Nutrition Engine"})
-        with urllib.request.urlopen(req, timeout=2.5) as resp:
+        url = f"https://world.openfoodfacts.org/cgi/search.pl?search_terms={quote(query.strip())}&search_simple=1&action=process&json=1&page_size=15"
+        req = Request(url, headers={"User-Agent": "VitalHealth/6.0 Nutrition Engine"})
+        with urlopen(req, timeout=2.5) as resp:
             data = json.loads(resp.read().decode('utf-8'))
             products = data.get("products", [])
             
