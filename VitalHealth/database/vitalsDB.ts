@@ -50,6 +50,11 @@ export const initVitalsDB = async () => {
     } catch (_) {
       // Column already exists
     }
+    try {
+      await db.execAsync("CREATE INDEX IF NOT EXISTS idx_vitals_member_ts ON vitals_log (member_id, timestamp DESC);");
+    } catch (_) {
+      // Index creation fallback
+    }
     log("✅ Vitals Log DB ready (shared vital_health.db)");
   } catch (err) {
     log("❌ initVitalsDB error:", err);

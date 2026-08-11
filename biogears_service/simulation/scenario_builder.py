@@ -606,6 +606,8 @@ def build_registration_scenario(user_id, age, weight, height, sex, body_fat,
     #  HbA1c 7–9  → moderate control → medium severity
     #  HbA1c > 9  → poor control → high severity
     hba1c = clinical_config.get("hba1c")
+    egfr = clinical_config.get("egfr")
+    creatinine = clinical_config.get("creatinine")
 
     def _t1d_severity(hba1c):
         """InsulinProductionSeverity: 0 = normal, 1 = no insulin produced."""
@@ -628,7 +630,7 @@ def build_registration_scenario(user_id, age, weight, height, sex, body_fat,
             f'<Condition xsi:type="DiabetesType1Data">'
             f'<InsulinProductionSeverity value="{sev}"/></Condition>'
         )
-    elif clinical_config.get("has_type2_diabetes"):
+    elif clinical_config.get("has_type2_diabetes") or (hba1c is not None and hba1c >= 6.5):
         prod_sev, res_sev = _t2d_severity(hba1c)
         conditions_xml += (
             f'<Condition xsi:type="DiabetesType2Data">'
@@ -649,18 +651,21 @@ def build_registration_scenario(user_id, age, weight, height, sex, body_fat,
             '<EmphysemaSeverity value="0.2"/></Condition>'
         )
 
-
-    # ── Hypertension condition ────────────────────────────────────────────────
-    # Explicitly sets the engine's cardiovascular tone above the stable baseline.
-    if is_hypertensive:
-        # Severity scales with how far above normal: 0.1 = mild, 0.5 = severe
-        ht_sev = min(1.0, max(0.05, (real_systolic - 120.0) / 60.0 + 0.1))
+    # ── Renal Impairment / Hypertension Condition ────────────────────────────
+    has_renal_impairment = (egfr is not None and egfr < 60.0) or (creatinine is not None and creatinine > 1.2)
+    if is_hypertensive or has_renal_impairment:
+        if has_renal_impairment:
+            egfr_val = egfr if egfr is not None else 60.0
+            ht_sev = min(0.85, max(0.15, (60.0 - egfr_val) / 60.0 + 0.2))
+            _log.info(f"[{user_id}] Renal impairment (eGFR={egfr}, Creatinine={creatinine}): severity={ht_sev:.2f}")
+        else:
+            ht_sev = min(1.0, max(0.05, (real_systolic - 120.0) / 60.0 + 0.1))
+            _log.info(f"[{user_id}] Hypertension modelled via renal stenosis: severity={ht_sev:.2f} (real BP={real_systolic:.0f}/{real_diastolic:.0f})")
         conditions_xml += (
             f'<Condition xsi:type="ChronicRenalStenosisData">'
             f'<LeftKidneySeverity value="{ht_sev:.2f}"/>'
             f'<RightKidneySeverity value="{ht_sev:.2f}"/></Condition>'
         )
-        _log.info(f"[{user_id}] Hypertension modelled via renal stenosis: severity={ht_sev:.2f} (real BP={real_systolic:.0f}/{real_diastolic:.0f})")
 
 
     # ── Scenario XML ─────────────────────────────────────────────────────────

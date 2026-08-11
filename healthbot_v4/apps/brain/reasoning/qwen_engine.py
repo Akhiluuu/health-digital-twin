@@ -40,7 +40,12 @@ class ReasoningResult(TypedDict):
 # ---------------------------------------------------------------------------
 # Ollama configuration (local, on-premise)
 # ---------------------------------------------------------------------------
-_OLLAMA_ENDPOINT = os.getenv("OLLAMA_ENDPOINT", "http://127.0.0.1:11434/api/chat")
+_OLLAMA_HOST_BASE = os.getenv("OLLAMA_HOST", os.getenv("OLLAMA_ENDPOINT", "http://127.0.0.1:11434")).rstrip("/")
+if not _OLLAMA_HOST_BASE.endswith("/api/chat"):
+    _OLLAMA_ENDPOINT = f"{_OLLAMA_HOST_BASE}/api/chat"
+else:
+    _OLLAMA_ENDPOINT = _OLLAMA_HOST_BASE
+
 _OLLAMA_MODEL    = os.getenv("OLLAMA_MODEL", "qwen2.5:7b")
 _OLLAMA_TIMEOUT  = int(os.getenv("OLLAMA_TIMEOUT_SECONDS", "25"))
 _MAX_TOKENS      = int(os.getenv("LLM_MAX_TOKENS", "1024"))

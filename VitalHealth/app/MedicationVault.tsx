@@ -17,6 +17,7 @@ import { LinearGradient } from "expo-linear-gradient";
 // Contexts & Services
 import { Medicine, useMedicine } from "../context/MedicineContext";
 import { useTheme } from "../context/ThemeContext";
+import { useThemeAlert } from "../context/ThemeAlertContext";
 import { colors } from "../theme/colors";
 import { useNotifications } from "../context/NotificationContext";
 import { useFamily } from "../context/FamilyContext";
@@ -172,6 +173,7 @@ export default function MedicationVault() {
   const insets = useSafeAreaInsets();
   const { theme } = useTheme();
   const c = colors[theme];
+  const { showAlert, showToast } = useThemeAlert();
 
   // Context hooks
   const {
@@ -255,12 +257,19 @@ export default function MedicationVault() {
     await setMedicineStatus(med.id, status);
     if (status === "taken") {
       runSimulation();
+      showToast({ message: `${med.name} marked as taken 💊`, type: "success" });
+    } else {
+      showToast({ message: `${med.name} marked as missed ❌`, type: "warning" });
     }
   };
 
   const handleDelayDose = async (med: Medicine) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    Alert.alert("Snooze Reminder", `Reminding you to take ${med.name} in 15 minutes.`);
+    showAlert({
+      title: "Snooze Reminder",
+      message: `Reminding you to take ${med.name} in 15 minutes.`,
+      type: "info",
+    });
   };
 
   const handleAddMedication = async (details: any) => {
@@ -283,9 +292,10 @@ export default function MedicationVault() {
 
       setActivePage("dashboard");
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      showToast({ message: `${details.name} added to schedule 💊`, type: "success" });
     } catch (err) {
       log("Error adding medicine:", err);
-      Alert.alert("Error", "Failed to save medication to schedule.");
+      showAlert({ title: "Error", message: "Failed to save medication to schedule.", type: "error" });
     }
   };
 
@@ -295,7 +305,7 @@ export default function MedicationVault() {
       const ImagePicker = await import("expo-image-picker");
       const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (status !== "granted") {
-        Alert.alert("Permission Denied", "Media library permissions required for OCR extraction.");
+        showAlert({ title: "Permission Denied", message: "Media library permissions required for OCR extraction.", type: "warning" });
         return;
       }
 
@@ -312,14 +322,15 @@ export default function MedicationVault() {
 
       if (res && res.success && res.data) {
         loadLivePrescriptions();
-        Alert.alert(
-          "OCR Scan Successful",
-          "Clinical prescription dossier has been securely stored. Medication extraction complete."
-        );
+        showAlert({
+          title: "OCR Scan Successful",
+          message: "Clinical prescription dossier has been securely stored. Medication extraction complete.",
+          type: "success",
+        });
       }
     } catch (err) {
       log("OCR scan error:", err);
-      Alert.alert("OCR Scanning Failed", "Unable to parse document. Please log details manually.");
+      showAlert({ title: "OCR Scanning Failed", message: "Unable to parse document. Please log details manually.", type: "error" });
     }
   };
 

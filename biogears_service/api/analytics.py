@@ -487,22 +487,31 @@ def compute_organ_scores(user_id: str, history_dir: Path) -> Dict[str, Any]:
     # Soft cap: gut score shouldn't exceed 100
     gut_score = min(gut_score, 100)
 
-    # ── Brain (CoreTemperature stability) ─────────────────────────────────────
+    # ── Brain (CoreTemperature stability & HR autonomic balance) ──────────────
     # CoreTemperature tightly reflects autonomic nervous system balance.
-    # Normal: 36.5–37.5°C. Deviations indicate thermoregulatory stress.
     temp_s = comp.get("core_temp", {}).get("score", 90)
-    # HR also contributes — sustained elevated HR correlates with cognitive load.
-    brain_score = round(temp_s * 0.6 + hr_s * 0.4)
+    brain_score = min(100, round(temp_s * 0.6 + hr_s * 0.4))
+
+    # ── Liver (Metabolic & Glycemic Clearance) ─────────────────────────────────
+    # Liver score is derived from glucose handling stability and core temperature.
+    liver_score = min(100, round(gluc_s * 0.6 + temp_s * 0.4))
+
+    # ── Legs (Musculoskeletal & Peripheral Vascular Perfusion) ─────────────────
+    # Peripheral perfusion depends on oxygenation (SpO2), respiration, and blood pressure.
+    legs_score = min(100, round(spo2_s * 0.4 + resp_s * 0.3 + sys_s * 0.3))
+
+    def _get_status(score: int) -> str:
+        return "good" if score > 80 else ("warning" if score > 60 else "critical")
 
     return {
         "user_id": user_id,
         "scores": {
-            "heart": {"score": heart_score, "status": "good" if heart_score > 80 else ("warning" if heart_score > 60 else "critical")},
-            "lungs": {"score": lungs_score, "status": "good" if lungs_score > 80 else ("warning" if lungs_score > 60 else "critical")},
-            "gut":   {"score": gut_score,   "status": "good" if gut_score > 80 else ("warning" if gut_score > 60 else "critical")},
-            "brain": {"score": brain_score, "status": "good" if brain_score > 80 else ("warning" if brain_score > 60 else "critical")},
-            "liver": {"score": 95,          "status": "good"}, # Placeholder
-            "legs":  {"score": 90,          "status": "good"}, # Placeholder
+            "heart": {"score": heart_score, "status": _get_status(heart_score)},
+            "lungs": {"score": lungs_score, "status": _get_status(lungs_score)},
+            "gut":   {"score": gut_score,   "status": _get_status(gut_score)},
+            "brain": {"score": brain_score, "status": _get_status(brain_score)},
+            "liver": {"score": liver_score, "status": _get_status(liver_score)},
+            "legs":  {"score": legs_score,  "status": _get_status(legs_score)},
         },
         "overall_health_score": res["score"]
     }

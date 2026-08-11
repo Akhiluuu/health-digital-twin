@@ -150,7 +150,8 @@ export interface BiogearsTwinContextValue {
   runMultiDayCatchup: (days: number) => Promise<void>;
   recheckTwinStatus: () => Promise<void>;
   undoLastSimulation: () => Promise<void>;
-  fillBaselineEvents: () => Promise<void>;
+  fillBaselineEvents: () => Promise<{ status: 'up_to_date' | 'filled' | 'conflicts'; message?: string; addedCount?: number } | void>;
+
   loadRoutineWithConflictCheck: (
     routineId: string,
     onConflicts: (conflicts: EventConflict[], resolve: (resolutions: Record<string, 'keep_mine' | 'use_routine' | 'keep_both'>) => void) => void
@@ -221,6 +222,26 @@ function wallTimeToTimestamp(wallTime: string, anchorDate?: Date): number {
 
   return Math.floor(now.getTime() / 1000);
 }
+
+export function safeParseTimestamp(ts: string | number | null | undefined): number {
+  if (!ts) return 0;
+  if (typeof ts === 'number') {
+    return ts > 1e11 ? ts : ts * 1000;
+  }
+  const str = String(ts).trim();
+  if (!str) return 0;
+  // Replace space with 'T' for SQLite datetime strings (e.g. "2026-08-05 10:00:00" -> "2026-08-05T10:00:00")
+  const isoStr = str.includes(' ') ? str.replace(' ', 'T') : str;
+  // If string missing timezone, append Z for UTC
+  const normalizedStr = (isoStr.includes('Z') || isoStr.includes('+') || (isoStr.includes('-') && isoStr.length > 10))
+    ? isoStr
+    : `${isoStr}Z`;
+  const t = new Date(normalizedStr).getTime();
+  if (!isNaN(t)) return t;
+  const fallback = new Date(isoStr).getTime();
+  return isNaN(fallback) ? 0 : fallback;
+}
+
 
 // ─── Event Fingerprinting & Conflict Detection ────────────────────────────────
 
@@ -1377,8 +1398,9 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
       }
 
       const mergedList = Array.from(mergedMap.values()).sort(
-        (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+        (a, b) => safeParseTimestamp(b.timestamp) - safeParseTimestamp(a.timestamp)
       );
+
 
       setSessions(mergedList);
       return mergedList;
@@ -2527,7 +2549,7 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
    * - Dedup window is ±30 min (tighter than load-routine's ±30 min fingerprint bucket).
    * - Baseline events are always lower priority: default resolution = 'keep_mine'.
    */
-  const fillBaselineEvents = useCallback(async (): Promise<void> => {
+  const fillBaselineEvents = useCallback(async (): Promise<{ status: 'up_to_date' | 'filled' | 'conflicts'; message?: string; addedCount?: number } | void> => {
     if (!twinUserId) return;
     const defaultRoutine = savedRoutines.find(r => r.isDefault) || savedRoutines[0];
     let eventsToUse = defaultRoutine?.events;
@@ -2552,18 +2574,24 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
     };
 
     // Find the last simulation time if it happened today
-    const lastSession = sessions && sessions.length > 0
-      ? [...sessions].sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())[0]
-      : null;
+    const sortedSessions = sessions && sessions.length > 0
+      ? [...sessions].sort((a, b) => safeParseTimestamp(b.timestamp) - safeParseTimestamp(a.timestamp))
+      : [];
+    const lastSession = sortedSessions[0] || null;
 
     let startMinutes = 0;
-    if (lastSession) {
-      const lastSessionDate = new Date(lastSession.timestamp);
-      const today = new Date();
-      if (lastSessionDate.toDateString() === today.toDateString()) {
-        startMinutes = lastSessionDate.getHours() * 60 + lastSessionDate.getMinutes();
+    if (lastSession && lastSession.timestamp) {
+      const lastSessionMs = safeParseTimestamp(lastSession.timestamp);
+      if (lastSessionMs > 0) {
+        const lastSessionDate = new Date(lastSessionMs);
+        const today = new Date();
+        if (lastSessionDate.toDateString() === today.toDateString()) {
+          startMinutes = lastSessionDate.getHours() * 60 + lastSessionDate.getMinutes();
+        }
       }
     }
+
+    log(`[FillBaseline] Last simulation startMinutes=${startMinutes}, currentMinutes=${currentMinutes}`);
 
     // Build candidate baseline events in the gap window
     const candidates: RoutineEvent[] = [];
@@ -2588,8 +2616,7 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
       const msg = startMinutes > 0
         ? `No missing baseline events found between the last simulation (${Math.floor(startMinutes / 60)}:${String(startMinutes % 60).padStart(2, '0')}) and now.`
         : 'No missing baseline events found for the past hours of today.';
-      Alert.alert('Baseline Up to Date', msg);
-      return;
+      return { status: 'up_to_date', message: msg };
     }
 
     // Run conflict detection — baseline events win only if explicitly accepted
@@ -2613,9 +2640,9 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
       setTimeout(() => {
         runSimulation().catch(e => log('[FillBaseline] Auto-simulation failed:', e));
       }, 500);
-      Alert.alert('Baseline Filled', `Added ${safeToAdd.length} missing event(s) and started simulation.`);
-      return;
+      return { status: 'filled', addedCount: safeToAdd.length, message: `Added ${safeToAdd.length} missing event(s) and started simulation.` };
     }
+
 
     // Surface conflicts to the UI via the context's pending-conflict state
     // We commit safe events now and store conflicts for the resolution sheet
@@ -2657,7 +2684,9 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
         return merged;
       });
     });
+    return { status: 'conflicts', addedCount: safeToAdd.length, message: 'Conflicting baseline events detected.' };
   }, [twinUserId, savedRoutines, todayEvents, sessions, runSimulation]);
+
 
   // ─── Undo Last Simulation ─────────────────────────────────────────────────────
   const undoLastSimulation = useCallback(async () => {

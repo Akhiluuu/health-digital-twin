@@ -22,7 +22,8 @@ import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import { getBiogearsBaseUrl } from '../../services/biogears';
 
-import { useBiogearsTwin } from '../../context/BiogearsTwinContext';
+import { useBiogearsTwin, safeParseTimestamp } from '../../context/BiogearsTwinContext';
+
 import { useTheme } from '../../context/ThemeContext';
 import { useFamily } from '../../context/FamilyContext';
 import { useNutrition } from '../../context/NutritionContext';
@@ -328,63 +329,6 @@ export default function TwinScreen() {
     }
   }, [calibrationJustSucceeded, isFocused]);
 
-  const handleFillBaseline = async () => {
-    if (sessions.length > 0 && savedRoutines.length > 0) {
-      const lastSimTime = new Date(sessions[0].timestamp).getTime();
-      const hoursSinceLastSim = (Date.now() - lastSimTime) / (1000 * 60 * 60);
-
-      if (hoursSinceLastSim > 28) {
-        const daysMissed = Math.floor(hoursSinceLastSim / 24);
-        if (daysMissed >= 1) {
-          const defaultRoutine = savedRoutines.find(r => r.isDefault) || savedRoutines[0];
-          if (defaultRoutine) {
-            const lastSimDate = new Date(sessions[0].timestamp);
-            const fromLabel = lastSimDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
-            const toLabel = new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
-
-            Alert.alert(
-              'Sync Digital Twin',
-              `Your digital twin is behind by ${daysMissed} day(s) (last sim: ${fromLabel} → today: ${toLabel}).\n\nWould you like to run a catch-up simulation using "${defaultRoutine.name}" or just fill today's hourly baseline gaps?`,
-              [
-                { text: 'Cancel', style: 'cancel' },
-                {
-                  text: 'Fill Today Gaps',
-                  onPress: async () => {
-                    try {
-                      setConflictSheetMode('baseline');
-                      await fillBaselineEvents();
-                    } catch (e: any) {
-                      Alert.alert('Fill Failed', e.message);
-                    }
-                  }
-                },
-                {
-                  text: `Simulate ${daysMissed} Days`,
-                  onPress: async () => {
-                    try {
-                      await runMultiDayCatchup(daysMissed);
-                      Alert.alert('Success', 'Digital Twin caught up successfully!');
-                    } catch (e: any) {
-                      Alert.alert('Catch-up Failed', e.message);
-                    }
-                  }
-                }
-              ]
-            );
-            return;
-          }
-        }
-      }
-    }
-
-    try {
-      setConflictSheetMode('baseline');
-      await fillBaselineEvents();
-    } catch (e: any) {
-      Alert.alert('Fill Failed', e.message);
-    }
-  };
-
   // ── Custom Alert State ──────────────────────────────────────────────────────
   const [customAlert, setCustomAlert] = useState<{
     visible: boolean;
@@ -407,6 +351,84 @@ export default function TwinScreen() {
       });
     }
   };
+
+  const handleFillBaseline = async () => {
+    // 1. Sort sessions using safeParseTimestamp to reliably locate the latest simulation
+    const sortedSessions = sessions && sessions.length > 0
+      ? [...sessions].sort((a, b) => safeParseTimestamp(b.timestamp) - safeParseTimestamp(a.timestamp))
+      : [];
+
+    const lastSession = sortedSessions[0] || null;
+
+    if (lastSession && savedRoutines.length > 0) {
+      const lastSimTime = safeParseTimestamp(lastSession.timestamp);
+      if (lastSimTime > 0) {
+        const hoursSinceLastSim = (Date.now() - lastSimTime) / (1000 * 60 * 60);
+        const lastSimIso = new Date(lastSimTime).toISOString();
+
+        if (hoursSinceLastSim > 28) {
+          const daysMissed = Math.floor(hoursSinceLastSim / 24);
+          if (daysMissed >= 1) {
+            const defaultRoutine = savedRoutines.find(r => r.isDefault) || savedRoutines[0];
+            if (defaultRoutine) {
+              const lastSimDate = new Date(lastSimTime);
+              const fromLabel = lastSimDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+              const toLabel = new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+
+              Alert.alert(
+                'Sync Digital Twin',
+                `Your digital twin is behind by ${daysMissed} day(s) (last sim: ${fromLabel} → today: ${toLabel}).\n\nWould you like to run a catch-up simulation using "${defaultRoutine.name}" or just fill today's hourly baseline gaps?`,
+                [
+                  { text: 'Cancel', style: 'cancel' },
+                  {
+                    text: 'Fill Today Gaps',
+                    onPress: async () => {
+                      try {
+                        setConflictSheetMode('baseline');
+                        const res = await fillBaselineEvents();
+                        if (res?.status === 'up_to_date') {
+                          Alert.alert('Baseline Up to Date', res.message);
+                        } else if (res?.status === 'filled') {
+                          Alert.alert('Baseline Filled', res.message);
+                        }
+                      } catch (e: any) {
+                        Alert.alert('Fill Failed', e.message);
+                      }
+                    }
+                  },
+                  {
+                    text: `Simulate ${daysMissed} Days`,
+                    onPress: async () => {
+                      try {
+                        await runMultiDayCatchup(daysMissed);
+                        Alert.alert('Success', 'Digital Twin caught up successfully!');
+                      } catch (e: any) {
+                        Alert.alert('Catch-up Failed', e.message);
+                      }
+                    }
+                  }
+                ]
+              );
+              return;
+            }
+          }
+        }
+      }
+    }
+
+    try {
+      setConflictSheetMode('baseline');
+      const res = await fillBaselineEvents();
+      if (res?.status === 'up_to_date') {
+        Alert.alert('Baseline Up to Date', res.message);
+      } else if (res?.status === 'filled') {
+        Alert.alert('Baseline Filled', res.message);
+      }
+    } catch (e: any) {
+      Alert.alert('Fill Failed', e.message);
+    }
+  };
+
 
   // ── Conflict Sheet Mode ─────────────────────────────────────────────────────
   const [conflictSheetMode, setConflictSheetMode] = useState<'routine' | 'baseline'>('routine');
@@ -2741,18 +2763,87 @@ export default function TwinScreen() {
         onRequestClose={() => setCustomAlert(null)}
       >
         <Pressable style={ss.modalOverlay} onPress={() => setCustomAlert(null)}>
-          <Pressable style={[ss.modalCard, { backgroundColor: c.card, borderWidth: 1, borderColor: c.border }]} onPress={(e) => e.stopPropagation()}>
-            <Text style={[ss.modalTitle, { color: c.text }]}>{customAlert?.title}</Text>
+          <Pressable
+            style={[
+              ss.modalCard,
+              {
+                backgroundColor: c.card,
+                borderWidth: 1,
+                borderColor: c.border,
+                width: '90%',
+                maxWidth: 360,
+                alignSelf: 'center',
+                padding: 24,
+                borderRadius: 24,
+                elevation: 10,
+                shadowColor: '#000',
+                shadowOffset: { width: 0, height: 6 },
+                shadowOpacity: 0.25,
+                shadowRadius: 12,
+              }
+            ]}
+            onPress={(e) => e.stopPropagation()}
+          >
+            <View
+              style={{
+                width: 56,
+                height: 56,
+                borderRadius: 28,
+                backgroundColor: customAlert?.title?.toLowerCase().includes('sync')
+                  ? 'rgba(99, 102, 241, 0.15)'
+                  : customAlert?.title?.toLowerCase().includes('success') || customAlert?.title?.toLowerCase().includes('filled')
+                  ? 'rgba(16, 185, 129, 0.15)'
+                  : customAlert?.title?.toLowerCase().includes('failed') || customAlert?.title?.toLowerCase().includes('error')
+                  ? 'rgba(239, 68, 68, 0.15)'
+                  : 'rgba(56, 189, 248, 0.15)',
+                justifyContent: 'center',
+                alignItems: 'center',
+                alignSelf: 'center',
+                marginBottom: 14,
+              }}
+            >
+              <Ionicons
+                name={
+                  customAlert?.title?.toLowerCase().includes('sync')
+                    ? 'sync'
+                    : customAlert?.title?.toLowerCase().includes('success') || customAlert?.title?.toLowerCase().includes('filled')
+                    ? 'checkmark-circle'
+                    : customAlert?.title?.toLowerCase().includes('failed') || customAlert?.title?.toLowerCase().includes('error')
+                    ? 'alert-circle'
+                    : 'information-circle'
+                }
+                size={34}
+                color={
+                  customAlert?.title?.toLowerCase().includes('sync')
+                    ? c.active
+                    : customAlert?.title?.toLowerCase().includes('success') || customAlert?.title?.toLowerCase().includes('filled')
+                    ? '#10b981'
+                    : customAlert?.title?.toLowerCase().includes('failed') || customAlert?.title?.toLowerCase().includes('error')
+                    ? '#ef4444'
+                    : '#38bdf8'
+                }
+              />
+            </View>
+
+            <Text style={[ss.modalTitle, { color: c.text, textAlign: 'center', fontSize: 18, fontWeight: '800' }]}>
+              {customAlert?.title}
+            </Text>
+
             {customAlert?.message ? (
-              <Text style={[ss.modalSub, { color: c.sub }]}>{customAlert.message}</Text>
+              <Text style={[ss.modalSub, { color: c.sub, textAlign: 'center', fontSize: 13, lineHeight: 19, marginTop: 6, marginBottom: 16 }]}>
+                {customAlert.message}
+              </Text>
             ) : null}
-            <View style={{
-              flexDirection: customAlert?.buttons && customAlert.buttons.length > 2 ? 'column' : 'row',
-              justifyContent: 'flex-end',
-              gap: 8,
-              marginTop: 16,
-              width: '100%'
-            }}>
+
+            <View
+              style={{
+                flexDirection: customAlert?.buttons && customAlert.buttons.length > 2 ? 'column' : 'row',
+                justifyContent: 'center',
+                gap: 10,
+                marginTop: 8,
+                width: '100%',
+              }}
+            >
               {customAlert?.buttons.map((btn, idx) => {
                 const isDestructive = btn.style === 'destructive';
                 const isCancel = btn.style === 'cancel';
@@ -2762,19 +2853,34 @@ export default function TwinScreen() {
                     key={idx}
                     style={[
                       ss.modalBtn,
+                      {
+                        flex: isStack ? 0 : 1,
+                        paddingVertical: 12,
+                        paddingHorizontal: 14,
+                        borderRadius: 14,
+                        justifyContent: 'center',
+                        alignItems: 'center',
+                      },
                       isDestructive
                         ? { backgroundColor: '#ef4444' }
                         : isCancel
-                          ? { borderColor: c.border, borderWidth: 1 }
-                          : { backgroundColor: c.active },
-                      isStack && { width: '100%', justifyContent: 'center' }
+                        ? { borderColor: c.border, borderWidth: 1, backgroundColor: 'transparent' }
+                        : { backgroundColor: c.active },
+                      isStack && { width: '100%' },
                     ]}
                     onPress={() => {
                       setCustomAlert(null);
                       if (btn.onPress) btn.onPress();
                     }}
                   >
-                    <Text style={{ color: isCancel ? c.sub : '#fff', fontWeight: 'bold', fontSize: 14, textAlign: 'center' }}>
+                    <Text
+                      style={{
+                        color: isCancel ? c.sub : '#fff',
+                        fontWeight: '700',
+                        fontSize: 13,
+                        textAlign: 'center',
+                      }}
+                    >
                       {btn.text}
                     </Text>
                   </TouchableOpacity>
@@ -2784,6 +2890,7 @@ export default function TwinScreen() {
           </Pressable>
         </Pressable>
       </Modal>
+
 
       {/* ── Calibration Success Modal ── */}
       <Modal transparent visible={showSuccessModal} animationType="fade" onRequestClose={() => setShowSuccessModal(false)}>

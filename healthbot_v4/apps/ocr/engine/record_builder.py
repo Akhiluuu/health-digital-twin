@@ -35,9 +35,9 @@ _ocr_job_store: Dict[str, Dict[str, Any]] = {}
 _LAB_PATTERNS: List[Tuple] = [
     # Glycaemic
     ("HbA1c (Glycated Hemoglobin)", "4548-4",
-     r"HbA1c[\s:]*(\d+\.?\d*)\s*%", "%", "4.0-5.6%", 6.5, None),
+     r"(?:HbA1c|Glycated\s+H(?:ae|e)moglobin|A1C)[\s:]*(\d+\.?\d*)\s*%?", "%", "4.0-5.6%", 6.5, None),
     ("Fasting Blood Glucose", "1558-6",
-     r"(?:Fasting\s+(?:Blood\s+)?(?:Glucose|Sugar|BS))[\s:]*(\d+\.?\d*)\s*(?:mg/dL)?", "mg/dL", "70-99 mg/dL", 100, 70),
+     r"(?:Fasting\s+(?:Blood\s+)?(?:Glucose|Sugar|BS)|FBG)[\s:]*(\d+\.?\d*)\s*(?:mg/dL)?", "mg/dL", "70-99 mg/dL", 100, 70),
     ("Random Blood Glucose", "2345-7",
      r"(?:Random|Post-?\s*prandial|PP)\s*(?:Blood\s+)?(?:Glucose|Sugar|BS)[\s:]*(\d+\.?\d*)\s*(?:mg/dL)?", "mg/dL", "<140 mg/dL", 140, None),
     # CBC
@@ -55,11 +55,11 @@ _LAB_PATTERNS: List[Tuple] = [
      r"MCV[\s:]*(\d+\.?\d*)\s*(?:fL)?", "fL", "80-100 fL", 100, 80),
     # Lipid panel
     ("Total Cholesterol", "2093-3",
-     r"Total\s+Cholesterol[\s:]*(\d+\.?\d*)\s*(?:mg/dL)?", "mg/dL", "<200 mg/dL", 200, None),
+     r"(?:Total\s+)?Cholesterol[\s:]*(\d+\.?\d*)\s*(?:mg/dL)?", "mg/dL", "<200 mg/dL", 200, None),
     ("LDL Cholesterol", "13457-7",
-     r"LDL[\s:]*(\d+\.?\d*)\s*(?:mg/dL)?", "mg/dL", "<100 mg/dL", 100, None),
+     r"(?:LDL|LDL-C|Low\s+Density\s+Lipoprotein)[\s:]*(\d+\.?\d*)\s*(?:mg/dL)?", "mg/dL", "<100 mg/dL", 100, None),
     ("HDL Cholesterol", "2085-9",
-     r"HDL[\s:]*(\d+\.?\d*)\s*(?:mg/dL)?", "mg/dL", ">40 mg/dL", None, 40),
+     r"(?:HDL|HDL-C|High\s+Density\s+Lipoprotein)[\s:]*(\d+\.?\d*)\s*(?:mg/dL)?", "mg/dL", ">40 mg/dL", None, 40),
     ("Triglycerides", "2571-8",
      r"Triglyceride[s]?[\s:]*(\d+\.?\d*)\s*(?:mg/dL)?", "mg/dL", "<150 mg/dL", 150, None),
     # Renal
@@ -68,12 +68,12 @@ _LAB_PATTERNS: List[Tuple] = [
     ("Blood Urea Nitrogen", "3094-0",
      r"(?:BUN|Blood\s+Urea\s+Nitrogen|Urea)[\s:]*(\d+\.?\d*)\s*(?:mg/dL)?", "mg/dL", "7-25 mg/dL", 25, 7),
     ("eGFR", "33914-3",
-     r"eGFR[\s:]*(\d+\.?\d*)\s*(?:mL/min)?", "mL/min/1.73m²", ">60", None, 60),
+     r"(?:eGFR|Estimated\s+GFR|GFR)[\s:]*(\d+\.?\d*)\s*(?:mL/min)?", "mL/min/1.73m²", ">60", None, 60),
     # Liver
     ("ALT", "1742-6",
-     r"(?:ALT|SGPT)[\s:]*(\d+\.?\d*)\s*(?:U/L|IU/L)?", "U/L", "7-56 U/L", 56, None),
+     r"(?:ALT|SGPT|Alanine\s+Aminotransferase)[\s:]*(\d+\.?\d*)\s*(?:U/L|IU/L)?", "U/L", "7-56 U/L", 56, None),
     ("AST", "1920-8",
-     r"(?:AST|SGOT)[\s:]*(\d+\.?\d*)\s*(?:U/L|IU/L)?", "U/L", "10-40 U/L", 40, None),
+     r"(?:AST|SGOT|Aspartate\s+Aminotransferase)[\s:]*(\d+\.?\d*)\s*(?:U/L|IU/L)?", "U/L", "10-40 U/L", 40, None),
     ("Alkaline Phosphatase", "6768-6",
      r"(?:ALP|Alkaline\s+Phosphatase)[\s:]*(\d+\.?\d*)\s*(?:U/L)?", "U/L", "44-147 U/L", 147, 44),
     ("Total Bilirubin", "1975-2",

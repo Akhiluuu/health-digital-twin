@@ -350,20 +350,35 @@ async def get_organ_scores(user_id: str):
     sys_vals = [v.value_primary for v in state.recent_vitals if v.vital_type == "blood_pressure" and v.value_primary]
     dia_vals = [v.value_secondary for v in state.recent_vitals if v.vital_type == "blood_pressure" and v.value_secondary]
     spo2_vals = [v.value_primary for v in state.recent_vitals if v.vital_type == "spo2" and v.value_primary]
-    gluc_vals = [l.value for l in state.recent_labs if "glucose" in l.canonical_name.lower() and l.value]
+    
+    # Extract LOINC lab values from patient state
+    labs = state.recent_labs or []
+    gluc_vals = [l.value for l in labs if ("glucose" in l.canonical_name.lower() or getattr(l, "loinc_code", "") in ("1558-6", "2345-7")) and l.value]
+    hba1c_vals = [l.value for l in labs if ("hba1c" in l.canonical_name.lower() or getattr(l, "loinc_code", "") == "4548-4") and l.value]
+    creat_vals = [l.value for l in labs if ("creatinine" in l.canonical_name.lower() or getattr(l, "loinc_code", "") == "2160-0") and l.value]
+    egfr_vals = [l.value for l in labs if ("egfr" in l.canonical_name.lower() or getattr(l, "loinc_code", "") == "33914-3") and l.value]
+    alt_vals = [l.value for l in labs if ("alt" in l.canonical_name.lower() or getattr(l, "loinc_code", "") == "1742-6") and l.value]
+    ast_vals = [l.value for l in labs if ("ast" in l.canonical_name.lower() or getattr(l, "loinc_code", "") == "1920-8") and l.value]
+    chol_vals = [l.value for l in labs if ("cholesterol" in l.canonical_name.lower() or getattr(l, "loinc_code", "") in ("2093-3", "13457-7")) and l.value]
 
     latest_hr = hr_vals[-1] if hr_vals else None
     latest_sys = sys_vals[-1] if sys_vals else None
     latest_dia = dia_vals[-1] if dia_vals else None
     latest_spo2 = spo2_vals[-1] if spo2_vals else None
     latest_gluc = gluc_vals[-1] if gluc_vals else None
+    latest_hba1c = hba1c_vals[-1] if hba1c_vals else None
+    latest_creat = creat_vals[-1] if creat_vals else None
+    latest_egfr = egfr_vals[-1] if egfr_vals else None
+    latest_alt = alt_vals[-1] if alt_vals else None
+    latest_ast = ast_vals[-1] if ast_vals else None
+    latest_chol = chol_vals[-1] if chol_vals else None
 
     # Risk flags text
     risk_text = " ".join(
         [f"{r.level.value} {r.title}" for r in (state.active_risks or [])]
     ).lower()
 
-    # Dynamic Heart/Cardiovascular score based on MAP and RPP
+    # Dynamic Heart/Cardiovascular score based on MAP, HR, and Cholesterol LOINC
     heart_score = base
     if latest_sys and latest_dia:
         map_val = latest_dia + (latest_sys - latest_dia) / 3.0
@@ -372,6 +387,8 @@ async def get_organ_scores(user_id: str):
     if latest_hr:
         if latest_hr > 100 or latest_hr < 50:
             heart_score -= min(20.0, abs(latest_hr - 72.0) * 0.5)
+    if latest_chol and latest_chol > 200:
+        heart_score -= min(20.0, (latest_chol - 200.0) * 0.15)
     if any(kw in risk_text for kw in ["cardiac", "cardiovascular", "hypertension", "bp"]):
         heart_score -= 10.0
     heart_score = max(30.0, round(min(100.0, heart_score), 1))
@@ -385,22 +402,39 @@ async def get_organ_scores(user_id: str):
         lung_score -= 10.0
     lung_score = max(30.0, round(min(100.0, lung_score), 1))
 
-    # Dynamic Kidneys/Renal score based on BP strain
+    # Dynamic Kidneys/Renal score based on BP strain + eGFR & Creatinine LOINC
     renal_score = base
     if latest_sys and latest_sys > 130:
-        renal_score -= min(20.0, (latest_sys - 130.0) * 0.4)
+        renal_score -= min(15.0, (latest_sys - 130.0) * 0.3)
+    if latest_egfr is not None:
+        if latest_egfr < 60:
+            renal_score -= min(40.0, (60.0 - latest_egfr) * 0.8)
+    elif latest_creat is not None and latest_creat > 1.2:
+        renal_score -= min(30.0, (latest_creat - 1.2) * 20.0)
     if any(kw in risk_text for kw in ["renal", "kidney", "ckd", "creatinine"]):
         renal_score -= 15.0
     renal_score = max(30.0, round(min(100.0, renal_score), 1))
 
-    # Dynamic Metabolic score based on Glucose
+    # Dynamic Metabolic score based on Glucose & HbA1c LOINC
     metabolic_score = base
-    if latest_gluc:
+    if latest_hba1c is not None and latest_hba1c > 5.7:
+        metabolic_score -= min(40.0, (latest_hba1c - 5.7) * 15.0)
+    elif latest_gluc:
         if latest_gluc > 125 or latest_gluc < 70:
             metabolic_score -= min(30.0, abs(latest_gluc - 90.0) * 0.3)
     if any(kw in risk_text for kw in ["diabetes", "glucose", "hba1c", "metabolic"]):
         metabolic_score -= 15.0
     metabolic_score = max(30.0, round(min(100.0, metabolic_score), 1))
+
+    # Dynamic Liver score based on ALT / AST LOINC
+    liver_score = base
+    if latest_alt is not None and latest_alt > 56:
+        liver_score -= min(35.0, (latest_alt - 56.0) * 0.5)
+    if latest_ast is not None and latest_ast > 40:
+        liver_score -= min(25.0, (latest_ast - 40.0) * 0.4)
+    if any(kw in risk_text for kw in ["hepatic", "liver", "fatty liver", "alt", "ast"]):
+        liver_score -= 12.0
+    liver_score = max(30.0, round(min(100.0, liver_score), 1))
 
     # Generic risk deduction helper for remaining organs without live sensor telemetry
     def generic_organ_score(organ_risk_kws):
@@ -420,7 +454,7 @@ async def get_organ_scores(user_id: str):
             "brain":    {"score": generic_organ_score(["neurological", "cognitive", "temp"]), "status": _organ_status(generic_organ_score(["neurological", "cognitive", "temp"]))},
             "heart":    {"score": heart_score,                                                "status": _organ_status(heart_score)},
             "lungs":    {"score": lung_score,                                                 "status": _organ_status(lung_score)},
-            "liver":    {"score": generic_organ_score(["hepatic", "liver"]),                  "status": _organ_status(generic_organ_score(["hepatic", "liver"]))},
+            "liver":    {"score": liver_score,                                                "status": _organ_status(liver_score)},
             "gut":      {"score": generic_organ_score(["gut", "digestive", "stomach"]),       "status": _organ_status(generic_organ_score(["gut", "digestive", "stomach"]))},
             "legs":     {"score": generic_organ_score(["legs", "vascular", "stroke"]),        "status": _organ_status(generic_organ_score(["legs", "vascular", "stroke"]))},
             "kidneys":  {"score": renal_score,                                                "status": _organ_status(renal_score)},

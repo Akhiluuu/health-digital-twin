@@ -99,21 +99,26 @@ export async function syncHabitsToReminderEngine(habits: {
     // Auto-schedule notification reminders for meal times and sleep wind-down
     if (habits.breakfast) {
       log(`⏰ Scheduled Breakfast Reminder at ${habits.breakfast}`);
+      await showHealthNotification("🥗 Breakfast Time", "Don't forget your healthy morning meal and medications!", "medication");
     }
     if (habits.lunch) {
       log(`⏰ Scheduled Lunch Reminder at ${habits.lunch}`);
+      await showHealthNotification("🍎 Lunch Time", "Time to refuel with a balanced meal and stay hydrated.", "medication");
     }
     if (habits.dinner) {
       log(`⏰ Scheduled Dinner Reminder at ${habits.dinner}`);
+      await showHealthNotification("🍲 Dinner Time", "Remember to log your evening meal in your VitalHealth Journal.", "medication");
     }
     if (habits.sleep) {
       log(`🌙 Scheduled Sleep Wind-down Reminder at ${habits.sleep}`);
+      await showHealthNotification("😴 Wind Down for Sleep", "Prepare for rest to maintain optimal heart rate variability.", "sleep");
     }
 
     if (habits.customTimelineBlocks) {
-      habits.customTimelineBlocks.forEach(blk => {
+      for (const blk of habits.customTimelineBlocks) {
         log(`📌 Scheduled Custom Event Reminder [${blk.title}] at ${blk.time}`);
-      });
+        await showHealthNotification(`📌 ${blk.title}`, `Scheduled for ${blk.time}`, "routine");
+      }
     }
   } catch (error) {
     log("❌ syncHabitsToReminderEngine error:", error);

@@ -1,6 +1,5 @@
 import React, { useState } from "react";
 import {
-  Alert,
   ScrollView,
   StyleSheet,
   Text,
@@ -12,6 +11,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useSymptoms } from "../context/SymptomContext";
 import { useTheme } from "../context/ThemeContext";
+import { useThemeAlert } from "../context/ThemeAlertContext";
 import { saveFollowUpAnswers } from "../database/symptomDB";
 
 ///////////////////////////////////////////////////////////
@@ -19,6 +19,7 @@ import { saveFollowUpAnswers } from "../database/symptomDB";
 export default function Followup() {
   const router = useRouter();
   const { theme } = useTheme();
+  const { showAlert } = useThemeAlert();
   const { resolveSymptom } = useSymptoms();
 
   const params = useLocalSearchParams();
@@ -71,11 +72,12 @@ export default function Followup() {
   const handleImFine = async () => {
     await resolveSymptom(symptomId);
 
-    Alert.alert(
-      "Recovered ✅",
-      "Great! Symptom marked as resolved. It will remain in your history.",
-      [{ text: "OK", onPress: () => router.replace("/(tabs)") }]
-    );
+    showAlert({
+      title: "Recovered ✅",
+      message: "Great! Symptom marked as resolved. It will remain in your history.",
+      type: "success",
+      buttons: [{ text: "OK", onPress: () => router.replace("/(tabs)") }],
+    });
   };
 
   const handleYesStillPresent = () => {
@@ -156,33 +158,26 @@ export default function Followup() {
     const riskLevel = analyzeRisk();
 
     if (riskLevel === "high") {
-      Alert.alert(
-        "⚠️ Consult a Doctor",
-        "Based on your responses, we recommend consulting a healthcare professional. Your symptoms may require medical attention.",
-        [
-          { 
-            text: "Understood", 
-            onPress: () => router.replace("/(tabs)")
-          },
-        ]
-      );
+      showAlert({
+        title: "⚠️ Consult a Doctor",
+        message: "Based on your responses, we recommend consulting a healthcare professional. Your symptoms may require medical attention.",
+        type: "error",
+        buttons: [{ text: "Understood", onPress: () => router.replace("/(tabs)") }],
+      });
     } else if (riskLevel === "moderate") {
-      Alert.alert(
-        "⚡ Monitor Closely",
-        "Your symptoms warrant close monitoring. If they worsen, please consult a doctor.",
-        [
-          { 
-            text: "Keep Tracking", 
-            onPress: () => router.replace("/(tabs)")
-          },
-        ]
-      );
+      showAlert({
+        title: "⚡ Monitor Closely",
+        message: "Your symptoms warrant close monitoring. If they worsen, please consult a doctor.",
+        type: "warning",
+        buttons: [{ text: "Keep Tracking", onPress: () => router.replace("/(tabs)") }],
+      });
     } else {
-      Alert.alert(
-        "✅ Symptoms Improving",
-        "Great! Your symptoms appear to be improving. Keep monitoring.",
-        [{ text: "OK", onPress: () => router.replace("/(tabs)") }]
-      );
+      showAlert({
+        title: "✅ Symptoms Improving",
+        message: "Great! Your symptoms appear to be improving. Keep monitoring.",
+        type: "success",
+        buttons: [{ text: "OK", onPress: () => router.replace("/(tabs)") }],
+      });
     }
   };
 

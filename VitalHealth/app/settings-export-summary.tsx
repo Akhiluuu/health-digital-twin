@@ -1,8 +1,8 @@
 // app/settings-export-summary.tsx
-// Dedicated Doctor Summary Export Screen in Settings
-// Allows full customization of clinical PDF summary report sections, timeframe, and export options.
+// Dedicated Doctor Summary & FHIR Data Export Screen in Settings
+// Allows full customization of clinical PDF summary report sections, timeframe, and HL7 FHIR R4 JSON bundle exports.
 
-import React, { useState, useMemo, useCallback } from "react";
+import React, { useState, useMemo } from "react";
 import {
   View,
   Text,
@@ -30,6 +30,7 @@ import {
   SummaryDataPayload,
   DoctorSummaryOptions,
 } from "../utils/doctorSummaryPdfBuilder";
+import { exportFhirR4Json, buildFhirR4Bundle } from "../utils/fhirExporter";
 import { log } from "../utils/logger";
 
 export default function SettingsExportSummaryScreen() {
@@ -41,12 +42,13 @@ export default function SettingsExportSummaryScreen() {
   const { profile: selfProfile } = useProfile();
   const { activeProfile, isSwitched } = useFamily();
   const { medicines } = useMedicine();
-  const { activeSymptoms, historySymptoms } = useSymptoms();
+  const { activeSymptoms } = useSymptoms();
   const { lastVitals } = useBiogearsTwin();
 
   // Export State
   const [timeframeDays, setTimeframeDays] = useState<number>(30);
-  const [isExporting, setIsExporting] = useState<boolean>(false);
+  const [isExportingPdf, setIsExportingPdf] = useState<boolean>(false);
+  const [isExportingFhir, setIsExportingFhir] = useState<boolean>(false);
 
   // Section Toggles
   const [sections, setSections] = useState({
@@ -211,11 +213,16 @@ export default function SettingsExportSummaryScreen() {
     };
   }, [targetPatient, medicines, activeSymptoms, lastVitals]);
 
+  // Compute FHIR Resource Count
+  const fhirBundle = useMemo(() => {
+    return buildFhirR4Bundle(summaryPayload);
+  }, [summaryPayload]);
+
   // Generate & Share PDF Action
   const handleExportPdf = async () => {
     try {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-      setIsExporting(true);
+      setIsExportingPdf(true);
 
       const options: DoctorSummaryOptions = {
         timeframeDays,
@@ -227,7 +234,22 @@ export default function SettingsExportSummaryScreen() {
       log("Error exporting Doctor Summary PDF:", err);
       Alert.alert("Export Error", "Unable to generate PDF report. Please try again.");
     } finally {
-      setIsExporting(false);
+      setIsExportingPdf(false);
+    }
+  };
+
+  // Generate & Share FHIR JSON Action
+  const handleExportFhir = async () => {
+    try {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      setIsExportingFhir(true);
+
+      await exportFhirR4Json(summaryPayload);
+    } catch (err) {
+      log("Error exporting FHIR JSON:", err);
+      Alert.alert("FHIR Export Error", "Unable to generate FHIR JSON bundle. Please try again.");
+    } finally {
+      setIsExportingFhir(false);
     }
   };
 
@@ -249,7 +271,7 @@ export default function SettingsExportSummaryScreen() {
         {/* Title */}
         <Text style={[styles.headerTitle, { color: c.text }]}>Export Doctor Summary</Text>
         <Text style={[styles.headerSubtitle, { color: c.sub }]}>
-          Generate a comprehensive clinical PDF report detailing your regimen, adherence metrics, biomarker trends, and symptoms for your physician.
+          Generate clinician-grade PDF reports and HL7 FHIR R4 JSON clinical bundles for your physician visits and hospital EHR ingestion.
         </Text>
 
         {/* Timeframe Selector */}
@@ -322,7 +344,7 @@ export default function SettingsExportSummaryScreen() {
         <View style={[styles.previewCard, { backgroundColor: c.card, borderColor: c.border }]}>
           <View style={styles.previewHeader}>
             <Ionicons name="document-text" size={24} color={c.accent} />
-            <Text style={[styles.previewTitle, { color: c.text }]}>Report Preview</Text>
+            <Text style={[styles.previewTitle, { color: c.text }]}>Clinical Bundle Preview</Text>
           </View>
 
           <View style={styles.previewGrid}>
@@ -339,35 +361,62 @@ export default function SettingsExportSummaryScreen() {
               <Text style={[styles.previewItemVal, { color: c.text }]}>{summaryPayload.medications.length}</Text>
             </View>
             <View style={[styles.previewItem, { backgroundColor: c.bg }]}>
-              <Text style={[styles.previewItemLabel, { color: c.sub }]}>ACTIVE SYMPTOMS</Text>
-              <Text style={[styles.previewItemVal, { color: c.text }]}>{summaryPayload.symptoms.length}</Text>
+              <Text style={[styles.previewItemLabel, { color: c.sub }]}>HL7 FHIR RESOURCES</Text>
+              <Text style={[styles.previewItemVal, { color: "#10b981" }]}>{fhirBundle.total} Items</Text>
             </View>
           </View>
         </View>
 
-        {/* Export Button */}
-        <TouchableOpacity
-          style={styles.exportButtonWrapper}
-          onPress={handleExportPdf}
-          disabled={isExporting}
-          activeOpacity={0.8}
-        >
-          <LinearGradient
-            colors={["#2563eb", "#1d4ed8"]}
-            style={styles.exportGradient}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
+        {/* Export Buttons */}
+        <View style={styles.actionsContainer}>
+          {/* Button 1: PDF Export */}
+          <TouchableOpacity
+            style={styles.exportButtonWrapper}
+            onPress={handleExportPdf}
+            disabled={isExportingPdf || isExportingFhir}
+            activeOpacity={0.8}
           >
-            {isExporting ? (
-              <ActivityIndicator color="#ffffff" size="small" />
-            ) : (
-              <>
-                <Ionicons name="share-social" size={22} color="#ffffff" />
-                <Text style={styles.exportButtonText}>Export & Share Doctor Summary (PDF)</Text>
-              </>
-            )}
-          </LinearGradient>
-        </TouchableOpacity>
+            <LinearGradient
+              colors={["#2563eb", "#1d4ed8"]}
+              style={styles.exportGradient}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+            >
+              {isExportingPdf ? (
+                <ActivityIndicator color="#ffffff" size="small" />
+              ) : (
+                <>
+                  <Ionicons name="document-attach" size={22} color="#ffffff" />
+                  <Text style={styles.exportButtonText}>Export Doctor Summary PDF</Text>
+                </>
+              )}
+            </LinearGradient>
+          </TouchableOpacity>
+
+          {/* Button 2: FHIR R4 JSON Export */}
+          <TouchableOpacity
+            style={styles.exportButtonWrapper}
+            onPress={handleExportFhir}
+            disabled={isExportingPdf || isExportingFhir}
+            activeOpacity={0.8}
+          >
+            <LinearGradient
+              colors={["#059669", "#047857"]}
+              style={styles.exportGradient}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+            >
+              {isExportingFhir ? (
+                <ActivityIndicator color="#ffffff" size="small" />
+              ) : (
+                <>
+                  <Ionicons name="code-download" size={22} color="#ffffff" />
+                  <Text style={styles.exportButtonText}>Export HL7 FHIR R4 (JSON)</Text>
+                </>
+              )}
+            </LinearGradient>
+          </TouchableOpacity>
+        </View>
       </ScrollView>
     </View>
   );
@@ -490,6 +539,9 @@ const styles = StyleSheet.create({
   previewItemVal: {
     fontSize: 16,
     fontWeight: "800",
+  },
+  actionsContainer: {
+    gap: 12,
   },
   exportButtonWrapper: {
     borderRadius: 16,

@@ -32,6 +32,7 @@ import {
   useNutrition,
 } from "../context/NutritionContext";
 import { useTheme } from "../context/ThemeContext";
+import { useThemeAlert } from "../context/ThemeAlertContext";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 export interface CsvFoodItem {
@@ -605,6 +606,7 @@ const GOAL = 2000;
 export default function NutritionScreen() {
   const router = useRouter();
   const { theme } = useTheme();
+  const { showAlert, showToast } = useThemeAlert();
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
   const {
@@ -714,8 +716,8 @@ export default function NutritionScreen() {
       sodium: scaled.sodium, fiber: scaled.fiber,
     });
     closeModal();
-    Alert.alert("✅ Added", `${label} added to ${selectedMeal.label}`);
-  }, [selectedCsvFood, selectedMeal, scaled, quantity, parsedUnit, isSubmitting]);
+    showToast({ message: `${label} added to ${selectedMeal.label} 🥗`, type: "success" });
+  }, [selectedCsvFood, selectedMeal, scaled, quantity, parsedUnit, isSubmitting, showToast]);
 
   // ── Custom food entry ────────────────────────────────────────────────────
   const handleAddCustomFood = () => {
@@ -730,7 +732,7 @@ export default function NutritionScreen() {
       protein: 0, carbs: 0, fat: 0, sugar: 0, sodium: 0, fiber: 0,
     });
     closeModal();
-    Alert.alert("✅ Added", `${customFood} added to ${selectedMeal.label}`);
+    showToast({ message: `${customFood} added to ${selectedMeal.label} 🥗`, type: "success" });
   };
 
   const closeModal = () => {
@@ -883,13 +885,22 @@ export default function NutritionScreen() {
                     <Text style={[styles.mealCalories, { color: colors.accent }]}>{totalMealCals} cal</Text>
                     {entries.length > 0 && (
                       <TouchableOpacity onPress={() =>
-                        Alert.alert("Remove Last Item", "Remove the last item?", [
-                          { text: "Cancel", style: "cancel" },
-                          {
-                            text: "Remove", style: "destructive",
-                            onPress: () => removeFoodEntry(entries[entries.length - 1].id)
-                          },
-                        ])
+                        showAlert({
+                          title: "Remove Item",
+                          message: `Remove the last item from ${meal.label}?`,
+                          type: "warning",
+                          buttons: [
+                            { text: "Cancel", style: "cancel" },
+                            {
+                              text: "Remove",
+                              style: "destructive",
+                              onPress: () => {
+                                removeFoodEntry(entries[entries.length - 1].id);
+                                showToast({ message: "Item removed 🗑️", type: "info" });
+                              },
+                            },
+                          ],
+                        })
                       }>
                         <Ionicons name="close-circle" size={20} color={colors.sub} />
                       </TouchableOpacity>

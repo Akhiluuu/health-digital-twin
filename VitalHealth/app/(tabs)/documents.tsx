@@ -48,6 +48,15 @@ type ReportCategory =
   | "Discharge"
   | "Other";
 
+export interface ExtractedLabItem {
+  name?: string;
+  canonical_name?: string;
+  value: number;
+  unit: string;
+  classification?: string;
+  loinc_code?: string;
+}
+
 interface StoredDocument {
   id: string;
   title: string;
@@ -59,6 +68,7 @@ interface StoredDocument {
   originalName: string;
   mimeType: string;
   sizeKb: number;
+  extractedLabs?: ExtractedLabItem[];
 }
 
 interface CategoryStyle {
@@ -517,39 +527,50 @@ export default function DocumentsScreen() {
 
         if (uploadRes.ok) {
           const uploadData = await uploadRes.json();
-          if (uploadData.status === 'success' && Array.isArray(uploadData.chunks) && uploadData.chunks.length > 0) {
-            // Bridge: store server-generated chunks into AI Chat's vector namespace
-            const docId = uploadData.doc_id || `doc_${Date.now()}`;
-            const aiChunks = uploadData.chunks.map((c: any, idx: number) => ({
-              id: c.id || `${docId}_c${idx}`,
-              text: c.text,
-              metadata: {
-                ...(c.metadata || {}),
-                docId,
-                docName: pickedFileName,
-                docType: pickedMime?.includes('pdf') ? 'pdf' : 'image',
-                sourceScreen: 'documents',
-              },
-              embedding: c.embedding,
-            }));
-            const aiDoc = {
-              id: docId,
-              name: pickedFileName,
-              type: (pickedMime?.includes('pdf') ? 'pdf' : 'image') as 'pdf' | 'image',
-              chunkCount: aiChunks.length,
-              uploadedAt: Date.now(),
-            };
-            const existingDocs = await loadAIDocs();
-            const existingChunks = await loadAIChunks();
-            await saveAIDocs([...existingDocs, aiDoc]);
-            await saveAIChunks([...existingChunks, ...aiChunks]);
-            console.log(`[Documents] Bridged ${aiChunks.length} chunks into AI Chat vector store`);
+          if (uploadData.status === 'success') {
+            if (Array.isArray(uploadData.labs) && uploadData.labs.length > 0) {
+              newDoc.extractedLabs = uploadData.labs.map((l: any) => ({
+                name: l.canonical_name || l.name || "Lab Finding",
+                value: l.value,
+                unit: l.unit || "",
+                classification: l.classification || "Normal",
+                loinc_code: l.loinc_code || "",
+              }));
+            }
+            if (Array.isArray(uploadData.chunks) && uploadData.chunks.length > 0) {
+              // Bridge: store server-generated chunks into AI Chat's vector namespace
+              const docId = uploadData.doc_id || `doc_${Date.now()}`;
+              const aiChunks = uploadData.chunks.map((c: any, idx: number) => ({
+                id: c.id || `${docId}_c${idx}`,
+                text: c.text,
+                metadata: {
+                  ...(c.metadata || {}),
+                  docId,
+                  docName: pickedFileName,
+                  docType: pickedMime?.includes('pdf') ? 'pdf' : 'image',
+                  sourceScreen: 'documents',
+                },
+                embedding: c.embedding,
+              }));
+              const aiDoc = {
+                id: docId,
+                name: pickedFileName,
+                type: (pickedMime?.includes('pdf') ? 'pdf' : 'image') as 'pdf' | 'image',
+                chunkCount: aiChunks.length,
+                uploadedAt: Date.now(),
+              };
+              const existingDocs = await loadAIDocs();
+              const existingChunks = await loadAIChunks();
+              await saveAIDocs([...existingDocs, aiDoc]);
+              await saveAIChunks([...existingChunks, ...aiChunks]);
+              console.log(`[Documents] Bridged ${aiChunks.length} chunks into AI Chat vector store`);
+            }
           }
         } else {
           // Fallback: send text metadata to /lab-report/ocr for at least lab ingestion
           console.log('[Documents] upload-and-embed returned non-200, falling back to /lab-report/ocr');
           const fbBaseUrl = await getBiogearsBaseUrl();
-          await fetch(`${fbBaseUrl}/lab-report/ocr`, {
+          const fbRes = await fetch(`${fbBaseUrl}/lab-report/ocr`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -559,6 +580,18 @@ export default function DocumentsScreen() {
               text_content: `Category: ${selectedCategory}. Document: ${pickedFileName}.`,
             }),
           });
+          if (fbRes.ok) {
+            const fbData = await fbRes.json();
+            if (Array.isArray(fbData.labs) && fbData.labs.length > 0) {
+              newDoc.extractedLabs = fbData.labs.map((l: any) => ({
+                name: l.canonical_name || l.name || "Lab Finding",
+                value: l.value,
+                unit: l.unit || "",
+                classification: l.classification || "Normal",
+                loinc_code: l.loinc_code || "",
+              }));
+            }
+          }
         }
       } catch (ocrErr: any) {
         // Silent failure — document is still stored locally
@@ -642,18 +675,53 @@ export default function DocumentsScreen() {
           <Text style={[styles.cardTitle, { color: colors.text }]} numberOfLines={1}>{item.title}</Text>
           <Text style={[styles.cardMeta, { color: colors.sub }]}>{item.date} · {fileLabel} · {formatSize(item.sizeKb)}</Text>
           
-          {/* Color-Coded Clinical Parameter Flags */}
-          {item.category === "Lab" && (
+          {/* Color-Coded Clinical LOINC Lab Finding Chips */}
+          {Array.isArray(item.extractedLabs) && item.extractedLabs.length > 0 ? (
             <View style={{ flexDirection: "row", gap: 6, marginTop: 6, flexWrap: "wrap" }}>
-              <View style={{ backgroundColor: "#10b98120", paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6, flexDirection: "row", alignItems: "center", gap: 4 }}>
-                <View style={{ width: 5, height: 5, borderRadius: 3, backgroundColor: "#10b981" }} />
-                <Text style={{ color: "#10b981", fontSize: 10, fontWeight: "700" }}>Glucose: 95 mg/dL (NORMAL)</Text>
-              </View>
-              <View style={{ backgroundColor: "#f59e0b20", paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6, flexDirection: "row", alignItems: "center", gap: 4 }}>
-                <View style={{ width: 5, height: 5, borderRadius: 3, backgroundColor: "#f59e0b" }} />
-                <Text style={{ color: "#f59e0b", fontSize: 10, fontWeight: "700" }}>Cholesterol: 215 mg/dL (ELEVATED)</Text>
-              </View>
+              {item.extractedLabs.slice(0, 3).map((lab, lIdx) => {
+                const isHigh = lab.classification === "High" || lab.classification === "Elevated";
+                const isLow = lab.classification === "Low";
+                const color = isHigh ? "#f59e0b" : (isLow ? "#ef4444" : "#10b981");
+                const labTitle = lab.name || lab.canonical_name || "Lab Test";
+                const unitStr = lab.unit ? ` ${lab.unit}` : "";
+                const classStr = lab.classification ? ` (${lab.classification.toUpperCase()})` : "";
+                return (
+                  <View
+                    key={`lab_chip_${lIdx}`}
+                    style={{
+                      backgroundColor: `${color}20`,
+                      paddingHorizontal: 6,
+                      paddingVertical: 2,
+                      borderRadius: 6,
+                      flexDirection: "row",
+                      alignItems: "center",
+                      gap: 4,
+                    }}
+                  >
+                    <View style={{ width: 5, height: 5, borderRadius: 3, backgroundColor: color }} />
+                    <Text style={{ color, fontSize: 10, fontWeight: "700" }}>
+                      {labTitle}: {lab.value}{unitStr}{classStr}
+                    </Text>
+                  </View>
+                );
+              })}
+              {item.extractedLabs.length > 3 && (
+                <View style={{ backgroundColor: "#6b728020", paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 }}>
+                  <Text style={{ color: "#6b7280", fontSize: 10, fontWeight: "700" }}>
+                    +{item.extractedLabs.length - 3} more
+                  </Text>
+                </View>
+              )}
             </View>
+          ) : (
+            item.category === "Lab" && (
+              <View style={{ flexDirection: "row", gap: 6, marginTop: 6, flexWrap: "wrap" }}>
+                <View style={{ backgroundColor: "#3b82f620", paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6, flexDirection: "row", alignItems: "center", gap: 4 }}>
+                  <View style={{ width: 5, height: 5, borderRadius: 3, backgroundColor: "#3b82f6" }} />
+                  <Text style={{ color: "#3b82f6", fontSize: 10, fontWeight: "700" }}>LOINC Parser Ready</Text>
+                </View>
+              </View>
+            )
           )}
         </View>
         <View style={[styles.badge, { backgroundColor: isDark ? style.darkBadge : style.lightBadge }]}>
@@ -817,6 +885,28 @@ export default function DocumentsScreen() {
                 <Text style={[styles.metaValue, { color: colors.text }]} numberOfLines={1}>{row.value}</Text>
               </View>
             ))}
+
+            {Array.isArray(viewingDoc.extractedLabs) && viewingDoc.extractedLabs.length > 0 && (
+              <View style={{ marginTop: 12, marginBottom: 8, width: "100%" }}>
+                <Text style={{ fontSize: 11, fontWeight: "700", color: colors.sub, marginBottom: 6 }}>EXTRACTED LOINC LAB FINDINGS</Text>
+                <ScrollView style={{ maxHeight: 120 }}>
+                  {viewingDoc.extractedLabs.map((lab, lIdx) => {
+                    const isHigh = lab.classification === "High" || lab.classification === "Elevated";
+                    const isLow = lab.classification === "Low";
+                    const color = isHigh ? "#f59e0b" : (isLow ? "#ef4444" : "#10b981");
+                    return (
+                      <View key={`detail_lab_${lIdx}`} style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 4, borderBottomWidth: 0.5, borderBottomColor: colors.border }}>
+                        <View style={{ flex: 1 }}>
+                          <Text style={{ fontSize: 12, fontWeight: "600", color: colors.text }}>{lab.name || lab.canonical_name || "Lab"}</Text>
+                          {lab.loinc_code ? <Text style={{ fontSize: 10, color: colors.sub }}>LOINC: {lab.loinc_code}</Text> : null}
+                        </View>
+                        <Text style={{ fontSize: 12, fontWeight: "700", color }}>{lab.value} {lab.unit} ({lab.classification || "Normal"})</Text>
+                      </View>
+                    );
+                  })}
+                </ScrollView>
+              </View>
+            )}
 
             <View style={styles.detailActions}>
               {/* Open in-app */}

@@ -17,13 +17,13 @@ import {
 
 /** Ensure BioGears URL correctly targets port 8000 on the production/staging server */
 function sanitizeBiogearsUrl(raw: string): string {
-  if (!raw) return 'http://151.185.45.137:8000';
+  const envUrl = process.env.EXPO_PUBLIC_BACKEND_URL;
+  if (!raw) return envUrl || 'http://151.185.45.137:8000';
   let cleaned = raw.trim().replace(/\/+$/, '');
   try {
     const u = new URL(cleaned);
-    // If pointing to VM without explicit port or port 80, route to port 8000 where FastAPI is running
-    if ((!u.port || u.port === '80') && u.hostname === '151.185.45.137') {
-      return `http://151.185.45.137:8000${u.pathname !== '/' ? u.pathname : ''}`;
+    if ((!u.port || u.port === '80') && (u.hostname === '151.185.45.137' || u.hostname === '127.0.0.1')) {
+      return `${u.protocol}//${u.hostname}:8000${u.pathname !== '/' ? u.pathname : ''}`;
     }
     return `${u.protocol}//${u.host}${u.pathname !== '/' ? u.pathname : ''}`;
   } catch {

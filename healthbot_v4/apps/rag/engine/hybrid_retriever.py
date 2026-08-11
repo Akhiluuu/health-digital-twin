@@ -47,13 +47,42 @@ class HybridRAGEngine:
         )
     ]
 
+    def _load_db_chunks(self, query: str) -> List[ClinicalChunk]:
+        """Dynamically loads relevant clinical chunks from clinical_kb.db if available."""
+        import os, sqlite3
+        db_path = os.path.join(os.path.dirname(__file__), "..", "..", "..", "database", "clinical_kb.db")
+        if not os.path.exists(db_path):
+            return []
+        
+        chunks = []
+        try:
+            conn = sqlite3.connect(db_path, timeout=5.0)
+            cur = conn.cursor()
+            query_terms = [t for t in query.lower().split() if len(t) > 3]
+            if query_terms:
+                like_clauses = " OR ".join(["interaction_mechanism LIKE ?" for _ in query_terms[:3]])
+                params = [f"%{t}%" for t in query_terms[:3]]
+                cur.execute(f"SELECT drug_a, drug_b, severity, interaction_mechanism FROM drug_interactions WHERE {like_clauses} LIMIT 5", params)
+                for row in cur.fetchall():
+                    drug_a, drug_b, sev, mech = row
+                    chunks.append(ClinicalChunk(
+                        chunk_id=f"kb_db_{drug_a}_{drug_b}".lower(),
+                        source_document=f"FDA Clinical Knowledge Base ({sev.upper()} Interaction)",
+                        content=f"Drug interaction between {drug_a} and {drug_b}: {mech}"
+                    ))
+            conn.close()
+        except Exception as e:
+            logger.warning(f"⚠️ Failed to query clinical_kb.db for RAG: {e}")
+        return chunks
+
     def hybrid_retrieve(self, query: str, top_k: int = 3) -> List[ClinicalChunk]:
         """Performs sparse keyword matching + vector similarity + cross-encoder re-ranking."""
         logger.info(f"🔎 Executing Hybrid RAG Retrieval for query: '{query}'")
         query_words = set(query.lower().split())
 
+        all_chunks = list(self.CLINICAL_KNOWLEDGE_BASE) + self._load_db_chunks(query)
         scored_chunks: List[ClinicalChunk] = []
-        for chunk in self.CLINICAL_KNOWLEDGE_BASE:
+        for chunk in all_chunks:
             chunk_words = set(chunk.content.lower().split())
             overlap = len(query_words.intersection(chunk_words))
             

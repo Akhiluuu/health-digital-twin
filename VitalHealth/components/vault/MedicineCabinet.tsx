@@ -14,6 +14,7 @@ import PillAvatar from "./shared/PillAvatar";
 import { getVaultStyles } from "./shared/VaultStyles";
 import { Medicine } from "../../context/MedicineContext";
 import { useTheme } from "../../context/ThemeContext";
+import { useThemeAlert } from "../../context/ThemeAlertContext";
 import { colors } from "../../theme/colors";
 
 interface MedicineCabinetProps {
@@ -36,6 +37,7 @@ export default function MedicineCabinet({
   const { theme } = useTheme();
   const c = colors[theme];
   const styles = getVaultStyles(c);
+  const { showAlert, showToast } = useThemeAlert();
 
   const [selectedPrescription, setSelectedPrescription] = useState<any | null>(null);
 
@@ -118,10 +120,20 @@ export default function MedicineCabinet({
                 ]}
                 onPress={() => {
                   Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-                  Alert.alert(
-                    "Order Refill",
-                    `Do you want to send a refill request for ${med.name} to ${meta.doctor || "your doctor"}?`
-                  );
+                  showAlert({
+                    title: "Order Refill",
+                    message: `Do you want to send a refill request for ${med.name} to ${meta.doctor || "your doctor"}?`,
+                    type: "info",
+                    buttons: [
+                      { text: "Cancel", style: "cancel" },
+                      {
+                        text: "Request Refill",
+                        onPress: () => {
+                          showToast({ message: `Refill request sent for ${med.name} 💊`, type: "success" });
+                        },
+                      },
+                    ],
+                  });
                 }}
               >
                 <Text style={styles.refillButtonTxt}>Refill</Text>

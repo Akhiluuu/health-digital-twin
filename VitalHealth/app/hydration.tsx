@@ -22,6 +22,7 @@ import {
 
 import { useHydration } from "../context/HydrationContext";
 import { useTheme } from "../context/ThemeContext";
+import { useThemeAlert } from "../context/ThemeAlertContext";
 import { useBiogearsTwin } from "../context/BiogearsTwinContext";
 import {
   cancelHydrationReminder,
@@ -74,6 +75,7 @@ const formatRelativeTime = (timestamp: number): string => {
 export default function HydrationScreen() {
   const router = useRouter();
   const { theme } = useTheme();
+  const { showAlert, showToast } = useThemeAlert();
   const { water, history, addWater, reset, reloadHistory } = useHydration();
   const { addEvent } = useBiogearsTwin();
 
@@ -283,27 +285,26 @@ export default function HydrationScreen() {
     } catch (err) {
       console.error("BioGears Hydration Sync Error:", err);
     }
-    setToast(`+${ml}ml added ✓`);
-    setTimeout(() => setToast(""), 1500);
+    showToast({ message: `+${ml}ml water logged 💧`, type: "success" });
   };
 
   const handleReset = () => {
-    Alert.alert(
-      "Reset Hydration",
-      "Are you sure you want to reset today's water intake and history?",
-      [
+    showAlert({
+      title: "Reset Daily Hydration",
+      message: "Are you sure you want to reset today's water intake and history?",
+      type: "warning",
+      buttons: [
         { text: "Cancel", style: "cancel" },
         {
           text: "Reset",
           style: "destructive",
           onPress: () => {
             reset();
-            setToast("Reset complete ✓");
-            setTimeout(() => setToast(""), 2000);
+            showToast({ message: "Hydration history reset 💧", type: "success" });
           },
         },
-      ]
-    );
+      ],
+    });
   };
 
   ///////////////////////////////////////////////////////////
