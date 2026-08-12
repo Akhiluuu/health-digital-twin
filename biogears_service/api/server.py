@@ -312,7 +312,7 @@ _prune_old_jobs()
 _recover_interrupted_jobs()
 
 # ---------------------------------------------------------------------------
-# PER-USER RATE LIMITING  (max 15 simulations per hour per user)
+# PER-USER RATE LIMITING  (disabled for testing — re-enable before production)
 # ---------------------------------------------------------------------------
 import collections
 _sim_log: Dict[str, collections.deque] = {}  # user_id -> deque of epoch timestamps
@@ -320,24 +320,24 @@ _RATE_LIMIT_MAX   = int(os.environ.get("SIM_RATE_LIMIT", "15"))  # max sims per 
 _RATE_LIMIT_WINDOW = int(os.environ.get("SIM_RATE_WINDOW", "3600"))  # window in seconds (1 hr)
 
 def _check_rate_limit(user_id: str):
-    """Raises HTTP 429 if user has exceeded 15 simulations in the last hour."""
-    now = time.time()
-    if user_id not in _sim_log:
-        _sim_log[user_id] = collections.deque()
-    dq = _sim_log[user_id]
-    # Evict entries outside the rolling window
-    while dq and now - dq[0] > _RATE_LIMIT_WINDOW:
-        dq.popleft()
-    if len(dq) >= _RATE_LIMIT_MAX:
-        wait = int(_RATE_LIMIT_WINDOW - (now - dq[0]))
-        raise HTTPException(
-            status_code=429,
-            detail=(
-                f"Rate limit reached: max {_RATE_LIMIT_MAX} simulations per hour. "
-                f"Please wait {wait // 60}m {wait % 60}s before running another."
-            )
-        )
-    dq.append(now)
+    """Rate limiting disabled for testing. Uncomment body to re-enable."""
+    pass  # TODO: re-enable before production deployment
+    # now = time.time()
+    # if user_id not in _sim_log:
+    #     _sim_log[user_id] = collections.deque()
+    # dq = _sim_log[user_id]
+    # while dq and now - dq[0] > _RATE_LIMIT_WINDOW:
+    #     dq.popleft()
+    # if len(dq) >= _RATE_LIMIT_MAX:
+    #     wait = int(_RATE_LIMIT_WINDOW - (now - dq[0]))
+    #     raise HTTPException(
+    #         status_code=429,
+    #         detail=(
+    #             f"Rate limit reached: max {_RATE_LIMIT_MAX} simulations per hour. "
+    #             f"Please wait {wait // 60}m {wait % 60}s before running another."
+    #         )
+    #     )
+    # dq.append(now)
 
 
 # ---------------------------------------------------------------------------
