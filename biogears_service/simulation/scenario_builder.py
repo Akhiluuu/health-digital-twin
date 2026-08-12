@@ -673,11 +673,14 @@ def build_registration_scenario(user_id, age, weight, height, sex, body_fat,
     # BioGears CDM requires conditions inside a <Conditions> wrapper element
     # within <InitialParameters>. Placing them bare (without wrapper) causes
     # XSD validation failure: "no declaration found for element 'Condition'"
-    conditions_block = conditions_xml if conditions_xml.strip() else ""
+    if conditions_xml.strip():
+        conditions_block = f'        <Conditions>\n            {conditions_xml}\n        </Conditions>\n'
+    else:
+        conditions_block = ""
 
     # BioGears 8 auto-stabilizes the patient before running actions.
     # <TrackStabilization> is not a valid v8 CDM element and causes parse errors.
-    # We advance 120s post-stabilization to let transient oscillations settle
+    # We advance 600s post-stabilization to let transient oscillations fully settle
     # before saving the calibrated state.
     s_xml = (
         '<?xml version="1.0" encoding="UTF-8" standalone="no" ?>\n'
@@ -685,10 +688,10 @@ def build_registration_scenario(user_id, age, weight, height, sex, body_fat,
         ' xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">\n'
         '    <InitialParameters>\n'
         f'        <PatientFile>{abs_patient}</PatientFile>\n'
-        f'        {conditions_block}\n'
+        f'{conditions_block}'
         '    </InitialParameters>\n'
         '    <Actions>\n'
-        '        <Action xsi:type="AdvanceTimeData"><Time value="300" unit="s"/></Action>\n'
+        '        <Action xsi:type="AdvanceTimeData"><Time value="600" unit="s"/></Action>\n'
         f'        <Action xsi:type="SerializeStateData" Type="Save"><Filename>{abs_state_out}</Filename></Action>\n'
         '    </Actions>\n'
         '</Scenario>'
