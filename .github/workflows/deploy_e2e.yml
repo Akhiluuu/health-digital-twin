@@ -40,14 +40,16 @@ jobs:
     runs-on: ubuntu-latest
     env:
       E2E_SSH_KEY: ${{ secrets.E2E_SSH_PRIVATE_KEY || '' }}
+      E2E_HOST: '151.185.45.137'
+      E2E_USER: 'cave'
 
     steps:
       - name: 🚀 Trigger Remote Deployment via SSH
         if: ${{ env.E2E_SSH_KEY != '' }}
         uses: appleboy/ssh-action@v1.0.3
         with:
-          host: ${{ secrets.E2E_SERVER_IP || '151.185.45.137' }}
-          username: ${{ secrets.E2E_SERVER_USER || 'cave' }}
+          host: ${{ env.E2E_HOST }}
+          username: ${{ env.E2E_USER }}
           key: ${{ secrets.E2E_SSH_PRIVATE_KEY || '' }}
           script: |
             cd /home/cave/health-digital-twin
