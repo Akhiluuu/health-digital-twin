@@ -66,17 +66,17 @@ async def test_organ_scores_loinc_integration():
 
     # Inject elevated BP vital & labs
     bp_vital = NormalizedVital(
-        vital_id="v1", patient_id=uid, vital_type="blood_pressure",
+        vital_type="blood_pressure",
         value_primary=145.0, value_secondary=95.0, unit="mmHg",
         timestamp=datetime.now(timezone.utc)
     )
     state.recent_vitals.append(bp_vital)
 
     labs = [
-        NormalizedLab(lab_id="l1", patient_id=uid, canonical_name="HbA1c", loinc_code="4548-4", value=8.2, unit="%", timestamp=datetime.now(timezone.utc)),
-        NormalizedLab(lab_id="l2", patient_id=uid, canonical_name="eGFR", loinc_code="33914-3", value=42.0, unit="mL/min", timestamp=datetime.now(timezone.utc)),
-        NormalizedLab(lab_id="l3", patient_id=uid, canonical_name="ALT", loinc_code="1742-6", value=85.0, unit="U/L", timestamp=datetime.now(timezone.utc)),
-        NormalizedLab(lab_id="l4", patient_id=uid, canonical_name="Total Cholesterol", loinc_code="2093-3", value=240.0, unit="mg/dL", timestamp=datetime.now(timezone.utc)),
+        NormalizedLab(canonical_name="HbA1c", loinc_code="4548-4", value=8.2, unit="%", timestamp=datetime.now(timezone.utc)),
+        NormalizedLab(canonical_name="eGFR", loinc_code="33914-3", value=42.0, unit="mL/min", timestamp=datetime.now(timezone.utc)),
+        NormalizedLab(canonical_name="ALT", loinc_code="1742-6", value=85.0, unit="U/L", timestamp=datetime.now(timezone.utc)),
+        NormalizedLab(canonical_name="Total Cholesterol", loinc_code="2093-3", value=240.0, unit="mg/dL", timestamp=datetime.now(timezone.utc)),
     ]
     for lab in labs:
         state_mgr.add_lab(uid, lab)

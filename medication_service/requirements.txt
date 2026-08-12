@@ -9,11 +9,11 @@ psycopg2-binary>=2.9.9
 python-multipart>=0.0.9
 firebase-admin>=6.5.0
 # Optional — install for full OCR support
-# pytesseract>=0.3.10
-# Pillow>=10.0.0
-# pypdf>=4.0.0
+pytesseract>=0.3.10
+Pillow>=10.0.0
+pypdf>=4.0.0
 # Optional — for PDF report generation
-# reportlab>=4.1.0
+reportlab>=4.1.0
 pytest>=8.0.0
 pytest-asyncio>=0.23.0
 anyio>=4.0.0

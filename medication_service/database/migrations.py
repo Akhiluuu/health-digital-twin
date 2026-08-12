@@ -629,7 +629,7 @@ logger = logging.getLogger(__name__)
 def run_migrations(conn=None):
     """Execute all DDL migrations. Accepts an existing psycopg2 connection or creates one."""
     if conn is None:
-        import psycopg2
+        import psycopg2  # type: ignore
         database_url = os.environ.get("DATABASE_URL")
         if not database_url:
             raise RuntimeError("DATABASE_URL environment variable not set")

@@ -25,11 +25,11 @@ async def test_fhir_r4_export_compliance():
     # Add sample lab and med
     orchestrator.state_mgr.add_lab(
         "usr_fhir_test",
-        NormalizedLab(lab_id="lab_1", lab_name="HbA1c", canonical_name="HbA1c", value=8.1, unit="%", loinc_code="4548-4")
+        NormalizedLab(canonical_name="HbA1c", value=8.1, unit="%", loinc_code="4548-4")
     )
     orchestrator.state_mgr.add_medication(
         "usr_fhir_test",
-        NormalizedMedication(med_id="med_1", name="Metformin", med_name="Metformin", dosage="500mg", frequency="Daily", rxnorm_code="6809")
+        NormalizedMedication(name="Metformin", dosage_form="500mg", frequency="Daily", rxnorm_code="6809")
     )
 
     bundle = exporter.export_patient_bundle(

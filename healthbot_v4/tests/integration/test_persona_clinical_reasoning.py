@@ -63,14 +63,24 @@ def test_clinical_persona_divergence_suite(client):
     responses = {}
 
     for p in personas:
+        raw_id = p["id"]
+        pid = raw_id if isinstance(raw_id, str) else str(raw_id)
+        raw_name = p["name"]
+        pname = raw_name if isinstance(raw_name, str) else str(raw_name)
+        raw_age = p["age"]
+        page = raw_age if isinstance(raw_age, int) else 30
+        psex = p["sex"] if isinstance(p["sex"], BiologicalSex) else BiologicalSex.other
+        raw_conds = p["conditions"]
+        pconds = [str(c) for c in raw_conds] if isinstance(raw_conds, list) else []
+
         # 1. Create Patient Profile with chronic conditions
         prof = PatientProfile(
-            patient_id=p["id"],
-            first_name=p["name"].split()[0],
+            patient_id=pid,
+            first_name=pname.split()[0],
             last_name="Test",
-            age=p["age"],
-            biological_sex=p["sex"],
-            chronic_conditions=p["conditions"],
+            age=page,
+            biological_sex=psex,
+            chronic_conditions=pconds,
         )
         client.post("/api/v5/patients/profile", json=prof.model_dump())
 
@@ -79,17 +89,19 @@ def test_clinical_persona_divergence_suite(client):
             client.post("/api/v5/ocr/ingest", json={"patient_id": p["id"], "raw_text": "HbA1c: 8.5% (High)", "document_name": "lab.pdf"})
 
         # 2. Process Query
-        query_payload = {"patient_id": p["id"], "session_id": "sess_persona", "query": "Can I eat a mango?"}
+        query_payload = {"patient_id": pid, "session_id": "sess_persona", "query": "Can I eat a mango?"}
         res = client.post("/api/v5/brain/query/explainable", json=query_payload)
         assert res.status_code == 200
         data = res.json()
 
-        responses[p["id"]] = data
-        print(f"\nPERSONA: {p['name']}")
+        responses[pid] = data
+        print(f"\nPERSONA: {pname}")
         print(f"  • Query: Can I eat a mango?")
         print(f"  • Classified Intent: {data['explainability']['intent']}")
         print(f"  • AI Physician Response Excerpt:\n    {data['response'].splitlines()[1]}")
-        assert p["expected_kw"].lower() in data["response"].lower()
+        raw_kw = p["expected_kw"]
+        expected_kw = raw_kw if isinstance(raw_kw, str) else str(raw_kw)
+        assert expected_kw.lower() in data["response"].lower()
 
     # Verify response divergence between Healthy Sarah and Diabetic John
     assert responses["persona_1_healthy"]["response"] != responses["persona_2_diabetic"]["response"]

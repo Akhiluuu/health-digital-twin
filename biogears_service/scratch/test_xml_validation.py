@@ -1,6 +1,9 @@
 import sys
 from pathlib import Path
-from lxml import etree
+try:
+    from lxml import etree # type: ignore
+except ImportError:
+    import xml.etree.ElementTree as etree # type: ignore
 
 def main():
     xsd_path = Path("/home/akhilreddy/health-digital-twin/biogears_runtime/xsd/BioGearsDataModel.xsd")
@@ -25,18 +28,18 @@ def main():
         # Since lxml handles relative schema imports relative to the file path of the main schema,
         # parsing from a path object or string path allows resolution of cdm/*.xsd and biogears/*.xsd.
         schema_doc = etree.parse(str(xsd_path))
-        schema = etree.XMLSchema(schema_doc)
-        
-        # Load and parse XML document
-        xml_doc = etree.parse(str(xml_path))
-        
-        # Validate
-        is_valid = schema.validate(xml_doc)
-        print(f"Valid: {is_valid}")
-        if not is_valid:
-            print("Errors:")
-            for error in schema.error_log:
-                print(f"  Line {error.line}: {error.message}")
+        schema_cls = getattr(etree, "XMLSchema", None)
+        if schema_cls:
+            schema = schema_cls(schema_doc)
+            xml_doc = etree.parse(str(xml_path))
+            is_valid = schema.validate(xml_doc)
+            print(f"Valid: {is_valid}")
+            if not is_valid:
+                print("Errors:")
+                for error in getattr(schema, "error_log", []):
+                    print(f"  Line {error.line}: {error.message}")
+        else:
+            print("lxml.etree XMLSchema not available.")
     except Exception as e:
         print(f"Error during validation: {e}")
 

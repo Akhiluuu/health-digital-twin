@@ -58,7 +58,7 @@ class ScenarioRunner:
         )
         latency_ms = (time.time() - t0) * 1000.0
 
-        emergency_triggered = orchestration_result.triage_triggered if hasattr(orchestration_result, 'triage_triggered') else False
+        emergency_triggered = getattr(orchestration_result, "triage_triggered", False)
 
         # Evaluate Response
         score = self.evaluator.evaluate_response(

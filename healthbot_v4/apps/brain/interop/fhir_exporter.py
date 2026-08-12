@@ -39,7 +39,7 @@ class FHIRR4Exporter(HealthBrainSubsystem):
         now_iso = datetime.now(timezone.utc).isoformat()
 
         sex_val = getattr(state.profile, "biological_sex", "unknown")
-        gender_str = sex_val.value if hasattr(sex_val, "value") else str(sex_val)
+        gender_str = sex_val.value if hasattr(sex_val, "value") and not isinstance(sex_val, str) else str(sex_val)
 
         # 1. FHIR Patient Resource
         patient_resource = {

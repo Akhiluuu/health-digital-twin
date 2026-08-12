@@ -7,6 +7,7 @@ import sys
 import os
 import argparse
 from datetime import datetime
+from typing import Optional
 
 # Ensure project root is in sys.path
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
@@ -20,7 +21,7 @@ from healthbot_v4.validation_lab.report_generator import ReportGenerator
 from healthbot_v4.validation_lab.dashboard_export import DashboardExporter
 from healthbot_v4.validation_lab.persona_factory import PersonaFactory
 
-def run_validation_lab(category_filter: str = None, persona_id: str = "type2_diabetes", export_dash: bool = True) -> int:
+def run_validation_lab(category_filter: Optional[str] = None, persona_id: str = "type2_diabetes", export_dash: bool = True) -> int:
     """Executes validation laboratory suite and returns exit code 0 on pass or 1 on fail."""
     print("\n" + "="*75)
     print("🔬 VITALHEALTH v5.0 — AUTOMATED VALIDATION LABORATORY RUNNER")

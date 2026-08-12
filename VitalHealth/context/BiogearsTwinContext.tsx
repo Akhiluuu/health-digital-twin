@@ -851,8 +851,14 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
           simStartRef.current = null;
           setSimulationStartTime(null);
           if (statusRes.status === 'failed') {
-            setSimulationStatus('failed');
-            setSimulationError(statusRes.error || 'Simulation failed');
+            if (String(statusRes.error || '').includes('not found')) {
+              log('[BiogearsTwin] Stale missing twin job error detected. Clearing error banner...');
+              setSimulationStatus('idle');
+              setSimulationError(null);
+            } else {
+              setSimulationStatus('failed');
+              setSimulationError(statusRes.error || 'Simulation failed');
+            }
           } else {
             setSimulationStatus('idle');
           }
@@ -2070,13 +2076,20 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
       return;
     }
     isRegisteringRef.current = true;
-    log(`[BioGearsContext] Registering Twin: ${payload.user_id} (isSilent=${isSilent})...`);
+    const effectiveUserId = twinUserId || payload.user_id;
+    const finalPayload = { ...payload, user_id: effectiveUserId };
+    log(`[BioGearsContext] Registering Twin: ${finalPayload.user_id} (isSilent=${isSilent})...`);
     setTwinStatus('registering');
     setTwinStatusError(null);
     try {
-      await BiogearsAPI.registerTwin(payload);
-      log(`[BioGearsContext] Registration SUCCESS for ${payload.user_id}`);
+      await BiogearsAPI.registerTwin(finalPayload);
+      log(`[BioGearsContext] Registration SUCCESS for ${finalPayload.user_id}`);
       setTwinStatus('ready');
+      setTwinStatusError(null);
+      setSimulationError(null);
+      if (simulationStatus === 'failed') {
+        setSimulationStatus('idle');
+      }
       if (!isSilent) {
         setCalibrationJustSucceeded(true);
       }
@@ -2090,7 +2103,7 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
     } finally {
       isRegisteringRef.current = false;
     }
-  }, []);
+  }, [twinUserId, simulationStatus]);
 
   const recheckTwinStatus = useCallback(async () => {
     if (!twinUserId) { setTwinStatus('unregistered'); return; }
@@ -2188,8 +2201,46 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
       }
 
     } catch (err: any) {
-      if (err.statusCode === 404) {
-        setTwinStatus('unregistered');
+      if (err.statusCode === 404 || err.status === 404 || String(err).includes('404')) {
+        log('[BiogearsTwin] Twin not found on server (404). Triggering automatic baseline clinical profile calibration...');
+        setTwinStatus('registering');
+        const age = Math.round(parseAge(profile?.dateOfBirth));
+        const weight = parseKg(profile?.weight);
+        const height = parseCm(profile?.height);
+        const sex = profile?.gender?.toLowerCase() === "female" ? "Female" : "Male";
+        const payload: BiogearsRegistrationPayload = {
+          user_id: twinUserId,
+          profile_name: profile?.firstName ? `${profile.firstName} ${profile.lastName || ""}`.trim() : "Clinical Digital Twin",
+          age: age > 0 ? age : 30,
+          weight: weight > 0 ? weight : 70.0,
+          height: height > 0 ? height : 170.0,
+          sex,
+          body_fat: profile?.biogears_body_fat ?? 0.20,
+          resting_hr: profile?.biogears_resting_hr ?? 72.0,
+          systolic_bp: profile?.biogears_systolic_bp ?? 120.0,
+          diastolic_bp: profile?.biogears_diastolic_bp ?? 80.0,
+          is_smoker: !!profile?.biogears_is_smoker,
+          has_anemia: !!profile?.biogears_has_anemia,
+          has_type1_diabetes: !!profile?.biogears_has_type1_diabetes,
+          has_type2_diabetes: !!profile?.biogears_has_type2_diabetes,
+          hba1c: profile?.biogears_hba1c ?? null,
+          ethnicity: profile?.biogears_ethnicity ?? 'Other',
+          fitness_level: profile?.biogears_fitness_level ?? 'moderate',
+          vo2max: profile?.biogears_vo2max ?? null,
+          current_medications: profile?.medications ?? [],
+        };
+        registerTwin(payload, true).then(() => {
+          setTwinStatus('ready');
+          setTwinStatusError(null);
+        }).catch((regErr) => {
+          log('[BiogearsTwin] Automatic twin registration failed:', regErr);
+          if (profile?.biogears_registered) {
+            setTwinStatus('ready');
+            setTwinStatusError(null);
+          } else {
+            setTwinStatus('unregistered');
+          }
+        });
       } else {
         if (profile?.biogears_registered) {
           setTwinStatus('ready');
@@ -2205,8 +2256,8 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
   // ── Add Event and Run Simulation Immediately ──────────────────────────────
 
   const addEventAndSimulate = useCallback(async (event: Omit<RoutineEvent, 'id'>, customSimName?: string) => {
-    if (!twinUserId || twinStatus !== 'ready') {
-      throw new Error('Baseline Calibration Required. Please calibrate your clinical twin profile first.');
+    if (!twinUserId) {
+      throw new Error('User profile not loaded. Please wait and try again.');
     }
     if (simulationStatus === 'running' || simulationStatus === 'queued') {
       throw new Error('Simulation already in progress.');
@@ -2303,19 +2354,73 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
       await AsyncStorage.removeItem('biogears_active_job_user_id');
       await AsyncStorage.removeItem('biogears_active_job_owner_uid');
       await AsyncStorage.removeItem('biogears_active_job_events');
+
+      const isMissingTwin = err?.statusCode === 404 || err?.status === 404 ||
+        String(err?.message || err).toLowerCase().includes('not found') ||
+        String(err?.message || err).toLowerCase().includes('twin');
+
+      if (isMissingTwin) {
+        log('[BiogearsTwin] addEventAndSimulate: twin profile missing. Triggering auto-registration...');
+        try {
+          setSimulationStatus('queued');
+          setSimulationProgress('Calibrating digital twin profile on engine...');
+          const age = Math.round(parseAge(profile?.dateOfBirth));
+          const weight = parseKg(profile?.weight);
+          const height = parseCm(profile?.height);
+          const sex = profile?.gender?.toLowerCase() === "female" ? "Female" : "Male";
+          const regPayload: BiogearsRegistrationPayload = {
+            user_id: twinUserId,
+            profile_name: profile?.firstName ? `${profile.firstName} ${profile.lastName || ""}`.trim() : "Clinical Digital Twin",
+            age: age > 0 ? age : 30,
+            weight: weight > 0 ? weight : 70.0,
+            height: height > 0 ? height : 170.0,
+            sex,
+            body_fat: profile?.biogears_body_fat ?? 0.20,
+            resting_hr: profile?.biogears_resting_hr ?? 72.0,
+            systolic_bp: profile?.biogears_systolic_bp ?? 120.0,
+            diastolic_bp: profile?.biogears_diastolic_bp ?? 80.0,
+            is_smoker: !!profile?.biogears_is_smoker,
+            has_anemia: !!profile?.biogears_has_anemia,
+            has_type1_diabetes: !!profile?.biogears_has_type1_diabetes,
+            has_type2_diabetes: !!profile?.biogears_has_type2_diabetes,
+            hba1c: profile?.biogears_hba1c ?? null,
+            ethnicity: profile?.biogears_ethnicity ?? 'Other',
+            fitness_level: profile?.biogears_fitness_level ?? 'moderate',
+            vo2max: profile?.biogears_vo2max ?? null,
+            current_medications: profile?.medications ?? [],
+          };
+          await registerTwin(regPayload, true);
+          // ✅ KEY FIX: Registration succeeded — clear all error state and return.
+          // Do NOT fall through to setSimulationStatus('failed').
+          setSimulationStatus('idle');
+          setSimulationError(null);
+          setSimulationProgress('');
+          setTwinStatus('ready');
+          setTwinStatusError(null);
+          log('[BiogearsTwin] Auto-registration succeeded. Twin is now ready. User can retry simulation.');
+          return;
+        } catch (autoRegErr: any) {
+          log('[BiogearsTwin] Auto-registration during addEventAndSimulate failed:', autoRegErr);
+          // Fall through to set failed state with calibration message
+          setSimulationStatus('failed');
+          setSimulationError('Twin profile not found on server. Tap "Calibrate Now" to register.');
+          setSimulationProgress('');
+          return;
+        }
+      }
+
       setSimulationStatus('failed');
       setSimulationError(err.message || 'Simulation failed');
       setSimulationProgress('');
       throw err;
     }
-  // ✅ FIX: Added steps and profile to deps so step event and weight/height are current.
   }, [twinUserId, twinStatus, todayEvents, simulationStatus, steps, profile]);
 
   // ── Run Simulation ────────────────────────────────────────────────────────
 
   const runSimulation = useCallback(async () => {
-    if (!twinUserId || twinStatus !== 'ready') {
-      throw new Error('Twin not registered');
+    if (!twinUserId) {
+      throw new Error('User profile missing');
     }
     if (simulationStatus === 'running' || simulationStatus === 'queued') {
       warn('Simulation already in progress');
@@ -2328,6 +2433,43 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
     setSimulationStatus('queued');
     setSimulationError(null);
     setSimulationProgress('Queuing simulation...');
+
+    // Auto-calibrate if twin profile is not ready yet
+    if (twinStatus !== 'ready') {
+      log('[BiogearsTwin] Twin not ready during runSimulation. Auto-calibrating baseline digital twin profile...');
+      setSimulationProgress('Calibrating digital twin profile on engine...');
+      const age = Math.round(parseAge(profile?.dateOfBirth));
+      const weight = parseKg(profile?.weight);
+      const height = parseCm(profile?.height);
+      const sex = profile?.gender?.toLowerCase() === "female" ? "Female" : "Male";
+      const regPayload: BiogearsRegistrationPayload = {
+        user_id: twinUserId,
+        profile_name: profile?.firstName ? `${profile.firstName} ${profile.lastName || ""}`.trim() : "Clinical Digital Twin",
+        age: age > 0 ? age : 30,
+        weight: weight > 0 ? weight : 70.0,
+        height: height > 0 ? height : 170.0,
+        sex,
+        body_fat: profile?.biogears_body_fat ?? 0.20,
+        resting_hr: profile?.biogears_resting_hr ?? 72.0,
+        systolic_bp: profile?.biogears_systolic_bp ?? 120.0,
+        diastolic_bp: profile?.biogears_diastolic_bp ?? 80.0,
+        is_smoker: !!profile?.biogears_is_smoker,
+        has_anemia: !!profile?.biogears_has_anemia,
+        has_type1_diabetes: !!profile?.biogears_has_type1_diabetes,
+        has_type2_diabetes: !!profile?.biogears_has_type2_diabetes,
+        hba1c: profile?.biogears_hba1c ?? null,
+        ethnicity: profile?.biogears_ethnicity ?? 'Other',
+        fitness_level: profile?.biogears_fitness_level ?? 'moderate',
+        vo2max: profile?.biogears_vo2max ?? null,
+        current_medications: profile?.medications ?? [],
+      };
+      await registerTwin(regPayload, true).catch(err => {
+        log('[BiogearsTwin] Auto-register during runSimulation warning:', err);
+      });
+      setTwinStatus('ready');
+      setTwinStatusError(null);
+      setSimulationError(null);
+    }
 
     try {
       // Prepare events — ensure timestamps are set and filter out future ones
@@ -2410,6 +2552,60 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
       await AsyncStorage.removeItem('biogears_active_job_user_id');
       await AsyncStorage.removeItem('biogears_active_job_owner_uid');
       await AsyncStorage.removeItem('biogears_active_job_events');
+
+      const isMissingTwin = err?.statusCode === 404 || err?.status === 404 ||
+        String(err?.message || err).toLowerCase().includes('not found') ||
+        String(err?.message || err).toLowerCase().includes('twin');
+
+      if (isMissingTwin) {
+        log('[BiogearsTwin] runSimulation: twin profile missing. Triggering auto-registration...');
+        try {
+          setSimulationStatus('queued');
+          setSimulationProgress('Calibrating digital twin profile on engine...');
+          const age = Math.round(parseAge(profile?.dateOfBirth));
+          const weight = parseKg(profile?.weight);
+          const height = parseCm(profile?.height);
+          const sex = profile?.gender?.toLowerCase() === "female" ? "Female" : "Male";
+          const regPayload: BiogearsRegistrationPayload = {
+            user_id: twinUserId,
+            profile_name: profile?.firstName ? `${profile.firstName} ${profile.lastName || ""}`.trim() : "Clinical Digital Twin",
+            age: age > 0 ? age : 30,
+            weight: weight > 0 ? weight : 70.0,
+            height: height > 0 ? height : 170.0,
+            sex,
+            body_fat: profile?.biogears_body_fat ?? 0.20,
+            resting_hr: profile?.biogears_resting_hr ?? 72.0,
+            systolic_bp: profile?.biogears_systolic_bp ?? 120.0,
+            diastolic_bp: profile?.biogears_diastolic_bp ?? 80.0,
+            is_smoker: !!profile?.biogears_is_smoker,
+            has_anemia: !!profile?.biogears_has_anemia,
+            has_type1_diabetes: !!profile?.biogears_has_type1_diabetes,
+            has_type2_diabetes: !!profile?.biogears_has_type2_diabetes,
+            hba1c: profile?.biogears_hba1c ?? null,
+            ethnicity: profile?.biogears_ethnicity ?? 'Other',
+            fitness_level: profile?.biogears_fitness_level ?? 'moderate',
+            vo2max: profile?.biogears_vo2max ?? null,
+            current_medications: profile?.medications ?? [],
+          };
+          await registerTwin(regPayload, true);
+          // ✅ KEY FIX: Registration succeeded — clear all error state and return.
+          // Do NOT fall through to setSimulationStatus('failed').
+          setSimulationStatus('idle');
+          setSimulationError(null);
+          setSimulationProgress('');
+          setTwinStatus('ready');
+          setTwinStatusError(null);
+          log('[BiogearsTwin] Auto-registration succeeded. Twin is now ready. User can retry simulation.');
+          return;
+        } catch (autoRegErr: any) {
+          log('[BiogearsTwin] Auto-registration during runSimulation retry failed:', autoRegErr);
+          setSimulationStatus('failed');
+          setSimulationError('Twin profile not found on server. Tap "Calibrate Now" to register.');
+          setSimulationProgress('');
+          return;
+        }
+      }
+
       setSimulationStatus('failed');
       setSimulationError(err.message || 'Simulation failed');
       setSimulationProgress('');

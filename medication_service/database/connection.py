@@ -184,7 +184,7 @@ async def get_pool():
 
 async def close_pool():
     global _pool, _IS_MEMORY_MODE
-    if _pool and not _IS_MEMORY_MODE:
+    if _pool and not _IS_MEMORY_MODE and not isinstance(_pool, str):
         try:
             await _pool.close()
         except Exception:
@@ -197,7 +197,7 @@ async def close_pool():
 @asynccontextmanager
 async def get_conn() -> AsyncGenerator:
     pool = await get_pool()
-    if pool == "MEMORY_MODE" or _IS_MEMORY_MODE:
+    if pool == "MEMORY_MODE" or _IS_MEMORY_MODE or isinstance(pool, str):
         yield InMemoryConn()
     else:
         try:
@@ -211,7 +211,7 @@ async def get_conn() -> AsyncGenerator:
 @asynccontextmanager
 async def get_transaction() -> AsyncGenerator:
     pool = await get_pool()
-    if pool == "MEMORY_MODE" or _IS_MEMORY_MODE:
+    if pool == "MEMORY_MODE" or _IS_MEMORY_MODE or isinstance(pool, str):
         conn = InMemoryConn()
         async with conn.transaction():
             yield conn
@@ -225,4 +225,5 @@ async def get_transaction() -> AsyncGenerator:
             conn = InMemoryConn()
             async with conn.transaction():
                 yield conn
+
 

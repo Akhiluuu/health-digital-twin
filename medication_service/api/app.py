@@ -26,7 +26,7 @@ async def lifespan(app: FastAPI):
     logging.basicConfig(level=logging.INFO)
     logger.info("🚀 Medication Vault API starting up...")
     try:
-        import psycopg2
+        import psycopg2  # type: ignore
         database_url = os.environ.get("DATABASE_URL")
         if database_url:
             for attempt in range(5):

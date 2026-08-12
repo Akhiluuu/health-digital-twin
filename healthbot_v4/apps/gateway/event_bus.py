@@ -68,7 +68,10 @@ class EventBus:
             logger.debug(f"No active subscribers for event type '{event_type}'")
             return
 
-        tasks = [asyncio.create_task(h(event)) for h in all_handlers]
+        async def _safe_execute(handler: EventHandler, evt: HealthEvent) -> None:
+            await handler(evt)
+
+        tasks = [asyncio.create_task(_safe_execute(h, event)) for h in all_handlers]
         await asyncio.gather(*tasks, return_exceptions=True)
 
     def get_history(self, patient_id: str, limit: int = 50) -> List[HealthEvent]:

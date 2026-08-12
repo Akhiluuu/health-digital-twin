@@ -7,7 +7,7 @@ import csv
 import io
 import json
 import logging
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 from uuid import uuid4
 
@@ -97,7 +97,7 @@ class ReportService:
             "resourceType": "Bundle",
             "id": str(uuid4()),
             "type": "collection",
-            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "timestamp": datetime.now(timezone.utc).isoformat() + "Z",
             "total": len(entries),
             "entry": entries,
         }
@@ -106,7 +106,7 @@ class ReportService:
     async def generate_hl7(user_id: str, start: date, end: date) -> str:
         """Generate HL7 v2.5 RDS^O13 (Pharmacy/Treatment Dispense) segments."""
         data = await ReportService._fetch_report_data(user_id, start, end)
-        now = datetime.utcnow().strftime("%Y%m%d%H%M%S")
+        now = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
         lines = [
             f"MSH|^~\\&|VitalHealth|MedicationVault|EHR|Hospital|{now}||RDS^O13|{uuid4().hex[:12]}|P|2.5",
             f"PID|1||{user_id}|||||||",
@@ -123,10 +123,10 @@ class ReportService:
     async def generate_pdf(user_id: str, start: date, end: date) -> bytes:
         """Generate PDF report using reportlab if available, else plain-text bytes."""
         try:
-            from reportlab.lib.pagesizes import letter
-            from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
-            from reportlab.lib.styles import getSampleStyleSheet
-            from reportlab.lib import colors
+            from reportlab.lib.pagesizes import letter  # type: ignore
+            from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle  # type: ignore
+            from reportlab.lib.styles import getSampleStyleSheet  # type: ignore
+            from reportlab.lib import colors  # type: ignore
 
             data = await ReportService._fetch_report_data(user_id, start, end)
             buf = io.BytesIO()

@@ -26,14 +26,14 @@ class PatientGraphEngine(HealthBrainSubsystem):
             self._graphs[patient_id] = nx.DiGraph()
 
         G: Any = self._graphs[patient_id]
-        if callable(G) and not hasattr(G, "add_node"):
-            G = G()
         if not hasattr(G, "add_node"):
             G = nx.DiGraph()
 
-        node_exists = G.has_node(patient_id) if hasattr(G, "has_node") else (patient_id in G if hasattr(G, "__contains__") else False)
-        if not node_exists and hasattr(G, "add_node"):
-            G.add_node(patient_id, type="Patient")
+        has_node_fn = getattr(G, "has_node", None)
+        node_exists = bool(has_node_fn(patient_id)) if callable(has_node_fn) else False
+        add_node_fn = getattr(G, "add_node", None)
+        if not node_exists and callable(add_node_fn):
+            add_node_fn(patient_id, type="Patient")
 
         self._graphs[patient_id] = G
         return cast(nx.DiGraph, G)

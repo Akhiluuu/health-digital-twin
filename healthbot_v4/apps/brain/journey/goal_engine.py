@@ -7,7 +7,7 @@ All calculations are deterministic. Goals auto-create based on clinical context.
 
 import uuid
 from typing import List, Dict, Any, Optional
-from datetime import datetime, date, timedelta
+from datetime import datetime, date, timedelta, timezone
 
 from healthbot_v4.apps.brain.core import HealthBrainSubsystem
 from healthbot_v4.shared.logger.logger import logger
@@ -178,7 +178,7 @@ class GoalEngine(HealthBrainSubsystem):
         if hba1c_labs and hba1c_labs[0].value > 7.0 and "reduce_hba1c" not in existing_template_ids:
             current = hba1c_labs[0].value
             goal = self._build_goal(state.patient_id, "reduce_hba1c", current)
-            goal.expected_completion_date = (datetime.utcnow() + timedelta(days=90)).date()
+            goal.expected_completion_date = (datetime.now(timezone.utc) + timedelta(days=90)).date()
             new_goals.append(goal)
             self._record_goal_event(state.patient_id, goal, "created")
 
@@ -187,14 +187,14 @@ class GoalEngine(HealthBrainSubsystem):
         if bp_vitals and bp_vitals[0].value_primary >= 130.0 and "reduce_bp" not in existing_template_ids:
             current = bp_vitals[0].value_primary
             goal = self._build_goal(state.patient_id, "reduce_bp", current)
-            goal.expected_completion_date = (datetime.utcnow() + timedelta(days=60)).date()
+            goal.expected_completion_date = (datetime.now(timezone.utc) + timedelta(days=60)).date()
             new_goals.append(goal)
             self._record_goal_event(state.patient_id, goal, "created")
 
         # ── Trigger: Active medications → adherence goal ───────────────────
         if state.active_medications and "medication_adherence" not in existing_template_ids:
             goal = self._build_goal(state.patient_id, "medication_adherence", 75.0)
-            goal.expected_completion_date = (datetime.utcnow() + timedelta(days=30)).date()
+            goal.expected_completion_date = (datetime.now(timezone.utc) + timedelta(days=30)).date()
             new_goals.append(goal)
             self._record_goal_event(state.patient_id, goal, "created")
 
@@ -208,7 +208,7 @@ class GoalEngine(HealthBrainSubsystem):
             current_weight = state.profile.weight_kg
             goal = self._build_goal(state.patient_id, "lose_weight", current_weight)
             goal.target_value = round(current_weight * 0.95, 1)  # 5% reduction
-            goal.expected_completion_date = (datetime.utcnow() + timedelta(days=180)).date()
+            goal.expected_completion_date = (datetime.now(timezone.utc) + timedelta(days=180)).date()
             new_goals.append(goal)
             self._record_goal_event(state.patient_id, goal, "created")
 
@@ -227,7 +227,7 @@ class GoalEngine(HealthBrainSubsystem):
         ldl_labs = [l for l in state.recent_labs if l.loinc_code == "2089-1"]
         if ldl_labs and ldl_labs[0].value > 100.0 and "reduce_cholesterol" not in existing_template_ids:
             goal = self._build_goal(state.patient_id, "reduce_cholesterol", ldl_labs[0].value)
-            goal.expected_completion_date = (datetime.utcnow() + timedelta(days=90)).date()
+            goal.expected_completion_date = (datetime.now(timezone.utc) + timedelta(days=90)).date()
             new_goals.append(goal)
             self._record_goal_event(state.patient_id, goal, "created")
 
@@ -282,8 +282,21 @@ class GoalEngine(HealthBrainSubsystem):
         current_value: float,
     ) -> HealthGoal:
         t = _GOAL_TEMPLATES[template_id]
-        target = t.get("target_value", current_value * 0.9)
+        raw_target = t.get("target_value")
+        if isinstance(raw_target, (int, float)):
+            target = float(raw_target)
+        elif isinstance(raw_target, str):
+            try:
+                target = float(raw_target)
+            except ValueError:
+                target = current_value * 0.9
+        else:
+            target = current_value * 0.9
+
+        raw_recs = t.get("recommendations")
+        recs: List[str] = [r for r in raw_recs if isinstance(r, str)] if isinstance(raw_recs, list) else []
         progress = self._calc_progress(current_value, target, current_value)
+
         return HealthGoal(
             goal_id=f"goal_{template_id}_{patient_id[:8]}",
             patient_id=patient_id,
@@ -297,7 +310,7 @@ class GoalEngine(HealthBrainSubsystem):
             progress_pct=progress,
             trend=GoalTrend.unknown,
             status=GoalStatus.active,
-            recommendations=t.get("recommendations", []),
+            recommendations=recs,
         )
 
     def _calc_progress(
@@ -370,7 +383,7 @@ class GoalEngine(HealthBrainSubsystem):
         elif goal.progress_pct >= 90.0:
             goal.status = GoalStatus.completed
 
-        goal.updated_at = datetime.utcnow()
+        goal.updated_at = datetime.now(timezone.utc)
         return goal
 
     def _record_goal_event(

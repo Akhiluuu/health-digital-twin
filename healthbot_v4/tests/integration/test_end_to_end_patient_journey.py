@@ -19,7 +19,7 @@ from fastapi.testclient import TestClient
 
 from healthbot_v4.apps.api.server import app
 from healthbot_v4.apps.brain.state.patient_state_manager import PatientStateManager
-from healthbot_v4.shared.models.base import PatientProfile, NormalizedVital, TimelineEventType
+from healthbot_v4.shared.models.base import PatientProfile, NormalizedVital, TimelineEventType, BiologicalSex
 
 
 @pytest.fixture
@@ -47,7 +47,7 @@ def test_journey_1_user_profile_lifecycle(client):
         age=45,
         weight_kg=82.0,
         height_cm=178.0,
-        biological_sex="male",
+        biological_sex=BiologicalSex.male,
     )
     state = state_mgr.create_profile(profile)
 

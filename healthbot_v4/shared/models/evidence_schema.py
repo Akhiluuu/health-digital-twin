@@ -97,6 +97,7 @@ class EvidenceItem(BaseModel):
             confidence=0.98,
             reliability=ReliabilityLevel.HIGH,
             loinc_code=loinc,
+            snomed_code=None,
             notes=f"FHIR Observation: {label}",
             raw_payload=fhir_obs,
         )

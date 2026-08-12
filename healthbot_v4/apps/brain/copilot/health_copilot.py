@@ -5,7 +5,7 @@ Generates personalized daily health briefings upon app open and proactively moni
 """
 
 from typing import List, Dict, Any
-from datetime import datetime
+from datetime import datetime, timezone
 from pydantic import BaseModel, Field
 
 from healthbot_v4.apps.brain.core import HealthBrainSubsystem
@@ -69,7 +69,7 @@ class HealthCopilot(HealthBrainSubsystem):
             patient_id=patient_id,
             greeting=greeting,
             health_score_display=score_display,
-            briefing_date=datetime.utcnow().strftime("%B %d, %Y"),
+            briefing_date=datetime.now(timezone.utc).strftime("%B %d, %Y"),
             key_highlights=highlights,
             proactive_alerts=alerts,
             recommended_actions=snapshot.outstanding_action_items,

@@ -61,7 +61,8 @@ def _apply_stabilisation_filter(df: pd.DataFrame) -> pd.DataFrame:
     if "HeartRate" not in df.columns or len(df) < 20:
         # Fallback: skip first 10 simulation-seconds
         if "Time" in df.columns and df["Time"].iloc[-1] > 20:
-            return df[df["Time"] >= 10].copy()
+            res = df[df["Time"] >= 10].copy()
+            return res if isinstance(res, pd.DataFrame) else df
         return df
 
     window  = max(10, len(df) // 20)   # rolling window ≈ 5% of data
@@ -74,10 +75,12 @@ def _apply_stabilisation_filter(df: pd.DataFrame) -> pd.DataFrame:
     stable_mask = rolling_cv < 0.05
     if stable_mask.any():
         first_stable = stable_mask[stable_mask].index[0]
-        return df.loc[first_stable:].copy()
+        res = df.loc[first_stable:].copy()
+        return res if isinstance(res, pd.DataFrame) else df
 
     # If never stabilises, fall back to skipping the first 10%
-    return df.iloc[len(df) // 10:].copy()
+    res = df.iloc[len(df) // 10:].copy()
+    return res if isinstance(res, pd.DataFrame) else df
 
 
 # ── Colour palette ────────────────────────────────────────────────────────────
@@ -203,7 +206,7 @@ def generate_health_report(user_id, run_id=None, custom_path=None):
             ax.grid(True, linestyle="--", alpha=0.35)
 
         axes[-1].set_xlabel("Simulation Time (seconds)", fontsize=12)
-        plt.tight_layout(rect=[0, 0, 1, 0.97])
+        plt.tight_layout(rect=(0, 0, 1, 0.97))
 
         fname = f"{user_id}_{run_id}_report.png" if run_id else f"{user_id}_report.png"
         out   = _REPORTS_DIR / fname

@@ -19,7 +19,7 @@ class FollowUpGenerator:
         self,
         intent: str,
         query: str,
-        missing_gaps: List[Any] = None,
+        missing_gaps: Optional[List[Any]] = None,
         persona: Optional[PatientPersona] = None,
     ) -> Dict[str, List[str]]:
         i_upper = intent.upper()

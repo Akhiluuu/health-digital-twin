@@ -4,7 +4,7 @@ Safety-Critical Deterministic Clinical Risk Engine for VitalHealth v5.0.
 """
 
 from typing import List
-from datetime import datetime
+from datetime import datetime, timezone
 from healthbot_v4.apps.brain.core import HealthBrainSubsystem
 from healthbot_v4.shared.logger.logger import logger
 from healthbot_v4.shared.models.base import PatientState, RiskFlag, RiskLevel
@@ -27,7 +27,7 @@ class ClinicalRiskEngine(HealthBrainSubsystem):
             if lab.loinc_code == "4548-4" and lab.value >= 8.0:
                 risks.append(
                     RiskFlag(
-                        risk_id=f"risk_hba1c_{int(datetime.utcnow().timestamp())}",
+                        risk_id=f"risk_hba1c_{int(datetime.now(timezone.utc).timestamp())}",
                         level=RiskLevel.high,
                         title="Uncontrolled Glycemic Risk (HbA1c >= 8.0%)",
                         description=f"Latest HbA1c level measured at {lab.value}% indicates persistent hyperglycemia.",
@@ -40,7 +40,7 @@ class ClinicalRiskEngine(HealthBrainSubsystem):
             if vital.vital_type == "blood_pressure" and vital.value_primary >= 140.0:
                 risks.append(
                     RiskFlag(
-                        risk_id=f"risk_bp_{int(datetime.utcnow().timestamp())}",
+                        risk_id=f"risk_bp_{int(datetime.now(timezone.utc).timestamp())}",
                         level=RiskLevel.high,
                         title="Stage 2 Hypertension Alert",
                         description=f"Systolic Blood Pressure of {vital.value_primary} mmHg exceeds normal threshold.",

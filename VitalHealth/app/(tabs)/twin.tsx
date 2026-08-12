@@ -878,8 +878,6 @@ export default function TwinScreen() {
   const handleSimulate = async () => {
     if (todayEvents.length === 0)
       return Alert.alert('No Events', 'Log at least one event before simulating.');
-    if (twinStatus !== 'ready')
-      return Alert.alert('Twin Not Ready', 'Complete your clinical profile first (Profile → Calibrate Twin).');
 
     // Auto-generate name based on loaded routine or date
     const baseName = lastLoadedRoutineName
@@ -1879,9 +1877,23 @@ export default function TwinScreen() {
 
         {/* ── Simulation error banner ── */}
         {simulationStatus === 'failed' && (
-          <View style={[ss.errorBox, { backgroundColor: '#ef444420' }]}>
-            <Ionicons name="warning" size={18} color="#ef4444" />
-            <Text style={ss.errorTxt}>{simulationError || 'Simulation failed — check server logs.'}</Text>
+          <View style={[ss.errorBox, { backgroundColor: '#ef444420', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingRight: 12 }]}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 }}>
+              <Ionicons name="warning" size={18} color="#ef4444" />
+              <Text style={[ss.errorTxt, { flex: 1 }]}>
+                {simulationError && String(simulationError).includes('not found')
+                  ? 'BioGears Twin profile baseline needs initial calibration.'
+                  : simulationError || 'Simulation failed — check server logs.'}
+              </Text>
+            </View>
+            {simulationError && String(simulationError).includes('not found') ? (
+              <TouchableOpacity
+                style={{ backgroundColor: '#ef4444', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8, marginLeft: 8 }}
+                onPress={() => router.push('/profile')}
+              >
+                <Text style={{ color: '#fff', fontSize: 12, fontWeight: '700' }}>Calibrate Now</Text>
+              </TouchableOpacity>
+            ) : null}
           </View>
         )}
 

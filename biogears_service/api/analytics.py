@@ -375,10 +375,12 @@ def get_latest_vitals(user_id: str, history_dir: Optional[Path] = None) -> Dict[
         from healthbot_v4.apps.brain.state.patient_state_manager import PatientStateManager
         sm = PatientStateManager()
         st = sm.get_or_create_state(user_id)
-        if st and hasattr(st, "vitals") and st.vitals:
-            return dict(st.vitals)
-        elif isinstance(st, dict) and "vitals" in st:
-            return dict(st["vitals"])
+        if st:
+            vitals = getattr(st, "vitals", None)
+            if vitals:
+                return dict(vitals)
+            elif isinstance(st, dict) and "vitals" in st:
+                return dict(st["vitals"])
     except Exception:
         pass
 
@@ -423,21 +425,21 @@ def compute_health_score(user_id: str, history_dir: Optional[Path] = None) -> Di
                 for v in st.recent_vitals:
                     vtype = (v.vital_type or "").lower()
                     if "blood_pressure" in vtype or "bp" in vtype:
-                        sys_v = float(v.value_primary or 120.0)
-                        dia_v = float(v.value_secondary or 80.0)
+                        sys_v = v.value_primary or 120.0
+                        dia_v = v.value_secondary or 80.0
                         s_sys = _score_value(sys_v, 90, 120)
                         s_dia = _score_value(dia_v, 60, 80)
                         components["systolic_bp"] = {"value": sys_v, "unit": "mmHg", "score": round(s_sys * 100), "normal": "90–120", "status": "Normal" if s_sys == 1.0 else "High"}
                         components["diastolic_bp"] = {"value": dia_v, "unit": "mmHg", "score": round(s_dia * 100), "normal": "60–80", "status": "Normal" if s_dia == 1.0 else "High"}
                     elif "heart_rate" in vtype or "hr" in vtype:
-                        hr_v = float(v.value_primary or 72.0)
+                        hr_v = v.value_primary or 72.0
                         s_hr = _score_value(hr_v, 60, 100)
                         components["heart_rate"] = {"value": hr_v, "unit": "bpm", "score": round(s_hr * 100), "normal": "60–100", "status": "Normal" if s_hr == 1.0 else "High"}
 
                 for l in st.recent_labs:
                     cname = (l.canonical_name or "").lower()
                     if "hba1c" in cname or "glucose" in cname:
-                        val = float(l.value or 100.0)
+                        val = l.value or 100.0
                         s = max(0.0, min(1.0, 1.0 - max(0.0, val - 5.7) / 4.0)) if "%" in (l.unit or "") else _score_value(val, 70, 140)
                         components["glucose"] = {"value": val, "unit": l.unit or "mg/dL", "score": round(s * 100), "normal": "70–140", "status": "Normal" if s == 1.0 else "High"}
 
@@ -1211,7 +1213,7 @@ def compute_recovery_readiness(user_id: str, history_dir: Path,
     personal_hr_mean = None
 
     if latest_df is not None and "HeartRate" in latest_df.columns:
-        resting_hr = round(latest_df["HeartRate"].mean(), 1)
+        resting_hr = round(_parse_float(latest_df["HeartRate"].mean()), 1)
         
         hr_means = []
         for f in csv_files[-7:]:

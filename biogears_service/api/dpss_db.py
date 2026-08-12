@@ -17,6 +17,7 @@ import datetime
 import logging
 from typing import Optional, Dict, Any, List
 from pathlib import Path
+from contextlib import closing
 
 from biogears_service.simulation.config import BASE_DIR
 from biogears_service.api.db import get_connection, with_sqlite_retry, write_audit_log
@@ -179,7 +180,7 @@ def _init_dpss_schema(conn, is_pg: bool):
         return
     try:
         if is_pg:
-            with conn.cursor() as cur:
+            with closing(conn.cursor()) as cur:
                 for stmt in _PG_SCHEMA.strip().split(";"):
                     s = stmt.strip()
                     if s:
@@ -211,7 +212,7 @@ def _uuid() -> str:
 
 
 def _now_iso() -> str:
-    return datetime.datetime.utcnow().isoformat()
+    return datetime.datetime.now(datetime.timezone.utc).isoformat()
 
 
 def _json(obj) -> str:
@@ -249,7 +250,7 @@ def insert_pending_event(
     payload_str = _json(payload)
     try:
         if is_pg:
-            with conn.cursor() as cur:
+            with closing(conn.cursor()) as cur:
                 cur.execute(
                     """
                     INSERT INTO pending_events
@@ -283,7 +284,7 @@ def get_pending_events(user_id: str) -> List[Dict[str, Any]]:
     conn, is_pg = get_dpss_conn()
     try:
         if is_pg:
-            with conn.cursor() as cur:
+            with closing(conn.cursor()) as cur:
                 cur.execute(
                     "SELECT * FROM pending_events WHERE user_id=%s AND status='PENDING' ORDER BY event_timestamp ASC",
                     (user_id,)
@@ -291,13 +292,13 @@ def get_pending_events(user_id: str) -> List[Dict[str, Any]]:
                 cols = [d[0] for d in cur.description]
                 rows = [dict(zip(cols, r)) for r in cur.fetchall()]
         else:
-            cur = conn.cursor()
-            cur.execute(
-                "SELECT * FROM pending_events WHERE user_id=? AND status='PENDING' ORDER BY event_timestamp ASC",
-                (user_id,)
-            )
-            cols = [d[0] for d in cur.description]
-            rows = [dict(zip(cols, r)) for r in cur.fetchall()]
+            with closing(conn.cursor()) as cur:
+                cur.execute(
+                    "SELECT * FROM pending_events WHERE user_id=? AND status='PENDING' ORDER BY event_timestamp ASC",
+                    (user_id,)
+                )
+                cols = [d[0] for d in cur.description]
+                rows = [dict(zip(cols, r)) for r in cur.fetchall()]
         for r in rows:
             r["payload"] = _load(r.get("payload", "{}"))
         return rows
@@ -313,7 +314,7 @@ def mark_events_simulated(event_ids: List[str]) -> None:
     conn, is_pg = get_dpss_conn()
     try:
         if is_pg:
-            with conn.cursor() as cur:
+            with closing(conn.cursor()) as cur:
                 cur.execute(
                     "UPDATE pending_events SET status='SIMULATED' WHERE event_id = ANY(%s)",
                     (event_ids,)
@@ -338,7 +339,7 @@ def restore_events_to_pending(event_ids: List[str]) -> None:
     conn, is_pg = get_dpss_conn()
     try:
         if is_pg:
-            with conn.cursor() as cur:
+            with closing(conn.cursor()) as cur:
                 cur.execute(
                     "UPDATE pending_events SET status='PENDING' WHERE event_id = ANY(%s)",
                     (event_ids,)
@@ -361,19 +362,21 @@ def count_pending_events(user_id: str) -> int:
     conn, is_pg = get_dpss_conn()
     try:
         if is_pg:
-            with conn.cursor() as cur:
+            with closing(conn.cursor()) as cur:
                 cur.execute(
                     "SELECT COUNT(*) FROM pending_events WHERE user_id=%s AND status='PENDING'",
                     (user_id,)
                 )
-                return cur.fetchone()[0]
+                res = cur.fetchone()
+                return int(res[0]) if res and res[0] is not None else 0
         else:
-            cur = conn.cursor()
-            cur.execute(
-                "SELECT COUNT(*) FROM pending_events WHERE user_id=? AND status='PENDING'",
-                (user_id,)
-            )
-            return cur.fetchone()[0]
+            with closing(conn.cursor()) as cur:
+                cur.execute(
+                    "SELECT COUNT(*) FROM pending_events WHERE user_id=? AND status='PENDING'",
+                    (user_id,)
+                )
+                res = cur.fetchone()
+                return int(res[0]) if res and res[0] is not None else 0
     finally:
         conn.close()
 
@@ -384,17 +387,17 @@ def get_users_with_pending_events() -> List[str]:
     conn, is_pg = get_dpss_conn()
     try:
         if is_pg:
-            with conn.cursor() as cur:
+            with closing(conn.cursor()) as cur:
                 cur.execute(
                     "SELECT DISTINCT user_id FROM pending_events WHERE status='PENDING'"
                 )
                 return [r[0] for r in cur.fetchall()]
         else:
-            cur = conn.cursor()
-            cur.execute(
-                "SELECT DISTINCT user_id FROM pending_events WHERE status='PENDING'"
-            )
-            return [r[0] for r in cur.fetchall()]
+            with closing(conn.cursor()) as cur:
+                cur.execute(
+                    "SELECT DISTINCT user_id FROM pending_events WHERE status='PENDING'"
+                )
+                return [r[0] for r in cur.fetchall()]
     finally:
         conn.close()
 
@@ -417,7 +420,7 @@ def create_sim_history(
     sim_id = _uuid()
     try:
         if is_pg:
-            with conn.cursor() as cur:
+            with closing(conn.cursor()) as cur:
                 cur.execute(
                     """
                     INSERT INTO simulation_history
@@ -457,7 +460,7 @@ def complete_sim_history(
     completed_at = _now_iso()
     try:
         if is_pg:
-            with conn.cursor() as cur:
+            with closing(conn.cursor()) as cur:
                 cur.execute(
                     """
                     UPDATE simulation_history
@@ -491,7 +494,7 @@ def mark_sim_undone(sim_id: str) -> None:
     conn, is_pg = get_dpss_conn()
     try:
         if is_pg:
-            with conn.cursor() as cur:
+            with closing(conn.cursor()) as cur:
                 cur.execute(
                     "UPDATE simulation_history SET status='UNDONE' WHERE sim_id=%s",
                     (sim_id,)
@@ -513,7 +516,7 @@ def get_sim_history(user_id: str, limit: int = 50) -> List[Dict[str, Any]]:
     conn, is_pg = get_dpss_conn()
     try:
         if is_pg:
-            with conn.cursor() as cur:
+            with closing(conn.cursor()) as cur:
                 cur.execute(
                     "SELECT * FROM simulation_history WHERE user_id=%s ORDER BY started_at DESC LIMIT %s",
                     (user_id, limit)
@@ -521,13 +524,13 @@ def get_sim_history(user_id: str, limit: int = 50) -> List[Dict[str, Any]]:
                 cols = [d[0] for d in cur.description]
                 rows = [dict(zip(cols, r)) for r in cur.fetchall()]
         else:
-            cur = conn.cursor()
-            cur.execute(
-                "SELECT * FROM simulation_history WHERE user_id=? ORDER BY started_at DESC LIMIT ?",
-                (user_id, limit)
-            )
-            cols = [d[0] for d in cur.description]
-            rows = [dict(zip(cols, r)) for r in cur.fetchall()]
+            with closing(conn.cursor()) as cur:
+                cur.execute(
+                    "SELECT * FROM simulation_history WHERE user_id=? ORDER BY started_at DESC LIMIT ?",
+                    (user_id, limit)
+                )
+                cols = [d[0] for d in cur.description]
+                rows = [dict(zip(cols, r)) for r in cur.fetchall()]
         for r in rows:
             for k in ("input_events", "pre_vitals", "post_vitals"):
                 r[k] = _load(r.get(k))
@@ -556,7 +559,7 @@ def create_snapshot(
     snapshot_id = _uuid()
     try:
         if is_pg:
-            with conn.cursor() as cur:
+            with closing(conn.cursor()) as cur:
                 cur.execute(
                     """
                     INSERT INTO simulation_snapshots
@@ -597,7 +600,7 @@ def get_latest_snapshot(user_id: str) -> Optional[Dict[str, Any]]:
     conn, is_pg = get_dpss_conn()
     try:
         if is_pg:
-            with conn.cursor() as cur:
+            with closing(conn.cursor()) as cur:
                 cur.execute(
                     """
                     SELECT ss.* FROM simulation_snapshots ss
@@ -610,18 +613,18 @@ def get_latest_snapshot(user_id: str) -> Optional[Dict[str, Any]]:
                 cols = [d[0] for d in cur.description]
                 row = cur.fetchone()
         else:
-            cur = conn.cursor()
-            cur.execute(
-                """
-                SELECT ss.* FROM simulation_snapshots ss
-                JOIN simulation_history sh ON ss.sim_id = sh.sim_id
-                WHERE ss.user_id=? AND sh.status='SUCCESS'
-                ORDER BY ss.sim_date DESC, ss.created_at DESC LIMIT 1
-                """,
-                (user_id,)
-            )
-            cols = [d[0] for d in cur.description]
-            row = cur.fetchone()
+            with closing(conn.cursor()) as cur:
+                cur.execute(
+                    """
+                    SELECT ss.* FROM simulation_snapshots ss
+                    JOIN simulation_history sh ON ss.sim_id = sh.sim_id
+                    WHERE ss.user_id=? AND sh.status='SUCCESS'
+                    ORDER BY ss.sim_date DESC, ss.created_at DESC LIMIT 1
+                    """,
+                    (user_id,)
+                )
+                cols = [d[0] for d in cur.description]
+                row = cur.fetchone()
         if not row:
             return None
         r = dict(zip(cols, row))
@@ -639,7 +642,7 @@ def delete_snapshot(snapshot_id: str) -> None:
     conn, is_pg = get_dpss_conn()
     try:
         if is_pg:
-            with conn.cursor() as cur:
+            with closing(conn.cursor()) as cur:
                 cur.execute("DELETE FROM simulation_snapshots WHERE snapshot_id=%s", (snapshot_id,))
             conn.commit()
         else:
@@ -660,7 +663,7 @@ def upsert_scheduler_state(user_id: str, **kwargs) -> None:
     now = _now_iso()
     try:
         if is_pg:
-            with conn.cursor() as cur:
+            with closing(conn.cursor()) as cur:
                 cur.execute(
                     """
                     INSERT INTO scheduler_state (user_id, last_checked_at, updated_at)
@@ -701,15 +704,15 @@ def get_scheduler_state(user_id: str) -> Optional[Dict[str, Any]]:
     conn, is_pg = get_dpss_conn()
     try:
         if is_pg:
-            with conn.cursor() as cur:
+            with closing(conn.cursor()) as cur:
                 cur.execute("SELECT * FROM scheduler_state WHERE user_id=%s", (user_id,))
                 cols = [d[0] for d in cur.description]
                 row = cur.fetchone()
         else:
-            cur = conn.cursor()
-            cur.execute("SELECT * FROM scheduler_state WHERE user_id=?", (user_id,))
-            cols = [d[0] for d in cur.description]
-            row = cur.fetchone()
+            with closing(conn.cursor()) as cur:
+                cur.execute("SELECT * FROM scheduler_state WHERE user_id=?", (user_id,))
+                cols = [d[0] for d in cur.description]
+                row = cur.fetchone()
         return dict(zip(cols, row)) if row else None
     finally:
         conn.close()
@@ -732,7 +735,7 @@ def create_dpss_notification(
     notif_id = _uuid()
     try:
         if is_pg:
-            with conn.cursor() as cur:
+            with closing(conn.cursor()) as cur:
                 cur.execute(
                     """
                     INSERT INTO dpss_notifications
@@ -763,7 +766,7 @@ def mark_notification_status(notification_id: str, status: str) -> None:
     now = _now_iso()
     try:
         if is_pg:
-            with conn.cursor() as cur:
+            with closing(conn.cursor()) as cur:
                 cur.execute(
                     "UPDATE dpss_notifications SET status=%s, updated_at=%s WHERE notification_id=%s",
                     (status, now, notification_id)
@@ -784,7 +787,7 @@ def get_notifications(user_id: str, limit: int = 30) -> List[Dict[str, Any]]:
     conn, is_pg = get_dpss_conn()
     try:
         if is_pg:
-            with conn.cursor() as cur:
+            with closing(conn.cursor()) as cur:
                 cur.execute(
                     "SELECT * FROM dpss_notifications WHERE user_id=%s ORDER BY created_at DESC LIMIT %s",
                     (user_id, limit)
@@ -792,13 +795,13 @@ def get_notifications(user_id: str, limit: int = 30) -> List[Dict[str, Any]]:
                 cols = [d[0] for d in cur.description]
                 rows = [dict(zip(cols, r)) for r in cur.fetchall()]
         else:
-            cur = conn.cursor()
-            cur.execute(
-                "SELECT * FROM dpss_notifications WHERE user_id=? ORDER BY created_at DESC LIMIT ?",
-                (user_id, limit)
-            )
-            cols = [d[0] for d in cur.description]
-            rows = [dict(zip(cols, r)) for r in cur.fetchall()]
+            with closing(conn.cursor()) as cur:
+                cur.execute(
+                    "SELECT * FROM dpss_notifications WHERE user_id=? ORDER BY created_at DESC LIMIT ?",
+                    (user_id, limit)
+                )
+                cols = [d[0] for d in cur.description]
+                rows = [dict(zip(cols, r)) for r in cur.fetchall()]
         for r in rows:
             r["payload"] = _load(r.get("payload", "{}"))
         return rows

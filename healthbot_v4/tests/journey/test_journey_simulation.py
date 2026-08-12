@@ -123,6 +123,7 @@ class TestJourneySimulation:
         state = simulate_12_month_diabetes_journey("sim_stress_test")
         engine = GoalEngine()
         store = {"patient_id": state.patient_id, "goals": [], "milestones": [], "insights": [], "health_score_history": []}
+        goals = []
         for _ in range(50):  # 50 compute cycles (reduced for test speed)
             goals = engine.compute_goals(state, store)
             store["goals"] = [g.model_dump(mode="json") for g in goals]

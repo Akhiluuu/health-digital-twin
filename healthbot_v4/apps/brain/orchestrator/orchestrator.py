@@ -494,8 +494,6 @@ class AIOrchestrator(HealthBrainSubsystem):
                         continue
                     try:
                         lab = NormalizedLab(
-                            lab_id=lab_dict.get("lab_id") or f"lab_{patient_id[:6]}",
-                            patient_id=patient_id,
                             canonical_name=lab_dict.get("canonical_name") or lab_dict.get("name") or "Lab Test",
                             value=float(lab_dict.get("value", 0.0)),
                             unit=lab_dict.get("unit", ""),
@@ -584,9 +582,10 @@ class AIOrchestrator(HealthBrainSubsystem):
             if is_twin_query and organ_s and isinstance(organ_s, dict):
                 scores_dict = organ_s.get("scores") if isinstance(organ_s.get("scores"), dict) else organ_s
                 org_pairs = []
-                for k, v in scores_dict.items():
-                    if isinstance(v, (int, float)) and k not in ["overall_score", "timestamp"]:
-                        org_pairs.append(f"{k.capitalize()}: {v:.0f}/100")
+                if isinstance(scores_dict, dict):
+                    for k, v in scores_dict.items():
+                        if isinstance(v, (int, float)) and k not in ["overall_score", "timestamp"]:
+                            org_pairs.append(f"{k.capitalize()}: {v:.0f}/100")
                 if organ_s.get("overall_score") and isinstance(organ_s.get("overall_score"), (int, float)):
                     org_pairs.insert(0, f"Overall: {organ_s['overall_score']:.0f}/100")
                 if org_pairs:
@@ -599,7 +598,7 @@ class AIOrchestrator(HealthBrainSubsystem):
                 dom_str = f"Attention: {domains.get('attention', 80)}, Memory: {domains.get('memory', 85)}, Processing Speed: {domains.get('processingSpeed', 78)}, Executive Function: {domains.get('executiveFunction', 84)}"
                 streak = cog_a.get("streak_days", 0)
                 tests = cog_a.get("test_results") or []
-                test_names = [t.get("name") for t in tests if isinstance(t, dict) and t.get("name")]
+                test_names: List[str] = [str(t.get("name")) for t in tests if isinstance(t, dict) and t.get("name")]
                 tests_summary = f" [Tests: {', '.join(test_names)}]" if test_names else ""
                 extra_lines.append(f"• COGNITIVE STRESS TEST & BRAIN HEALTH: Cognitive Age {cog_age} yrs (Chronological: {state.profile.age}) | Overall Score: {score}/100 | Domain Breakdown: {dom_str}{tests_summary} | Testing Streak: {streak} days")
 

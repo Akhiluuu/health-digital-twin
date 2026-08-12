@@ -233,8 +233,6 @@ class SmartOCRPipeline:
                     else:
                         classification = "Normal"
                     labs.append(NormalizedLab(
-                        lab_id=f"lab_{uuid.uuid4().hex[:8]}",
-                        patient_id=patient_id,
                         canonical_name=canonical_name,
                         loinc_code=loinc,
                         value=val,
@@ -277,7 +275,6 @@ class SmartOCRPipeline:
                     condition_name=condition_name,
                     icd10_code="Z99",
                     status="active",
-                    onset_date=None,
                 ))
                 seen.add(condition_name)
         return conditions

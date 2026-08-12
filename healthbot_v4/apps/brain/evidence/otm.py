@@ -335,7 +335,7 @@ class OrchestratorToolManager:
         def _add_finding(sym_text: str, ts_label: str = "Logged"):
             if not sym_text:
                 return
-            clean_text = str(sym_text).strip()
+            clean_text = sym_text.strip()
             if clean_text and clean_text not in seen:
                 seen.add(clean_text)
                 findings.append(EvidenceFinding(
@@ -350,8 +350,10 @@ class OrchestratorToolManager:
             if isinstance(s, dict):
                 n = s.get("name") or s.get("title") or "Symptom"
                 sev = s.get("severity") or "Active"
-                notes = s.get("notes") or ""
-                val = f"{n} (Severity: {sev})" + (f" - {notes}" if notes else "")
+                val = f"{n} (Severity: {sev})"
+                raw_notes = s.get("notes")
+                if raw_notes:
+                    val += f" - {raw_notes}"
                 _add_finding(val)
             elif isinstance(s, str):
                 _add_finding(s)
@@ -367,8 +369,10 @@ class OrchestratorToolManager:
             if isinstance(s, dict):
                 n = s.get("name") or s.get("title") or "Symptom"
                 sev = s.get("severity") or "Active"
-                notes = s.get("notes") or ""
-                val = f"{n} (Severity: {sev})" + (f" - {notes}" if notes else "")
+                val = f"{n} (Severity: {sev})"
+                raw_notes = s.get("notes")
+                if raw_notes:
+                    val += f" - {raw_notes}"
                 _add_finding(val, s.get("date") or s.get("timestamp") or "Logged")
             elif isinstance(s, str):
                 _add_finding(s)
@@ -379,8 +383,10 @@ class OrchestratorToolManager:
             if isinstance(s, dict):
                 n = s.get("name") or s.get("title") or "Symptom"
                 sev = s.get("severity") or "Active"
-                notes = s.get("notes") or ""
-                val = f"{n} (Severity: {sev})" + (f" - {notes}" if notes else "")
+                val = f"{n} (Severity: {sev})"
+                raw_notes = s.get("notes")
+                if raw_notes:
+                    val += f" - {raw_notes}"
                 _add_finding(val)
             elif isinstance(s, str):
                 _add_finding(s)

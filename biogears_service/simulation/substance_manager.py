@@ -44,11 +44,11 @@ class SubstanceManager:
 
                 # Find the internal BioGears Name
                 name_node = root.find(".//bg:Name", self.ns)
-                bg_name = name_node.text if name_node is not None else file[:-4]
+                bg_name = (name_node.text if (name_node is not None and name_node.text) else None) or file[:-4]
 
                 # Check State (Liquid/Gas/Solid)
                 state_node = root.find(".//bg:State", self.ns)
-                state = state_node.text if state_node is not None else "Liquid"
+                state = (state_node.text if (state_node is not None and state_node.text) else None) or "Liquid"
 
                 self.registry[bg_name.lower()] = {
                     "name": bg_name,
@@ -62,4 +62,6 @@ class SubstanceManager:
                 logger.debug(f"SubstanceManager: skipping '{file}' ({e})")
 
     def get_substance(self, name: str):
+        if not name or not isinstance(name, str):
+            return None
         return self.registry.get(name.lower())

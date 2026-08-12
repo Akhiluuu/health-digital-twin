@@ -14,6 +14,7 @@ from healthbot_v4.shared.models.base import (
     PatientProfile, PatientState, NormalizedLab, NormalizedMedication,
     NormalizedVital, NormalizedCondition, RiskFlag, RiskLevel,
     TimelineEventType, GoalStatus, GoalTrend, MilestoneType, InsightType,
+    BiologicalSex,
 )
 from healthbot_v4.apps.brain.journey.milestone_engine import MilestoneEngine
 from healthbot_v4.apps.brain.journey.goal_engine import GoalEngine
@@ -30,7 +31,7 @@ def make_diabetic_state(patient_id: str = "test_diabetic") -> PatientState:
         first_name="John",
         last_name="Doe",
         age=52,
-        biological_sex="male",
+        biological_sex=BiologicalSex.male,
         weight_kg=90.0,
         height_cm=175.0,
     )
@@ -58,7 +59,7 @@ def make_healthy_state(patient_id: str = "test_healthy") -> PatientState:
         first_name="Sarah",
         last_name="Chen",
         age=32,
-        biological_sex="female",
+        biological_sex=BiologicalSex.female,
         weight_kg=62.0,
         height_cm=165.0,
     )

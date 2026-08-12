@@ -9,29 +9,29 @@ import time
 from typing import Dict, Any
 
 try:
-    from prometheus_client import Counter, Histogram, Gauge, generate_latest, CONTENT_TYPE_LATEST
+    from prometheus_client import Counter, Histogram, Gauge, generate_latest, CONTENT_TYPE_LATEST  # type: ignore
     _PROMETHEUS_AVAILABLE = True
 except ImportError:
     _PROMETHEUS_AVAILABLE = False
-    Counter = Histogram = Gauge = None
+    Counter = Histogram = Gauge = None  # type: ignore
     generate_latest = lambda: b""
     CONTENT_TYPE_LATEST = "text/plain"
 
 from fastapi import Response
 
 
-def _make_counter(name, doc, labels=None):
-    if _PROMETHEUS_AVAILABLE:
+def _make_counter(name: str, doc: str, labels: Any = None):
+    if _PROMETHEUS_AVAILABLE and Counter is not None:
         return Counter(name, doc, labels or [])
     return None
 
-def _make_histogram(name, doc, labels=None):
-    if _PROMETHEUS_AVAILABLE:
+def _make_histogram(name: str, doc: str, labels: Any = None):
+    if _PROMETHEUS_AVAILABLE and Histogram is not None:
         return Histogram(name, doc, labels or [])
     return None
 
-def _make_gauge(name, doc):
-    if _PROMETHEUS_AVAILABLE:
+def _make_gauge(name: str, doc: str):
+    if _PROMETHEUS_AVAILABLE and Gauge is not None:
         return Gauge(name, doc)
     return None
 

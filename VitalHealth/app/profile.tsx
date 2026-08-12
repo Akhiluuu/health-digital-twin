@@ -388,7 +388,7 @@ export default function ProfileScreen() {
 
   const { addMember, removeMember, members, activeMemberId, activeProfile, isSwitched, switchToMember, switchToSelf, updateActiveProfile, isSwitchLoading, refreshMembers } = useFamily();
   const { profile, updateProfile, isLoaded, isProfileComplete, resetProfile, reloadProfile } = useProfile();
-  const { twinStatus, twinStatusError, simulationProgress, registerTwin, calibrationJustSucceeded, dismissCalibrationSuccess } = useBiogearsTwin();
+  const { twinUserId, twinStatus, twinStatusError, simulationProgress, registerTwin, calibrationJustSucceeded, dismissCalibrationSuccess } = useBiogearsTwin();
   const isFocused = useIsFocused();
   const isCalibratingLocalRef = useRef(false);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
@@ -488,6 +488,41 @@ export default function ProfileScreen() {
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showHeightPicker, setShowHeightPicker] = useState(false);
   const [showWeightPicker, setShowWeightPicker] = useState(false);
+
+  // ── Pulse Animation for BioGears Engine Card ────────────────────────────────
+  const pulseAnim = useRef(new Animated.Value(1)).current;
+  const pulseLoopRef = useRef<Animated.CompositeAnimation | null>(null);
+
+  useEffect(() => {
+    const isActive = twinStatus === 'checking' || twinStatus === 'registering';
+    if (isActive) {
+      // Start pulsing ring while engine is working
+      pulseLoopRef.current = Animated.loop(
+        Animated.sequence([
+          Animated.timing(pulseAnim, { toValue: 1.5, duration: 700, useNativeDriver: true }),
+          Animated.timing(pulseAnim, { toValue: 1,   duration: 700, useNativeDriver: true }),
+        ])
+      );
+      pulseLoopRef.current.start();
+    } else {
+      // Stop loop and snap back to resting scale
+      if (pulseLoopRef.current) {
+        pulseLoopRef.current.stop();
+        pulseLoopRef.current = null;
+      }
+      Animated.timing(pulseAnim, {
+        toValue: 1,
+        duration: 250,
+        useNativeDriver: true,
+      }).start();
+    }
+    return () => {
+      if (pulseLoopRef.current) {
+        pulseLoopRef.current.stop();
+        pulseLoopRef.current = null;
+      }
+    };
+  }, [twinStatus, pulseAnim]);
 
   // ── Modal State ────────────────────────────────────────────────────────────
   const [editProfileModal, setEditProfileModal] = useState(false);
@@ -1054,7 +1089,7 @@ export default function ProfileScreen() {
       await saveProfileData(profileToSave);
       setLocalProfile(profileToSave);
 
-      const generatedId = getTwinId(localProfile);
+      const generatedId = twinUserId || getTwinId(localProfile);
       const payload: BiogearsRegistrationPayload = {
         user_id: generatedId,
         profile_name: localProfile.firstName ? `${localProfile.firstName} ${localProfile.lastName || ""}`.trim() : undefined,
@@ -1139,22 +1174,80 @@ export default function ProfileScreen() {
         </View>
       </View>
       <View style={[styles.twinStatusBox, {
-        borderColor: twinStatus === 'ready' ? colors.success : (twinStatus === 'registering' || twinStatus === 'checking') ? colors.warning : colors.danger,
-        backgroundColor: twinStatus === 'ready' ? colors.success + "10" : (twinStatus === 'registering' || twinStatus === 'checking') ? colors.warning + "10" : colors.danger + "10"
+        borderColor: twinStatus === 'ready' ? colors.success + "40" : (twinStatus === 'registering' || twinStatus === 'checking') ? colors.warning + "40" : colors.danger + "40",
+        backgroundColor: twinStatus === 'ready' ? colors.success + "0A" : (twinStatus === 'registering' || twinStatus === 'checking') ? colors.warning + "0A" : colors.danger + "0A"
       }]}>
         <View style={styles.twinStatusHeader}>
-          <Ionicons
-            name={twinStatus === 'ready' ? "checkmark-circle" : (twinStatus === 'registering' || twinStatus === 'checking') ? "hourglass" : "warning"}
-            size={20}
-            color={twinStatus === 'ready' ? colors.success : (twinStatus === 'registering' || twinStatus === 'checking') ? colors.warning : colors.danger}
-          />
-          <Text style={[styles.twinStatusText, { color: twinStatus === 'ready' ? colors.success : (twinStatus === 'registering' || twinStatus === 'checking') ? colors.warning : colors.danger }]}>
-            {twinStatus === "checking" ? "Checking Status..." : twinStatus === "registering" ? "Calibrating Twin Engine..." : twinStatus === "ready" ? "Clinical Engine Calibrated" : "⚠️ Twin Profile Uncalibrated"}
-          </Text>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 10, flex: 1 }}>
+            <View style={{ width: 22, height: 22, justifyContent: "center", alignItems: "center" }}>
+              {/* Pulsing halo — only visible while checking or registering */}
+              {(twinStatus === 'checking' || twinStatus === 'registering') && (
+                <Animated.View
+                  style={{
+                    position: "absolute",
+                    width: 20,
+                    height: 20,
+                    borderRadius: 10,
+                    backgroundColor: colors.warning,
+                    opacity: 0.35,
+                    transform: [{ scale: pulseAnim }],
+                  }}
+                />
+              )}
+              {/* Static halo for ready — soft permanent glow, no animation */}
+              {twinStatus === 'ready' && (
+                <View
+                  style={{
+                    position: "absolute",
+                    width: 18,
+                    height: 18,
+                    borderRadius: 9,
+                    backgroundColor: colors.success,
+                    opacity: 0.25,
+                  }}
+                />
+              )}
+              <View
+                style={{
+                  width: 10,
+                  height: 10,
+                  borderRadius: 5,
+                  backgroundColor: twinStatus === 'ready' ? colors.success : (twinStatus === 'registering' || twinStatus === 'checking') ? colors.warning : colors.danger,
+                }}
+              />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 11, fontWeight: "700", color: colors.subText, textTransform: "uppercase", letterSpacing: 0.5 }}>
+                BioGears Integration
+              </Text>
+              <Text style={[styles.twinStatusText, { color: twinStatus === 'ready' ? colors.success : (twinStatus === 'registering' || twinStatus === 'checking') ? colors.warning : colors.danger }]}>
+                {twinStatus === "checking" ? "Checking Status..." : twinStatus === "registering" ? "Calibrating Twin Engine..." : twinStatus === "ready" ? "BioGears Clinical Profile Calibrated" : "⚠️ Twin Profile Uncalibrated"}
+              </Text>
+            </View>
+          </View>
         </View>
+
         {twinStatusError ? (
           <Text style={{ color: colors.danger, fontSize: 11, marginBottom: 8, paddingHorizontal: 4 }}>{twinStatusError}</Text>
         ) : null}
+
+        <View style={{ flexDirection: "row", gap: 8, marginTop: 10, marginBottom: 12 }}>
+          <View style={{ flex: 1, backgroundColor: colors.bg, padding: 8, borderRadius: 10, alignItems: "center", borderWidth: 1, borderColor: colors.border }}>
+            <Text style={{ fontSize: 10, color: colors.subText }}>Resting HR</Text>
+            <Text style={{ fontSize: 13, fontWeight: "700", color: colors.text, marginTop: 2 }}>{safeProfile.biogears_resting_hr || 72} bpm</Text>
+          </View>
+          <View style={{ flex: 1, backgroundColor: colors.bg, padding: 8, borderRadius: 10, alignItems: "center", borderWidth: 1, borderColor: colors.border }}>
+            <Text style={{ fontSize: 10, color: colors.subText }}>Blood Pressure</Text>
+            <Text style={{ fontSize: 13, fontWeight: "700", color: colors.text, marginTop: 2 }}>{safeProfile.biogears_systolic_bp || 120}/{safeProfile.biogears_diastolic_bp || 80}</Text>
+          </View>
+          <View style={{ flex: 1, backgroundColor: colors.bg, padding: 8, borderRadius: 10, alignItems: "center", borderWidth: 1, borderColor: colors.border }}>
+            <Text style={{ fontSize: 10, color: colors.subText }}>Status</Text>
+            <Text style={{ fontSize: 13, fontWeight: "700", color: twinStatus === 'ready' ? colors.success : colors.warning, marginTop: 2 }}>
+              {twinStatus === 'ready' ? 'Active' : 'Syncing'}
+            </Text>
+          </View>
+        </View>
+
         <TouchableOpacity
           style={[styles.twinActionBtn, {
             backgroundColor: twinStatus === 'ready' ? colors.card : (twinStatus === 'registering' || twinStatus === 'checking') ? colors.warning : colors.danger,
@@ -1165,12 +1258,12 @@ export default function ProfileScreen() {
           disabled={twinStatus === "registering" || twinStatus === "checking"}
         >
           {twinStatus === "registering" ? (
-            <Text style={{ color: "#fff", fontSize: 13, fontWeight: "bold" }}>Please Wait...</Text>
+            <ActivityIndicator size="small" color="#fff" />
           ) : twinStatus === "checking" ? (
             <Text style={{ color: "#fff", fontSize: 13, fontWeight: "bold" }}>Checking...</Text>
           ) : (
             <Text style={[styles.twinActionBtnText, { color: twinStatus === 'ready' ? colors.success : "#fff" }]}>
-              {twinStatus === 'ready' ? "Recalibrate Engine" : "Calibrate Twin System"}
+              {twinStatus === 'ready' ? "Recalibrate Clinical Engine" : "Calibrate Twin System"}
             </Text>
           )}
         </TouchableOpacity>

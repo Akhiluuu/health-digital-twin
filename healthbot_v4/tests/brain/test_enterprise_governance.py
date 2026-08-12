@@ -105,6 +105,7 @@ def test_hitl_escalation_queue():
     assert len(hitl.get_pending_tasks()) == 1
 
     reviewed = hitl.review_task(task.task_id, "APPROVE", notes="Verified by Dr. Smith")
+    assert reviewed is not None
     assert reviewed.status == "APPROVED"
     assert len(hitl.get_pending_tasks()) == 0
 

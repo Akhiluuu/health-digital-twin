@@ -93,10 +93,13 @@ async def run_e2e_demo():
     # 4. BioGears Counterfactual Scenario Engine Execution
     sim_res = BioGearsScenarioEngine.run_counterfactual_scenario(state, query)
     print(f"\n4️⃣ BIOGEARS COUNTERFACTUAL SCENARIO ENGINE:")
-    print(f"   Scenario Title: {sim_res.scenario_title}")
-    print(f"   Baseline: {sim_res.baseline_metrics}")
-    print(f"   90-Day Projection: {sim_res.predicted_metrics}")
-    print(f"   Delta Impact: {sim_res.delta_summary}")
+    if sim_res:
+        print(f"   Scenario Title: {sim_res.scenario_title}")
+        print(f"   Baseline: {sim_res.baseline_metrics}")
+        print(f"   90-Day Projection: {sim_res.predicted_metrics}")
+        print(f"   Delta Impact: {sim_res.delta_summary}")
+    else:
+        print("   No counterfactual scenario matched query.")
 
     # 5. Semantic Context Compressor
     compressed_ctx = SemanticContextCompressor.compress(state, intent="MEDICATION")
@@ -134,7 +137,7 @@ async def run_e2e_demo():
         patient_id=state.patient_id,
         intent="MEDICATION_COUNTERFACTUAL",
         query=query,
-        summary=sim_res.clinical_interpretation,
+        summary=sim_res.clinical_interpretation if sim_res else "No counterfactual simulation scenario executed.",
         evidence_sources=["BioGears_v5.4_Metabolic_Sim", "ADA_2026_Standards_Sec6"],
         confidence=confidence,
         clinical_reasons=["Metformin discontinuation elevates fasting glucose delta by +38 mg/dL"]

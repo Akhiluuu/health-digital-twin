@@ -48,13 +48,13 @@ def _load_journey_store(patient_id: str) -> Dict[str, Any]:
         "milestones": [],
         "insights": [],
         "health_score_history": [],
-        "created_at": datetime.utcnow().isoformat(),
-        "updated_at": datetime.utcnow().isoformat(),
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "updated_at": datetime.now(timezone.utc).isoformat(),
     }
 
 
 def _save_journey_store(patient_id: str, data: Dict[str, Any]) -> None:
-    data["updated_at"] = datetime.utcnow().isoformat()
+    data["updated_at"] = datetime.now(timezone.utc).isoformat()
     path = _store_path(patient_id)
     try:
         with open(path, "w") as f:
@@ -112,7 +112,7 @@ class JourneyEngine(HealthBrainSubsystem):
         # Record health score history
         score_entry = {
             "score": state.current_health_score,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         }
         history = store.get("health_score_history", [])
         if not history or history[-1]["score"] != state.current_health_score:
@@ -144,7 +144,7 @@ class JourneyEngine(HealthBrainSubsystem):
                 "summary": longitudinal.overall_trajectory_summary,
             },
             "active_risks": [r.model_dump(mode="json") for r in state.active_risks],
-            "updated_at": datetime.utcnow().isoformat(),
+            "updated_at": datetime.now(timezone.utc).isoformat(),
         }
 
     def get_journey_snapshot(self, patient_id: str) -> JourneySnapshot:
@@ -285,7 +285,7 @@ class JourneyEngine(HealthBrainSubsystem):
             },
             "milestones": [m.model_dump(mode="json") for m in milestones],
             "twin_summary": snapshot.twin_prediction_summary or "Simulation pending.",
-            "generated_at": datetime.utcnow().isoformat(),
+            "generated_at": datetime.now(timezone.utc).isoformat(),
         }
 
     def get_filtered_timeline(

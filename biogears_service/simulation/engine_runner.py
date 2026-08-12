@@ -356,12 +356,13 @@ class CrossProcessUserLock:
             # fcntl not available (Windows): try msvcrt
             try:
                 import msvcrt
-                if hasattr(msvcrt, "locking"):
+                locking_fn = getattr(msvcrt, "locking", None)
+                if locking_fn:
                     self.file_handle.seek(0)
                     lk_lock = getattr(msvcrt, "LK_LOCK", 1)
                     lk_nblck = getattr(msvcrt, "LK_NBLCK", 2)
                     mode = lk_lock if blocking else lk_nblck
-                    msvcrt.locking(self.file_handle.fileno(), mode, 1)
+                    locking_fn(self.file_handle.fileno(), mode, 1)
                 return True
             except (ImportError, OSError, AttributeError):
                 # Fall through: treat as acquired (single-process environment)
@@ -385,10 +386,11 @@ class CrossProcessUserLock:
                 except (ImportError, AttributeError):
                     try:
                         import msvcrt
-                        if hasattr(msvcrt, "locking"):
+                        locking_fn = getattr(msvcrt, "locking", None)
+                        if locking_fn:
                             self.file_handle.seek(0)
                             mode = getattr(msvcrt, "LK_UNLCK", 0)
-                            msvcrt.locking(self.file_handle.fileno(), mode, 1)
+                            locking_fn(self.file_handle.fileno(), mode, 1)
                     except (ImportError, OSError, AttributeError):
                         pass
                 try:

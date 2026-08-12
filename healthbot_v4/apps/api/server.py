@@ -342,8 +342,6 @@ async def process_lab_ocr_scan(req: LabOCRScanRequest):
         for f in req.findings:
             try:
                 lab_obj = NormalizedLab(
-                    lab_id=f"lab_{uuid.uuid4().hex[:8]}",
-                    patient_id=req.user_id,
                     canonical_name=f.get("name") or "Lab Test",
                     value=float(f.get("value", 0.0)),
                     unit=f.get("unit", ""),

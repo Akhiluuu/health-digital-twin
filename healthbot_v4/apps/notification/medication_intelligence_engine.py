@@ -11,9 +11,12 @@ Handles:
 """
 
 from __future__ import annotations
+import json
 import logging
 from datetime import datetime, timedelta, timezone
 from typing import Dict, Any, List, Optional
+from urllib.parse import quote
+from urllib.request import Request, urlopen
 from uuid import UUID
 
 logger = logging.getLogger(__name__)
@@ -151,9 +154,9 @@ class MedicationIntelligenceEngine:
             headers = {"User-Agent": "VitalHealth/6.0 Clinical Engine"}
             
             def get_rxcui(drug_name: str) -> Optional[str]:
-                url = f"https://rxnav.nlm.nih.gov/REST/rxcui.json?name={urllib.parse.quote(drug_name)}"
-                req = urllib.request.Request(url, headers=headers)
-                with urllib.request.urlopen(req, timeout=2.5) as resp:
+                url = f"https://rxnav.nlm.nih.gov/REST/rxcui.json?name={quote(drug_name)}"
+                req = Request(url, headers=headers)
+                with urlopen(req, timeout=2.5) as resp:
                     data = json.loads(resp.read().decode('utf-8'))
                     id_group = data.get("idGroup", {})
                     rx_list = id_group.get("rxnormId", [])
@@ -164,8 +167,8 @@ class MedicationIntelligenceEngine:
 
             if rxcui_a and rxcui_b:
                 url_inter = f"https://rxnav.nlm.nih.gov/REST/interaction/interaction.json?rxcui={rxcui_a}"
-                req_inter = urllib.request.Request(url_inter, headers=headers)
-                with urllib.request.urlopen(req_inter, timeout=3.0) as resp:
+                req_inter = Request(url_inter, headers=headers)
+                with urlopen(req_inter, timeout=3.0) as resp:
                     inter_data = json.loads(resp.read().decode('utf-8'))
                     type_groups = inter_data.get("interactionTypeGroup", [])
                     

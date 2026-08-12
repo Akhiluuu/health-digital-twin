@@ -3,6 +3,7 @@ healthbot_v4/apps/brain/core.py
 Central Health Brain Subsystem Coordinator for VitalHealth v5.0.
 """
 
+from __future__ import annotations
 from typing import Dict, Any, Optional
 from healthbot_v4.shared.logger.logger import logger
 
@@ -24,13 +25,16 @@ class HealthBrainSubsystem:
 class HealthBrainCore:
     """Singleton coordinator managing lifecycles of all Health Brain subsystems."""
 
-    _instance = None
+    _instance: Optional[HealthBrainCore] = None
+    subsystems: Dict[str, HealthBrainSubsystem]
+    is_running: bool
 
-    def __new__(cls):
+    def __new__(cls) -> HealthBrainCore:
         if cls._instance is None:
-            cls._instance = super().__new__(cls)
-            cls._instance.subsystems = {}
-            cls._instance.is_running = False
+            inst = super().__new__(cls)
+            inst.subsystems = {}
+            inst.is_running = False
+            cls._instance = inst
         return cls._instance
 
     def register_subsystem(self, subsystem: HealthBrainSubsystem) -> None:

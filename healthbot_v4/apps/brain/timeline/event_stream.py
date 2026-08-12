@@ -3,8 +3,8 @@ healthbot_v4/apps/brain/timeline/event_stream.py
 Immutable chronological event stream logger for patient medical events.
 """
 
-from typing import List, Dict, Any
-from datetime import datetime
+from typing import List, Dict, Any, Optional
+from datetime import datetime, timezone
 from healthbot_v4.apps.brain.core import HealthBrainSubsystem
 from healthbot_v4.shared.logger.logger import logger
 from healthbot_v4.shared.models.base import TimelineEvent, TimelineEventType
@@ -23,13 +23,13 @@ class MedicalTimelineEngine(HealthBrainSubsystem):
         logger.info("📅 Medical Timeline Engine initialized")
 
     def record_event(
-        self, patient_id: str, event_type: TimelineEventType, title: str, description: str, payload: Dict[str, Any] = None
+        self, patient_id: str, event_type: TimelineEventType, title: str, description: str, payload: Optional[Dict[str, Any]] = None
     ) -> TimelineEvent:
         if patient_id not in self._timeline:
             self._timeline[patient_id] = []
 
         event = TimelineEvent(
-            event_id=f"evt_{int(datetime.utcnow().timestamp())}",
+            event_id=f"evt_{int(datetime.now(timezone.utc).timestamp())}",
             patient_id=patient_id,
             event_type=event_type,
             title=title,

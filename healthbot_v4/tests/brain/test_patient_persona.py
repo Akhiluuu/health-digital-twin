@@ -19,6 +19,7 @@ from healthbot_v4.shared.models.base import (
     PatientState,
     NormalizedCondition,
     NormalizedMedication,
+    BiologicalSex,
 )
 
 
@@ -46,7 +47,7 @@ def test_persona_building_from_state():
         first_name="John",
         last_name="Doe",
         age=52,
-        biological_sex="male",
+        biological_sex=BiologicalSex.male,
         allergies=["Penicillin"],
     )
     state = PatientState(

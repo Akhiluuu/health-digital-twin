@@ -197,7 +197,7 @@ class QwenInferenceEngine(HealthBrainSubsystem):
             return False
 
         complexity = getattr(strategy, "complexity", None)
-        complexity_val = str(complexity.value if hasattr(complexity, "value") else complexity or "").upper()
+        complexity_val = str(complexity.value if (complexity is not None and hasattr(complexity, "value")) else (complexity or "")).upper()
 
         # For micro chit-chat or short QA, length requirement is very low
         if "MICRO" in complexity_val or len(query.split()) <= 4:
@@ -620,7 +620,7 @@ You are a trusted healthcare companion helping users understand, manage, monitor
             return None
         try:
             prompt = self._messages_to_qwen_prompt(messages)
-            out = self._llm(
+            out: Any = self._llm(
                 prompt,
                 max_tokens=max_tokens,
                 temperature=temperature,
@@ -629,9 +629,10 @@ You are a trusted healthcare companion helping users understand, manage, monitor
                 stop=["<|im_end|>", "<|endoftext|>", "</s>"],
                 echo=False,
             )
-            text = out["choices"][0]["text"].strip()
-            if text and len(text) > 30:
-                return text
+            if isinstance(out, dict) and "choices" in out and len(out["choices"]) > 0:
+                text = out["choices"][0].get("text", "").strip() if isinstance(out["choices"][0], dict) else ""
+                if text and len(text) > 30:
+                    return text
         except Exception as e:
             logger.error(f"llama-cpp inference error: {e}\n{traceback.format_exc()}")
         return None
@@ -1208,9 +1209,12 @@ You are a trusted healthcare companion helping users understand, manage, monitor
                     stream=True,
                 )
                 for chunk in stream_res:
-                    token = chunk["choices"][0].get("text", "")
-                    if token:
-                        yield token
+                    if isinstance(chunk, dict) and "choices" in chunk:
+                        choices = chunk.get("choices")
+                        if isinstance(choices, list) and len(choices) > 0 and isinstance(choices[0], dict):
+                            token = choices[0].get("text", "")
+                            if token:
+                                yield token
                 return
             except Exception as e:
                 logger.error(f"GGUF stream error: {e}")

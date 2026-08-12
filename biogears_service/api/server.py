@@ -148,7 +148,7 @@ def _run_biogears_via_celery(scenario_path: str, user_id: str = "unknown") -> bo
     if _has_celery:
         try:
             from biogears_service.api.tasks import run_simulation_task
-            task_res = run_simulation_task.delay(scenario_path, user_id=user_id)
+            task_res = getattr(run_simulation_task, "delay")(scenario_path, user_id=user_id)
             result = task_res.get()
             return bool(result.get("success", False))
         except Exception as e:
@@ -217,10 +217,11 @@ class CrossProcessFileLock:
             except (ImportError, AttributeError):
                 try:
                     import msvcrt
-                    if hasattr(msvcrt, "locking"):
+                    locking_fn = getattr(msvcrt, "locking", None)
+                    if locking_fn:
                         self.file_handle.seek(0)
                         mode = getattr(msvcrt, "LK_LOCK", 1)
-                        msvcrt.locking(self.file_handle.fileno(), mode, 1)
+                        locking_fn(self.file_handle.fileno(), mode, 1)
                 except (ImportError, OSError, AttributeError):
                     pass
         except Exception:
@@ -235,10 +236,11 @@ class CrossProcessFileLock:
             except (ImportError, AttributeError):
                 try:
                     import msvcrt
-                    if hasattr(msvcrt, "locking"):
+                    locking_fn = getattr(msvcrt, "locking", None)
+                    if locking_fn:
                         self.file_handle.seek(0)
                         mode = getattr(msvcrt, "LK_UNLCK", 0)
-                        msvcrt.locking(self.file_handle.fileno(), mode, 1)
+                        locking_fn(self.file_handle.fileno(), mode, 1)
                 except (ImportError, OSError, AttributeError):
                     pass
             try:
@@ -1748,7 +1750,7 @@ def _predict_recovery_impl(data: PredictRequest):
             logger.warning(f"Failed to read cached JSON for {cache_key}: {e}")
 
     path, run_id, _csv_prefix = scenario_builder.build_forecast_scenario(
-        data.user_id, str(state_file), hours=data.hours
+        data.user_id, str(state_file), hours=int(data.hours or 4)
     )
     try:
         if _run_biogears_via_celery(path, user_id=data.user_id):
@@ -2082,7 +2084,7 @@ def _predict_whatif_impl(data: WhatIfRequest):
 
     base_path, evt_path, base_run_id, evt_run_id, base_prefix, evt_prefix = \
         scenario_builder.build_whatif_scenario(
-            data.user_id, str(state_file), event_dict, hours=data.hours
+            data.user_id, str(state_file), event_dict, hours=int(data.hours or 4)
         )
 
     base_candidates = []

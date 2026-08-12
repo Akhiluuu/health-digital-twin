@@ -151,7 +151,7 @@ def _run_sim(user_id: str, events: list, sim_type: str = "AUTOMATIC", sim_date: 
 
     # Convert raw dicts to HealthEvent pydantic models
     he_events = []
-    for e in events:
+    for e in (events or []):
         try:
             he_events.append(HealthEvent(**e) if isinstance(e, dict) else e)
         except Exception:
@@ -164,7 +164,11 @@ def _run_sim(user_id: str, events: list, sim_type: str = "AUTOMATIC", sim_date: 
         pre_vitals = latest_snap.get("vitals_snapshot", {})
 
     # Create history entry
-    event_ids = [e.get("event_id") for e in events if isinstance(e, dict) and e.get("event_id")]
+    event_ids: List[str] = [
+        str(e["event_id"])
+        for e in (events or [])
+        if isinstance(e, dict) and e.get("event_id") is not None
+    ]
     sim_id = db_m.create_sim_history(
         user_id=user_id,
         sim_type=sim_type,
@@ -172,6 +176,11 @@ def _run_sim(user_id: str, events: list, sim_type: str = "AUTOMATIC", sim_date: 
         input_events=events,
         pre_vitals=pre_vitals,
     )
+    if not sim_id or not isinstance(sim_id, str):
+        import uuid
+        sim_id = str(uuid.uuid4())
+
+    sim_id_short = sim_id[:8]
 
     # Save pre-sim state backup
     state_file = USER_STATES_DIR / f"{user_id}.xml"
@@ -187,8 +196,8 @@ def _run_sim(user_id: str, events: list, sim_type: str = "AUTOMATIC", sim_date: 
         active_file = gz_file
 
     if active_file:
-        ts = datetime.datetime.utcnow().strftime("%Y%m%d_%H%M%S")
-        dest = bak_dir / f"{user_id}_{sim_id[:8]}_{ts}{active_file.suffix}"
+        ts = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%d_%H%M%S")
+        dest = bak_dir / f"{user_id}_{sim_id_short}_{ts}{active_file.suffix}"
         try:
             shutil.copy2(str(active_file), str(dest))
             pre_state_path = str(dest)
@@ -228,9 +237,9 @@ def _run_sim(user_id: str, events: list, sim_type: str = "AUTOMATIC", sim_date: 
         )
 
         # Update scheduler state
-        db_m.upsert_scheduler_state(user_id, last_simulated_at=datetime.datetime.utcnow().isoformat())
+        db_m.upsert_scheduler_state(user_id, last_simulated_at=datetime.datetime.now(datetime.timezone.utc).isoformat())
 
-        logger.info(f"✅ [{user_id}] {sim_type} simulation SUCCESS (sim_id={sim_id[:8]})")
+        logger.info(f"✅ [{user_id}] {sim_type} simulation SUCCESS (sim_id={sim_id_short})")
         return {"success": True, "vitals": vitals, "sim_id": sim_id}
 
     except Exception as sim_err:
@@ -367,7 +376,7 @@ class DPSSScheduler:
         """
         db = _db()
         try:
-            user_ids = db.get_users_with_pending_events()
+            user_ids = db.get_users_with_pending_events() or []
         except Exception as e:
             logger.warning(f"evaluate_readiness DB error: {e}")
             return
@@ -380,13 +389,13 @@ class DPSSScheduler:
 
     def _maybe_notify_ready(self, user_id: str, db):
         """Send SIM_READY notification if threshold is met and not already notified today."""
-        count = db.count_pending_events(user_id)
+        count = db.count_pending_events(user_id) or 0
         if count < 3:
             return  # Not enough events yet
 
         # Check if we already sent a SIM_READY notification today
         today_str = datetime.date.today().isoformat()
-        existing = db.get_notifications(user_id, limit=10)
+        existing = db.get_notifications(user_id, limit=10) or []
         already_sent = any(
             n["notif_type"] in ("SIM_READY", "MULTIPLE_PENDING") and
             n["sim_date"] == today_str and
@@ -405,7 +414,9 @@ class DPSSScheduler:
                     last_sim_dt = datetime.datetime.fromisoformat(last_sim)
                 else:
                     last_sim_dt = last_sim
-                hours_since = (datetime.datetime.utcnow() - last_sim_dt.replace(tzinfo=None)).total_seconds() / 3600
+                if last_sim_dt.tzinfo is None:
+                    last_sim_dt = last_sim_dt.replace(tzinfo=datetime.timezone.utc)
+                hours_since = (datetime.datetime.now(datetime.timezone.utc) - last_sim_dt).total_seconds() / 3600
                 if hours_since < 4:
                     return  # Simulated less than 4 hours ago
             except Exception:
@@ -438,12 +449,12 @@ class DPSSScheduler:
         db = _db()
         from biogears_service.api.db import list_profiles
         try:
-            profiles = list_profiles()
-            user_ids = list(profiles.keys())
+            profiles = list_profiles() or {}
+            user_ids = list(profiles.keys()) if profiles else []
         except Exception as e:
             logger.warning(f"midnight_sweep list_profiles error: {e}")
             try:
-                user_ids = db.get_users_with_pending_events()
+                user_ids = db.get_users_with_pending_events() or []
             except Exception:
                 user_ids = []
 
@@ -469,7 +480,7 @@ class DPSSScheduler:
         and simulates standard baseline routine events to keep twin calibrated.
         """
         today = datetime.date.today()
-        pending = db.get_pending_events(user_id)
+        pending = db.get_pending_events(user_id) or []
 
         # Group existing pending events by calendar day
         from collections import defaultdict

@@ -51,7 +51,7 @@ class EvidenceCorrelationEngine:
                     })
 
         # Check elevated BP + headache correlation
-        bp_item = next((v for v in vitals if "bp" in str(v.source).lower() or "blood pressure" in str(v.dataType).lower()), None)
+        bp_item = next((v for v in vitals if "bp" in v.source.lower() or "blood pressure" in v.dataType.lower()), None)
         headache_item = next((s for s in symptoms if "headache" in str(s.value).lower()), None)
         if bp_item and headache_item:
             inferred_correlations.append({

@@ -37,14 +37,14 @@ def build_initialization_scenario(
     Returns the absolute path to the written scenario file.
     """
     # Clamp to BioGears-safe ranges
-    age      = max(18, min(80, int(age)))
-    weight   = max(30.0, min(200.0, float(weight)))
-    height   = max(140.0, min(220.0, float(height)))
-    body_fat = max(0.02, min(0.70, float(body_fat)))
-    hr       = max(50.0, min(100.0, float(hr)))
-    rr       = max(8.0,  min(25.0,  float(rr)))
-    sys      = max(85.0, min(160.0, float(sys)))
-    dia      = max(55.0, min(95.0,  float(dia)))
+    age      = max(18, min(80, age))
+    weight   = max(30.0, min(200.0, weight))
+    height   = max(140.0, min(220.0, height))
+    body_fat = max(0.02, min(0.70, body_fat))
+    hr       = max(50.0, min(100.0, hr))
+    rr       = max(8.0,  min(25.0,  rr))
+    sys      = max(85.0, min(160.0, sys))
+    dia      = max(55.0, min(95.0,  dia))
 
     scenario_file = SCENARIO_API_DIR / f"init_{user_id}.xml"
     patient_file  = SCENARIO_API_DIR / f"patient_{user_id}.xml"
@@ -95,7 +95,7 @@ def build_runtime_scenario(user_id: str, simulation_time: int) -> str:
     Builds a simple continuation scenario that advances time from the saved state.
     Returns the absolute path to the written scenario file.
     """
-    simulation_time = max(10, int(simulation_time))
+    simulation_time = max(10, simulation_time)
 
     scenario_file = SCENARIO_API_DIR / f"run_{user_id}.xml"
     abs_state_in  = (BIOGEARS_BIN_DIR / f"{user_id}.xml").absolute().as_posix()

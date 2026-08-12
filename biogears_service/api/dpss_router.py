@@ -200,7 +200,7 @@ async def stage_batch(req: StageBatchRequest, auth=Depends(lambda: _auth())):
 @dpss_router.get("/events/pending/{user_id}", summary="Get all pending unprocessed events")
 def get_pending(user_id: str, auth=Depends(lambda: _auth())):
     db = _db()
-    events = db.get_pending_events(user_id)
+    events = db.get_pending_events(user_id) or []
     return {"user_id": user_id, "pending_count": len(events), "events": events}
 
 
@@ -209,7 +209,7 @@ def get_pending(user_id: str, auth=Depends(lambda: _auth())):
 @dpss_router.post("/simulation/run", summary="Manually trigger simulation for pending events")
 async def run_simulation(req: RunSimulationRequest, background_tasks: BackgroundTasks, auth=Depends(lambda: _auth())):
     db = _db()
-    events = db.get_pending_events(req.user_id)
+    events = db.get_pending_events(req.user_id) or []
     if not events:
         raise HTTPException(
             status_code=404,
@@ -304,7 +304,7 @@ def undo_simulation(req: UndoRequest, auth=Depends(lambda: _auth())):
         raise HTTPException(status_code=500, detail=f"State restore failed: {e}")
 
     # Rollback event statuses to PENDING
-    event_ids = snap.get("input_event_ids", [])
+    event_ids = snap.get("input_event_ids", []) or []
     if event_ids:
         db.restore_events_to_pending(event_ids)
 
@@ -327,7 +327,8 @@ def undo_simulation(req: UndoRequest, auth=Depends(lambda: _auth())):
         },
     )
 
-    logger.info(f"✅ [{req.user_id}] Undo complete. Snapshot {snap['snapshot_id'][:8]} removed.")
+    snap_id = str(snap.get('snapshot_id', ''))[:8]
+    logger.info(f"✅ [{req.user_id}] Undo complete. Snapshot {snap_id} removed.")
     return {
         "status": "success",
         "message": "Digital Twin restored to pre-simulation checkpoint.",
@@ -341,7 +342,7 @@ def undo_simulation(req: UndoRequest, auth=Depends(lambda: _auth())):
 @dpss_router.get("/simulation/history/{user_id}", summary="Full DPSS simulation history for a user")
 def sim_history(user_id: str, limit: int = 50, auth=Depends(lambda: _auth())):
     db = _db()
-    records = db.get_sim_history(user_id, limit=limit)
+    records = db.get_sim_history(user_id, limit=limit) or []
     return {"user_id": user_id, "count": len(records), "history": records}
 
 
@@ -350,7 +351,7 @@ def sim_history(user_id: str, limit: int = 50, auth=Depends(lambda: _auth())):
 @dpss_router.get("/simulation/status/{user_id}", summary="Current DPSS sync status for a user")
 def sim_status(user_id: str, auth=Depends(lambda: _auth())):
     db = _db()
-    pending_count = db.count_pending_events(user_id)
+    pending_count = db.count_pending_events(user_id) or 0
     sched = db.get_scheduler_state(user_id)
     snap = db.get_latest_snapshot(user_id)
     return {
@@ -371,7 +372,7 @@ def sim_status(user_id: str, auth=Depends(lambda: _auth())):
 @dpss_router.get("/checkpoints/{user_id}", summary="List available undo checkpoints")
 def list_checkpoints(user_id: str, auth=Depends(lambda: _auth())):
     db = _db()
-    records = db.get_sim_history(user_id, limit=10)
+    records = db.get_sim_history(user_id, limit=10) or []
     checkpoints = [
         {
             "sim_id": r["sim_id"],
@@ -391,7 +392,7 @@ def list_checkpoints(user_id: str, auth=Depends(lambda: _auth())):
 @dpss_router.get("/notifications/{user_id}", summary="DPSS notification log for a user")
 def get_notifications(user_id: str, limit: int = 30, auth=Depends(lambda: _auth())):
     db = _db()
-    notifs = db.get_notifications(user_id, limit=limit)
+    notifs = db.get_notifications(user_id, limit=limit) or []
     return {"user_id": user_id, "count": len(notifs), "notifications": notifs}
 
 

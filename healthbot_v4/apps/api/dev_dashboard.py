@@ -113,9 +113,14 @@ async def get_system_subsystem_status():
 
 @router.get("/api/v5/dev/sys-health", tags=["Developer Dashboard"])
 async def get_system_hardware_health():
-    import psutil
-    cpu_pct = psutil.cpu_percent(interval=0.1) if 'psutil' in globals() else 18.4
-    mem_pct = psutil.virtual_memory().percent if 'psutil' in globals() else 34.2
+    try:
+        import psutil  # type: ignore[import-not-found, import-untyped]
+        cpu_pct = psutil.cpu_percent(interval=0.1)
+        mem_pct = psutil.virtual_memory().percent
+    except ImportError:
+        cpu_pct = 18.4
+        mem_pct = 34.2
+
     return {
         "cpu_usage_pct": cpu_pct,
         "memory_usage_pct": mem_pct,

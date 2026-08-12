@@ -44,11 +44,16 @@ class OCRService:
     def extract_text_from_image(image_bytes: bytes) -> str:
         """Extract text from image bytes using pytesseract."""
         try:
-            import pytesseract
-            from PIL import Image
+            import pytesseract  # type: ignore
+            from PIL import Image  # type: ignore
             import io
             img = Image.open(io.BytesIO(image_bytes))
-            return pytesseract.image_to_string(img, lang="eng", config="--psm 6")
+            res = pytesseract.image_to_string(img, lang="eng", config="--psm 6")
+            if isinstance(res, bytes):
+                return res.decode("utf-8", errors="ignore")
+            elif isinstance(res, str):
+                return res
+            return str(res)
         except ImportError:
             logger.warning("pytesseract not installed; returning empty extraction")
             return ""
@@ -60,14 +65,14 @@ class OCRService:
     def extract_text_from_pdf(pdf_bytes: bytes) -> str:
         """Extract text from PDF bytes using pdfminer or pypdf."""
         try:
-            import pypdf
+            import pypdf  # type: ignore
             import io
             reader = pypdf.PdfReader(io.BytesIO(pdf_bytes))
             return "\n".join(page.extract_text() or "" for page in reader.pages)
         except ImportError:
             pass
         try:
-            from pdfminer.high_level import extract_text_to_fp
+            from pdfminer.high_level import extract_text_to_fp  # type: ignore
             import io
             out = io.StringIO()
             extract_text_to_fp(io.BytesIO(pdf_bytes), out)

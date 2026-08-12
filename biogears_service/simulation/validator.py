@@ -244,12 +244,13 @@ def validate_events(events: List[Dict[str, Any]]) -> List[str]:
                 else:
                     for macro in ("carb_g", "fat_g", "protein_g"):
                         mval = e.get(macro)
-                        try:
-                            fmval = float(mval)
-                            if fmval < 0 or fmval > 5000:
-                                errors.append(f"{label}: '{macro}' must be between 0 and 5000 g, got {mval}.")
-                        except (ValueError, TypeError):
-                            errors.append(f"{label}: '{macro}' must be a valid number, got '{mval}'.")
+                        if mval is not None:
+                            try:
+                                fmval = float(mval)
+                                if fmval < 0 or fmval > 5000:
+                                    errors.append(f"{label}: '{macro}' must be between 0 and 5000 g, got {mval}.")
+                            except (ValueError, TypeError):
+                                errors.append(f"{label}: '{macro}' must be a valid number, got '{mval}'.")
 
         elif etype == "water":
             if val is None or not (5 <= float(val) <= 10000):
@@ -386,17 +387,22 @@ def validate_xml_schema(xml_path: str) -> List[str]:
                 )
                 return []  # Return empty list = no errors, simulation can proceed
 
-        from lxml import etree
+        try:
+            from lxml import etree # type: ignore
+        except ImportError:
+            logger.warning("lxml not installed — skipping XML schema validation.")
+            return errors
+
         schema_doc = etree.parse(str(xsd_path))
-        schema = etree.XMLSchema(schema_doc)
+        schema_cls = getattr(etree, "XMLSchema", None)
+        if not schema_cls:
+            return errors
+        schema = schema_cls(schema_doc)
 
         xml_doc = etree.parse(xml_path)
         if not schema.validate(xml_doc):
-            for error in schema.error_log:
+            for error in getattr(schema, "error_log", []):
                 errors.append(f"XML Schema Error (line {error.line}): {error.message}")
-    except ImportError:
-        # lxml not available — skip silently (non-blocking)
-        logger.warning("lxml not installed — skipping XML schema validation.")
     except Exception as e:
         logger.exception(f"Unexpected error during XML schema validation: {e}")
         errors.append(f"XML Schema validation failed to run: {e}")

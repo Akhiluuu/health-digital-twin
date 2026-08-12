@@ -3,7 +3,7 @@ VitalHealth AI Quality Improvement Program — Response Evaluator Engine
 Evaluates AI Physician responses across 17 quality dimensions, Personalization Score, Clinical Depth Score, and Overall Score.
 """
 
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 from healthbot_v4.apps.brain.evaluation.quality_metrics import QualityMetrics, PersonalizationBreakdown, ClinicalDepthBreakdown
 from healthbot_v4.apps.brain.evaluation.failure_classifier import FailureClassifier
 
@@ -15,8 +15,8 @@ class ResponseEvaluator:
         user_query: str,
         response_text: str,
         patient_context: Any,
-        expected_key_elements: List[str] = None,
-        forbidden_elements: List[str] = None,
+        expected_key_elements: Optional[List[str]] = None,
+        forbidden_elements: Optional[List[str]] = None,
         emergency_expected: bool = False,
         emergency_triggered: bool = False
     ) -> Dict[str, Any]:

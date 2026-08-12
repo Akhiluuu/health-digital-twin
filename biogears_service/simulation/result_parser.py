@@ -94,51 +94,50 @@ def detect_anomalies(df: pd.DataFrame) -> list:
 
     anomalies = []
     for check in _ANOMALY_CHECKS:
-        col = check["col"]
+        col = str(check["col"])
         if col not in df.columns:
             continue
         series = df[col].apply(safe_float).replace(0.0, float('nan')).dropna()
+        lo_val = float(check["lo"])
+        hi_val = float(check["hi"])
+        label = str(check["label"])
+        unit = str(check["unit"])
+
         if series.empty:
             # All values were 0 or NaN → engine divergence
             anomalies.append({
-                "label":     check["label"],
-                "unit":      check["unit"],
+                "label":     label,
+                "unit":      unit,
                 "value":     0.0,
-                "threshold": check["lo"],
+                "threshold": lo_val,
                 "direction": "zero_or_nan",
                 "severity":  "critical",
                 "note":      "Engine produced all-zero output (physiological divergence).",
             })
             continue
 
-        val_min = float(series.min())
-        val_max = float(series.max())
+        val_min = float(series.min()) # type: ignore[arg-type]
+        val_max = float(series.max()) # type: ignore[arg-type]
 
-        if val_min < check["lo"]:
-            severity = (
-                "critical"
-                if val_min <= _CRITICAL_LO.get(col, check["lo"] * 0.7)
-                else "warning"
-            )
+        if val_min < lo_val:
+            crit_lo = float(_CRITICAL_LO.get(col, lo_val * 0.7))
+            severity = "critical" if val_min <= crit_lo else "warning"
             anomalies.append({
-                "label":     check["label"],
-                "unit":      check["unit"],
+                "label":     label,
+                "unit":      unit,
                 "value":     round(val_min, 3),
-                "threshold": check["lo"],
+                "threshold": lo_val,
                 "direction": "below",
                 "severity":  severity,
             })
-        elif val_max > check["hi"]:
-            severity = (
-                "critical"
-                if val_max >= _CRITICAL_HI.get(col, check["hi"] * 1.3)
-                else "warning"
-            )
+        elif val_max > hi_val:
+            crit_hi = float(_CRITICAL_HI.get(col, hi_val * 1.3))
+            severity = "critical" if val_max >= crit_hi else "warning"
             anomalies.append({
-                "label":     check["label"],
-                "unit":      check["unit"],
+                "label":     label,
+                "unit":      unit,
                 "value":     round(val_max, 3),
-                "threshold": check["hi"],
+                "threshold": hi_val,
                 "direction": "above",
                 "severity":  severity,
             })

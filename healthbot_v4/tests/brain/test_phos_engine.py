@@ -50,6 +50,8 @@ def test_evidence_item_schema():
         unit="bpm",
         confidence=0.95,
         loinc_code="8867-4",
+        snomed_code=None,
+        notes=None,
     )
     contract = item.to_json_contract()
     assert contract["itemId"] == "item-001"

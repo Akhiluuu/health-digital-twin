@@ -94,7 +94,7 @@ def test_scheduler_sweeps():
         sequence_num=2
     )
 
-    pending = db.get_pending_events(user_id)
+    pending = db.get_pending_events(user_id) or []
     print("\nPending events in DB before auto-simulate:")
     for p in pending:
         print(f"  - Event timestamp: {p['event_timestamp']}, Type: {p['event_type']}")
@@ -142,12 +142,12 @@ def test_scheduler_sweeps():
             conn.close()
 
         # Verify that all pending events were marked simulated
-        pending = db.get_pending_events(user_id)
+        pending = db.get_pending_events(user_id) or []
         assert len(pending) == 0, f"Expected 0 pending events, got {len(pending)}"
         print("PASS: All pending events processed and marked as simulated!")
 
         # Verify simulation history entries
-        hist = db.get_sim_history(user_id)
+        hist = db.get_sim_history(user_id) or []
         print(f"Simulation history entry count: {len(hist)}")
         assert len(hist) >= 2, "Expected at least 2 simulation history entries"
         for h in hist:

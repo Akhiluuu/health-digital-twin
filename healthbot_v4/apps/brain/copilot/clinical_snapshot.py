@@ -5,7 +5,7 @@ Synthesizes multi-dimensional patient state into a concise clinical foundation.
 """
 
 from typing import List, Dict, Any, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 from pydantic import BaseModel, Field
 
 from healthbot_v4.apps.brain.core import HealthBrainSubsystem
@@ -25,7 +25,7 @@ class CurrentClinicalSnapshot(BaseModel):
     lifestyle_summary: str = "Non-smoker, moderate daily activity."
     twin_prediction_summary: Optional[str] = None
     outstanding_action_items: List[str] = Field(default_factory=list)
-    snapshot_timestamp: datetime = Field(default_factory=datetime.utcnow)
+    snapshot_timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class ClinicalSnapshotEngine(HealthBrainSubsystem):

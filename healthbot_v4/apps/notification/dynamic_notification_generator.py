@@ -274,15 +274,15 @@ class DynamicNotificationGenerator:
 
         # 2. Template Fallback
         cat_templates = DEFAULT_FALLBACK_NOTIFICATIONS.get(category, DEFAULT_FALLBACK_NOTIFICATIONS["medication"])
-        if isinstance(cat_templates, list):
-            template = cat_templates[0] if cat_templates else {}
-        elif isinstance(cat_templates, dict):
-            template = cat_templates.get(effective_tone, cat_templates.get("witty", list(cat_templates.values())[0] if cat_templates else {}))
-        else:
-            template = {}
-
-        if isinstance(template, list):
-            template = template[0] if template else {}
+        template: Dict[str, Any] = {}
+        if isinstance(cat_templates, dict):
+            raw_t = cat_templates.get(effective_tone, cat_templates.get("witty", list(cat_templates.values())[0] if cat_templates else {}))
+            if isinstance(raw_t, dict):
+                template = raw_t
+            elif isinstance(raw_t, list) and len(raw_t) > 0 and isinstance(raw_t[0], dict):
+                template = raw_t[0]
+        elif isinstance(cat_templates, list) and len(cat_templates) > 0 and isinstance(cat_templates[0], dict):
+            template = cat_templates[0]
 
         name = user_name or "there"
         med_name = context_data.get("medicine_name", "your medicine")
