@@ -39,7 +39,7 @@ jobs:
     needs: test-and-eval
     runs-on: ubuntu-latest
     env:
-      E2E_SSH_KEY: ${{ secrets.E2E_SSH_PRIVATE_KEY || '' }}
+      E2E_SSH_KEY: ${{ secrets['E2E_SSH_PRIVATE_KEY'] || '' }}
       E2E_HOST: '151.185.45.137'
       E2E_USER: 'cave'
 
