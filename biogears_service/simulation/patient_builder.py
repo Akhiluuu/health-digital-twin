@@ -70,6 +70,8 @@ def build_initialization_scenario(
     patient_file.write_text(p_xml, encoding="utf-8")
 
     # Write scenario XML — uses InitialParameters with PatientFile
+    # NOTE: Actions MUST be inside <Actions> wrapper, and AdvanceTimeData must
+    # come before SerializeStateData so engine stabilizes before saving state.
     s_xml = (
         '<?xml version="1.0" encoding="UTF-8" standalone="no" ?>\n'
         '<Scenario xmlns="uri:/mil/tatrc/physiology/datamodel"'
@@ -77,9 +79,11 @@ def build_initialization_scenario(
         '    <InitialParameters>\n'
         f'        <PatientFile>{abs_patient}</PatientFile>\n'
         '    </InitialParameters>\n'
-        '        <Action xsi:type="AdvanceTimeData"><Time value="300" unit="s"/></Action>\n'
+        '    <Actions>\n'
+        '        <Action xsi:type="AdvanceTimeData"><Time value="600" unit="s"/></Action>\n'
         f'        <Action xsi:type="SerializeStateData" Type="Save">'
         f'<Filename>{abs_state_out}</Filename></Action>\n'
+        '    </Actions>\n'
         '</Scenario>'
     )
     scenario_file.write_text(s_xml, encoding="utf-8")
@@ -110,8 +114,10 @@ def build_runtime_scenario(user_id: str, simulation_time: int) -> str:
         '        <DataRequest xsi:type="PhysiologyDataRequestData"'
         ' Name="OxygenSaturation" Unit="unitless" Precision="3"/>\n'
         '    </DataRequests>\n'
+        '    <Actions>\n'
         f'        <Action xsi:type="AdvanceTimeData">'
         f'<Time value="{simulation_time}" unit="s"/></Action>\n'
+        '    </Actions>\n'
         '</Scenario>'
     )
     scenario_file.write_text(s_xml, encoding="utf-8")
