@@ -207,6 +207,24 @@ class AIOrchestrator(HealthBrainSubsystem):
     ) -> OrchestratorResponse:
         logger.info(f"AIOrchestrator processing query for patient {patient_id} in session {session_id}")
 
+        if patient_context is None:
+            patient_context = {}
+
+        # Auto-enrich patient_context with live BioGears vitals & organ health scores if missing
+        if "sim_vitals" not in patient_context or "organ_scores" not in patient_context:
+            try:
+                from biogears_service.api.analytics import get_latest_vitals, compute_organ_scores
+                if "sim_vitals" not in patient_context or not patient_context.get("sim_vitals"):
+                    v = get_latest_vitals(patient_id)
+                    if v:
+                        patient_context["sim_vitals"] = v
+                if "organ_scores" not in patient_context or not patient_context.get("organ_scores"):
+                    o = compute_organ_scores(patient_id)
+                    if o:
+                        patient_context["organ_scores"] = o
+            except Exception as e:
+                logger.debug(f"BioGears patient_context auto-enrichment skipped: {e}")
+
         # Check for image/document payload
         multimodal_res = None
         raw_img = (image_payload or (patient_context.get("image_payload") if patient_context else "")) or ""

@@ -76,11 +76,15 @@ from healthbot_v4.apps.api.journey_router import router as journey_router
 from healthbot_v4.apps.api.onboarding_router import router as onboarding_router
 from healthbot_v4.apps.notification.routers.notification_router import router as notification_router
 from healthbot_v4.apps.brain.copilot.dev_review_router import router as dev_review_router
+from biogears_service.api.server import app as biogears_app
+
 app.include_router(dev_router)
 app.include_router(journey_router)
 app.include_router(onboarding_router)
 app.include_router(notification_router)
 app.include_router(dev_review_router)
+app.include_router(biogears_app.router)
+
 
 app.add_middleware(
     CORSMiddleware,
@@ -89,8 +93,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-
+_telemetry_cache: Dict[str, Dict[str, Any]] = {}
 
 # Request schemas
 # Request schemas
@@ -254,11 +257,28 @@ async def process_phos_query(req: QueryRequest):
     if req.active_symptoms:
         for sym in req.active_symptoms:
             state_mgr.add_symptom(req.patient_id, sym)
+
+    # Auto-enrich patient_context with live BioGears vitals & organ health scores if missing
+    patient_ctx = req.patient_context or {}
+    if "sim_vitals" not in patient_ctx or "organ_scores" not in patient_ctx:
+        try:
+            from biogears_service.api.analytics import get_latest_vitals, compute_organ_scores
+            if "sim_vitals" not in patient_ctx or not patient_ctx.get("sim_vitals"):
+                v = get_latest_vitals(req.patient_id)
+                if v:
+                    patient_ctx["sim_vitals"] = v
+            if "organ_scores" not in patient_ctx or not patient_ctx.get("organ_scores"):
+                o = compute_organ_scores(req.patient_id)
+                if o:
+                    patient_ctx["organ_scores"] = o
+        except Exception as e:
+            logger.debug(f"BioGears process_phos_query auto-enrichment skipped: {e}")
+
     response_payload = phos_orchestrator.process_query(
         query=req.query,
         state=state,
         active_symptoms=req.active_symptoms,
-        patient_context=req.patient_context,
+        patient_context=patient_ctx,
         rag_context=req.rag_context,
     )
     return response_payload.to_full_contract()
@@ -296,376 +316,10 @@ async def run_digital_twin_simulation(req: TwinSimulationRequest):
 
 
 # =============================================================================
-# BIOGEARS COMPATIBILITY ROUTES
-# The mobile app (services/biogears.ts) calls these endpoints for Digital Twin
-# analytics, registration, simulation jobs, vitals, and substance library.
+# BIOGEARS DIGITAL TWIN ENDPOINTS
+# Mounted directly from biogears_service.api.server via biogears_app.router
 # =============================================================================
 
-import uuid, math
-
-@app.get("/health-score/{user_id}", tags=["BioGears Compatibility"])
-async def get_health_score(user_id: str):
-    state = state_mgr.get_or_create_state(user_id)
-    score = min(100.0, max(0.0, state.current_health_score))
-    if score >= 90:
-        grade, confidence = "A", "HIGH"
-    elif score >= 75:
-        grade, confidence = "B", "HIGH"
-    elif score >= 60:
-        grade, confidence = "C", "MEDIUM"
-    else:
-        grade, confidence = "D", "LOW"
-    return {
-        "user_id": user_id,
-        "composite_score": score,
-        "grade": grade,
-        "confidence": confidence,
-        "components": {
-            "vitals": {"score": score, "grade": grade},
-            "activity": {"score": score * 0.9, "grade": grade},
-            "nutrition": {"score": score * 0.85, "grade": grade},
-            "sleep": {"score": score * 0.95, "grade": grade},
-        }
-    }
-
-
-@app.get("/metrics/{user_id}", tags=["BioGears Compatibility"])
-async def get_body_metrics(user_id: str):
-    state = state_mgr.get_or_create_state(user_id)
-    p = state.profile
-    weight = getattr(p, "weight_kg", None) or 70.0
-    height = getattr(p, "height_cm", None) or 170.0
-    height_m = height / 100.0
-    bmi = round(weight / (height_m ** 2), 1)
-    bsa = round(0.007184 * (height ** 0.725) * (weight ** 0.425), 2)
-    ideal_weight = round(22.0 * (height_m ** 2), 1)
-    return {
-        "user_id": user_id,
-        "bmi": bmi,
-        "bmi_category": "Normal" if 18.5 <= bmi <= 24.9 else ("Overweight" if bmi <= 29.9 else "Obese"),
-        "bsa_m2": bsa,
-        "ideal_weight_kg": ideal_weight,
-        "weight_kg": weight,
-        "height_cm": height,
-    }
-
-
-@app.get("/analytics/organ-scores/{user_id}", tags=["BioGears Compatibility"])
-async def get_organ_scores(user_id: str):
-    state = state_mgr.get_or_create_state(user_id)
-    base = min(100.0, state.current_health_score)
-    
-    # Extract latest vitals if available
-    hr_vals = [v.value_primary for v in state.recent_vitals if v.vital_type == "heart_rate" and v.value_primary]
-    sys_vals = [v.value_primary for v in state.recent_vitals if v.vital_type == "blood_pressure" and v.value_primary]
-    dia_vals = [v.value_secondary for v in state.recent_vitals if v.vital_type == "blood_pressure" and v.value_secondary]
-    spo2_vals = [v.value_primary for v in state.recent_vitals if v.vital_type == "spo2" and v.value_primary]
-    
-    # Extract LOINC lab values from patient state
-    labs = state.recent_labs or []
-    gluc_vals = [l.value for l in labs if ("glucose" in l.canonical_name.lower() or getattr(l, "loinc_code", "") in ("1558-6", "2345-7")) and l.value]
-    hba1c_vals = [l.value for l in labs if ("hba1c" in l.canonical_name.lower() or getattr(l, "loinc_code", "") == "4548-4") and l.value]
-    creat_vals = [l.value for l in labs if ("creatinine" in l.canonical_name.lower() or getattr(l, "loinc_code", "") == "2160-0") and l.value]
-    egfr_vals = [l.value for l in labs if ("egfr" in l.canonical_name.lower() or getattr(l, "loinc_code", "") == "33914-3") and l.value]
-    alt_vals = [l.value for l in labs if ("alt" in l.canonical_name.lower() or getattr(l, "loinc_code", "") == "1742-6") and l.value]
-    ast_vals = [l.value for l in labs if ("ast" in l.canonical_name.lower() or getattr(l, "loinc_code", "") == "1920-8") and l.value]
-    chol_vals = [l.value for l in labs if ("cholesterol" in l.canonical_name.lower() or getattr(l, "loinc_code", "") in ("2093-3", "13457-7")) and l.value]
-
-    latest_hr = hr_vals[-1] if hr_vals else None
-    latest_sys = sys_vals[-1] if sys_vals else None
-    latest_dia = dia_vals[-1] if dia_vals else None
-    latest_spo2 = spo2_vals[-1] if spo2_vals else None
-    latest_gluc = gluc_vals[-1] if gluc_vals else None
-    latest_hba1c = hba1c_vals[-1] if hba1c_vals else None
-    latest_creat = creat_vals[-1] if creat_vals else None
-    latest_egfr = egfr_vals[-1] if egfr_vals else None
-    latest_alt = alt_vals[-1] if alt_vals else None
-    latest_ast = ast_vals[-1] if ast_vals else None
-    latest_chol = chol_vals[-1] if chol_vals else None
-
-    # Risk flags text
-    risk_text = " ".join(
-        [f"{r.level.value} {r.title}" for r in (state.active_risks or [])]
-    ).lower()
-
-    # Dynamic Heart/Cardiovascular score based on MAP, HR, and Cholesterol LOINC
-    heart_score = base
-    if latest_sys and latest_dia:
-        map_val = latest_dia + (latest_sys - latest_dia) / 3.0
-        if map_val > 105 or map_val < 65:
-            heart_score -= min(25.0, abs(map_val - 85.0) * 0.8)
-    if latest_hr:
-        if latest_hr > 100 or latest_hr < 50:
-            heart_score -= min(20.0, abs(latest_hr - 72.0) * 0.5)
-    if latest_chol and latest_chol > 200:
-        heart_score -= min(20.0, (latest_chol - 200.0) * 0.15)
-    if any(kw in risk_text for kw in ["cardiac", "cardiovascular", "hypertension", "bp"]):
-        heart_score -= 10.0
-    heart_score = max(30.0, round(min(100.0, heart_score), 1))
-
-    # Dynamic Lungs/Pulmonary score based on SpO2
-    lung_score = base
-    if latest_spo2:
-        if latest_spo2 < 95:
-            lung_score -= min(35.0, (95.0 - latest_spo2) * 5.0)
-    if any(kw in risk_text for kw in ["respiratory", "pulmonary", "spo2", "asthma", "copd"]):
-        lung_score -= 10.0
-    lung_score = max(30.0, round(min(100.0, lung_score), 1))
-
-    # Dynamic Kidneys/Renal score based on BP strain + eGFR & Creatinine LOINC
-    renal_score = base
-    if latest_sys and latest_sys > 130:
-        renal_score -= min(15.0, (latest_sys - 130.0) * 0.3)
-    if latest_egfr is not None:
-        if latest_egfr < 60:
-            renal_score -= min(40.0, (60.0 - latest_egfr) * 0.8)
-    elif latest_creat is not None and latest_creat > 1.2:
-        renal_score -= min(30.0, (latest_creat - 1.2) * 20.0)
-    if any(kw in risk_text for kw in ["renal", "kidney", "ckd", "creatinine"]):
-        renal_score -= 15.0
-    renal_score = max(30.0, round(min(100.0, renal_score), 1))
-
-    # Dynamic Metabolic score based on Glucose & HbA1c LOINC
-    metabolic_score = base
-    if latest_hba1c is not None and latest_hba1c > 5.7:
-        metabolic_score -= min(40.0, (latest_hba1c - 5.7) * 15.0)
-    elif latest_gluc:
-        if latest_gluc > 125 or latest_gluc < 70:
-            metabolic_score -= min(30.0, abs(latest_gluc - 90.0) * 0.3)
-    if any(kw in risk_text for kw in ["diabetes", "glucose", "hba1c", "metabolic"]):
-        metabolic_score -= 15.0
-    metabolic_score = max(30.0, round(min(100.0, metabolic_score), 1))
-
-    # Dynamic Liver score based on ALT / AST LOINC
-    liver_score = base
-    if latest_alt is not None and latest_alt > 56:
-        liver_score -= min(35.0, (latest_alt - 56.0) * 0.5)
-    if latest_ast is not None and latest_ast > 40:
-        liver_score -= min(25.0, (latest_ast - 40.0) * 0.4)
-    if any(kw in risk_text for kw in ["hepatic", "liver", "fatty liver", "alt", "ast"]):
-        liver_score -= 12.0
-    liver_score = max(30.0, round(min(100.0, liver_score), 1))
-
-    # Generic risk deduction helper for remaining organs without live sensor telemetry
-    def generic_organ_score(organ_risk_kws):
-        penalize = any(kw in risk_text for kw in organ_risk_kws)
-        score = base - (12.0 if penalize else 0.0)
-        return max(30.0, round(min(100.0, score), 1))
-
-    def _organ_status(score: float) -> str:
-        if score >= 80: return "Stable"
-        if score >= 60: return "Moderate"
-        return "Needs Attention"
-
-    return {
-        "user_id": user_id,
-        "overall_health_score": base,
-        "scores": {
-            "brain":    {"score": generic_organ_score(["neurological", "cognitive", "temp"]), "status": _organ_status(generic_organ_score(["neurological", "cognitive", "temp"]))},
-            "heart":    {"score": heart_score,                                                "status": _organ_status(heart_score)},
-            "lungs":    {"score": lung_score,                                                 "status": _organ_status(lung_score)},
-            "liver":    {"score": liver_score,                                                "status": _organ_status(liver_score)},
-            "gut":      {"score": generic_organ_score(["gut", "digestive", "stomach"]),       "status": _organ_status(generic_organ_score(["gut", "digestive", "stomach"]))},
-            "legs":     {"score": generic_organ_score(["legs", "vascular", "stroke"]),        "status": _organ_status(generic_organ_score(["legs", "vascular", "stroke"]))},
-            "kidneys":  {"score": renal_score,                                                "status": _organ_status(renal_score)},
-            "metabolic":{"score": metabolic_score,                                            "status": _organ_status(metabolic_score)},
-        }
-    }
-
-
-@app.get("/vitals/{user_id}/trends", tags=["BioGears Compatibility"])
-async def get_vitals_trends(user_id: str):
-    state = state_mgr.get_or_create_state(user_id)
-    events = timeline_engine.get_timeline(user_id)
-
-    # Compute real averages from recorded vitals — never fabricate population normals
-    hr_vals = [v.value_primary for v in state.recent_vitals if v.vital_type == "heart_rate" and v.value_primary]
-    bp_vals = [v.value_primary for v in state.recent_vitals if v.vital_type == "blood_pressure" and v.value_primary]
-    bp_dia_vals = [v.value_secondary for v in state.recent_vitals if v.vital_type == "blood_pressure" and v.value_secondary]
-    spo2_vals = [v.value_primary for v in state.recent_vitals if v.vital_type == "spo2" and v.value_primary]
-    gluc_vals = [l.value for l in state.recent_labs if "glucose" in l.canonical_name.lower() and l.value]
-
-    def avg(vals): return round(sum(vals) / len(vals), 1) if vals else None
-
-    def trend(vals):
-        if not vals or len(vals) < 2: return "insufficient_data"
-        return "improving" if vals[-1] < vals[0] else ("worsening" if vals[-1] > vals[0] else "stable")
-
-    return {
-        "sessions": [{"session_id": f"s_{i}", "timestamp": str(e.timestamp)} for i, e in enumerate(events[:10])],
-        "trends": {
-            "heart_rate":    {"direction": trend(hr_vals),   "normal_range": "60-100 bpm",  "data_points": len(hr_vals)},
-            "blood_pressure":{"direction": trend(bp_vals),   "normal_range": "<120/80 mmHg", "data_points": len(bp_vals)},
-            "glucose":       {"direction": trend(gluc_vals), "normal_range": "70-100 mg/dL", "data_points": len(gluc_vals)},
-            "spo2":          {"direction": trend(spo2_vals), "normal_range": "95-100%",      "data_points": len(spo2_vals)},
-        },
-        "overall_averages": {
-            "heart_rate":   avg(hr_vals),
-            "systolic_bp":  avg(bp_vals),
-            "diastolic_bp": avg(bp_dia_vals),
-            "glucose":      avg(gluc_vals),
-            "spo2":         avg(spo2_vals),
-            "note": "null values mean no real telemetry recorded yet for this patient"
-        }
-    }
-
-
-@app.get("/analytics/cvd-risk/{user_id}", tags=["BioGears Compatibility"])
-async def get_cvd_risk(user_id: str):
-    state = state_mgr.get_or_create_state(user_id)
-    p = state.profile
-    age = getattr(p, "age", None) or 30
-    
-    # Live blood pressure & HR readings
-    sys_vals = [v.value_primary for v in state.recent_vitals if v.vital_type == "blood_pressure" and v.value_primary]
-    hr_vals = [v.value_primary for v in state.recent_vitals if v.vital_type == "heart_rate" and v.value_primary]
-    latest_sys = sys_vals[-1] if sys_vals else 120.0
-    latest_hr = hr_vals[-1] if hr_vals else 72.0
-
-    risk_text = " ".join(
-        [f"{r.level.value} {r.title}" for r in (state.active_risks or [])]
-    ).lower()
-    has_cv_risk = any(kw in risk_text for kw in ["cardiovascular", "cardiac", "hypertension", "bp", "blood pressure", "cholesterol"])
-    has_smoking = "smoke" in risk_text or "tobacco" in risk_text
-
-    # Dynamic risk formula incorporating age, systolic BP strain, HR, and active clinical risk factors
-    base_risk = 2.0 + (age - 20) * 0.15
-    if latest_sys > 120:
-        base_risk += (latest_sys - 120) * 0.12
-    if latest_hr > 80:
-        base_risk += (latest_hr - 80) * 0.08
-    if has_cv_risk:
-        base_risk += 4.5
-    if has_smoking:
-        base_risk += 5.0
-
-    risk_pct = round(max(1.0, min(65.0, base_risk)), 1)
-    category = "High" if risk_pct >= 20.0 else ("Moderate" if risk_pct >= 10.0 else "Low")
-    color = "#F44336" if category == "High" else ("#FF9800" if category == "Moderate" else "#4CAF50")
-
-    return {
-        "ten_year_risk_pct": risk_pct,
-        "category": category,
-        "color": color,
-        "action": "Follow up with cardiologist annually." if category != "Low" else "Maintain healthy lifestyle.",
-        "modifiable_risk_factors": ["Exercise regularly", "Maintain healthy weight", "Reduce sodium intake", "Monitor blood pressure"]
-    }
-
-
-@app.get("/analytics/recovery-readiness/{user_id}", tags=["BioGears Compatibility"])
-async def get_recovery_readiness(user_id: str):
-    state = state_mgr.get_or_create_state(user_id)
-    # No floor — let the score reflect actual health state
-    score = min(100, int(state.current_health_score * 0.9))
-    if score >= 80:
-        status, color = "Excellent", "#4CAF50"
-        recommendation = "Your body is well-recovered. Moderate to high intensity exercise is safe today."
-    elif score >= 65:
-        status, color = "Good", "#8BC34A"
-        recommendation = "Good recovery. Light to moderate exercise is recommended."
-    elif score >= 50:
-        status, color = "Fair", "#FF9800"
-        recommendation = "Allow additional recovery time before high-intensity activity."
-    else:
-        status, color = "Poor", "#F44336"
-        recommendation = "Rest and recovery recommended. Consult your physician if this persists."
-    return {
-        "readiness_score": score,
-        "status": status,
-        "color": color,
-        "recommendation": recommendation,
-        "factors": ["Sleep quality", "Resting heart rate", "Activity level", "Hydration"]
-    }
-
-
-@app.get("/analytics/weekly-summary/{user_id}", tags=["BioGears Compatibility"])
-async def get_weekly_summary(user_id: str):
-    state = state_mgr.get_or_create_state(user_id)
-    # Count real simulation events from timeline — never fabricate
-    all_events = timeline_engine.get_timeline(user_id, limit=200)
-    from healthbot_v4.shared.models.base import TimelineEventType
-    sim_events = [e for e in all_events if e.event_type in (
-        TimelineEventType.lab_report_uploaded, TimelineEventType.ocr_processed
-    )]
-    lab_events = [e for e in all_events if e.event_type == TimelineEventType.lab_report_uploaded]
-    # Health score trend from stored history
-    from healthbot_v4.apps.brain.journey.journey_engine import _load_journey_store
-    store = _load_journey_store(user_id)
-    score_hist = store.get("health_score_history", [])
-    if len(score_hist) >= 2:
-        delta = score_hist[-1]["score"] - score_hist[0]["score"]
-        trend = "improving" if delta > 2 else ("declining" if delta < -2 else "stable")
-    else:
-        trend = "insufficient_data"
-    return {
-        "user_id": user_id,
-        "period": "Last 7 days",
-        "simulations_run": len(sim_events),
-        "lab_reports_uploaded": len(lab_events),
-        "health_score_trend": trend,
-        "avg_health_score": state.current_health_score,
-        "notable_events": [e.title for e in all_events[:5]],
-        "recommendations": ["Stay hydrated", "Log daily meals", "Complete BioGears calibration for detailed insights"]
-    }
-
-
-@app.post("/analytics/caloric-balance/{user_id}", tags=["BioGears Compatibility"])
-async def get_caloric_balance(user_id: str, events: Optional[List[Dict[str, Any]]] = None):
-    import datetime
-    state = state_mgr.get_or_create_state(user_id)
-    p = state.profile
-    weight = getattr(p, "weight_kg", None) or 70.0
-    height = getattr(p, "height_cm", None) or 170.0
-    age = getattr(p, "age", None) or 30
-    bmr = round(10 * weight + 6.25 * height - 5 * age + 5)
-    now = datetime.datetime.now()
-    hours_elapsed = max(0.1, min(24.0, now.hour + now.minute / 60.0 + now.second / 3600.0))
-    burn_so_far = round(bmr * (hours_elapsed / 24.0))
-    total_burn = round(bmr * 1.3)
-    return {
-        "bmr_kcal_day": bmr,
-        "estimated_burn_kcal": total_burn,
-        "burn_so_far_kcal": burn_so_far,
-        "meal_intake_kcal": 0,
-        "caloric_balance": -burn_so_far,
-        "balance_status": "Deficit",
-        "note": "Log meals via the app to get accurate caloric balance calculations."
-    }
-
-
-@app.get("/profiles/{user_id}", tags=["BioGears Compatibility"])
-async def get_twin_profile(user_id: str):
-    state = state_mgr.get_or_create_state(user_id)
-    registered = state.profile is not None and getattr(state.profile, "age", None) is not None
-    if not registered:
-        raise HTTPException(status_code=404, detail=f"Twin profile not found for user {user_id}. Please calibrate.")
-    return {
-        "user_id": user_id,
-        "status": "registered",
-        "profile": state.profile.model_dump() if state.profile else {},
-        "health_score": state.current_health_score,
-    }
-
-
-class RegisterTwinRequest(BaseModel):
-    user_id: str
-    age: int = 30
-    weight: float = 70.0
-    height: float = 170.0
-    sex: str = "Male"
-    body_fat: Optional[float] = None
-    resting_hr: Optional[float] = None
-    systolic_bp: Optional[float] = None
-    diastolic_bp: Optional[float] = None
-    is_smoker: bool = False
-    has_anemia: bool = False
-    has_type1_diabetes: bool = False
-    has_type2_diabetes: bool = False
-    hba1c: Optional[float] = None
-    ethnicity: Optional[str] = None
-    fitness_level: Optional[str] = None
-    vo2max: Optional[float] = None
-    current_medications: List[str] = []
 
 
 class LabOCRScanRequest(BaseModel):
@@ -1003,205 +657,7 @@ async def generate_legacy(payload: Dict[str, Any]):
     )
     return {"status": "success", "response": res.response_text, "response_text": res.response_text}
 
-@app.post("/simulate/async", tags=["BioGears Compatibility"])
-async def simulate_async(req: AsyncSimRequest):
-    job_id = f"job_{uuid.uuid4().hex[:12]}"
-    state = state_mgr.get_or_create_state(req.user_id)
 
-    if not state.active_medications:
-        _job_store[job_id] = {
-            "job_id": job_id, "status": "done", "user_id": req.user_id,
-            "result": {"status": "no_medications_on_record",
-                       "message": "No medications found for this patient. Add medications to run a simulation.",
-                       "vitals": None}
-        }
-        return {"job_id": job_id, "status": "done", "poll_url": f"/jobs/{job_id}"}
-
-    runner = DigitalTwinRunner()
-    med_name = state.active_medications[0].name
-    result = runner.run_medication_simulation(state.profile, med_name)
-    predicted_glucose = result.trajectories[-1].predicted_glucose_mg_dl if result.trajectories else None
-    _job_store[job_id] = {
-        "job_id": job_id, "status": "done", "user_id": req.user_id,
-        "result": {
-            "status": "success",
-            "medication_simulated": med_name,
-            "vitals": {
-                "heart_rate": None,
-                "blood_pressure": None,
-                "glucose": predicted_glucose,
-                "spo2": None,
-                "core_temperature": None,
-                "note": "Only glucose trajectory is simulated by BioGears. Other vitals require live telemetry."
-            },
-            "anomalies": [], "has_anomaly": False, "interaction_warnings": [],
-        }
-    }
-    return {"job_id": job_id, "status": "done", "poll_url": f"/jobs/{job_id}"}
-
-
-# NOTE: /jobs/active/{user_id} MUST be defined BEFORE /jobs/{job_id}
-# otherwise FastAPI will match 'active' as job_id
-@app.get("/jobs/active/{user_id}", tags=["BioGears Compatibility"])
-async def get_active_job(user_id: str):
-    for job in _job_store.values():
-        if job.get("user_id") == user_id and job.get("status") in ("running", "pending"):
-            return {"job_id": job["job_id"], "status": job["status"], "user_id": user_id, "created_at": None}
-    return {"job_id": None, "status": None, "user_id": user_id, "created_at": None}
-
-
-@app.get("/jobs/{job_id}", tags=["BioGears Compatibility"])
-async def get_job_status(job_id: str):
-    job = _job_store.get(job_id)
-    if not job:
-        return {"job_id": job_id, "status": "not_found",
-                "message": "No simulation job found with this ID. Please run a new simulation.",
-                "result": None}
-    return job
-
-
-
-@app.get("/substances", tags=["BioGears Compatibility"])
-async def get_substances():
-    return {
-        "total": 6,
-        "substances": {
-            "Oral": ["Caffeine", "Aspirin", "Acetaminophen", "Ethanol", "Prednisone"],
-            "Intravenous": ["Saline", "Epinephrine", "Fentanyl", "Morphine", "Insulin", "Glucose"],
-            "Inhalation": ["Albuterol", "Desflurane"]
-        }
-    }
-
-
-class TelemetryPacket(BaseModel):
-    user_id: str
-    heart_rate: Optional[float] = None
-    systolic_bp: Optional[float] = None
-    diastolic_bp: Optional[float] = None
-    spo2: Optional[float] = None
-    respiration_rate: Optional[float] = None
-    steps: Optional[int] = None
-    timestamp: Optional[str] = None
-
-
-# In-memory telemetry cache for active sessions
-_telemetry_cache: Dict[str, Dict[str, Any]] = {}
-
-
-@app.post("/telemetry/stream", tags=["BioGears Telemetry"])
-async def receive_telemetry_stream(packet: TelemetryPacket):
-    from datetime import datetime, timezone
-    state = state_mgr.get_or_create_state(packet.user_id)
-    now_ts = packet.timestamp or datetime.now(timezone.utc).isoformat()
-    
-    current_data = _telemetry_cache.get(packet.user_id, {})
-    if packet.heart_rate is not None: current_data["heart_rate"] = packet.heart_rate
-    if packet.systolic_bp is not None: current_data["systolic_bp"] = packet.systolic_bp
-    if packet.diastolic_bp is not None: current_data["diastolic_bp"] = packet.diastolic_bp
-    if packet.spo2 is not None: current_data["spo2"] = packet.spo2
-    if packet.respiration_rate is not None: current_data["respiration_rate"] = packet.respiration_rate
-    if packet.steps is not None: current_data["steps"] = packet.steps
-    current_data["last_updated"] = now_ts
-    
-    _telemetry_cache[packet.user_id] = current_data
-    
-    # Auto update state vital history for dynamic context
-    if packet.heart_rate or packet.systolic_bp:
-        from healthbot_v4.shared.models.base import NormalizedVital
-        if packet.heart_rate:
-            state_mgr.add_vital(packet.user_id, NormalizedVital(
-                vital_type="heart_rate",
-                value_primary=packet.heart_rate,
-                unit="bpm",
-                timestamp=datetime.now(timezone.utc)
-            ))
-        if packet.systolic_bp:
-            state_mgr.add_vital(packet.user_id, NormalizedVital(
-                vital_type="blood_pressure",
-                value_primary=packet.systolic_bp,
-                value_secondary=packet.diastolic_bp,
-                unit="mmHg",
-                timestamp=datetime.now(timezone.utc)
-            ))
-    
-    return {
-        "status": "success",
-        "user_id": packet.user_id,
-        "active_telemetry": current_data,
-        "message": "Telemetry streamed to twin context successfully."
-    }
-
-
-@app.get("/history/{user_id}", tags=["BioGears Compatibility"])
-async def get_simulation_history(user_id: str):
-    state = state_mgr.get_or_create_state(user_id)
-    events = timeline_engine.get_timeline(user_id)
-    # Build vitals snapshot from real recorded vitals — never fabricate
-    def _latest_vital(vtype):
-        matches = [v for v in state.recent_vitals if v.vital_type == vtype and v.value_primary is not None]
-        return matches[-1].value_primary if matches else None
-    real_snapshot = {
-        "heart_rate":      _latest_vital("heart_rate"),
-        "systolic_bp":     _latest_vital("blood_pressure"),
-        "spo2":            _latest_vital("spo2"),
-        "glucose":         next((l.value for l in state.recent_labs if "glucose" in l.canonical_name.lower()), None),
-        "core_temperature":_latest_vital("temperature"),
-        "note": "null values indicate no real telemetry recorded for this patient",
-    }
-    sessions = [{
-        "session_id": f"session_{i}_{user_id}",
-        "timestamp": str(e.timestamp),
-        "name": e.title,
-        "vitals_snapshot": real_snapshot,
-        "event_count": 1,
-        "has_anomaly": False,
-    } for i, e in enumerate(events[:20])]
-    return {"user_id": user_id, "sessions": sessions}
-
-
-@app.delete("/profiles/{user_id}", tags=["BioGears Compatibility"])
-async def delete_twin_profile(user_id: str):
-    return {"status": "deleted", "message": f"Twin profile for {user_id} removed."}
-
-
-@app.post("/sync/undo/{user_id}", tags=["BioGears Compatibility"])
-async def undo_simulation(user_id: str):
-    return {"status": "success", "message": "Last simulation reverted to previous state."}
-
-
-@app.post("/sync/batch", tags=["BioGears Compatibility"])
-async def sync_batch(req: AsyncSimRequest):
-    state = state_mgr.get_or_create_state(req.user_id)
-
-    if not state.active_medications:
-        return {
-            "status": "no_medications_on_record",
-            "message": "No medications found. Add medications before running a batch sync.",
-            "vitals": None
-        }
-
-    runner = DigitalTwinRunner()
-    med_name = state.active_medications[0].name
-    result = runner.run_medication_simulation(state.profile, med_name)
-    predicted_glucose = result.trajectories[-1].predicted_glucose_mg_dl if result.trajectories else None
-    return {
-        "status": "success",
-        "medication_simulated": med_name,
-        "vitals": {
-            "heart_rate": None,
-            "blood_pressure": None,
-            "glucose": predicted_glucose,
-            "spo2": None,
-            "core_temperature": None,
-            "note": "Only glucose trajectory is simulated by BioGears. Other vitals require live telemetry."
-        },
-        "anomalies": [], "has_anomaly": False, "interaction_warnings": []
-    }
-
-
-@app.post("/predict/recovery", tags=["BioGears Compatibility"])
-async def predict_recovery(req: dict):
-    return {"status": "success", "hours": req.get("hours", 4), "forecast_chart": None}
 
 
 # =============================================================================

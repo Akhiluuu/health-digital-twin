@@ -155,7 +155,7 @@ export default function PPGMeasurementScreen({
       if (rawStatus === "CALIBRATING") nextStatus = "CALIBRATING";
       else if (rawStatus === "TOO_MUCH_PRESSURE") nextStatus = "TOO_MUCH_PRESSURE";
       else if (rawStatus === "MOTION_ARTIFACT_DETECTED") nextStatus = "MOTION_ARTIFACT_DETECTED";
-      else if (rawStatus === "SIGNAL_LOW_QUALITY") nextStatus = "SIGNAL_LOW_QUALITY";
+      else if (rawStatus === "SIGNAL_LOW_QUALITY" || rawStatus === "LOW_SIGNAL_QUALITY") nextStatus = "SIGNAL_LOW_QUALITY";
 
       const nextBpm = event.bpm ?? 0;
       const nextSpo2 = event.spo2 ?? 0;

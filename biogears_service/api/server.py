@@ -23,7 +23,7 @@ from biogears_service.simulation import scenario_builder, engine_runner, result_
 from biogears_service.simulation.config import (
     USER_STATES_DIR, BIO_OUTPUT_DIR, SCENARIO_API_DIR,
     BASE_DIR, BIOGEARS_BIN_DIR, USER_HISTORY_DIR, REPORTS_DIR, LOGS_DIR,
-    JOBS_STORE_PATH
+    JOBS_STORE_PATH, resolve_state_file
 )
 from biogears_service.simulation.substance_registry import ROUTE_GROUPS
 from biogears_service.simulation import validator as sim_validator
@@ -1859,7 +1859,8 @@ def get_metrics(user_id: str):
     - **Weight vs Ideal** (percentage difference)
     """
     state_file = USER_STATES_DIR / f"{user_id}.xml"
-    if not state_file.exists():
+    gz_file = USER_STATES_DIR / f"{user_id}.xml.gz"
+    if not state_file.exists() and not gz_file.exists():
         raise HTTPException(status_code=404, detail=f"Twin '{user_id}' not found.")
 
     meta = db.get_profile(user_id)
@@ -1903,7 +1904,8 @@ def get_vitals_trends(user_id: str):
     - Overall averages across all sessions
     """
     state_file = USER_STATES_DIR / f"{user_id}.xml"
-    if not state_file.exists():
+    gz_file = USER_STATES_DIR / f"{user_id}.xml.gz"
+    if not state_file.exists() and not gz_file.exists():
         raise HTTPException(status_code=404, detail=f"Twin '{user_id}' not found.")
 
     return analytics.compute_trends(user_id, USER_HISTORY_DIR)
@@ -1920,7 +1922,8 @@ def get_health_score(user_id: str):
     > **Disclaimer**: This is a physiological simulation score, not a medical diagnosis.
     """
     state_file = USER_STATES_DIR / f"{user_id}.xml"
-    if not state_file.exists():
+    gz_file = USER_STATES_DIR / f"{user_id}.xml.gz"
+    if not state_file.exists() and not gz_file.exists():
         raise HTTPException(status_code=404, detail=f"Twin '{user_id}' not found.")
 
     result = analytics.compute_health_score(user_id, USER_HISTORY_DIR)
@@ -1937,7 +1940,8 @@ def export_user_data(user_id: str):
     into a single `.zip` file for download or offline analysis.
     """
     state_file = USER_STATES_DIR / f"{user_id}.xml"
-    if not state_file.exists():
+    gz_file = USER_STATES_DIR / f"{user_id}.xml.gz"
+    if not state_file.exists() and not gz_file.exists():
         raise HTTPException(status_code=404, detail=f"Twin '{user_id}' not found.")
 
     meta = db.get_profile(user_id) or {}

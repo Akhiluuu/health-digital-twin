@@ -64,17 +64,20 @@ class BiogearsSyncService:
             value = 1.0
 
         sim_id = uuid4()
-        async with get_transaction() as conn:
-            await conn.execute(
-                """INSERT INTO biogears_medication_simulations
-                (id, user_id, medicine_id, dose_id, substance_name, dose_value, dose_unit,
-                vitals_pre, status, started_at)
-                VALUES ($1,$2,$3,$4,$5,$6,'mg',$7,'queued',$8)""",
-                sim_id, user_id, medicine_id, dose_id,
-                substance, value,
-                __import__("json").dumps(pre_vitals or {}),
-                datetime.now(timezone.utc),
-            )
+        try:
+            async with get_transaction() as conn:
+                await conn.execute(
+                    """INSERT INTO biogears_medication_simulations
+                    (id, user_id, medicine_id, dose_id, substance_name, dose_value, dose_unit,
+                    vitals_pre, status, started_at)
+                    VALUES ($1,$2,$3,$4,$5,$6,'mg',$7,'queued',$8)""",
+                    sim_id, user_id, medicine_id, dose_id,
+                    substance, value,
+                    __import__("json").dumps(pre_vitals or {}),
+                    datetime.now(timezone.utc),
+                )
+        except Exception as db_err:
+            logger.warning(f"PostgreSQL unreachable for dose simulation logging, operating in memory mode: {db_err}")
 
         # Dispatch async to BioGears
         try:
@@ -97,26 +100,35 @@ class BiogearsSyncService:
                 if resp.status_code == 200:
                     job_data = resp.json()
                     job_id = job_data.get("job_id", "")
-                    async with get_conn() as conn:
-                        await conn.execute(
-                            "UPDATE biogears_medication_simulations SET biogears_job_id=$2, status='running' WHERE id=$1",
-                            sim_id, job_id,
-                        )
+                    try:
+                        async with get_conn() as conn:
+                            await conn.execute(
+                                "UPDATE biogears_medication_simulations SET biogears_job_id=$2, status='running' WHERE id=$1",
+                                sim_id, job_id,
+                            )
+                    except Exception:
+                        pass
                     logger.info(f"BioGears job dispatched: {job_id} for dose {dose_id}")
                 else:
                     logger.warning(f"BioGears dispatch failed: {resp.status_code} — {resp.text[:200]}")
-                    async with get_conn() as conn:
-                        await conn.execute(
-                            "UPDATE biogears_medication_simulations SET status='failed', error_message=$2 WHERE id=$1",
-                            sim_id, f"HTTP {resp.status_code}",
-                        )
+                    try:
+                        async with get_conn() as conn:
+                            await conn.execute(
+                                "UPDATE biogears_medication_simulations SET status='failed', error_message=$2 WHERE id=$1",
+                                sim_id, f"HTTP {resp.status_code}",
+                            )
+                    except Exception:
+                        pass
         except Exception as e:
             logger.error(f"BioGears HTTP error: {e}")
-            async with get_conn() as conn:
-                await conn.execute(
-                    "UPDATE biogears_medication_simulations SET status='failed', error_message=$2 WHERE id=$1",
-                    sim_id, str(e),
-                )
+            try:
+                async with get_conn() as conn:
+                    await conn.execute(
+                        "UPDATE biogears_medication_simulations SET status='failed', error_message=$2 WHERE id=$1",
+                        sim_id, str(e),
+                    )
+            except Exception:
+                pass
 
         return str(sim_id)
 

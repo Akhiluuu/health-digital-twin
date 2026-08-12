@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import Optional
 import os
 import sys
 
@@ -55,9 +56,23 @@ for path in [SCENARIO_API_DIR, USER_STATES_DIR, USER_HISTORY_DIR, REPORTS_DIR, L
 # ── Persistent async-job store (survives server restarts) ─────────────────────
 JOBS_STORE_PATH = BASE_DIR / "biogears_service" / "jobs_store.json"
 
+def resolve_state_file(user_id: str) -> Optional[Path]:
+    """
+    Locates the state file for a digital twin, returning the Path to either
+    user_id.xml or user_id.xml.gz. Returns None if neither exists.
+    """
+    xml_path = USER_STATES_DIR / f"{user_id}.xml"
+    if xml_path.exists():
+        return xml_path
+    gz_path = USER_STATES_DIR / f"{user_id}.xml.gz"
+    if gz_path.exists():
+        return gz_path
+    return None
+
 # ── Startup log ───────────────────────────────────────────────────────────────
 print(f"[Config] Platform  : {'Windows' if IS_WINDOWS else 'Linux/Ubuntu'}")
 print(f"[Config] BioGears  : {BIOGEARS_EXECUTABLE}")
 print(f"[Config] Base Dir  : {BASE_DIR}")
 print(f"[Config] States Dir: {USER_STATES_DIR}")
+
 

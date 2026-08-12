@@ -22,15 +22,15 @@ class AnalyticsService:
         start = end - timedelta(days=6)
         logs = await ComplianceRepository.get_range(user_id, start, end)
 
-        daily = {str(l["log_date"]): {
-            "adherence_pct": float(l["adherence_pct"] or 0),
-            "taken": l["total_taken"],
-            "missed": l["total_missed"],
-            "score": float(l["score"] or 0),
+        daily = {str(l.get("log_date", date.today())): {
+            "adherence_pct": float(l.get("adherence_pct") or 0),
+            "taken": l.get("total_taken", 0),
+            "missed": l.get("total_missed", 0),
+            "score": float(l.get("score") or 0),
         } for l in logs}
 
-        total_taken = sum(l["total_taken"] for l in logs)
-        total_sched = sum(l["total_scheduled"] for l in logs) or 1
+        total_taken = sum(l.get("total_taken", 0) for l in logs)
+        total_sched = sum(l.get("total_scheduled", 0) for l in logs) or 1
         avg_adherence = total_taken / total_sched * 100
 
         return {
@@ -40,7 +40,7 @@ class AnalyticsService:
             "average_adherence_pct": round(avg_adherence, 2),
             "daily_breakdown": daily,
             "total_taken": total_taken,
-            "total_missed": sum(l["total_missed"] for l in logs),
+            "total_missed": sum(l.get("total_missed", 0) for l in logs),
         }
 
     @staticmethod
@@ -48,10 +48,10 @@ class AnalyticsService:
         end = date.today()
         start = end - timedelta(days=29)
         logs = await ComplianceRepository.get_range(user_id, start, end)
-        total_taken = sum(l["total_taken"] for l in logs)
-        total_sched = sum(l["total_scheduled"] for l in logs) or 1
+        total_taken = sum(l.get("total_taken", 0) for l in logs)
+        total_sched = sum(l.get("total_scheduled", 0) for l in logs) or 1
         avg_adherence = total_taken / total_sched * 100
-        streak = max((l["streak_days"] for l in logs), default=0)
+        streak = max((l.get("streak_days", 0) for l in logs), default=0)
 
         return {
             "period": "monthly",
@@ -60,8 +60,8 @@ class AnalyticsService:
             "average_adherence_pct": round(avg_adherence, 2),
             "streak_days": streak,
             "total_taken": total_taken,
-            "total_missed": sum(l["total_missed"] for l in logs),
-            "total_skipped": sum(l["total_skipped"] for l in logs),
+            "total_missed": sum(l.get("total_missed", 0) for l in logs),
+            "total_skipped": sum(l.get("total_skipped", 0) for l in logs),
         }
 
     @staticmethod

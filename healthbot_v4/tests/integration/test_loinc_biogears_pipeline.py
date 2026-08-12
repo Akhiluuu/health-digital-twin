@@ -56,7 +56,8 @@ def test_scenario_builder_loinc_calibration():
 
 @pytest.mark.asyncio
 async def test_organ_scores_loinc_integration():
-    from healthbot_v4.apps.api.server import get_organ_scores, state_mgr
+    from biogears_service.api.server import get_organ_scores
+    from healthbot_v4.apps.api.server import state_mgr
     from healthbot_v4.shared.models.base import NormalizedLab, NormalizedVital
     from datetime import datetime, timezone
 
@@ -80,7 +81,7 @@ async def test_organ_scores_loinc_integration():
     for lab in labs:
         state_mgr.add_lab(uid, lab)
 
-    scores_res = await get_organ_scores(uid)
+    scores_res = get_organ_scores(uid)
     scores = scores_res["scores"]
 
     assert scores["metabolic"]["score"] < 90.0

@@ -384,7 +384,7 @@ class InventoryRepository:
         results = []
         for r in rows:
             rec = dict(r)
-            rec["is_low"] = rec["current_count"] <= rec["reorder_threshold"]
+            rec["is_low"] = rec.get("current_count", 0) <= rec.get("reorder_threshold", 0)
             results.append(rec)
         return results
 

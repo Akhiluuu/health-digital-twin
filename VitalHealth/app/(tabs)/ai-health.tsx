@@ -318,17 +318,13 @@ function UploadOptionsModal({
   onClose,
   onPickPdf,
   onPickImage,
-  onViewChunks,
   c,
-  chunkCount,
 }: {
   visible: boolean;
   onClose: () => void;
   onPickPdf: () => void;
   onPickImage: () => void;
-  onViewChunks: () => void;
   c: any;
-  chunkCount: number;
 }) {
   if (!visible) return null;
   return (
@@ -385,25 +381,6 @@ function UploadOptionsModal({
               </View>
               <Ionicons name="chevron-forward" size={16} color={c.sub} />
             </TouchableOpacity>
-
-            {chunkCount > 0 && (
-              <TouchableOpacity
-                style={[styles.uploadOptionBtn, { backgroundColor: c.bg, borderColor: c.border }]}
-                onPress={() => {
-                  onClose();
-                  onViewChunks();
-                }}
-              >
-                <View style={[styles.uploadOptionIcon, { backgroundColor: "#8b5cf618" }]}>
-                  <Ionicons name="layers" size={20} color="#8b5cf6" />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.uploadOptionTitle, { color: c.text }]}>View On-Device Embeddings</Text>
-                  <Text style={[styles.uploadOptionSub, { color: c.sub }]}>{chunkCount} vector chunks stored locally</Text>
-                </View>
-                <Ionicons name="chevron-forward" size={16} color={c.sub} />
-              </TouchableOpacity>
-            )}
           </View>
         </View>
       </View>
@@ -463,72 +440,7 @@ function DocViewerModal({
   );
 }
 
-// ── All Embeddings Knowledge Base Modal ──────────────────────────────────────
-function AllChunksModal({
-  chunks,
-  docs,
-  visible,
-  onClose,
-  c,
-}: {
-  chunks: EmbeddedChunk[];
-  docs: Doc[];
-  visible: boolean;
-  onClose: () => void;
-  c: any;
-}) {
-  if (!visible) return null;
-  return (
-    <Modal visible animationType="slide" onRequestClose={onClose}>
-      <SafeAreaView style={{ flex: 1, backgroundColor: c.bg }}>
-        <View style={[styles.docHeader, { backgroundColor: c.card, borderBottomColor: c.border }]}>
-          <View style={{ flex: 1 }}>
-            <Text style={[styles.docHeaderTitle, { color: c.text }]}>🧠 Clinical Knowledge Base</Text>
-            <Text style={[styles.docHeaderSub, { color: c.sub }]}>
-              {chunks.length} chunks indexed across {docs.length} document(s)
-            </Text>
-          </View>
-          <TouchableOpacity style={styles.iconBtn} onPress={onClose}>
-            <Ionicons name="close" size={20} color={c.danger} />
-          </TouchableOpacity>
-        </View>
 
-        <ScrollView style={{ flex: 1, paddingHorizontal: 16 }}>
-          {chunks.length === 0 ? (
-            <View style={{ alignItems: "center", marginTop: 60 }}>
-              <Ionicons name="document-text-outline" size={48} color={c.sub} />
-              <Text style={[styles.emptyTxt, { color: c.sub, fontSize: 16, marginTop: 12 }]}>
-                No clinical documents uploaded yet
-              </Text>
-            </View>
-          ) : (
-            docs.map((doc) => {
-              const docChunks = chunks.filter((ch) => ch.metadata?.docId === doc.id);
-              return (
-                <View key={doc.id} style={{ marginBottom: 18, marginTop: 14 }}>
-                  <View style={[styles.docSectionHeader, { backgroundColor: c.card, borderColor: c.border }]}>
-                    <Ionicons name="document-attach" size={16} color={c.accent} />
-                    <Text style={[styles.docSectionTitle, { color: c.text }]} numberOfLines={1}>
-                      {doc.name}
-                    </Text>
-                    <Text style={[styles.docSectionSub, { color: c.sub }]}>{docChunks.length} chunks</Text>
-                  </View>
-                  {docChunks.map((ch, i) => (
-                    <View key={ch.id} style={[styles.chunkCard, { backgroundColor: c.bg, borderColor: c.border }]}>
-                      <Text style={[styles.chunkIdx, { color: c.accent }]}>Chunk #{i + 1}</Text>
-                      <Text style={[styles.chunkTxt, { color: c.sub }]}>{ch.text}</Text>
-                    </View>
-                  ))}
-                </View>
-              );
-            })
-          )}
-          <View style={{ height: 40 }} />
-        </ScrollView>
-      </SafeAreaView>
-    </Modal>
-  );
-}
 
 // ── On-Device Processing Overlay Modal ────────────────────────────────────────
 function ProcessingModal({
@@ -1265,7 +1177,6 @@ export default function AIHealthScreen() {
   const [docs, setDocs] = useState<Doc[]>([]);
   const [allChunks, setAllChunks] = useState<EmbeddedChunk[]>([]);
   const [viewDoc, setViewDoc] = useState<Doc | null>(null);
-  const [showAllChunks, setShowAllChunks] = useState(false);
   const [showUploadOptions, setShowUploadOptions] = useState(false);
   const [showTwinContext, setShowTwinContext] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -2207,16 +2118,6 @@ export default function AIHealthScreen() {
 
           {/* Action Header Buttons */}
           <View style={styles.headerActions}>
-            {allChunks.length > 0 && (
-              <TouchableOpacity
-                style={[styles.actionIconBtn, { backgroundColor: c.bg }]}
-                onPress={() => setShowAllChunks(true)}
-              >
-                <Ionicons name="layers-outline" size={16} color={c.accent} />
-                {modelLoading && <ActivityIndicator size="small" color={c.accent} style={styles.headerSpinner} />}
-              </TouchableOpacity>
-            )}
-
             <TouchableOpacity
               style={[styles.actionIconBtn, { backgroundColor: c.bg }]}
               onPress={() => setShowHistory(true)}
@@ -2237,8 +2138,8 @@ export default function AIHealthScreen() {
       {/* Main Chat Stream */}
       <KeyboardAvoidingView
         style={styles.flex}
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
-        keyboardVerticalOffset={Platform.OS === "ios" ? 90 : 80}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        keyboardVerticalOffset={Platform.OS === "ios" ? headerH : 0}
       >
         <View style={[styles.container, { backgroundColor: c.bg }]}>
           <FlatList
@@ -2324,9 +2225,7 @@ export default function AIHealthScreen() {
         onClose={() => setShowUploadOptions(false)}
         onPickPdf={() => handleUpload("pdf")}
         onPickImage={() => handleUpload("image")}
-        onViewChunks={() => setShowAllChunks(true)}
         c={c}
-        chunkCount={allChunks.length}
       />
 
       <DocViewerModal doc={viewDoc} chunks={allChunks} onClose={() => setViewDoc(null)} c={c} />
@@ -2337,13 +2236,6 @@ export default function AIHealthScreen() {
           setUploading(false);
           setProcessingProgress(null);
         }}
-        c={c}
-      />
-      <AllChunksModal
-        chunks={allChunks}
-        docs={docs}
-        visible={showAllChunks}
-        onClose={() => setShowAllChunks(false)}
         c={c}
       />
 

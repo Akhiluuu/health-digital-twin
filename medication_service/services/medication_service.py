@@ -144,12 +144,12 @@ class MedicationService:
         logs = await ComplianceRepository.get_range(user_id, start, end)
         if not logs:
             return {"message": "No compliance data available", "adherence_pct": 100.0, "streak_days": 0}
-        total_taken = sum(l["total_taken"] for l in logs)
-        total_sched = sum(l["total_scheduled"] for l in logs)
+        total_taken = sum(l.get("total_taken", 0) for l in logs)
+        total_sched = sum(l.get("total_scheduled", 0) for l in logs)
         adherence = (total_taken / total_sched * 100) if total_sched > 0 else 100.0
-        streak = max((l["streak_days"] for l in logs), default=0)
-        latest_score = logs[0]["score"] if logs else 100.0
-        grade = logs[0]["grade"] if logs else "A"
+        streak = max((l.get("streak_days", 0) for l in logs), default=0)
+        latest_score = logs[0].get("score", 100.0) if logs else 100.0
+        grade = logs[0].get("grade", "A") if logs else "A"
         return {
             "period_days": days,
             "adherence_pct": round(adherence, 2),

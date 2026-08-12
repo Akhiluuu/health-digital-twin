@@ -14,6 +14,8 @@ import numpy as np
 from pathlib import Path
 from typing import Optional, Dict, Any, List
 
+from biogears_service.simulation.config import USER_HISTORY_DIR
+
 
 # ---------------------------------------------------------------------------
 # NORMAL RANGES  (used by health score + trend flags)
@@ -336,27 +338,137 @@ def compute_trends(user_id: str, history_dir: Path) -> Dict[str, Any]:
     }
 
 
+def get_latest_vitals(user_id: str, history_dir: Optional[Path] = None) -> Dict[str, Any]:
+    """
+    Returns the latest physiological vitals dictionary for the specified digital twin user.
+    Reads from historical session CSV logs or falls back to PatientStateManager state profile.
+    """
+    if history_dir is None:
+        history_dir = USER_HISTORY_DIR
+
+    user_path = history_dir / user_id
+    if user_path.exists():
+        csv_files = sorted(user_path.glob("*.csv"), key=os.path.getmtime, reverse=True)
+        for csv_file in csv_files:
+            df = _clean_df(csv_file)
+            if df is not None and not df.empty:
+                last_row = df.iloc[-1]
+                vitals = {}
+                for col in df.columns:
+                    col_lower = col.lower()
+                    if "heart" in col_lower or "hr" in col_lower:
+                        vitals["heart_rate"] = _parse_float(last_row[col], 72.0)
+                    elif "systolic" in col_lower or "sys" in col_lower:
+                        vitals["systolic"] = _parse_float(last_row[col], 120.0)
+                    elif "diastolic" in col_lower or "dia" in col_lower:
+                        vitals["diastolic"] = _parse_float(last_row[col], 80.0)
+                    elif "glucose" in col_lower:
+                        vitals["glucose"] = _parse_float(last_row[col], 95.0)
+                    elif "respiration" in col_lower or "resp" in col_lower:
+                        vitals["respiration"] = _parse_float(last_row[col], 16.0)
+                    elif "spo2" in col_lower or "oxygen" in col_lower:
+                        vitals["spO2"] = _parse_float(last_row[col], 98.0)
+                if vitals:
+                    return vitals
+
+    try:
+        from healthbot_v4.apps.brain.state.patient_state_manager import PatientStateManager
+        sm = PatientStateManager()
+        st = sm.get_or_create_state(user_id)
+        if st and hasattr(st, "vitals") and st.vitals:
+            return dict(st.vitals)
+        elif isinstance(st, dict) and "vitals" in st:
+            return dict(st["vitals"])
+    except Exception:
+        pass
+
+    return {
+        "heart_rate": 72.0,
+        "systolic": 120.0,
+        "diastolic": 80.0,
+        "glucose": 95.0,
+        "respiration": 16.0,
+        "spO2": 98.0,
+    }
+
+
 # ---------------------------------------------------------------------------
 # 4. HEALTH SCORE  (0 – 100 composite from latest session vitals)
 # ---------------------------------------------------------------------------
-def compute_health_score(user_id: str, history_dir: Path) -> Dict[str, Any]:
+def compute_health_score(user_id: str, history_dir: Optional[Path] = None) -> Dict[str, Any]:
     """
     Calculates a 0–100 composite health score from the most recent session.
     Each vital is scored against its normal range and weighted equally.
+    Falls back to PatientStateManager state if no simulation CSV exists.
     """
+    if history_dir is None:
+        history_dir = USER_HISTORY_DIR
     user_path = history_dir / user_id
-    if not user_path.exists():
+    csv_files = sorted(user_path.glob("vitals_*.csv"), key=os.path.getmtime, reverse=True) if user_path.exists() else []
+
+    latest = None
+    if csv_files:
+        df = _clean_df(csv_files[0])
+        if df is not None:
+            latest = df.iloc[-1]
+
+    if latest is None:
+        # Fallback to PatientStateManager for registered twins without simulation CSV yet
+        try:
+            from healthbot_v4.apps.brain.state.patient_state_manager import PatientStateManager
+            sm = PatientStateManager()
+            st = sm.get_or_create_state(user_id)
+            if st and (st.recent_vitals or st.recent_labs or st.profile):
+                components = {}
+                for v in st.recent_vitals:
+                    vtype = (v.vital_type or "").lower()
+                    if "blood_pressure" in vtype or "bp" in vtype:
+                        sys_v = float(v.value_primary or 120.0)
+                        dia_v = float(v.value_secondary or 80.0)
+                        s_sys = _score_value(sys_v, 90, 120)
+                        s_dia = _score_value(dia_v, 60, 80)
+                        components["systolic_bp"] = {"value": sys_v, "unit": "mmHg", "score": round(s_sys * 100), "normal": "90–120", "status": "Normal" if s_sys == 1.0 else "High"}
+                        components["diastolic_bp"] = {"value": dia_v, "unit": "mmHg", "score": round(s_dia * 100), "normal": "60–80", "status": "Normal" if s_dia == 1.0 else "High"}
+                    elif "heart_rate" in vtype or "hr" in vtype:
+                        hr_v = float(v.value_primary or 72.0)
+                        s_hr = _score_value(hr_v, 60, 100)
+                        components["heart_rate"] = {"value": hr_v, "unit": "bpm", "score": round(s_hr * 100), "normal": "60–100", "status": "Normal" if s_hr == 1.0 else "High"}
+
+                for l in st.recent_labs:
+                    cname = (l.canonical_name or "").lower()
+                    if "hba1c" in cname or "glucose" in cname:
+                        val = float(l.value or 100.0)
+                        s = max(0.0, min(1.0, 1.0 - max(0.0, val - 5.7) / 4.0)) if "%" in (l.unit or "") else _score_value(val, 70, 140)
+                        components["glucose"] = {"value": val, "unit": l.unit or "mg/dL", "score": round(s * 100), "normal": "70–140", "status": "Normal" if s == 1.0 else "High"}
+
+                # Set baseline defaults for missing fields
+                defaults = [
+                    ("heart_rate", 72.0, "bpm", 60, 100, "60–100"),
+                    ("systolic_bp", 120.0, "mmHg", 90, 120, "90–120"),
+                    ("diastolic_bp", 80.0, "mmHg", 60, 80, "60–80"),
+                    ("glucose", 90.0, "mg/dL", 70, 140, "70–140"),
+                    ("respiration", 14.0, "br/min", 12, 20, "12–20"),
+                    ("spo2", 98.0, "%", 94, 100, "94–100"),
+                    ("core_temp", 37.0, "°C", 36.5, 37.5, "36.5–37.5"),
+                ]
+                for key, val, unit, lo, hi, norm in defaults:
+                    if key not in components:
+                        s = _score_value(val, lo, hi)
+                        components[key] = {"value": val, "unit": unit, "score": round(s * 100), "normal": norm, "status": "Normal"}
+
+                composite = round(sum(c["score"] for c in components.values()) / len(components))
+                grade = "A" if composite >= 90 else ("B" if composite >= 75 else ("C" if composite >= 60 else "D"))
+                return {
+                    "score": composite,
+                    "grade": grade,
+                    "label": "State Baseline",
+                    "components": components,
+                    "based_on_session": "patient_state_manager",
+                    "disclaimer": "Calculated from baseline patient state.",
+                }
+        except Exception:
+            pass
         return {"score": None, "error": "No simulation history found."}
-
-    csv_files = sorted(user_path.glob("vitals_*.csv"), key=os.path.getmtime, reverse=True)
-    if not csv_files:
-        return {"score": None, "error": "No sessions found."}
-
-    df = _clean_df(csv_files[0])
-    if df is None:
-        return {"score": None, "error": "Could not read latest session."}
-
-    latest = df.iloc[-1]
 
     components = {}
 
@@ -405,8 +517,6 @@ def compute_health_score(user_id: str, history_dir: Path) -> Dict[str, Any]:
             "status": "Normal" if s == 1.0 else ("Low" if float(rr) < 12 else "High")
         }
 
-    # SpO2: BioGears returns OxygenSaturation as a 0–1 fraction.
-    # Convert to percentage before scoring against 94–100% normal range.
     spo2_raw = latest.get("OxygenSaturation", None)
     if spo2_raw is not None:
         spo2_pct = float(spo2_raw) * 100.0
@@ -417,7 +527,6 @@ def compute_health_score(user_id: str, history_dir: Path) -> Dict[str, Any]:
             "status": "Normal" if s == 1.0 else ("Low" if spo2_pct < 94 else "High")
         }
 
-    # CoreTemperature: normal human range 36.5–37.5°C.
     core_temp = latest.get("CoreTemperature", None)
     if core_temp is not None:
         s = _score_value(float(core_temp), 36.5, 37.5)
@@ -448,7 +557,7 @@ def compute_health_score(user_id: str, history_dir: Path) -> Dict[str, Any]:
         "grade": grade,
         "label": label,
         "components": components,
-        "based_on_session": csv_files[0].name,
+        "based_on_session": csv_files[0].name if csv_files else "state_mgr",
         "disclaimer": "This is a physiological simulation score, not a medical diagnosis.",
     }
 
@@ -456,48 +565,71 @@ def compute_health_score(user_id: str, history_dir: Path) -> Dict[str, Any]:
 # ---------------------------------------------------------------------------
 # 13. ORGAN HEALTH SCORES  (Anatomical grouping for the Twin UI)
 # ---------------------------------------------------------------------------
-def compute_organ_scores(user_id: str, history_dir: Path) -> Dict[str, Any]:
+def compute_organ_scores(user_id: str, history_dir: Optional[Path] = None) -> Dict[str, Any]:
     """
-    Groups BioGears vitals into anatomical systems for the digital twin markers.
+    Groups BioGears vitals & patient labs into anatomical systems for the digital twin markers.
     Uses weighted averages of component scores (0-100).
     """
+    if history_dir is None:
+        history_dir = USER_HISTORY_DIR
     res = compute_health_score(user_id, history_dir)
     if "error" in res:
         return res
 
     comp = res["components"]
+
+    # Incorporate labs from PatientStateManager if available
+    labs_dict = {}
+    try:
+        from healthbot_v4.apps.brain.state.patient_state_manager import PatientStateManager
+        sm = PatientStateManager()
+        st = sm.get_or_create_state(user_id)
+        if st and st.recent_labs:
+            for l in st.recent_labs:
+                cname = (l.canonical_name or "").lower()
+                labs_dict[cname] = l.value
+    except Exception:
+        pass
     
     # ── Heart (HR + BP) ──────────────────────────────────────────────────────
     hr_s  = comp.get("heart_rate", {}).get("score", 100)
     sys_s = comp.get("systolic_bp", {}).get("score", 100)
     dia_s = comp.get("diastolic_bp", {}).get("score", 100)
     heart_score = round(hr_s * 0.4 + sys_s * 0.3 + dia_s * 0.3)
+    if "total cholesterol" in labs_dict and labs_dict["total cholesterol"] > 200:
+        chol_pen = min(30, int((labs_dict["total cholesterol"] - 200) * 0.5))
+        heart_score = max(10, heart_score - chol_pen)
 
     # ── Lungs (SpO2 + RR) ────────────────────────────────────────────────────
-    # SpO2 is now correctly scored in compute_health_score above.
-    spo2_s = comp.get("spo2", {}).get("score", 95)  # default 95 if not present
+    spo2_s = comp.get("spo2", {}).get("score", 95)
     resp_s = comp.get("respiration", {}).get("score", 100)
     lungs_score = round(spo2_s * 0.6 + resp_s * 0.4)
 
-    # ── Gut (Glucose + metabolic stability) ──────────────────────────────────
+    # ── Gut / Metabolic (Glucose + CoreTemp + HbA1c) ─────────────────────────
     gluc_s = comp.get("glucose", {}).get("score", 100)
-    # CoreTemp stability is also a gut/metabolic marker
     temp_s = comp.get("core_temp", {}).get("score", 100)
     gut_score = round(gluc_s * 0.7 + temp_s * 0.3)
-    # Soft cap: gut score shouldn't exceed 100
+    if "hba1c" in labs_dict and labs_dict["hba1c"] > 5.7:
+        a1c_pen = min(40, int((labs_dict["hba1c"] - 5.7) * 15.0))
+        gut_score = max(10, gut_score - a1c_pen)
     gut_score = min(gut_score, 100)
 
     # ── Brain (CoreTemperature stability & HR autonomic balance) ──────────────
-    # CoreTemperature tightly reflects autonomic nervous system balance.
-    temp_s = comp.get("core_temp", {}).get("score", 90)
     brain_score = min(100, round(temp_s * 0.6 + hr_s * 0.4))
 
-    # ── Liver (Metabolic & Glycemic Clearance) ─────────────────────────────────
-    # Liver score is derived from glucose handling stability and core temperature.
+    # ── Liver (Metabolic & ALT/AST Clearance) ──────────────────────────────────
     liver_score = min(100, round(gluc_s * 0.6 + temp_s * 0.4))
+    if "alt" in labs_dict and labs_dict["alt"] > 35:
+        alt_pen = min(35, int((labs_dict["alt"] - 35) * 0.8))
+        liver_score = max(10, liver_score - alt_pen)
+
+    # ── Kidneys / Renal (eGFR & Creatinine) ───────────────────────────────────
+    kidney_score = min(100, round(sys_s * 0.5 + dia_s * 0.5))
+    if "egfr" in labs_dict and labs_dict["egfr"] < 60:
+        egfr_pen = min(50, int((60.0 - labs_dict["egfr"]) * 1.2))
+        kidney_score = max(10, kidney_score - egfr_pen)
 
     # ── Legs (Musculoskeletal & Peripheral Vascular Perfusion) ─────────────────
-    # Peripheral perfusion depends on oxygenation (SpO2), respiration, and blood pressure.
     legs_score = min(100, round(spo2_s * 0.4 + resp_s * 0.3 + sys_s * 0.3))
 
     def _get_status(score: int) -> str:
@@ -509,8 +641,10 @@ def compute_organ_scores(user_id: str, history_dir: Path) -> Dict[str, Any]:
             "heart": {"score": heart_score, "status": _get_status(heart_score)},
             "lungs": {"score": lungs_score, "status": _get_status(lungs_score)},
             "gut":   {"score": gut_score,   "status": _get_status(gut_score)},
+            "metabolic": {"score": gut_score, "status": _get_status(gut_score)},
             "brain": {"score": brain_score, "status": _get_status(brain_score)},
             "liver": {"score": liver_score, "status": _get_status(liver_score)},
+            "kidneys": {"score": kidney_score, "status": _get_status(kidney_score)},
             "legs":  {"score": legs_score,  "status": _get_status(legs_score)},
         },
         "overall_health_score": res["score"]

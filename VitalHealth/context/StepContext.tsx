@@ -94,25 +94,83 @@ class StepDetector {
   private kErr = 1;
   private lastAt = 0;
   private init = false;
+  private bufferSize = 7;
+  private magBuffer: number[] = [];
+  private bufCount = 0;
+  private recentPeaks: number[] = [];
+  private adaptiveThreshold = 0.45;
+  private cadenceCount = 0;
+  private lastCadenceTime = 0;
   onStep: (() => void) | null = null;
 
   feed(x: number, y: number, z: number) {
-    const A = 0.8;
+    const A = 0.82;
     if (!this.init) { this.grav = { x, y, z }; this.init = true; return; }
     this.grav.x = A * this.grav.x + (1 - A) * x;
     this.grav.y = A * this.grav.y + (1 - A) * y;
     this.grav.z = A * this.grav.z + (1 - A) * z;
     const lx = x - this.grav.x, ly = y - this.grav.y, lz = z - this.grav.z;
     const mag = Math.sqrt(lx * lx + ly * ly + lz * lz);
-    const gain = this.kErr / (this.kErr + 0.1);
+
+    const gain = this.kErr / (this.kErr + 0.08);
     this.kalman += gain * (mag - this.kalman);
-    this.kErr = (1 - gain) * this.kErr + 0.005;
+    this.kErr = (1 - gain) * this.kErr + 0.004;
+
+    this.magBuffer[this.bufCount % this.bufferSize] = this.kalman;
+    this.bufCount++;
+
+    if (this.bufCount < this.bufferSize) return;
+
     const now = Date.now();
-    if (this.kalman > 1.2 && (now - this.lastAt) > 250) {
-      this.lastAt = now; this.onStep?.();
+    const minStepInterval = 220;
+    const maxStepInterval = 1400;
+
+    const idxCurr  = (this.bufCount - 1) % this.bufferSize;
+    const idxPrev  = (this.bufCount - 2 + this.bufferSize) % this.bufferSize;
+    const idxPrev2 = (this.bufCount - 3 + this.bufferSize) % this.bufferSize;
+
+    const pCurr  = this.magBuffer[idxCurr];
+    const pPrev  = this.magBuffer[idxPrev];
+    const pPrev2 = this.magBuffer[idxPrev2];
+
+    if (pPrev > pPrev2 && pPrev > pCurr && pPrev >= this.adaptiveThreshold) {
+      const interval = now - this.lastAt;
+      if ((interval >= minStepInterval && interval <= maxStepInterval) || this.lastAt === 0) {
+        this.lastAt = now;
+        this.updateAdaptiveThreshold(pPrev);
+
+        const cadenceInterval = now - this.lastCadenceTime;
+        this.lastCadenceTime = now;
+
+        if (cadenceInterval >= minStepInterval && cadenceInterval <= maxStepInterval) {
+          this.cadenceCount++;
+          if (this.cadenceCount === 3) {
+            for (let i = 0; i < 3; i++) this.onStep?.();
+          } else if (this.cadenceCount > 3) {
+            this.onStep?.();
+          }
+        } else {
+          this.cadenceCount = 1;
+        }
+      }
     }
   }
-  reset() { this.grav = { x: 0, y: 0, z: 0 }; this.kalman = 0; this.kErr = 1; this.lastAt = 0; this.init = false; }
+
+  private updateAdaptiveThreshold(peak: number) {
+    this.recentPeaks.push(peak);
+    if (this.recentPeaks.length > 15) this.recentPeaks.shift();
+    if (this.recentPeaks.length >= 4) {
+      const avg = this.recentPeaks.reduce((a, b) => a + b, 0) / this.recentPeaks.length;
+      this.adaptiveThreshold = Math.min(2.5, Math.max(0.35, avg * 0.55));
+    }
+  }
+
+  reset() {
+    this.grav = { x: 0, y: 0, z: 0 };
+    this.kalman = 0; this.kErr = 1; this.lastAt = 0; this.init = false;
+    this.magBuffer = []; this.bufCount = 0; this.recentPeaks = [];
+    this.adaptiveThreshold = 0.45; this.cadenceCount = 0; this.lastCadenceTime = 0;
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
