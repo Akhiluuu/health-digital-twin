@@ -50,7 +50,7 @@ jobs:
         with:
           host: ${{ env.E2E_HOST }}
           username: ${{ env.E2E_USER }}
-          key: ${{ secrets.E2E_SSH_PRIVATE_KEY || '' }}
+          key: ${{ env.E2E_SSH_KEY }}
           script: |
             cd /home/cave/health-digital-twin
             git pull origin main
