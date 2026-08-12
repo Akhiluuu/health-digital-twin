@@ -312,15 +312,15 @@ _prune_old_jobs()
 _recover_interrupted_jobs()
 
 # ---------------------------------------------------------------------------
-# PER-USER RATE LIMITING  (max 3 simulations per hour per user)
+# PER-USER RATE LIMITING  (max 15 simulations per hour per user)
 # ---------------------------------------------------------------------------
 import collections
 _sim_log: Dict[str, collections.deque] = {}  # user_id -> deque of epoch timestamps
-_RATE_LIMIT_MAX   = int(os.environ.get("SIM_RATE_LIMIT", "10"))  # max sims per rolling window
+_RATE_LIMIT_MAX   = int(os.environ.get("SIM_RATE_LIMIT", "15"))  # max sims per rolling window
 _RATE_LIMIT_WINDOW = int(os.environ.get("SIM_RATE_WINDOW", "3600"))  # window in seconds (1 hr)
 
 def _check_rate_limit(user_id: str):
-    """Raises HTTP 429 if user has exceeded 3 simulations in the last hour."""
+    """Raises HTTP 429 if user has exceeded 15 simulations in the last hour."""
     now = time.time()
     if user_id not in _sim_log:
         _sim_log[user_id] = collections.deque()
