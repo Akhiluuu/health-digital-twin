@@ -39,7 +39,7 @@ jobs:
     needs: test-and-eval
     runs-on: ubuntu-latest
     env:
-      E2E_SSH_KEY: ${{ secrets.E2E_SSH_PRIVATE_KEY }}
+      E2E_SSH_KEY: ${{ secrets.E2E_SSH_PRIVATE_KEY || '' }}
 
     steps:
       - name: 🚀 Trigger Remote Deployment via SSH
@@ -48,7 +48,7 @@ jobs:
         with:
           host: ${{ secrets.E2E_SERVER_IP || '151.185.45.137' }}
           username: ${{ secrets.E2E_SERVER_USER || 'cave' }}
-          key: ${{ secrets.E2E_SSH_PRIVATE_KEY }}
+          key: ${{ secrets.E2E_SSH_PRIVATE_KEY || '' }}
           script: |
             cd /home/cave/health-digital-twin
             git pull origin main
