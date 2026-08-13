@@ -91,6 +91,7 @@ if [ -n "$PIDS" ]; then
     kill -9 $PIDS 2>/dev/null || true
     pkill -9 -f "uvicorn" 2>/dev/null || true
 fi
+sudo pkill -9 -f "celery" 2>/dev/null || pkill -9 -f "celery" 2>/dev/null || true
 sleep 2
 
 echo "==========================================================================="

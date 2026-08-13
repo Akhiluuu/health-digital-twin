@@ -150,7 +150,11 @@ def _run_biogears_via_celery(scenario_path: str, user_id: str = "unknown") -> bo
             from biogears_service.api.tasks import run_simulation_task
             task_res = getattr(run_simulation_task, "delay")(scenario_path, user_id=user_id)
             result = task_res.get()
-            return bool(result.get("success", False))
+            if result and result.get("success", False):
+                return True
+            logger.warning(f"⚠️ Celery task returned success=False (res={result}). Retrying via direct local synchronous engine_runner...")
+            res = engine_runner.run_biogears(scenario_path, user_id=user_id)
+            return res.success
         except Exception as e:
             logger.error(f"❌ [Celery Handoff] Failed to run simulation via Celery: {e}")
             logger.info("⚠️ Falling back to local synchronous BioGears execution...")
