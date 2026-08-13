@@ -2125,51 +2125,7 @@ export default function ProfileScreen() {
         </View>
       </Modal>
 
-      {/* ── Calibration Progress Overlay ── */}
-      <Modal transparent visible={twinStatus === 'registering'} animationType="fade">
-        <View style={{
-          flex: 1,
-          backgroundColor: 'rgba(0,0,0,0.7)',
-          justifyContent: 'center',
-          alignItems: 'center',
-          padding: 24
-        }}>
-          <View style={{
-            backgroundColor: colors.card,
-            borderRadius: 24,
-            padding: 32,
-            alignItems: 'center',
-            width: '85%',
-            maxWidth: 320,
-            borderWidth: 1,
-            borderColor: colors.border,
-            shadowColor: colors.accent,
-            shadowOffset: { width: 0, height: 4 },
-            shadowOpacity: 0.3,
-            shadowRadius: 12,
-            elevation: 8
-          }}>
-            <ActivityIndicator size="large" color={colors.accent} style={{ marginBottom: 20 }} />
-            <Text style={{
-              color: colors.text,
-              fontSize: 18,
-              fontWeight: 'bold',
-              textAlign: 'center',
-              marginBottom: 8
-            }}>
-              Calibrating Twin
-            </Text>
-            <Text style={{
-              color: colors.subText,
-              fontSize: 13,
-              textAlign: 'center',
-              lineHeight: 18
-            }}>
-              Adapting the BioGears clinical engine to your physiological baseline. This takes a moment...
-            </Text>
-          </View>
-        </View>
-      </Modal>
+
 
       {/* ── Calibration Success Modal ── */}
       <Modal transparent visible={showSuccessModal} animationType="fade" onRequestClose={() => setShowSuccessModal(false)}>
