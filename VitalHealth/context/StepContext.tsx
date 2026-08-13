@@ -892,13 +892,13 @@ export const StepProvider: React.FC<{
 
         if (isNaN(savedSteps)) savedSteps = 0;
 
-        // On Android, always prefer native DB (most accurate) - only for self
+        // On Android, always use native DB (hardware sensor ground truth) for self
         if (Platform.OS === 'android' && !isSwitched) {
           const nativeData = await getTodayStepsNative().catch((err) => {
             warn("⚠️ [StepContext] getTodayStepsNative failed:", err);
-            return { steps: 0, source: 'SENSOR_FUSION' as const };
+            return { steps: 0, source: 'STEP_SENSOR' as const };
           });
-          if (nativeData.steps > savedSteps) { savedSteps = nativeData.steps; }
+          savedSteps = nativeData.steps;
           setDataSource(nativeData.source);
         }
 
@@ -953,10 +953,6 @@ export const StepProvider: React.FC<{
           startClock(Date.now() - sessionStart);
           if (Platform.OS === 'android') {
             const profileName = activeProfile ? `${activeProfile.firstName} ${activeProfile.lastName || ""}`.trim() : "";
-            const currentNative = await getTodayStepsNative().catch(() => ({ steps: 0, source: 'STEP_SENSOR' }));
-            if (savedSteps > currentNative.steps) {
-              await updateNativeSteps(savedSteps).catch(() => {});
-            }
             await startNativeTracking(userUid, profileName).catch((err) => {
               warn("⚠️ [StepContext] startNativeTracking failed:", err);
             });
