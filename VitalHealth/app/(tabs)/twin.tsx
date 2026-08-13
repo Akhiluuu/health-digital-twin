@@ -1881,12 +1881,10 @@ export default function TwinScreen() {
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 }}>
               <Ionicons name="warning" size={18} color="#ef4444" />
               <Text style={[ss.errorTxt, { flex: 1 }]}>
-                {simulationError && String(simulationError).includes('not found')
-                  ? 'BioGears Twin profile baseline needs initial calibration.'
-                  : simulationError || 'Simulation failed — check server logs.'}
+                {simulationError || 'Simulation failed — check server logs.'}
               </Text>
             </View>
-            {simulationError && String(simulationError).includes('not found') ? (
+            {(String(simulationError).toLowerCase().includes('calibration') || String(simulationError).toLowerCase().includes('not found') || String(simulationError).toLowerCase().includes('calibrate')) ? (
               <TouchableOpacity
                 style={{ backgroundColor: '#ef4444', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8, marginLeft: 8 }}
                 onPress={() => router.push('/profile')}

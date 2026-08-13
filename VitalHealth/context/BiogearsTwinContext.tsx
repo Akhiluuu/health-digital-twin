@@ -2069,40 +2069,47 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
   // ── Register Twin ─────────────────────────────────────────────────────────
 
   const autoCalibratedProfilesRef = useRef<Set<string>>(new Set());
+  const activeRegistrationPromiseRef = useRef<Promise<void> | null>(null);
 
   const registerTwin = useCallback(async (payload: BiogearsRegistrationPayload, isSilent: boolean = false) => {
-    if (isRegisteringRef.current) {
-      log('[BioGearsContext] Registration already in progress. Ignoring duplicate call.');
-      return;
+    if (activeRegistrationPromiseRef.current) {
+      log('[BioGearsContext] Registration already in progress. Awaiting existing promise...');
+      return activeRegistrationPromiseRef.current;
     }
-    isRegisteringRef.current = true;
-    const effectiveUserId = twinUserId || payload.user_id;
-    const finalPayload = { ...payload, user_id: effectiveUserId };
-    log(`[BioGearsContext] Registering Twin: ${finalPayload.user_id} (isSilent=${isSilent})...`);
-    setTwinStatus('registering');
-    setTwinStatusError(null);
-    try {
-      await BiogearsAPI.registerTwin(finalPayload);
-      log(`[BioGearsContext] Registration SUCCESS for ${finalPayload.user_id}`);
-      setTwinStatus('ready');
+    const regPromise = (async () => {
+      isRegisteringRef.current = true;
+      const effectiveUserId = twinUserId || payload.user_id;
+      const finalPayload = { ...payload, user_id: effectiveUserId };
+      log(`[BioGearsContext] Registering Twin: ${finalPayload.user_id} (isSilent=${isSilent})...`);
+      setTwinStatus('registering');
       setTwinStatusError(null);
-      setSimulationError(null);
-      if (simulationStatus === 'failed') {
-        setSimulationStatus('idle');
+      try {
+        await BiogearsAPI.registerTwin(finalPayload);
+        log(`[BioGearsContext] Registration SUCCESS for ${finalPayload.user_id}`);
+        setTwinStatus('ready');
+        setTwinStatusError(null);
+        setSimulationError(null);
+        if (simulationStatus === 'failed') {
+          setSimulationStatus('idle');
+        }
+        if (!isSilent) {
+          setCalibrationJustSucceeded(true);
+        }
+        await scheduleInactivityReminder().catch(() => {});
+      } catch (err: any) {
+        log(`[BioGearsContext] Registration FAILED:`, err);
+        setTwinStatus('error');
+        const msg = err.message || 'Registration failed';
+        setTwinStatusError(msg);
+        throw err;
+      } finally {
+        isRegisteringRef.current = false;
+        activeRegistrationPromiseRef.current = null;
       }
-      if (!isSilent) {
-        setCalibrationJustSucceeded(true);
-      }
-      await scheduleInactivityReminder().catch(() => {});
-    } catch (err: any) {
-      log(`[BioGearsContext] Registration FAILED:`, err);
-      setTwinStatus('error');
-      const msg = err.message || 'Registration failed';
-      setTwinStatusError(msg);
-      throw err;
-    } finally {
-      isRegisteringRef.current = false;
-    }
+    })();
+
+    activeRegistrationPromiseRef.current = regPromise;
+    return regPromise;
   }, [twinUserId, simulationStatus]);
 
   const recheckTwinStatus = useCallback(async () => {
@@ -2234,21 +2241,12 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
           setTwinStatusError(null);
         }).catch((regErr) => {
           log('[BiogearsTwin] Automatic twin registration failed:', regErr);
-          if (profile?.biogears_registered) {
-            setTwinStatus('ready');
-            setTwinStatusError(null);
-          } else {
-            setTwinStatus('unregistered');
-          }
+          setTwinStatus('unregistered');
+          setTwinStatusError(regErr.message || 'Registration failed');
         });
       } else {
-        if (profile?.biogears_registered) {
-          setTwinStatus('ready');
-          setTwinStatusError(null);
-        } else {
-          setTwinStatusError(err.message || 'Cannot reach BioGears server');
-          setTwinStatus('error');
-        }
+        setTwinStatusError(err.message || 'Cannot reach BioGears server');
+        setTwinStatus('error');
       }
     }
   }, [twinUserId, twinStatus, profile, registerTwin]);
@@ -2282,8 +2280,11 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
 
     const finalName = customSimName || `Sim ${new Date().toLocaleDateString('en-IN')}`;
 
+    let events: BiogearsHealthEvent[] = [];
+    let rawEventsToStore: RoutineEvent[] = [];
+
     try {
-      const events: BiogearsHealthEvent[] = updatedEvents.map(e => ({
+      events = updatedEvents.map(e => ({
         event_type: e.event_type,
         value: e.value,
         timestamp: e.timestamp ?? wallTimeToTimestamp(e.wallTime),
@@ -2304,7 +2305,7 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
         events.push(stepEvent);
       }
 
-      const rawEventsToStore = [...updatedEvents];
+      rawEventsToStore = [...updatedEvents];
       if (stepEvent) {
         rawEventsToStore.push({
           id: 'step_exercise_event',
@@ -2390,20 +2391,39 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
             current_medications: profile?.medications ?? [],
           };
           await registerTwin(regPayload, true);
-          // ✅ KEY FIX: Registration succeeded — clear all error state and return.
-          // Do NOT fall through to setSimulationStatus('failed').
-          setSimulationStatus('idle');
-          setSimulationError(null);
-          setSimulationProgress('');
           setTwinStatus('ready');
           setTwinStatusError(null);
-          log('[BiogearsTwin] Auto-registration succeeded. Twin is now ready. User can retry simulation.');
+          setSimulationError(null);
+          log('[BiogearsTwin] Auto-registration succeeded. Retrying simulation job...');
+
+          // Retry simulation job after successful calibration
+          const retryRes = await BiogearsAPI.simulateAsync(twinUserId, events);
+          const retryJobId = retryRes.job_id;
+          await AsyncStorage.setItem('biogears_active_job', retryJobId);
+          await AsyncStorage.setItem('biogears_active_job_user_id', twinUserId);
+          await AsyncStorage.setItem('biogears_active_job_owner_uid', firestoreOwnerUid || '');
+          await AsyncStorage.setItem('biogears_active_job_events', JSON.stringify(rawEventsToStore));
+          const startTime = Date.now();
+          await AsyncStorage.setItem('biogears_active_job_start_time', String(startTime));
+          setSimulationStartTime(startTime);
+
+          simStartRef.current = startTime;
+          setSimulationProgress('BioGears engine initialising...');
+          progressTickRef.current = setInterval(() => {
+            const elapsed = Math.round((Date.now() - (simStartRef.current ?? Date.now())) / 1000);
+            const mins = Math.floor(elapsed / 60);
+            const secs = elapsed % 60;
+            const timeStr = mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
+            setSimulationProgress(`BioGears computing physiology... (${timeStr} elapsed)`);
+          }, 5000);
+
+          const result = await BiogearsAPI.pollUntilDone(retryJobId, 3000, 43_200_000);
+          await finishSimulationSuccess(result, twinUserId, firestoreOwnerUid);
           return;
         } catch (autoRegErr: any) {
           log('[BiogearsTwin] Auto-registration during addEventAndSimulate failed:', autoRegErr);
-          // Fall through to set failed state with calibration message
           setSimulationStatus('failed');
-          setSimulationError('Twin profile not found on server. Tap "Calibrate Now" to register.');
+          setSimulationError('Twin profile baseline needs initial calibration. Please tap "Calibrate Twin System" in Profile.');
           setSimulationProgress('');
           return;
         }
@@ -2470,6 +2490,9 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
       setTwinStatusError(null);
       setSimulationError(null);
     }
+
+    let events: BiogearsHealthEvent[] = [];
+    let rawEventsToStore: RoutineEvent[] = [];
 
     try {
       // Prepare events — ensure timestamps are set and filter out future ones
@@ -2588,19 +2611,39 @@ export function BiogearsTwinProvider({ children }: { children: React.ReactNode }
             current_medications: profile?.medications ?? [],
           };
           await registerTwin(regPayload, true);
-          // ✅ KEY FIX: Registration succeeded — clear all error state and return.
-          // Do NOT fall through to setSimulationStatus('failed').
-          setSimulationStatus('idle');
-          setSimulationError(null);
-          setSimulationProgress('');
           setTwinStatus('ready');
           setTwinStatusError(null);
-          log('[BiogearsTwin] Auto-registration succeeded. Twin is now ready. User can retry simulation.');
+          setSimulationError(null);
+          log('[BiogearsTwin] Auto-registration succeeded. Retrying simulation job...');
+
+          // Retry simulation job after successful calibration
+          const retryRes = await BiogearsAPI.simulateAsync(twinUserId, rawEventsToStore);
+          const retryJobId = retryRes.job_id;
+          await AsyncStorage.setItem('biogears_active_job', retryJobId);
+          await AsyncStorage.setItem('biogears_active_job_user_id', twinUserId);
+          await AsyncStorage.setItem('biogears_active_job_owner_uid', firestoreOwnerUid || '');
+          await AsyncStorage.setItem('biogears_active_job_events', JSON.stringify(rawEventsToStore));
+          const startTime = Date.now();
+          await AsyncStorage.setItem('biogears_active_job_start_time', String(startTime));
+          setSimulationStartTime(startTime);
+
+          simStartRef.current = startTime;
+          setSimulationProgress('BioGears engine initialising...');
+          progressTickRef.current = setInterval(() => {
+            const elapsed = Math.round((Date.now() - (simStartRef.current ?? Date.now())) / 1000);
+            const mins = Math.floor(elapsed / 60);
+            const secs = elapsed % 60;
+            const timeStr = mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
+            setSimulationProgress(`BioGears computing physiology... (${timeStr} elapsed)`);
+          }, 5000);
+
+          const result = await BiogearsAPI.pollUntilDone(retryJobId, 3000, 43_200_000);
+          await finishSimulationSuccess(result, twinUserId, firestoreOwnerUid);
           return;
         } catch (autoRegErr: any) {
           log('[BiogearsTwin] Auto-registration during runSimulation retry failed:', autoRegErr);
           setSimulationStatus('failed');
-          setSimulationError('Twin profile not found on server. Tap "Calibrate Now" to register.');
+          setSimulationError('Twin profile baseline needs initial calibration. Please tap "Calibrate Twin System" in Profile.');
           setSimulationProgress('');
           return;
         }
