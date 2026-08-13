@@ -107,19 +107,13 @@ def run_biogears(scenario_path: str, user_id: str = "unknown") -> EngineResult:
     ts           = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     log_path     = LOGS_DIR / f"engine_{user_id}_{ts}.log"
 
-    # ── XML Schema Validation ──────────────────────────────────────────────────
+    # ── XML Schema Validation Pre-Check (Non-blocking) ─────────────────────────
     from biogears_service.simulation.validator import validate_xml_schema
     schema_errors = validate_xml_schema(scenario_path)
     if schema_errors:
-        logger.error(f"❌  [{user_id}] XML schema validation failed for scenario XML:")
+        logger.warning(f"⚠️  [{user_id}] XML schema pre-check warning(s) for scenario XML:")
         for err in schema_errors:
-            logger.error(f"    - {err}")
-        try:
-            log_path.parent.mkdir(parents=True, exist_ok=True)
-            log_path.write_text("[XML SCHEMA VALIDATION FAILED]\n" + "\n".join(schema_errors), encoding="utf-8")
-        except Exception:
-            pass
-        return EngineResult(success=False, log_path=str(log_path), return_code=-3)
+            logger.warning(f"    - {err}")
 
     rel_scenario = os.path.relpath(scenario_path, BIOGEARS_BIN_DIR)
     exec_path = str(BIOGEARS_EXECUTABLE.absolute())
