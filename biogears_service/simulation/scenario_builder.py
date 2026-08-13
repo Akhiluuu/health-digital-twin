@@ -674,7 +674,7 @@ def build_registration_scenario(user_id, age, weight, height, sex, body_fat,
     # within <InitialParameters>. Placing them bare (without wrapper) causes
     # XSD validation failure: "no declaration found for element 'Condition'"
     if conditions_xml.strip():
-        conditions_block = f'        <Conditions>\n            {conditions_xml}\n        </Conditions>\n'
+        conditions_block = f'        {conditions_xml}\n'
     else:
         conditions_block = ""
 

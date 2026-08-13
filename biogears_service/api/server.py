@@ -1431,7 +1431,36 @@ def _register_impl(data: RegistrationRequest):
 
                 return {"status": "success", "message": f"Twin '{data.user_id}' calibrated."}
 
-        raise HTTPException(status_code=500, detail="Engine convergence failure.")
+        # Registration failed or state file invalid — extract engine log snippet for clear diagnosis
+        log = engine_runner.get_latest_log(data.user_id) or ""
+        _ansi = re.compile(r'\x1b(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
+        _prog = re.compile(r'^\d+\s+process;\s+Progress\s+\d+/\d+', re.IGNORECASE)
+        clean_lines = [
+            _ansi.sub('', ln).strip()
+            for ln in log.splitlines()
+            if ln.strip() and not _prog.match(_ansi.sub('', ln).strip())
+        ]
+        _err_kw = ('error', 'failed', 'fatal', 'unable', 'could not', 'missing', 'invalid')
+        error_lines = [ln for ln in clean_lines if any(k in ln.lower() for k in _err_kw)]
+        snippet_lines = error_lines[-10:] if error_lines else clean_lines[-20:]
+        snippet = "\n".join(snippet_lines)
+
+        target_file = BIOGEARS_BIN_DIR / f"{data.user_id}.xml"
+        if not target_file.exists():
+            reason = "State file was not produced by BioGears engine during calibration."
+        elif target_file.stat().st_size < MIN_VALID_SIZE:
+            reason = f"State file produced is incomplete (size: {target_file.stat().st_size} B, required: {MIN_VALID_SIZE} B)."
+        else:
+            reason = "BioGears engine execution failed during registration."
+
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "message": f"Registration failed: {reason}",
+                "reason": reason,
+                "log_snippet": snippet
+            }
+        )
 
     except Exception as e:
         logger.error(f"❌ Registration failed for {data.user_id}: {e}. Initiating rollback...")
