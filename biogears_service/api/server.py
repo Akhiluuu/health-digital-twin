@@ -1363,10 +1363,10 @@ def _register_impl(data: RegistrationRequest):
             data.sex, data.body_fat, _to_dict(data)
         )
 
+        MIN_VALID_SIZE = 51200  # 50 KB — must match _check_state_file_validity
         if _run_biogears_via_celery(path, user_id=data.user_id):
             target_file = BIOGEARS_BIN_DIR / f"{data.user_id}.xml"
             perm_state = USER_STATES_DIR / f"{data.user_id}.xml"
-            MIN_VALID_SIZE = 51200  # 50 KB — must match _check_state_file_validity
             if target_file.exists() and target_file.stat().st_size >= MIN_VALID_SIZE:
                 shutil.copy2(str(target_file), str(perm_state))
                 os.remove(str(target_file))
