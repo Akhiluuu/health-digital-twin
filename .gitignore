@@ -78,9 +78,22 @@ healthbot/model/*.gguf
 healthbot/__pycache__/
 healthbot/**/__pycache__/
 # BioGears runtime generated outputs (state XML files generated during simulation)
-biogears_runtime/Scenarios/API/*.xml
+biogears_runtime/*.xml
+!biogears_runtime/BioGearsConfiguration.xml
+!biogears_runtime/OverrideConfig.xml
+!biogears_runtime/PopulationTemplate.xml
+biogears_runtime/*.csv
 biogears_runtime/*.log
 biogears_runtime/bin/test_*.xml
+biogears_runtime/states/
+biogears_runtime/ecg/
+biogears_runtime/config/
+biogears_runtime/override/
+biogears_runtime/share/
+biogears_runtime/templates/
+biogears_runtime/validation/
+biogears_runtime/bin/howtos/
+healthbot_venv
 health_ai
 venv/
 # Secrets & Firebase credentials
