@@ -22,6 +22,11 @@ echo "🔍 [1/5] Checking system prerequisites and updating codebase..."
 command -v python3 >/dev/null 2>&1 || { echo "❌ Python3 is required. Run: sudo apt update && sudo apt install -y python3 python3-venv python3-pip"; exit 1; }
 command -v curl >/dev/null 2>&1 || { echo "❌ curl is required."; exit 1; }
 
+if ! ldconfig -p 2>/dev/null | grep -q "libxerces-c-3.2.so"; then
+    echo "📦 [1/5] Installing required BioGears C++ XML library (libxerces-c3.2)..."
+    sudo apt-get update -qq && sudo apt-get install -y -qq libxerces-c3.2 libxerces-c-dev || true
+fi
+
 if [ -d ".git" ]; then
     git fetch origin main >/dev/null 2>&1 || true
     LOCAL_HASH=$(git rev-parse HEAD 2>/dev/null || true)
