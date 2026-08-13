@@ -26,8 +26,15 @@ else:
     # (xsd/, patients/, substances/, environments/, etc.).
     # Override with env var BIOGEARS_BIN_DIR if you install it elsewhere.
     _bio_bin_override = os.environ.get("BIOGEARS_BIN_DIR")
-    BIOGEARS_BIN_DIR    = Path(_bio_bin_override) if _bio_bin_override else BASE_DIR / "biogears_runtime"
-    BIOGEARS_EXECUTABLE = BIOGEARS_BIN_DIR / "bg-cli"
+    BIOGEARS_BIN_DIR = Path(_bio_bin_override) if _bio_bin_override else BASE_DIR / "biogears_runtime"
+    
+    _exec_candidate = BIOGEARS_BIN_DIR / "bg-cli"
+    if _exec_candidate.exists() and _exec_candidate.is_file():
+        BIOGEARS_EXECUTABLE = _exec_candidate
+    elif (BIOGEARS_BIN_DIR / "bin" / "bg-cli").exists():
+        BIOGEARS_EXECUTABLE = BIOGEARS_BIN_DIR / "bin" / "bg-cli"
+    else:
+        BIOGEARS_EXECUTABLE = _exec_candidate
 
 # BioGears scenario output directory (scenarios written here before engine runs)
 SCENARIO_API_DIR = BIOGEARS_BIN_DIR / "Scenarios" / "API"

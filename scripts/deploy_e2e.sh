@@ -33,6 +33,10 @@ if [ -d ".git" ]; then
     fi
 fi
 
+if [ -d "biogears_runtime" ]; then
+    (cd biogears_runtime && ln -sf bin/bg-cli bg-cli && ln -sf bin/bg-scenario bg-scenario 2>/dev/null || true)
+fi
+
 # 2. Virtual Environment Setup
 echo "📦 [2/5] Initializing Python Virtual Environment..."
 if [ ! -d "venv" ]; then
