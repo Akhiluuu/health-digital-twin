@@ -171,7 +171,7 @@ def run_biogears(scenario_path: str, user_id: str = "unknown") -> EngineResult:
         else:
             env["PATH"] = lib_path
     else:
-        lib_path = f"{BIOGEARS_BIN_DIR}/lib:{BIOGEARS_BIN_DIR}/bin"
+        lib_path = f"{BIOGEARS_BIN_DIR}/lib:{BIOGEARS_BIN_DIR}/bin:/usr/lib/x86_64-linux-gnu:/usr/lib:/usr/local/lib"
         if "LD_LIBRARY_PATH" in env:
             env["LD_LIBRARY_PATH"] = f"{lib_path}:{env['LD_LIBRARY_PATH']}"
         else:
