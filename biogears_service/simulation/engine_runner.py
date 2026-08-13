@@ -99,6 +99,38 @@ def _heartbeat(user_id: str, stop_evt: threading.Event, start_time: float,
         logger.info(f"⏳  [{user_id}] BioGears still running... ({int(elapsed)}s elapsed)")
 
 
+def get_biogears_executable() -> Path:
+    from biogears_service.simulation.config import BIOGEARS_BIN_DIR, BASE_DIR, IS_WINDOWS
+    if IS_WINDOWS:
+        return (BASE_DIR / "biogears_service" / "engine" / "BioGears" / "bin" / "bg-cli.exe").resolve()
+
+    # 1. Direct bin/bg-cli inside biogears_runtime (real ELF binary)
+    direct_bin = BIOGEARS_BIN_DIR / "bin" / "bg-cli"
+    if direct_bin.exists():
+        try:
+            direct_bin.chmod(0o755)
+        except Exception:
+            pass
+        return direct_bin.resolve()
+
+    # 2. Direct bg-cli in biogears_runtime
+    target_link = BIOGEARS_BIN_DIR / "bg-cli"
+    if target_link.exists():
+        try:
+            target_link.chmod(0o755)
+        except Exception:
+            pass
+        return target_link.resolve()
+
+    # 3. System PATH fallback
+    import shutil
+    which = shutil.which("bg-cli")
+    if which:
+        return Path(which).resolve()
+
+    return (BIOGEARS_BIN_DIR / "bin" / "bg-cli").resolve()
+
+
 def run_biogears(scenario_path: str, user_id: str = "unknown") -> EngineResult:
     """
     Launches BioGears CLI for the given scenario file.
@@ -116,7 +148,8 @@ def run_biogears(scenario_path: str, user_id: str = "unknown") -> EngineResult:
             logger.warning(f"    - {err}")
 
     rel_scenario = os.path.relpath(scenario_path, BIOGEARS_BIN_DIR)
-    exec_path = str(BIOGEARS_EXECUTABLE.absolute())
+    exec_file = get_biogears_executable()
+    exec_path = str(exec_file)
     command = [exec_path, "Scenario", rel_scenario]
 
     logger.info("")
