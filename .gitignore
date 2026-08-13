@@ -77,10 +77,10 @@ VitalHealth/.env.local
 healthbot/model/*.gguf
 healthbot/__pycache__/
 healthbot/**/__pycache__/
-healthbot/*.pyc
-biogears_runtime/
-healthbot_venv
-healthbot_venv/
+# BioGears runtime generated outputs (state XML files generated during simulation)
+biogears_runtime/Scenarios/API/*.xml
+biogears_runtime/*.log
+biogears_runtime/bin/test_*.xml
 health_ai
 venv/
 # Secrets & Firebase credentials
