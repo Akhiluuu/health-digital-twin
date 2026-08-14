@@ -35,20 +35,20 @@ _ocr_job_store: Dict[str, Dict[str, Any]] = {}
 _LAB_PATTERNS: List[Tuple] = [
     # Glycaemic
     ("HbA1c (Glycated Hemoglobin)", "4548-4",
-     r"(?:HbA1c|Glycated\s+H(?:ae|e)moglobin|A1C)[\s:]*(\d+\.?\d*)\s*%?", "%", "4.0-5.6%", 6.5, None),
+     r"(?:HbA1c|Glycated\s+H(?:ae|e)moglobin|A1C|(?:Glycosylated\s+Hb))[\s:]*(\d+\.?\d*)\s*%?", "%", "4.0-5.6%", 6.5, None),
     ("Fasting Blood Glucose", "1558-6",
-     r"(?:Fasting\s+(?:Blood\s+)?(?:Glucose|Sugar|BS)|FBG)[\s:]*(\d+\.?\d*)\s*(?:mg/dL)?", "mg/dL", "70-99 mg/dL", 100, 70),
+     r"(?:Fasting\s+(?:Blood\s+)?(?:Glucose|Sugar|BS)|FBG|FBS)[\s:]*(\d+\.?\d*)\s*(?:mg/dL)?", "mg/dL", "70-99 mg/dL", 100, 70),
     ("Random Blood Glucose", "2345-7",
-     r"(?:Random|Post-?\s*prandial|PP)\s*(?:Blood\s+)?(?:Glucose|Sugar|BS)[\s:]*(\d+\.?\d*)\s*(?:mg/dL)?", "mg/dL", "<140 mg/dL", 140, None),
+     r"(?:Random|Post-?\s*prandial|PP|PPBS)\s*(?:Blood\s+)?(?:Glucose|Sugar|BS)[\s:]*(\d+\.?\d*)\s*(?:mg/dL)?", "mg/dL", "<140 mg/dL", 140, None),
     # CBC
     ("Hemoglobin", "718-7",
-     r"H(?:ae|e)moglobin[\s:]*(\d+\.?\d*)\s*(?:g/dL)?", "g/dL", "13.5-17.5 g/dL", 17.5, 13.5),
+     r"(?:H(?:ae|e)moglobin|Hb|HGB)[\s:]*(\d+\.?\d*)\s*(?:g/dL|gm/dL)?", "g/dL", "13.5-17.5 g/dL", 17.5, 13.5),
     ("WBC Count", "6690-2",
-     r"(?:WBC|White\s+Blood\s+(?:Cell|Count))[\s:]*(\d+\.?\d*)\s*(?:k/uL|×10³/μL|10\^3)?", "k/uL", "4.5-11.0 k/uL", 11.0, 4.5),
+     r"(?:WBC|White\s+Blood\s+(?:Cell|Count)|Total\s+Leucocyte\s+Count|TLC)[\s:]*(\d+\.?\d*)\s*(?:k/uL|×10³/μL|10\^3|/cumm)?", "k/uL", "4.5-11.0 k/uL", 11.0, 4.5),
     ("Platelet Count", "777-3",
-     r"(?:Platelet|PLT)[\s:]*(\d+\.?\d*)\s*(?:k/uL|×10³|lakh)?", "k/uL", "150-400 k/uL", 400, 150),
+     r"(?:Platelet|PLT|Platelet\s+Count)[\s:]*(\d+\.?\d*)\s*(?:k/uL|×10³|lakh|/cumm)?", "k/uL", "150-400 k/uL", 400, 150),
     ("RBC Count", "789-8",
-     r"RBC[\s:]*(\d+\.?\d*)\s*(?:M/uL|million)?", "M/uL", "4.5-5.9 M/uL", 5.9, 4.5),
+     r"(?:RBC|Red\s+Blood\s+Cell|RBC\s+Count)[\s:]*(\d+\.?\d*)\s*(?:M/uL|million|/cumm)?", "M/uL", "4.5-5.9 M/uL", 5.9, 4.5),
     ("Hematocrit", "4544-3",
      r"(?:Hematocrit|HCT|PCV)[\s:]*(\d+\.?\d*)\s*%?", "%", "41-53%", 53, 41),
     ("MCV", "787-2",
@@ -64,9 +64,9 @@ _LAB_PATTERNS: List[Tuple] = [
      r"Triglyceride[s]?[\s:]*(\d+\.?\d*)\s*(?:mg/dL)?", "mg/dL", "<150 mg/dL", 150, None),
     # Renal
     ("Creatinine", "2160-0",
-     r"(?:Serum\s+)?Creatinine[\s:]*(\d+\.?\d*)\s*(?:mg/dL)?", "mg/dL", "0.7-1.2 mg/dL", 1.2, 0.7),
+     r"(?:Serum\s+|S\.\s*)?Creatinine[\s:]*(\d+\.?\d*)\s*(?:mg/dL)?", "mg/dL", "0.7-1.2 mg/dL", 1.2, 0.7),
     ("Blood Urea Nitrogen", "3094-0",
-     r"(?:BUN|Blood\s+Urea\s+Nitrogen|Urea)[\s:]*(\d+\.?\d*)\s*(?:mg/dL)?", "mg/dL", "7-25 mg/dL", 25, 7),
+     r"(?:BUN|Blood\s+Urea\s+Nitrogen|Serum\s+Urea|S\.\s*Urea)[\s:]*(\d+\.?\d*)\s*(?:mg/dL)?", "mg/dL", "7-25 mg/dL", 25, 7),
     ("eGFR", "33914-3",
      r"(?:eGFR|Estimated\s+GFR|GFR)[\s:]*(\d+\.?\d*)\s*(?:mL/min)?", "mL/min/1.73m²", ">60", None, 60),
     # Liver
@@ -77,19 +77,19 @@ _LAB_PATTERNS: List[Tuple] = [
     ("Alkaline Phosphatase", "6768-6",
      r"(?:ALP|Alkaline\s+Phosphatase)[\s:]*(\d+\.?\d*)\s*(?:U/L)?", "U/L", "44-147 U/L", 147, 44),
     ("Total Bilirubin", "1975-2",
-     r"Total\s+Bilirubin[\s:]*(\d+\.?\d*)\s*(?:mg/dL)?", "mg/dL", "0.1-1.2 mg/dL", 1.2, None),
+     r"(?:Total\s+)?Bilirubin[\s:]*(\d+\.?\d*)\s*(?:mg/dL)?", "mg/dL", "0.1-1.2 mg/dL", 1.2, None),
     # Thyroid
     ("TSH", "3016-3",
-     r"TSH[\s:]*(\d+\.?\d*)\s*(?:mIU/L|uIU/mL)?", "mIU/L", "0.4-4.0 mIU/L", 4.0, 0.4),
+     r"(?:TSH|Thyroid\s+Stimulating\s+Hormone)[\s:]*(\d+\.?\d*)\s*(?:mIU/L|uIU/mL|µIU/mL)?", "mIU/L", "0.4-4.0 mIU/L", 4.0, 0.4),
     ("T3", "3051-0",
      r"\bT3\b[\s:]*(\d+\.?\d*)\s*(?:ng/dL)?", "ng/dL", "80-200 ng/dL", 200, 80),
     ("T4", "3054-4",
      r"\bT4\b[\s:]*(\d+\.?\d*)\s*(?:μg/dL|ug/dL)?", "μg/dL", "5.0-12.0 μg/dL", 12.0, 5.0),
     # Electrolytes
     ("Sodium", "2951-2",
-     r"(?:Sodium|Na\+?)[\s:]*(\d+\.?\d*)\s*(?:mEq/L|mmol/L)?", "mEq/L", "136-145 mEq/L", 145, 136),
+     r"(?:Sodium|Na\+?|Serum\s+Sodium|S\.\s*Sodium)[\s:]*(\d+\.?\d*)\s*(?:mEq/L|mmol/L)?", "mEq/L", "136-145 mEq/L", 145, 136),
     ("Potassium", "2823-3",
-     r"(?:Potassium|K\+?)[\s:]*(\d+\.?\d*)\s*(?:mEq/L|mmol/L)?", "mEq/L", "3.5-5.0 mEq/L", 5.0, 3.5),
+     r"(?:Potassium|K\+?|Serum\s+Potassium|S\.\s*Potassium)[\s:]*(\d+\.?\d*)\s*(?:mEq/L|mmol/L)?", "mEq/L", "3.5-5.0 mEq/L", 5.0, 3.5),
     # Vitamins
     ("Vitamin D", "62292-8",
      r"(?:Vitamin\s+D|25-OH\s+Vitamin)[\s:]*(\d+\.?\d*)\s*(?:ng/mL)?", "ng/mL", "30-100 ng/mL", 100, 30),
@@ -107,11 +107,12 @@ _LAB_PATTERNS: List[Tuple] = [
      r"(?:BP|Blood\s+Pressure)[\s:]*\d{2,3}/(\d{2,3})\s*(?:mmHg)?", "mmHg", "60-80 mmHg", 90, 60),
     # Uric Acid
     ("Uric Acid", "3084-1",
-     r"Uric\s+Acid[\s:]*(\d+\.?\d*)\s*(?:mg/dL)?", "mg/dL", "3.5-7.2 mg/dL", 7.2, 3.5),
+     r"(?:Serum\s+)?Uric\s+Acid[\s:]*(\d+\.?\d*)\s*(?:mg/dL)?", "mg/dL", "3.5-7.2 mg/dL", 7.2, 3.5),
     # PSA
     ("PSA", "10508-0",
      r"PSA[\s:]*(\d+\.?\d*)\s*(?:ng/mL)?", "ng/mL", "<4.0 ng/mL", 4.0, None),
 ]
+
 
 # ── Medication patterns ─────────────────────────────────────────────────────
 _MED_PATTERNS = [
@@ -143,7 +144,6 @@ _MED_PATTERNS = [
     ("Prednisolone", "8638"),
     ("Paracetamol", "161"),
     ("Ibuprofen", "5640"),
-    ("Pantoprazole", "40790"),
     ("Cetirizine", "20480"),
 ]
 
@@ -191,7 +191,7 @@ class SmartOCRPipeline:
         pages = raw_text.split("---PAGE---") if "---PAGE---" in raw_text else [raw_text]
         page_count = max(1, len(pages))
 
-        doctor_match = re.search(r"(?:Doctor|Physician|Dr\.?)[\s:]+([A-Z][a-zA-Z\s\.]+)", raw_text)
+        doctor_match = re.search(r"(?:Doctor|Physician|Dr\.?)[\s:]+([A-Z][a-zA-Z\s]+?)(?=\r?\n|$)", raw_text)
         doctor_name = doctor_match.group(1).strip() if doctor_match else "Unknown Physician"
 
         extracted_labs = self._extract_labs(patient_id, raw_text)
@@ -244,7 +244,54 @@ class SmartOCRPipeline:
                     seen.add(canonical_name)
             except (ValueError, AttributeError):
                 pass
+
+        if not labs and len(text.strip()) > 50:
+            logger.info("Regex extraction returned 0 labs — attempting LLM structured lab extraction fallback")
+            labs = self._extract_labs_with_llm(text)
+
         return labs
+
+    def _extract_labs_with_llm(self, text: str) -> List[NormalizedLab]:
+        """Fall back to LLM JSON extraction when regex patterns yield no matches from document text."""
+        try:
+            from healthbot_v4.apps.brain.reasoning.qwen_engine import QwenInferenceEngine
+            from healthbot_v4.apps.brain.context.context_builder import BudgetedContext
+            import json
+
+            engine = QwenInferenceEngine()
+            prompt = (
+                "Extract all laboratory test results, values, units, and classifications (High/Low/Normal) "
+                "from the following medical document text as a JSON array of objects with keys: "
+                "canonical_name, value (number), unit, classification.\n"
+                "Return ONLY a valid JSON array with no markdown formatting or extra text.\n\n"
+                f"Document Text:\n{text[:2500]}"
+            )
+            ctx = BudgetedContext(patient_id="ocr_fallback")
+            res = engine.generate_reasoning_response(ctx, prompt, intent="LAB_REPORT_ANALYSIS")
+            resp_text = res.get("response", "")
+            json_match = re.search(r"\[\s*\{.*\}\s*\]", resp_text, re.DOTALL)
+            if json_match:
+                raw_json = json_match.group(0)
+                items = json.loads(raw_json)
+                extracted = []
+                for item in items:
+                    if isinstance(item, dict) and item.get("canonical_name") and item.get("value") is not None:
+                        try:
+                            val = float(item["value"])
+                            extracted.append(NormalizedLab(
+                                canonical_name=str(item["canonical_name"]),
+                                loinc_code="UNKNOWN",
+                                value=val,
+                                unit=str(item.get("unit") or ""),
+                                classification=str(item.get("classification") or "Normal"),
+                                timestamp=datetime.now(timezone.utc)
+                            ))
+                        except (ValueError, TypeError):
+                            pass
+                return extracted
+        except Exception as e:
+            logger.debug(f"LLM lab extraction fallback skipped: {e}")
+        return []
 
     def _extract_medications(self, text: str) -> List[NormalizedMedication]:
         meds = []

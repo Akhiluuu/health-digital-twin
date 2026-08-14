@@ -58,68 +58,76 @@ class MultimodalTriageEngine(HealthBrainSubsystem):
         start = time.time()
         self.processed_count += 1
 
-        # Determine payload signature or decode text if text-encoded image
-        payload_str = image_base64_or_bytes.decode("utf-8", errors="ignore") if isinstance(image_base64_or_bytes, bytes) else image_base64_or_bytes
-        
-        # Analyze content hints or simulated OCR extraction
+        # Decode raw text or base64 image payload
+        raw_text = ""
+        image_bytes = None
+
+        if isinstance(image_base64_or_bytes, bytes):
+            image_bytes = image_base64_or_bytes
+            raw_text = image_base64_or_bytes.decode("utf-8", errors="ignore")
+        elif isinstance(image_base64_or_bytes, str):
+            if image_base64_or_bytes.startswith("data:image") or "base64," in image_base64_or_bytes:
+                try:
+                    import base64
+                    b64_data = image_base64_or_bytes.split("base64,")[-1]
+                    image_bytes = base64.b64decode(b64_data)
+                except Exception as e:
+                    logger.debug(f"Base64 decode skipped in multimodal engine: {e}")
+            raw_text = image_base64_or_bytes
+
+        # Perform real OCR on image bytes if text is empty or non-legible
+        if image_bytes and (not raw_text or len(raw_text.strip()) < 10 or "data:image" in raw_text):
+            try:
+                import pytesseract
+                from PIL import Image, ImageEnhance
+                import io
+                img = Image.open(io.BytesIO(image_bytes))
+                gray = img.convert("L")
+                enhancer = ImageEnhance.Contrast(gray)
+                enhanced = enhancer.enhance(1.5)
+                ocr_text = pytesseract.image_to_string(enhanced)
+                if ocr_text and len(ocr_text.strip()) > 5:
+                    raw_text = ocr_text
+            except Exception as ocr_err:
+                logger.debug(f"Multimodal image OCR skipped: {ocr_err}")
+
+        # Parse medical entities using SmartOCRPipeline
+        from healthbot_v4.apps.ocr.engine.record_builder import SmartOCRPipeline
+        record = SmartOCRPipeline().process_raw_text(patient_id, raw_text, document_name="multimodal_upload.jpg")
+
         entities: List[ExtractedMedicalEntity] = []
-        doc_type = "GENERAL_MEDICAL_RECORD"
-        requires_urgency = False
-
-        if "hba1c" in payload_str.lower() or "glucose" in payload_str.lower() or hint_category == "LAB_REPORT":
-            doc_type = "LAB_REPORT"
+        for lab in record.extracted_labs:
             entities.append(
                 ExtractedMedicalEntity(
                     category="LAB",
                     code_system="LOINC",
-                    code="4548-4",
-                    name="HbA1c (Glycated Hemoglobin)",
-                    value="8.2%",
-                    confidence=0.98
+                    code=lab.loinc_code or "UNKNOWN",
+                    name=lab.canonical_name,
+                    value=f"{lab.value} {lab.unit}".strip(),
+                    confidence=0.95
                 )
             )
-            entities.append(
-                ExtractedMedicalEntity(
-                    category="LAB",
-                    code_system="LOINC",
-                    code="2345-7",
-                    name="Fasting Plasma Glucose",
-                    value="142 mg/dL",
-                    confidence=0.96
-                )
-            )
-            summary = "Extracted Lab Report: HbA1c 8.2% (High), Fasting Glucose 142 mg/dL."
 
-        elif "metformin" in payload_str.lower() or "lisinopril" in payload_str.lower() or hint_category == "PRESCRIPTION":
-            doc_type = "PRESCRIPTION"
+        for med in record.extracted_medications:
             entities.append(
                 ExtractedMedicalEntity(
                     category="MEDICATION",
                     code_system="RxNorm",
-                    code="6809",
-                    name="Metformin Hydrochloride",
-                    value="500mg Tablet (Daily)",
-                    confidence=0.97
+                    code=med.rxnorm_code or "UNKNOWN",
+                    name=med.name,
+                    value=f"{med.dosage_form} ({med.frequency})",
+                    confidence=0.95
                 )
             )
-            summary = "Extracted Prescription Label: Metformin 500mg daily."
 
-        elif "rash" in payload_str.lower() or "skin" in payload_str.lower() or hint_category == "DERMATOLOGY":
-            doc_type = "DERMATOLOGY_IMAGE"
-            entities.append(
-                ExtractedMedicalEntity(
-                    category="VISUAL_SYMPTOM",
-                    code_system="SNOMED",
-                    code="271807003",
-                    name="Erythematous Maculopapular Rash",
-                    value="Localized Mild Erythema",
-                    confidence=0.91
-                )
-            )
-            summary = "Analyzed Image: Localized mild erythematous skin rash without ulceration."
+        doc_type = "LAB_REPORT" if record.extracted_labs else ("PRESCRIPTION" if record.extracted_medications else "GENERAL_MEDICAL_RECORD")
+        requires_urgency = any(l.classification.upper() in ["HIGH", "CRITICAL"] for l in record.extracted_labs)
 
+        if entities:
+            summary_items = [f"{e.name}: {e.value}" for e in entities[:4]]
+            summary = f"Extracted {len(entities)} medical entities: {'; '.join(summary_items)}."
         else:
-            summary = f"Processed document payload ({len(payload_str)} bytes). Document structure verified."
+            summary = f"Processed document payload ({len(raw_text)} chars). Structure verified."
 
         elapsed_ms = (time.time() - start) * 1000.0
         self.total_latency_ms += elapsed_ms

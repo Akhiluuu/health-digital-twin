@@ -45,10 +45,15 @@ class OCRService:
         """Extract text from image bytes using pytesseract."""
         try:
             import pytesseract  # type: ignore
-            from PIL import Image  # type: ignore
+            from PIL import Image, ImageEnhance  # type: ignore
             import io
             img = Image.open(io.BytesIO(image_bytes))
-            res = pytesseract.image_to_string(img, lang="eng", config="--psm 6")
+            gray = img.convert("L")
+            enhancer = ImageEnhance.Contrast(gray)
+            enhanced = enhancer.enhance(1.5)
+            res = pytesseract.image_to_string(enhanced, lang="eng", config="--psm 6")
+            if not res or len(str(res).strip()) < 5:
+                res = pytesseract.image_to_string(img, lang="eng")
             if isinstance(res, bytes):
                 return res.decode("utf-8", errors="ignore")
             elif isinstance(res, str):

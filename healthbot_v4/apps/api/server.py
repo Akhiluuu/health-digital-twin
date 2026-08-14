@@ -395,9 +395,11 @@ async def process_lab_ocr_scan(req: LabOCRScanRequest):
 
 def _extract_text_from_bytes(file_bytes: bytes, filename: str, mime_type: str) -> str:
     """
-    Pure-Python text extraction — no external OCR deps required.
-    Handles PDFs via PyMuPDF if available, else falls back to byte-level
-    ASCII extraction. Images are described by filename + MIME hint.
+    Multi-engine text extraction:
+    - PyMuPDF (fitz) for vector & text-layer PDFs
+    - PyMuPDF + pytesseract OCR for image-scanned PDFs
+    - pypdf / pdfminer fallbacks for PDFs
+    - PIL + pytesseract OCR for medical image scans (.png, .jpg, .webp)
     """
     text = ""
     filename_lower = (filename or "").lower()
@@ -406,52 +408,82 @@ def _extract_text_from_bytes(file_bytes: bytes, filename: str, mime_type: str) -
                or "image" in (mime_type or "")
 
     if is_pdf:
-        # Try PyMuPDF first (best quality)
+        # Priority 1: PyMuPDF (fitz) with OCR fallback for scanned pages
         try:
             import fitz  # PyMuPDF
             doc = fitz.open(stream=file_bytes, filetype="pdf")
             pages = []
+            has_empty_pages = False
             for page in doc:
-                pages.append(page.get_text())
+                page_text = page.get_text()
+                if not page_text or len(page_text.strip()) < 10:
+                    has_empty_pages = True
+                    # Try Tesseract OCR on rendered page pixmap
+                    try:
+                        import pytesseract
+                        from PIL import Image
+                        import io
+                        pix = page.get_pixmap(dpi=150)
+                        img = Image.open(io.BytesIO(pix.tobytes("png"))).convert("L")
+                        ocr_text = pytesseract.image_to_string(img)
+                        if ocr_text and len(ocr_text.strip()) > 5:
+                            page_text = ocr_text
+                    except Exception as ocr_err:
+                        logger.debug(f"PyMuPDF page OCR fallback skipped: {ocr_err}")
+                pages.append(page_text)
             text = "---PAGE---".join(pages)
             doc.close()
-            logger.info(f"PyMuPDF extracted {len(text)} chars from {filename}")
+            logger.info(f"PyMuPDF extracted {len(text)} chars from {filename} (empty_pages_ocr={has_empty_pages})")
         except ImportError:
             pass
         except Exception as e:
             logger.warning(f"PyMuPDF failed: {e}")
 
-        if not text:
-            # Fallback: extract raw ASCII strings from PDF bytes (catches text-layer PDFs)
+        # Priority 2: pypdf fallback if text is still empty
+        if not text or len(text.strip()) < 10:
+            try:
+                import pypdf
+                import io
+                reader = pypdf.PdfReader(io.BytesIO(file_bytes))
+                text = "\n".join(page.extract_text() or "" for page in reader.pages)
+                logger.info(f"pypdf extracted {len(text)} chars from {filename}")
+            except Exception as e:
+                logger.warning(f"pypdf fallback failed: {e}")
+
+        # Priority 3: Raw byte string extraction fallback
+        if not text or len(text.strip()) < 10:
             import re
             raw = file_bytes.decode("latin-1", errors="replace")
-            # Extract parenthesised strings (PDF text objects)
             strings = re.findall(r'\(([^)]{2,}?)\)', raw)
-            # Filter out binary noise: keep strings with mostly printable ASCII
             readable = []
             for s in strings:
                 printable_ratio = sum(1 for c in s if 32 <= ord(c) < 127) / max(len(s), 1)
                 if printable_ratio > 0.75 and len(s.strip()) > 2:
                     readable.append(s.strip())
             text = " ".join(readable)
-            logger.info(f"Raw PDF string extraction: {len(text)} chars from {filename}")
+            logger.info(f"Raw PDF string extraction fallback: {len(text)} chars from {filename}")
 
     elif is_image:
-        # Try pytesseract if available
+        # Try pytesseract with image contrast & grayscale pre-processing
         try:
             import pytesseract
-            from PIL import Image
+            from PIL import Image, ImageEnhance
             import io
             img = Image.open(io.BytesIO(file_bytes))
-            text = pytesseract.image_to_string(img)
-            logger.info(f"Tesseract OCR extracted {len(text)} chars from {filename}")
+            # Convert to grayscale and enhance contrast for medical scans
+            gray = img.convert("L")
+            enhancer = ImageEnhance.Contrast(gray)
+            enhanced = enhancer.enhance(1.5)
+            text = pytesseract.image_to_string(enhanced)
+            if not text or len(text.strip()) < 5:
+                text = pytesseract.image_to_string(img)
+            logger.info(f"Tesseract OCR extracted {len(text)} chars from image '{filename}'")
         except ImportError:
-            pass
+            logger.warning("pytesseract not installed; skipping image OCR")
         except Exception as e:
-            logger.warning(f"Tesseract failed: {e}")
+            logger.warning(f"Tesseract image OCR failed: {e}")
 
-        if not text:
-            # Fallback: embed image filename + content hints for multimodal engine
+        if not text or len(text.strip()) < 5:
             text = f"[Image document: {filename}]\nDocument type hint: medical image scan"
 
     else:
@@ -497,8 +529,20 @@ def _chunk_text(text: str, doc_id: str, doc_name: str, chunk_size: int = 500, ov
     return chunks
 
 
+_st_model = None
+
 def _generate_hash_embedding(text: str, dim: int = 384) -> list:
-    """Deterministic hash-based embedding matching frontend embeddingService.ts."""
+    """Generates embeddings using sentence-transformers (all-MiniLM-L6-v2) with hash fallback."""
+    global _st_model
+    try:
+        if _st_model is None:
+            from sentence_transformers import SentenceTransformer
+            _st_model = SentenceTransformer("all-MiniLM-L6-v2")
+        emb = _st_model.encode(text, convert_to_numpy=True).tolist()
+        return emb
+    except Exception:
+        pass
+
     import math
     embedding = [0.0] * dim
     for i, ch in enumerate(text):

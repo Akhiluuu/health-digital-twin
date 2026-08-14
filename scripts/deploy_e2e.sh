@@ -78,7 +78,7 @@ fi
 echo "🧪 [4/5] Executing pre-deployment test suite..."
 pip install pytest pytest-asyncio --quiet
 export PYTHONPATH=.
-"$ROOT_DIR/venv/bin/pytest" healthbot_v4/tests/brain/test_phos_engine.py healthbot_v4/tests/api/test_v6_api_endpoints.py healthbot_v4/tests/brain/test_persistent_graph_sync.py healthbot_v4/tests/test_dynamic_notifications.py healthbot_v4/tests/test_expanded_notification_engines.py --quiet
+"$ROOT_DIR/venv/bin/pytest" healthbot_v4/tests/brain/test_phos_engine.py healthbot_v4/tests/api/test_v6_api_endpoints.py healthbot_v4/tests/brain/test_persistent_graph_sync.py healthbot_v4/tests/test_dynamic_notifications.py healthbot_v4/tests/test_expanded_notification_engines.py healthbot_v4/tests/integration/test_medical_ocr_llm_pipeline.py --quiet
 
 echo "✅ Pre-deployment test suite passed (100%)!"
 
