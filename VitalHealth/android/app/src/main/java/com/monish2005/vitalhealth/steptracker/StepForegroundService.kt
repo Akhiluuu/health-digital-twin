@@ -61,6 +61,9 @@ class StepForegroundService : Service(), SensorEventListener {
         const val SOURCE_STEP_SENSOR = "STEP_SENSOR"
         const val SOURCE_SENSOR_FUSION = "SENSOR_FUSION"
         @Volatile var currentDailySteps: Int = 0
+        private val liveStepsMap = java.util.concurrent.ConcurrentHashMap<String, Int>()
+
+        fun getLiveSteps(uid: String): Int = liveStepsMap[uid] ?: 0
     }
 
     // ── Sensor infrastructure ─────────────────────────────────────────────────
@@ -81,6 +84,8 @@ class StepForegroundService : Service(), SensorEventListener {
     private var activeProfileName = ""
     private var dataSource = SOURCE_SENSOR_FUSION
 
+    private fun getPrefKey(baseKey: String, uid: String = activeUid): String = "${baseKey}_${uid}"
+
     // ── Biomechanical Sensor Fusion Detector ──────────────────────────────────
     private val fusion = SensorFusionDetector()
 
@@ -96,11 +101,11 @@ class StepForegroundService : Service(), SensorEventListener {
         override fun run() {
             val today = todayString()
             if (today != currentDate) {
-                Log.d(TAG, "🌙 Midnight reset: $currentDate → $today")
+                Log.d(TAG, "🌙 Midnight reset for $activeUid: $currentDate → $today")
                 if (lastRawStepCount > 0) {
                     getPrefs().edit()
-                        .putLong(PREF_YESTERDAY_LAST_RAW, lastRawStepCount)
-                        .putString(PREF_YESTERDAY_LAST_RAW_DATE, currentDate)
+                        .putLong(getPrefKey(PREF_YESTERDAY_LAST_RAW), lastRawStepCount)
+                        .putString(getPrefKey(PREF_YESTERDAY_LAST_RAW_DATE), currentDate)
                         .apply()
                 }
                 saveToPrefs()
@@ -108,6 +113,7 @@ class StepForegroundService : Service(), SensorEventListener {
                 dailySteps = 0
                 stepCounterBaseline = if (lastRawStepCount > 0) lastRawStepCount else -1L
                 currentDailySteps = 0
+                liveStepsMap[activeUid] = 0
                 saveToPrefs()
                 updateNotification()
                 broadcastSteps()
@@ -152,6 +158,7 @@ class StepForegroundService : Service(), SensorEventListener {
                 Log.d(TAG, "✏️ Setting steps from intent: $dailySteps → $newSteps")
                 dailySteps = newSteps
                 currentDailySteps = dailySteps
+                liveStepsMap[activeUid] = dailySteps
                 if (lastRawStepCount > 0) {
                     stepCounterBaseline = (lastRawStepCount - dailySteps).coerceAtLeast(0L)
                 } else {
@@ -164,13 +171,14 @@ class StepForegroundService : Service(), SensorEventListener {
         }
 
         if (intent?.action == ACTION_RESET) {
-            Log.d(TAG, "🔄 Reset action received")
+            Log.d(TAG, "🔄 Reset action received for $activeUid")
             dailySteps = 0
             currentDailySteps = 0
+            liveStepsMap[activeUid] = 0
             stepCounterBaseline = if (lastRawStepCount > 0) lastRawStepCount else -1L
             getPrefs().edit()
-                .remove(PREF_YESTERDAY_LAST_RAW)
-                .remove(PREF_YESTERDAY_LAST_RAW_DATE)
+                .remove(getPrefKey(PREF_YESTERDAY_LAST_RAW))
+                .remove(getPrefKey(PREF_YESTERDAY_LAST_RAW_DATE))
                 .apply()
             saveToPrefs()
             persistToDb()
@@ -178,12 +186,24 @@ class StepForegroundService : Service(), SensorEventListener {
             return START_STICKY
         }
 
-        activeUid = intent?.getStringExtra("uid") ?: getPrefs().getString(PREF_UID, "self") ?: "self"
-        activeProfileName = intent?.getStringExtra("profileName") ?: getPrefs().getString(PREF_PROFILE_NAME, "") ?: ""
-        getPrefs().edit()
-            .putString(PREF_UID, activeUid)
-            .putString(PREF_PROFILE_NAME, activeProfileName)
-            .apply()
+        val newUid = intent?.getStringExtra("uid") ?: getPrefs().getString(PREF_UID, "self") ?: "self"
+        val newProfileName = intent?.getStringExtra("profileName") ?: getPrefs().getString(PREF_PROFILE_NAME, "") ?: ""
+
+        if (newUid != activeUid) {
+            saveToPrefs()
+            activeUid = newUid
+            activeProfileName = newProfileName
+            getPrefs().edit()
+                .putString(PREF_UID, activeUid)
+                .putString(PREF_PROFILE_NAME, activeProfileName)
+                .apply()
+            loadFromPrefs()
+        } else {
+            activeProfileName = newProfileName
+            getPrefs().edit()
+                .putString(PREF_PROFILE_NAME, activeProfileName)
+                .apply()
+        }
 
         try {
             val notification = buildNotification(dailySteps)
@@ -361,6 +381,7 @@ class StepForegroundService : Service(), SensorEventListener {
 
     private fun onStepUpdate() {
         currentDailySteps = dailySteps
+        liveStepsMap[activeUid] = dailySteps
         saveToPrefs()
         broadcastSteps()
         updateNotification()
@@ -380,6 +401,7 @@ class StepForegroundService : Service(), SensorEventListener {
             `package` = applicationContext.packageName
             putExtra(EXTRA_STEPS, dailySteps)
             putExtra(EXTRA_SOURCE, dataSource)
+            putExtra("uid", activeUid)
         }
         sendBroadcast(intent)
     }
@@ -442,35 +464,59 @@ class StepForegroundService : Service(), SensorEventListener {
 
     private fun saveToPrefs() {
         getPrefs().edit().apply {
-            putInt(PREF_STEPS, dailySteps)
-            putString(PREF_DATE, currentDate)
-            putLong(PREF_BASELINE, stepCounterBaseline)
-            putLong(PREF_LAST_RAW, lastRawStepCount)
+            putInt(getPrefKey(PREF_STEPS), dailySteps)
+            putString(getPrefKey(PREF_DATE), currentDate)
+            putLong(getPrefKey(PREF_BASELINE), stepCounterBaseline)
+            putLong(getPrefKey(PREF_LAST_RAW), lastRawStepCount)
             putString(PREF_UID, activeUid)
             putString(PREF_PROFILE_NAME, activeProfileName)
+
+            if (activeUid == "self") {
+                putInt(PREF_STEPS, dailySteps)
+                putString(PREF_DATE, currentDate)
+                putLong(PREF_BASELINE, stepCounterBaseline)
+                putLong(PREF_LAST_RAW, lastRawStepCount)
+            }
             apply()
         }
     }
 
     private fun loadFromPrefs() {
         val prefs = getPrefs()
-        val savedDate = prefs.getString(PREF_DATE, "") ?: ""
         val today = todayString()
 
+        var savedDate = prefs.getString(getPrefKey(PREF_DATE), "") ?: ""
+        if (savedDate.isEmpty() && activeUid == "self") {
+            savedDate = prefs.getString(PREF_DATE, "") ?: ""
+        }
+
         if (savedDate == today) {
-            dailySteps = prefs.getInt(PREF_STEPS, 0)
-            stepCounterBaseline = prefs.getLong(PREF_BASELINE, -1L)
-            lastRawStepCount = prefs.getLong(PREF_LAST_RAW, -1L)
+            dailySteps = if (prefs.contains(getPrefKey(PREF_STEPS))) {
+                prefs.getInt(getPrefKey(PREF_STEPS), 0)
+            } else if (activeUid == "self") {
+                prefs.getInt(PREF_STEPS, 0)
+            } else 0
+
+            stepCounterBaseline = if (prefs.contains(getPrefKey(PREF_BASELINE))) {
+                prefs.getLong(getPrefKey(PREF_BASELINE), -1L)
+            } else if (activeUid == "self") {
+                prefs.getLong(PREF_BASELINE, -1L)
+            } else -1L
+
+            lastRawStepCount = if (prefs.contains(getPrefKey(PREF_LAST_RAW))) {
+                prefs.getLong(getPrefKey(PREF_LAST_RAW), -1L)
+            } else if (activeUid == "self") {
+                prefs.getLong(PREF_LAST_RAW, -1L)
+            } else -1L
         } else {
-            Log.d(TAG, "📅 New day ($savedDate → $today): resetting steps")
+            Log.d(TAG, "📅 New day ($savedDate → $today) for $activeUid: resetting steps")
             dailySteps = 0
             stepCounterBaseline = -1L
             lastRawStepCount = -1L
         }
         currentDate = today
-        activeUid = prefs.getString(PREF_UID, "self") ?: "self"
-        activeProfileName = prefs.getString(PREF_PROFILE_NAME, "") ?: ""
         currentDailySteps = dailySteps
+        liveStepsMap[activeUid] = dailySteps
 
         scope.launch {
             try {

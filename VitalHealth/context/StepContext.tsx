@@ -258,6 +258,8 @@ export const StepProvider: React.FC<{
   const goalRef       = useRef(10000);
   const isTrackingRef = useRef(false);
   const dirtyRef      = useRef(false);
+  const userUidRef    = useRef(userUid);
+  userUidRef.current  = userUid;
 
   // Validate weight and height inputs to prevent 0 or NaN calculations
   const validWeight = weightKg && weightKg > 0 && !isNaN(weightKg) ? weightKg : 70;
@@ -537,7 +539,8 @@ export const StepProvider: React.FC<{
   const startAndroidNativeSubscription = useCallback(() => {
     nativeUnsubRef.current?.();
     nativeUnsubRef.current = subscribeToStepUpdates((event) => {
-      // Native service sends absolute daily step count ground-truth
+      // Filter out events meant for a different profile UID
+      if (event.uid && event.uid !== userUidRef.current) return;
       if (event.steps > stepsRef.current) {
         stepsRef.current = event.steps;
         dirtyRef.current = true;
@@ -562,7 +565,7 @@ export const StepProvider: React.FC<{
       if (!isSwitched) {
         try {
           if (Platform.OS === 'android') {
-            const wData = await getWeeklyStepsNative().catch(() => []);
+            const wData = await getWeeklyStepsNative(userUidRef.current).catch(() => []);
             if (Array.isArray(wData)) {
               wData.forEach(d => {
                 if (d && d.date) {
@@ -571,7 +574,7 @@ export const StepProvider: React.FC<{
                 }
               });
             }
-            const mData = await getMonthlyStepsNative().catch(() => []);
+            const mData = await getMonthlyStepsNative(userUidRef.current).catch(() => []);
             if (Array.isArray(mData)) {
               mData.forEach(d => {
                 if (d && d.date) {
@@ -689,7 +692,7 @@ export const StepProvider: React.FC<{
   const refreshFromNative = useCallback(async () => {
     if (Platform.OS !== 'android') return;
     if (isSwitched) return;
-    const { steps: nativeSteps, source } = await getTodayStepsNative();
+    const { steps: nativeSteps, source } = await getTodayStepsNative(userUidRef.current);
     if (nativeSteps >= 0) {
       stepsRef.current = nativeSteps;
       dirtyRef.current = true;
@@ -916,7 +919,7 @@ export const StepProvider: React.FC<{
 
         // On Android, always use native DB (hardware sensor ground truth) for self
         if (Platform.OS === 'android' && !isSwitched) {
-          const nativeData = await getTodayStepsNative().catch((err) => {
+          const nativeData = await getTodayStepsNative(userUid).catch((err) => {
             warn("⚠️ [StepContext] getTodayStepsNative failed:", err);
             return { steps: 0, source: 'STEP_SENSOR' as const };
           });

@@ -21,6 +21,7 @@ export type DataSource = 'STEP_SENSOR' | 'SENSOR_FUSION' | 'HEALTH_CONNECT' | 'P
 export interface StepUpdateEvent {
   steps: number;
   source: DataSource;
+  uid?: string;
   timestamp: number;
 }
 
@@ -93,12 +94,12 @@ export async function updateNativeSteps(steps: number): Promise<void> {
 /**
  * Get today's step count from native DB (Android) or Pedometer API (iOS).
  */
-export async function getTodayStepsNative(): Promise<{ steps: number; source: DataSource }> {
+export async function getTodayStepsNative(uid?: string): Promise<{ steps: number; source: DataSource; uid?: string }> {
   if (Platform.OS === 'android') {
     if (!StepTrackerModule) return { steps: 0, source: 'NONE' };
     try {
-      const result = await StepTrackerModule.getTodaySteps();
-      return { steps: result.steps ?? 0, source: result.source ?? 'STEP_SENSOR' };
+      const result = await StepTrackerModule.getTodaySteps(uid || '');
+      return { steps: result.steps ?? 0, source: result.source ?? 'STEP_SENSOR', uid: result.uid };
     } catch (e) {
       warn('[NativeStepTracker] getTodaySteps error:', e);
       return { steps: 0, source: 'NONE' };
@@ -121,10 +122,10 @@ export async function getTodayStepsNative(): Promise<{ steps: number; source: Da
 /**
  * Get weekly step data.
  */
-export async function getWeeklyStepsNative(): Promise<DailyStepData[]> {
+export async function getWeeklyStepsNative(uid?: string): Promise<DailyStepData[]> {
   if (Platform.OS !== 'android' || !StepTrackerModule) return [];
   try {
-    const result = await StepTrackerModule.getWeeklySteps();
+    const result = await StepTrackerModule.getWeeklySteps(uid || '');
     return Array.isArray(result) ? result : [];
   } catch (e) {
     warn('[NativeStepTracker] getWeeklySteps error:', e);
@@ -135,10 +136,10 @@ export async function getWeeklyStepsNative(): Promise<DailyStepData[]> {
 /**
  * Get monthly step data.
  */
-export async function getMonthlyStepsNative(): Promise<DailyStepData[]> {
+export async function getMonthlyStepsNative(uid?: string): Promise<DailyStepData[]> {
   if (Platform.OS !== 'android' || !StepTrackerModule) return [];
   try {
-    const result = await StepTrackerModule.getMonthlySteps();
+    const result = await StepTrackerModule.getMonthlySteps(uid || '');
     return Array.isArray(result) ? result : [];
   } catch (e) {
     warn('[NativeStepTracker] getMonthlySteps error:', e);
@@ -151,11 +152,12 @@ export async function getMonthlyStepsNative(): Promise<DailyStepData[]> {
  */
 export async function getHistoricalStepsNative(
   startDate: string,
-  endDate: string
+  endDate: string,
+  uid?: string
 ): Promise<DailyStepData[]> {
   if (Platform.OS !== 'android' || !StepTrackerModule) return [];
   try {
-    const result = await StepTrackerModule.getHistoricalSteps(startDate, endDate);
+    const result = await StepTrackerModule.getHistoricalSteps(startDate, endDate, uid || '');
     return Array.isArray(result) ? result : [];
   } catch (e) {
     warn('[NativeStepTracker] getHistoricalSteps error:', e);
