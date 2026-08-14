@@ -127,7 +127,7 @@ def generate_health_report(user_id, run_id=None, custom_path=None):
             title += f"\n(Session: {run_id})"
         fig.suptitle(title, fontsize=16, fontweight="bold", y=0.99)
 
-        T = df["Time"]
+        T = df["Time"] if "Time" in df.columns else pd.Series(range(len(df)))
 
         # Panel 0: Heart Rate
         ax = axes[0]
@@ -235,7 +235,7 @@ def generate_forecast_report(user_id, run_id=None):
         fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 10), sharex=True)
         fig.suptitle(f"4-Hour Recovery Forecast — {user_id}", fontsize=14, fontweight="bold")
 
-        T = df["Time"]
+        T = df["Time"] if "Time" in df.columns else pd.Series(range(len(df)))
         gcol = "Glucose-BloodConcentration"
 
         if gcol in df.columns:
@@ -288,7 +288,7 @@ def generate_comparison_report(user_id: str, baseline_df: pd.DataFrame,
             (baseline_df,     "Baseline",          "-",  0.8),
             (intervention_df, intervention_label,  "--", 0.9),
         ]:
-            T = df["Time"]
+            T = df["Time"] if "Time" in df.columns else pd.Series(range(len(df)))
             gcol = "Glucose-BloodConcentration"
             c_hr  = _COLOURS["baseline"] if label == "Baseline" else _COLOURS["intervention"]
             c_gluc = "#27ae60" if label == "Baseline" else "#f39c12"

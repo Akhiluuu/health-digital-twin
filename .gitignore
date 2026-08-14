@@ -21,6 +21,7 @@ user_history/
 biogears_service/runtime/
 biogears_service/simulation_results/
 biogears_service/__pycache__/
+simulation_cache/
 
 # Generated health reports
 reports/

@@ -20,6 +20,7 @@ def mock_run_biogears_success(scenario_path, user_id):
     csv_prefix = Path(scenario_path).stem
     dest_csv = SCENARIO_API_DIR / f"{csv_prefix}Results.csv"
     df = pd.DataFrame({
+        "Time(s)": [0.0, 10.0],
         "HeartRate(1/min)": [72.0, 72.5],
         "SystolicArterialPressure(mmHg)": [120.0, 120.0],
         "OxygenSaturation(unitless)": [0.98, 0.98],
