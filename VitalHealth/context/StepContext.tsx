@@ -85,68 +85,92 @@ TaskManager.defineTask(BG_TASK, async () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Accelerometer fallback step detector (iOS only / ultra-old Android)
-// Gravity-subtraction + Kalman smoothing
+// Accelerometer fallback step detector (iOS / JS fallback)
+// Biomechanical Dynamic Hysteresis + Moving Average Noise Filter
 // ─────────────────────────────────────────────────────────────────────────────
 class StepDetector {
   private grav = { x: 0, y: 0, z: 0 };
-  private kalman = 0;
-  private kErr = 1;
-  private lastAt = 0;
   private init = false;
-  private bufferSize = 7;
-  private magBuffer: number[] = [];
-  private bufCount = 0;
-  private recentPeaks: number[] = [];
-  private adaptiveThreshold = 0.45;
+  private rawBuffer: number[] = [];
+  private filterSize = 4;
+  private sampleCount = 0;
+
+  private windowSize = 50;
+  private magWindow: number[] = [];
+  private windowIndex = 0;
+  private windowFilled = false;
+
+  private armed = true;
+  private lastStepTime = 0;
   private cadenceCount = 0;
   private lastCadenceTime = 0;
   onStep: (() => void) | null = null;
 
   feed(x: number, y: number, z: number) {
-    const A = 0.82;
+    const ALPHA = 0.90;
     if (!this.init) { this.grav = { x, y, z }; this.init = true; return; }
-    this.grav.x = A * this.grav.x + (1 - A) * x;
-    this.grav.y = A * this.grav.y + (1 - A) * y;
-    this.grav.z = A * this.grav.z + (1 - A) * z;
+    
+    // 1. Isolate Gravity vs User Acceleration (EMA Filter)
+    this.grav.x = ALPHA * this.grav.x + (1 - ALPHA) * x;
+    this.grav.y = ALPHA * this.grav.y + (1 - ALPHA) * y;
+    this.grav.z = ALPHA * this.grav.z + (1 - ALPHA) * z;
+
     const lx = x - this.grav.x, ly = y - this.grav.y, lz = z - this.grav.z;
     const mag = Math.sqrt(lx * lx + ly * ly + lz * lz);
 
-    const gain = this.kErr / (this.kErr + 0.08);
-    this.kalman += gain * (mag - this.kalman);
-    this.kErr = (1 - gain) * this.kErr + 0.004;
+    // 2. 4-Sample Moving Average Filter
+    this.rawBuffer[this.sampleCount % this.filterSize] = mag;
+    this.sampleCount++;
+    if (this.sampleCount < this.filterSize) return;
 
-    this.magBuffer[this.bufCount % this.bufferSize] = this.kalman;
-    this.bufCount++;
+    let filteredMag = 0;
+    for (let i = 0; i < this.filterSize; i++) filteredMag += this.rawBuffer[i];
+    filteredMag /= this.filterSize;
 
-    if (this.bufCount < this.bufferSize) return;
+    // 3. Dynamic Rolling Window for Threshold Adaptation
+    this.magWindow[this.windowIndex] = filteredMag;
+    this.windowIndex = (this.windowIndex + 1) % this.windowSize;
+    if (this.windowIndex === 0) this.windowFilled = true;
+
+    const effectiveSize = this.windowFilled ? this.windowSize : this.windowIndex;
+    if (effectiveSize < 10) return;
+
+    let minVal = this.magWindow[0], maxVal = this.magWindow[0];
+    for (let i = 0; i < effectiveSize; i++) {
+      if (this.magWindow[i] < minVal) minVal = this.magWindow[i];
+      if (this.magWindow[i] > maxVal) maxVal = this.magWindow[i];
+    }
+
+    const range = maxVal - minVal;
+    // Dynamic peak threshold: 35% above valley [0.18 m/s², 3.2 m/s²]
+    const dynamicPeakThreshold = Math.max(0.18, Math.min(3.2, minVal + 0.35 * range));
+    // Dynamic arming threshold (hysteresis reset): 15% above valley
+    const dynamicArmThreshold = Math.max(0.06, Math.min(1.2, minVal + 0.15 * range));
+
+    if (filteredMag <= dynamicArmThreshold) {
+      this.armed = true;
+    }
 
     const now = Date.now();
-    const minStepInterval = 220;
-    const maxStepInterval = 1400;
+    const minStepInterval = 200;   // Max ~300 steps/min
+    const maxStepInterval = 1800;  // Min ~33 steps/min
 
-    const idxCurr  = (this.bufCount - 1) % this.bufferSize;
-    const idxPrev  = (this.bufCount - 2 + this.bufferSize) % this.bufferSize;
-    const idxPrev2 = (this.bufCount - 3 + this.bufferSize) % this.bufferSize;
-
-    const pCurr  = this.magBuffer[idxCurr];
-    const pPrev  = this.magBuffer[idxPrev];
-    const pPrev2 = this.magBuffer[idxPrev2];
-
-    if (pPrev > pPrev2 && pPrev > pCurr && pPrev >= this.adaptiveThreshold) {
-      const interval = now - this.lastAt;
-      if ((interval >= minStepInterval && interval <= maxStepInterval) || this.lastAt === 0) {
-        this.lastAt = now;
-        this.updateAdaptiveThreshold(pPrev);
+    if (this.armed && filteredMag >= dynamicPeakThreshold) {
+      const interval = now - this.lastStepTime;
+      if ((interval >= minStepInterval && interval <= maxStepInterval) || this.lastStepTime === 0) {
+        this.armed = false;
+        this.lastStepTime = now;
 
         const cadenceInterval = now - this.lastCadenceTime;
         this.lastCadenceTime = now;
 
         if (cadenceInterval >= minStepInterval && cadenceInterval <= maxStepInterval) {
           this.cadenceCount++;
-          if (this.cadenceCount === 3) {
-            for (let i = 0; i < 3; i++) this.onStep?.();
-          } else if (this.cadenceCount > 3) {
+          if (this.cadenceCount === 2) {
+            // Fast lock: credit initial 2 steps
+            this.onStep?.();
+            this.onStep?.();
+          } else if (this.cadenceCount > 2) {
             this.onStep?.();
           }
         } else {
@@ -156,20 +180,18 @@ class StepDetector {
     }
   }
 
-  private updateAdaptiveThreshold(peak: number) {
-    this.recentPeaks.push(peak);
-    if (this.recentPeaks.length > 15) this.recentPeaks.shift();
-    if (this.recentPeaks.length >= 4) {
-      const avg = this.recentPeaks.reduce((a, b) => a + b, 0) / this.recentPeaks.length;
-      this.adaptiveThreshold = Math.min(2.5, Math.max(0.35, avg * 0.55));
-    }
-  }
-
   reset() {
     this.grav = { x: 0, y: 0, z: 0 };
-    this.kalman = 0; this.kErr = 1; this.lastAt = 0; this.init = false;
-    this.magBuffer = []; this.bufCount = 0; this.recentPeaks = [];
-    this.adaptiveThreshold = 0.45; this.cadenceCount = 0; this.lastCadenceTime = 0;
+    this.init = false;
+    this.rawBuffer = [];
+    this.sampleCount = 0;
+    this.magWindow = [];
+    this.windowIndex = 0;
+    this.windowFilled = false;
+    this.armed = true;
+    this.lastStepTime = 0;
+    this.cadenceCount = 0;
+    this.lastCadenceTime = 0;
   }
 }
 

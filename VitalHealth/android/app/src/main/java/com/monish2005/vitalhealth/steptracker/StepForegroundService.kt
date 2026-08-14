@@ -19,21 +19,23 @@ import kotlinx.coroutines.*
 import java.text.SimpleDateFormat
 import java.util.*
 import kotlin.math.abs
+import kotlin.math.max
+import kotlin.math.min
 import kotlin.math.sqrt
 
 /**
- * Production-grade foreground service for step tracking.
+ * Production-grade foreground service for active step tracking.
  *
- * Priority order:
- *  1. Android Sensor.TYPE_STEP_COUNTER (hardware, reports cumulative count since reboot)
- *  2. Sensor fusion (accelerometer + gyroscope peak detection with Kalman filter)
+ * Architecture:
+ *  - Hybrid Multi-Sensor Fusion Engine running concurrently:
+ *    1. Hardware Sensor.TYPE_STEP_COUNTER (Ground truth for cumulative step total)
+ *    2. Real-time Biomechanical Acceleration Peak Detection (Instant physical step count)
  *
  * Guarantees:
- *  - Survives screen-off, lock, app minimise, swipe from recents
- *  - START_STICKY → auto-restarted by Android if killed
- *  - WakeLock kept to ensure sensor delivery on heavy OEM skins
- *  - Midnight auto-reset
- *  - Writes to Room DB every step, batches Firestore via WorkManager
+ *  - Real-time continuous UI updates during physical motion (walking, running, indoor movement)
+ *  - Survives screen-off, background execution, app swipe-kill (START_STICKY)
+ *  - Midnight auto-reset & date-validated baseline management
+ *  - Persistent Room DB and SharedPreferences storage
  */
 class StepForegroundService : Service(), SensorEventListener {
 
@@ -73,12 +75,13 @@ class StepForegroundService : Service(), SensorEventListener {
     private var dailySteps = 0
     private var stepCounterBaseline = -1L   // Raw hardware counter value at session start
     private var lastRawStepCount = -1L      // Last raw hardware counter value received
+    private var lastHardwareStepTime = 0L   // Timestamp of last hardware step event
     private var currentDate = todayString()
     private var activeUid = "self"
     private var activeProfileName = ""
     private var dataSource = SOURCE_SENSOR_FUSION
 
-    // ── Sensor fusion (accelerometer-based detection) ─────────────────────────
+    // ── Biomechanical Sensor Fusion Detector ──────────────────────────────────
     private val fusion = SensorFusionDetector()
 
     // ── Coroutine scope for DB writes ─────────────────────────────────────────
@@ -86,9 +89,6 @@ class StepForegroundService : Service(), SensorEventListener {
 
     // ── DB ─────────────────────────────────────────────────────────────────────
     private lateinit var db: StepDatabase
-
-    // ── React event bridge (optional — null when running headless) ────────────
-    private var rnContext: ReactApplicationContext? = null
 
     // ── Midnight reset handler ─────────────────────────────────────────────────
     private val handler = android.os.Handler(android.os.Looper.getMainLooper())
@@ -106,17 +106,12 @@ class StepForegroundService : Service(), SensorEventListener {
                 saveToPrefs()
                 currentDate = today
                 dailySteps = 0
-                if (lastRawStepCount > 0) {
-                    stepCounterBaseline = lastRawStepCount
-                } else {
-                    stepCounterBaseline = -1L
-                }
+                stepCounterBaseline = if (lastRawStepCount > 0) lastRawStepCount else -1L
                 currentDailySteps = 0
                 saveToPrefs()
                 updateNotification()
                 broadcastSteps()
             }
-            // Re-schedule for next midnight check (every 60 seconds)
             handler.postDelayed(this, 60_000L)
         }
     }
@@ -153,7 +148,6 @@ class StepForegroundService : Service(), SensorEventListener {
 
         if (intent?.action == ACTION_SET_STEPS) {
             val newSteps = intent.getIntExtra("steps", -1)
-            // Monotonicity check: Only accept external updates if newSteps > dailySteps
             if (newSteps > dailySteps) {
                 Log.d(TAG, "✏️ Setting steps from intent: $dailySteps → $newSteps")
                 dailySteps = newSteps
@@ -219,7 +213,6 @@ class StepForegroundService : Service(), SensorEventListener {
 
     override fun onTaskRemoved(rootIntent: Intent?) {
         Log.d(TAG, "📌 onTaskRemoved — keeping service alive")
-        // Do NOT call stopSelf() here — START_STICKY will restart us
         saveToPrefs()
     }
 
@@ -236,26 +229,30 @@ class StepForegroundService : Service(), SensorEventListener {
     override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
 
     // ─────────────────────────────────────────────────────────────────────────
-    // TYPE_STEP_DETECTOR handling (active ONLY if TYPE_STEP_COUNTER is null)
+    // TYPE_STEP_DETECTOR handling
     // ─────────────────────────────────────────────────────────────────────────
     private var lastDetectorStepAt = 0L
     private var detectorCadenceCount = 0
 
     private fun handleStepDetector() {
-        if (stepCounterSensor != null) return  // Hardware step counter is primary; ignore detector to prevent over-counting
         val now = System.currentTimeMillis()
         val interval = now - lastDetectorStepAt
         lastDetectorStepAt = now
 
-        // Cadence filter: valid human step cadence window (220ms to 1600ms)
-        if (interval in 220..1600) {
+        if (interval in 200..1800) {
             detectorCadenceCount++
-            if (detectorCadenceCount == 3) { // Cadence validated -> add initial 3 steps
-                dailySteps += 3
+            if (detectorCadenceCount == 2) {
+                dailySteps += 2
+                if (lastRawStepCount > 0) {
+                    stepCounterBaseline = (lastRawStepCount - dailySteps).coerceAtLeast(0L)
+                }
                 dataSource = SOURCE_STEP_SENSOR
                 onStepUpdate()
-            } else if (detectorCadenceCount > 3) {
+            } else if (detectorCadenceCount > 2) {
                 dailySteps += 1
+                if (lastRawStepCount > 0) {
+                    stepCounterBaseline = (lastRawStepCount - dailySteps).coerceAtLeast(0L)
+                }
                 dataSource = SOURCE_STEP_SENSOR
                 onStepUpdate()
             }
@@ -265,12 +262,12 @@ class StepForegroundService : Service(), SensorEventListener {
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // TYPE_STEP_COUNTER handling (priority 1 cumulative count ground-truth)
+    // TYPE_STEP_COUNTER handling (Hardware Ground Truth)
     // ─────────────────────────────────────────────────────────────────────────
     private fun handleStepCounter(rawCount: Long) {
-        if (rawCount <= 0) return  // Sensor not ready
+        if (rawCount <= 0) return
+        lastHardwareStepTime = System.currentTimeMillis()
 
-        // Date check fallback (in case service was sleeping across midnight)
         val today = todayString()
         if (today != currentDate) {
             Log.d(TAG, "📅 Date changed on sensor event ($currentDate -> $today)")
@@ -278,11 +275,6 @@ class StepForegroundService : Service(), SensorEventListener {
                 getPrefs().edit()
                     .putLong(PREF_YESTERDAY_LAST_RAW, lastRawStepCount)
                     .putString(PREF_YESTERDAY_LAST_RAW_DATE, currentDate)
-                    .apply()
-            } else {
-                getPrefs().edit()
-                    .remove(PREF_YESTERDAY_LAST_RAW)
-                    .remove(PREF_YESTERDAY_LAST_RAW_DATE)
                     .apply()
             }
             saveToPrefs()
@@ -296,10 +288,10 @@ class StepForegroundService : Service(), SensorEventListener {
             return
         }
 
-        // Check for device reboot: rawCount dropped significantly below last known rawCount
+        // Reboot check
         if (lastRawStepCount > 0 && rawCount < (lastRawStepCount - 50)) {
             Log.d(TAG, "🔄 Sensor reboot detected: lastRaw=$lastRawStepCount, newRaw=$rawCount, dailySteps=$dailySteps")
-            stepCounterBaseline = rawCount - dailySteps
+            stepCounterBaseline = (rawCount - dailySteps).coerceAtLeast(0L)
             lastRawStepCount = rawCount
             saveToPrefs()
             return
@@ -308,16 +300,14 @@ class StepForegroundService : Service(), SensorEventListener {
         lastRawStepCount = rawCount
 
         if (stepCounterBaseline < 0) {
-            // First baseline initialization for today
             val yesterdayLast = getPrefs().getLong(PREF_YESTERDAY_LAST_RAW, -1L)
             val yesterdayDate = getPrefs().getString(PREF_YESTERDAY_LAST_RAW_DATE, "") ?: ""
             val expectedYesterday = yesterdayString()
 
             if (yesterdayLast > 0 && yesterdayDate == expectedYesterday && rawCount > yesterdayLast && (rawCount - yesterdayLast) < 100000) {
-                // Restore steps walked earlier today using yesterday's midnight baseline!
                 stepCounterBaseline = yesterdayLast
                 dailySteps = (rawCount - yesterdayLast).toInt()
-                Log.d(TAG, "📍 Restored $dailySteps steps taken earlier today (baseline=$yesterdayLast, raw=$rawCount)")
+                Log.d(TAG, "📍 Restored $dailySteps steps from yesterday baseline")
             } else if (dailySteps > 0) {
                 stepCounterBaseline = (rawCount - dailySteps).coerceAtLeast(0L)
             } else {
@@ -338,21 +328,33 @@ class StepForegroundService : Service(), SensorEventListener {
             dailySteps = newSteps
             dataSource = SOURCE_STEP_SENSOR
             onStepUpdate()
+        } else if (newSteps < dailySteps) {
+            // Fusion step detector walked further than hardware counter reported yet.
+            // Sync baseline to maintain step count monotonicity.
+            stepCounterBaseline = (rawCount - dailySteps).coerceAtLeast(0L)
+            saveToPrefs()
         }
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // Sensor fusion step callback (active ONLY when no hardware step sensors exist)
+    // Biomechanical Accelerometer Sensor Fusion Step Callback
     // ─────────────────────────────────────────────────────────────────────────
     private fun onFusionStep() {
-        if (stepCounterSensor != null || stepDetectorSensor != null) return
+        val now = System.currentTimeMillis()
+        // If hardware counter has updated within last 1500ms, let hardware counter handle it to prevent double counting
+        if (stepCounterSensor != null && (now - lastHardwareStepTime) < 1500L) {
+            return
+        }
         dailySteps++
+        if (lastRawStepCount > 0) {
+            stepCounterBaseline = (lastRawStepCount - dailySteps).coerceAtLeast(0L)
+        }
         dataSource = SOURCE_SENSOR_FUSION
         onStepUpdate()
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // Called on every step update — debounced writes
+    // Debounced step update handler
     // ─────────────────────────────────────────────────────────────────────────
     private var lastDbWriteAt = 0L
     private val DB_WRITE_INTERVAL_MS = 2000L
@@ -371,7 +373,7 @@ class StepForegroundService : Service(), SensorEventListener {
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // Broadcast step update to React Native bridge
+    // Broadcast to React Native Bridge
     // ─────────────────────────────────────────────────────────────────────────
     private fun broadcastSteps() {
         val intent = Intent(ACTION_UPDATE).apply {
@@ -383,7 +385,7 @@ class StepForegroundService : Service(), SensorEventListener {
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // Notification
+    // Notification Channel & Updates
     // ─────────────────────────────────────────────────────────────────────────
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -410,14 +412,14 @@ class StepForegroundService : Service(), SensorEventListener {
         }
 
         val contentTitle = if (activeProfileName.isNotEmpty()) {
-            "👟 ${steps.toString().format()} steps today ($activeProfileName)"
+            "👟 ${steps} steps today ($activeProfileName)"
         } else {
-            "👟 ${steps.toString().format()} steps today"
+            "👟 ${steps} steps today"
         }
 
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle(contentTitle)
-            .setContentText("VitalHealth is tracking steps")
+            .setContentText("VitalHealth active step telemetry running")
             .setSmallIcon(R.mipmap.ic_launcher)
             .setOngoing(true)
             .setSilent(true)
@@ -434,7 +436,7 @@ class StepForegroundService : Service(), SensorEventListener {
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // SharedPreferences persistence (survives process death)
+    // SharedPreferences
     // ─────────────────────────────────────────────────────────────────────────
     private fun getPrefs() = getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
 
@@ -460,7 +462,6 @@ class StepForegroundService : Service(), SensorEventListener {
             stepCounterBaseline = prefs.getLong(PREF_BASELINE, -1L)
             lastRawStepCount = prefs.getLong(PREF_LAST_RAW, -1L)
         } else {
-            // New day — reset
             Log.d(TAG, "📅 New day ($savedDate → $today): resetting steps")
             dailySteps = 0
             stepCounterBaseline = -1L
@@ -470,15 +471,12 @@ class StepForegroundService : Service(), SensorEventListener {
         activeUid = prefs.getString(PREF_UID, "self") ?: "self"
         activeProfileName = prefs.getString(PREF_PROFILE_NAME, "") ?: ""
         currentDailySteps = dailySteps
-        Log.d(TAG, "📂 Loaded: $dailySteps steps, date=$currentDate, baseline=$stepCounterBaseline, profileName=$activeProfileName")
 
         scope.launch {
             try {
-                // Only restore from DB if dailySteps is 0 (e.g. SharedPreferences cleared)
                 if (dailySteps == 0) {
                     val entity = db.stepDao().getDaily(activeUid, currentDate)
                     if (entity != null && entity.steps > 0) {
-                        Log.d(TAG, "📈 Restoring step count from Room DB: ${entity.steps}")
                         dailySteps = entity.steps
                         if (lastRawStepCount > 0) {
                             stepCounterBaseline = (lastRawStepCount - dailySteps).coerceAtLeast(0L)
@@ -498,7 +496,7 @@ class StepForegroundService : Service(), SensorEventListener {
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // Room DB persistence
+    // Room DB
     // ─────────────────────────────────────────────────────────────────────────
     private fun persistToDb() {
         scope.launch {
@@ -511,7 +509,6 @@ class StepForegroundService : Service(), SensorEventListener {
                 )
                 db.stepDao().upsertDaily(entity)
 
-                // Hourly update
                 val hour = currentDate + "T" + String.format("%02d", Calendar.getInstance().get(Calendar.HOUR_OF_DAY))
                 val hourly = HourlyStepEntity(uid = activeUid, dateHour = hour, steps = dailySteps, source = dataSource)
                 db.stepDao().upsertHourly(hourly)
@@ -522,41 +519,41 @@ class StepForegroundService : Service(), SensorEventListener {
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // Sensor registration
+    // Hybrid Sensor Registration
     // ─────────────────────────────────────────────────────────────────────────
     private fun registerSensors() {
         if (stepCounterSensor != null) {
-            // Priority 1: Hardware cumulative step counter (Ground truth, low latency delivery)
             val samplingPeriodUs = SensorManager.SENSOR_DELAY_UI
-            val maxReportLatencyUs = 1_000_000 // 1 sec max latency to prevent OS dropouts
-            val registered = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
+            val maxReportLatencyUs = 500_000
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
                 sensorManager.registerListener(this, stepCounterSensor, samplingPeriodUs, maxReportLatencyUs)
             } else {
                 sensorManager.registerListener(this, stepCounterSensor, samplingPeriodUs)
             }
-            dataSource = SOURCE_STEP_SENSOR
-            Log.d(TAG, "✅ TYPE_STEP_COUNTER registered (Hardware ground truth, registered=$registered)")
-        } else if (stepDetectorSensor != null) {
-            // Priority 2: Hardware step detector fallback
-            val registered = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
-                sensorManager.registerListener(this, stepDetectorSensor, SensorManager.SENSOR_DELAY_UI, 1_000_000)
+            Log.d(TAG, "✅ TYPE_STEP_COUNTER registered (Hardware Ground Truth)")
+        }
+
+        if (stepDetectorSensor != null) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
+                sensorManager.registerListener(this, stepDetectorSensor, SensorManager.SENSOR_DELAY_UI, 500_000)
             } else {
                 sensorManager.registerListener(this, stepDetectorSensor, SensorManager.SENSOR_DELAY_UI)
             }
-            dataSource = SOURCE_STEP_SENSOR
-            Log.d(TAG, "✅ TYPE_STEP_DETECTOR registered (Fallback, registered=$registered)")
-        } else {
-            // Priority 3: Accelerometer + Gyroscope sensor fusion fallback
-            if (accelerometerSensor != null) {
-                sensorManager.registerListener(this, accelerometerSensor, SensorManager.SENSOR_DELAY_GAME)
-            }
-            if (gyroscopeSensor != null) {
-                sensorManager.registerListener(this, gyroscopeSensor, SensorManager.SENSOR_DELAY_GAME)
-            }
-            fusion.onStep = { onFusionStep() }
-            dataSource = SOURCE_SENSOR_FUSION
-            Log.d(TAG, "⚠️ Using sensor fusion fallback")
+            Log.d(TAG, "✅ TYPE_STEP_DETECTOR registered")
         }
+
+        // Always register Accelerometer for real-time biomechanical sensor fusion!
+        if (accelerometerSensor != null) {
+            sensorManager.registerListener(this, accelerometerSensor, SensorManager.SENSOR_DELAY_GAME)
+            Log.d(TAG, "✅ TYPE_ACCELEROMETER registered (Biomechanical Peak Engine Active)")
+        }
+
+        if (gyroscopeSensor != null) {
+            sensorManager.registerListener(this, gyroscopeSensor, SensorManager.SENSOR_DELAY_GAME)
+        }
+
+        fusion.onStep = { onFusionStep() }
+        dataSource = if (stepCounterSensor != null) SOURCE_STEP_SENSOR else SOURCE_SENSOR_FUSION
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -567,7 +564,7 @@ class StepForegroundService : Service(), SensorEventListener {
         wakeLock = pm.newWakeLock(
             PowerManager.PARTIAL_WAKE_LOCK,
             "VitalHealth:StepTracker"
-        ).apply { acquire(12 * 60 * 60 * 1000L) } // 12 hours max
+        ).apply { acquire(12 * 60 * 60 * 1000L) }
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -581,105 +578,135 @@ class StepForegroundService : Service(), SensorEventListener {
         return SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(cal.time)
     }
 
-    // ─────────────────────────────────────────────────────────────────────────
-    // Public API (called from React Native bridge)
-    // ─────────────────────────────────────────────────────────────────────────
     fun getCurrentSteps() = dailySteps
     fun getDataSource() = dataSource
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Sensor Fusion: Gravity-subtraction + peak detection + Kalman smoothing
-// Rejects vehicle vibration, random shaking, and false positives
+// Industry-Grade Biomechanical Step Detector
+// Features:
+//   - Fast Exponential Moving Average (EMA) Gravity Subtraction (alpha = 0.90)
+//   - 4-Sample Moving Average Noise Filter
+//   - Dynamic Hysteresis Peak & Valley Thresholding (dynamic floor 0.18 m/s²)
+//   - 2-Step Fast-Lock Cadence Validation (200ms - 1800ms physiological window)
 // ─────────────────────────────────────────────────────────────────────────────
 class SensorFusionDetector {
 
     var onStep: (() -> Unit)? = null
 
-    // Gravity estimate (low-pass filter)
-    private var gravX = 0f; private var gravY = 0f; private var gravZ = 0f
-    private var initialized = false
+    // Gravity Low-Pass Filter
+    private var gravX = 0f
+    private var gravY = 0f
+    private var gravZ = 0f
+    private var gravityInitialized = false
 
-    // Gyroscope for motion classification
+    // Gyroscope magnitude (motion rejection)
     private var gyroMag = 0f
 
-    // Peak detection buffer
-    private val bufferSize = 7
-    private val magBuffer = FloatArray(bufferSize)
-    private var bufCount = 0
+    // Signal smoothing buffer (4-sample moving average filter)
+    private val filterSize = 4
+    private val rawLinearBuffer = FloatArray(filterSize)
+    private var sampleCount = 0
 
-    private var kalmanEstimate = 0f
-    private var kalmanError = 1f
-    private var lastStepAt = 0L
+    // Dynamic Peak & Valley Buffer (rolling 50-sample window ~ 1-2 seconds)
+    private val windowSize = 50
+    private val magWindow = FloatArray(windowSize)
+    private var windowIndex = 0
+    private var windowFilled = false
 
-    // Adaptive peak threshold (m/s^2 linear acceleration)
-    private val recentPeaks = ArrayDeque<Float>()
-    private var adaptiveThreshold = 0.65f
+    // Dynamic Hysteresis State
+    private var armed = true
+    private var lastPeakValue = 0f
+    private var lastStepTime = 0L
 
-    // 5-step cadence filter
+    // Cadence Validation (2-step fast-lock)
     private var cadenceCount = 0
     private var lastCadenceTime = 0L
 
     fun feedAccel(x: Float, y: Float, z: Float) {
-        val ALPHA = 0.82f
+        val ALPHA = 0.90f
 
-        if (!initialized) {
+        if (!gravityInitialized) {
             gravX = x; gravY = y; gravZ = z
-            initialized = true
+            gravityInitialized = true
             return
         }
 
-        // Low-pass → gravity
-        gravX = ALPHA * gravX + (1 - ALPHA) * x
-        gravY = ALPHA * gravY + (1 - ALPHA) * y
-        gravZ = ALPHA * gravZ + (1 - ALPHA) * z
+        // 1. Isolate Gravity vs User Acceleration (EMA Filter)
+        gravX = ALPHA * gravX + (1f - ALPHA) * x
+        gravY = ALPHA * gravY + (1f - ALPHA) * y
+        gravZ = ALPHA * gravZ + (1f - ALPHA) * z
 
-        // High-pass → linear acceleration
-        val lx = x - gravX; val ly = y - gravY; val lz = z - gravZ
-        val mag = sqrt((lx * lx + ly * ly + lz * lz).toDouble()).toFloat()
+        val lx = x - gravX
+        val ly = y - gravY
+        val lz = z - gravZ
+        val linearMag = sqrt((lx * lx + ly * ly + lz * lz).toDouble()).toFloat()
 
-        // Kalman filter smoothing
-        val kalmanGain = kalmanError / (kalmanError + 0.08f)
-        kalmanEstimate += kalmanGain * (mag - kalmanEstimate)
-        kalmanError = (1 - kalmanGain) * kalmanError + 0.004f
+        // 2. 4-Sample Moving Average Filter to eliminate high-frequency jitter
+        rawLinearBuffer[sampleCount % filterSize] = linearMag
+        sampleCount++
 
-        magBuffer[bufCount % bufferSize] = kalmanEstimate
-        bufCount++
+        if (sampleCount < filterSize) return
 
-        // Reject fast vehicle/bumpy motion via gyroscope
-        if (gyroMag > 3.5f) return
-        if (bufCount < bufferSize) return
+        var filteredMag = 0f
+        for (i in 0 until filterSize) {
+            filteredMag += rawLinearBuffer[i]
+        }
+        filteredMag /= filterSize.toFloat()
+
+        // 3. Store sample in dynamic window for adaptive threshold calculation
+        magWindow[windowIndex] = filteredMag
+        windowIndex = (windowIndex + 1) % windowSize
+        if (windowIndex == 0) windowFilled = true
+
+        // 4. Reject extreme vehicle vibration using Gyroscope (> 4.5 rad/s)
+        if (gyroMag > 4.5f) return
+
+        // 5. Calculate Dynamic Peak Threshold & Arming Threshold from Rolling Window
+        val effectiveSize = if (windowFilled) windowSize else windowIndex
+        if (effectiveSize < 10) return
+
+        var minVal = magWindow[0]
+        var maxVal = magWindow[0]
+        for (i in 0 until effectiveSize) {
+            if (magWindow[i] < minVal) minVal = magWindow[i]
+            if (magWindow[i] > maxVal) maxVal = magWindow[i]
+        }
+
+        val range = maxVal - minVal
+        // Dynamic peak threshold: 35% above valley, clamped between physiological bounds [0.18 m/s², 3.2 m/s²]
+        val dynamicPeakThreshold = max(0.18f, min(3.2f, minVal + 0.35f * range))
+        // Dynamic arming threshold: 15% above valley (hysteresis reset)
+        val dynamicArmThreshold = max(0.06f, min(1.2f, minVal + 0.15f * range))
+
+        // 6. Dynamic Peak Detection with Hysteresis
+        if (filteredMag <= dynamicArmThreshold) {
+            armed = true
+        }
 
         val now = System.currentTimeMillis()
-        val minStepInterval = 220L  // ~272 steps/min max (running/fast walk)
-        val maxStepInterval = 1400L // ~42 steps/min min (slow walk)
+        val minStepInterval = 200L   // Max ~300 steps/min (sprint)
+        val maxStepInterval = 1800L  // Min ~33 steps/min (slow gait)
 
-        // Peak detection: check sample at t-1 relative to t-2 and t
-        val idxCurr = (bufCount - 1) % bufferSize
-        val idxPrev = (bufCount - 2 + bufferSize) % bufferSize
-        val idxPrev2 = (bufCount - 3 + bufferSize) % bufferSize
+        if (armed && filteredMag >= dynamicPeakThreshold) {
+            val interval = now - lastStepTime
 
-        val pCurr = magBuffer[idxCurr]
-        val pPrev = magBuffer[idxPrev]
-        val pPrev2 = magBuffer[idxPrev2]
+            if (interval in minStepInterval..maxStepInterval || lastStepTime == 0L) {
+                armed = false
+                lastStepTime = now
+                lastPeakValue = filteredMag
 
-        // Peak condition: prev sample is higher than both preceding and current sample
-        if (pPrev > pPrev2 && pPrev > pCurr && pPrev >= adaptiveThreshold) {
-            val interval = now - lastStepAt
-            if (interval in minStepInterval..maxStepInterval || lastStepAt == 0L) {
-                lastStepAt = now
-                updateAdaptiveThreshold(pPrev)
-
-                // Cadence filter to reject single bumps/vibrations
+                // Cadence Verification (2-step fast-lock)
                 val cadenceInterval = now - lastCadenceTime
                 lastCadenceTime = now
 
                 if (cadenceInterval in minStepInterval..maxStepInterval) {
                     cadenceCount++
-                    if (cadenceCount == 5) {
-                        // Confirmed walking rhythm! Credit initial 5 steps
-                        repeat(5) { onStep?.invoke() }
-                    } else if (cadenceCount > 5) {
+                    if (cadenceCount == 2) {
+                        // Fast lock achieved! Credit both candidate steps immediately
+                        onStep?.invoke()
+                        onStep?.invoke()
+                    } else if (cadenceCount > 2) {
                         onStep?.invoke()
                     }
                 } else {
@@ -691,14 +718,5 @@ class SensorFusionDetector {
 
     fun feedGyro(x: Float, y: Float, z: Float) {
         gyroMag = sqrt((x * x + y * y + z * z).toDouble()).toFloat()
-    }
-
-    private fun updateAdaptiveThreshold(peak: Float) {
-        recentPeaks.addLast(peak)
-        if (recentPeaks.size > 15) recentPeaks.removeFirst()
-        if (recentPeaks.size >= 4) {
-            val avg = recentPeaks.average().toFloat()
-            adaptiveThreshold = (avg * 0.60f).coerceIn(0.55f, 2.5f)
-        }
     }
 }

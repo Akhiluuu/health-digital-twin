@@ -1265,6 +1265,17 @@ export default function AIHealthScreen() {
     };
   }, []);
 
+  // Keyboard auto-scroll listener
+  useEffect(() => {
+    const showSub = Keyboard.addListener(
+      Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow",
+      () => {
+        setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 100);
+      }
+    );
+    return () => showSub.remove();
+  }, []);
+
   const requestMicPermission = async (): Promise<boolean> => {
     if (Platform.OS === "android") {
       try {
@@ -2138,8 +2149,8 @@ export default function AIHealthScreen() {
       {/* Main Chat Stream */}
       <KeyboardAvoidingView
         style={styles.flex}
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
-        keyboardVerticalOffset={Platform.OS === "ios" ? headerH : 0}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        keyboardVerticalOffset={Platform.OS === "ios" ? headerH : headerH}
       >
         <View style={[styles.container, { backgroundColor: c.bg }]}>
           <FlatList
@@ -2190,6 +2201,9 @@ export default function AIHealthScreen() {
                 returnKeyType="send"
                 onSubmitEditing={sendMessage}
                 blurOnSubmit={false}
+                onFocus={() => {
+                  setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 150);
+                }}
               />
 
               {/* Dynamic Send Button */}

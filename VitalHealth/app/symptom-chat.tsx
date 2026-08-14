@@ -9,6 +9,7 @@ import {
   TextInput,
   TouchableOpacity,
   KeyboardAvoidingView,
+  Keyboard,
   Platform,
   Alert,
 } from "react-native";
@@ -99,6 +100,16 @@ export default function SymptomChat() {
   useEffect(() => {
     flatListRef.current?.scrollToEnd({ animated: true });
   }, [messages]);
+
+  useEffect(() => {
+    const showSub = Keyboard.addListener(
+      Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow",
+      () => {
+        setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
+      }
+    );
+    return () => showSub.remove();
+  }, []);
 
   /**
    * Save symptom after diagnosis
@@ -236,6 +247,7 @@ export default function SymptomChat() {
     <KeyboardAvoidingView
       style={[styles.container, { backgroundColor: colors.bg }]}
       behavior={Platform.OS === "ios" ? "padding" : "height"}
+      keyboardVerticalOffset={Platform.OS === "ios" ? 60 : 0}
     >
       {/* Header */}
       <View style={[styles.header, { borderBottomColor: colors.border }]}>
@@ -278,6 +290,9 @@ export default function SymptomChat() {
             value={input}
             onChangeText={setInput}
             style={[styles.input, { color: colors.text }]}
+            onFocus={() => {
+              setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 150);
+            }}
           />
 
           <TouchableOpacity
