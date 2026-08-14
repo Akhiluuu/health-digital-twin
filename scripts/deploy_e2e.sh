@@ -85,8 +85,8 @@ echo "✅ Pre-deployment test suite passed (100%)!"
 # 5. Launch FastAPI Gateway Server
 echo "🌐 [5/5] Launching PHOS FastAPI Server Gateway on Port 8000..."
 echo "Stopping any existing server process on port 8000..."
-sudo systemctl stop digitaltwin.service 2>/dev/null || systemctl stop digitaltwin.service 2>/dev/null || true
-sudo systemctl stop vitalhealth.service 2>/dev/null || true
+systemctl stop digitaltwin.service 2>/dev/null || true
+systemctl stop vitalhealth.service 2>/dev/null || true
 if command -v docker >/dev/null 2>&1; then
     docker compose down 2>/dev/null || true
 fi
@@ -96,8 +96,8 @@ if [ -n "$PIDS" ]; then
     kill -9 $PIDS 2>/dev/null || true
     pkill -9 -f "uvicorn" 2>/dev/null || true
 fi
-sudo pkill -9 -f "celery" 2>/dev/null || pkill -9 -f "celery" 2>/dev/null || true
-sleep 2
+pkill -9 -f "celery" 2>/dev/null || true
+sleep 1
 
 echo "==========================================================================="
 echo "🟢 VitalHealth PHOS Server is ready!"
@@ -106,9 +106,10 @@ echo "   • Health Check Endpoint:    http://0.0.0.0:8000/health"
 echo "   • PHOS Reasoning Query:     http://0.0.0.0:8000/api/v6/brain/phos/query"
 echo "==========================================================================="
 
-nohup venv/bin/uvicorn healthbot_v4.apps.api.server:app --host 0.0.0.0 --port 8000 > uvicorn.log 2>&1 &
+nohup venv/bin/uvicorn healthbot_v4.apps.api.server:app --host 0.0.0.0 --port 8000 > uvicorn.log 2>&1 < /dev/null &
+disown %1 2>/dev/null || true
 
-sleep 3
+sleep 2
 if pgrep -f "uvicorn healthbot_v4.apps.api.server:app" > /dev/null; then
     echo "🎉 Server started successfully in background (PID: $(pgrep -f 'uvicorn healthbot_v4.apps.api.server:app' | head -n 1))"
     echo "Log output available at: $ROOT_DIR/uvicorn.log"
@@ -116,3 +117,5 @@ else
     echo "⚠️ Server start check pending. Checking uvicorn.log..."
     tail -n 15 uvicorn.log
 fi
+
+exit 0
