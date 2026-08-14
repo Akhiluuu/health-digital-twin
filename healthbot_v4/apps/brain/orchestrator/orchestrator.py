@@ -437,6 +437,44 @@ class AIOrchestrator(HealthBrainSubsystem):
                 except Exception:
                     pass
 
+            # Ingest conditions and allergies from mobile client
+            raw_conditions = patient_context.get("conditions") or patient_context.get("diseases") or []
+            if raw_conditions:
+                if isinstance(raw_conditions, str):
+                    cond_list = [c.strip() for c in raw_conditions.split(",") if c.strip()]
+                elif isinstance(raw_conditions, list):
+                    cond_list = [c.get("name", str(c)) if isinstance(c, dict) else str(c) for c in raw_conditions if c]
+                else:
+                    cond_list = []
+                if cond_list:
+                    from healthbot_v4.shared.models.base import Condition
+                    state.current_conditions = [Condition(condition_name=c, icd10_code="Z00.00", status="Active") for c in cond_list]
+                    try:
+                        from healthbot_v4.apps.brain.journey.journey_engine import _load_journey_store, _save_journey_store
+                        store = _load_journey_store(patient_id)
+                        store["conditions"] = cond_list
+                        _save_journey_store(patient_id, store)
+                    except Exception:
+                        pass
+
+            raw_allergies = patient_context.get("allergies") or []
+            if raw_allergies:
+                if isinstance(raw_allergies, str):
+                    alg_list = [a.strip() for a in raw_allergies.split(",") if a.strip()]
+                elif isinstance(raw_allergies, list):
+                    alg_list = [a.get("substance", str(a)) if isinstance(a, dict) else str(a) for a in raw_allergies if a]
+                else:
+                    alg_list = []
+                if alg_list and hasattr(state.profile, "allergies"):
+                    state.profile.allergies = alg_list
+                    try:
+                        from healthbot_v4.apps.brain.journey.journey_engine import _load_journey_store, _save_journey_store
+                        store = _load_journey_store(patient_id)
+                        store["allergies"] = alg_list
+                        _save_journey_store(patient_id, store)
+                    except Exception:
+                        pass
+
         # Fallback to journey store if active_medications is empty
         if not state.active_medications:
             try:

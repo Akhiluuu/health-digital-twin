@@ -72,6 +72,31 @@ class SemanticQueryCache(HealthBrainSubsystem):
                 "> 💡 *Please consult your doctor for personalized medical advice.*",
                 ["AHA_2026_Guidelines"]
             ),
+            (
+                "What is normal resting heart rate?",
+                "GENERAL_HEALTH_EDUCATION",
+                "A normal resting heart rate for adults ranges from **60 to 100 beats per minute (bpm)**.\n\n"
+                "• **Athletes:** 40 to 60 bpm due to efficient cardiac stroke volume.\n"
+                "• **Factors:** Stress, hydration, caffeine, sleep, and physical fitness affect daily resting pulse rates.",
+                ["AHA_Vitals_Guide"]
+            ),
+            (
+                "What are BioGears Organ Scores?",
+                "DIGITAL_TWIN",
+                "**BioGears Organ Scores** quantify organ system performance (Cardiovascular, Respiratory, Renal, Metabolic, Neurological) on a **0 to 100 scale** using real-time mathematical simulation models.\n\n"
+                "• **90-100:** Optimal functional capacity\n"
+                "• **60-89:** Mild to moderate physiological stress\n"
+                "• **Below 60:** Abnormal system stress warranting clinical review.",
+                ["BioGears_Physiology_Engine"]
+            ),
+            (
+                "What is SpO2 and what is normal?",
+                "GENERAL_HEALTH_EDUCATION",
+                "**SpO2 (Peripheral Oxygen Saturation)** measures the percentage of oxygen-saturated hemoglobin relative to total hemoglobin in the blood.\n\n"
+                "• **Normal Range:** 95% to 100%\n"
+                "• **Low (Hypoxemia):** Below 92% requires immediate clinical evaluation.",
+                ["Pulmonary_Medicine_Guide"]
+            ),
         ]
 
         now = time.time()

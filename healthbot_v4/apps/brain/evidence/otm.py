@@ -81,13 +81,13 @@ class OrchestratorToolManager:
         missing_data: List[str] = []
 
         dispatch = {
-            "medical_records": lambda: self._collect_medical_records(state),
+            "medical_records": lambda: self._collect_medical_records(state, pc),
             "biogears_twin":   lambda: self._collect_biogears_twin(state, pc),
             "vitals_history":  lambda: self._collect_vitals_history(state, pc),
             "telemetry":       lambda: self._collect_telemetry(pc),
             "medications":     lambda: self._collect_medications(state),
             "symptoms":        lambda: self._collect_symptoms(state, symptoms_logged or [], pc),
-            "labs":            lambda: self._collect_labs(state),
+            "labs":            lambda: self._collect_labs(state, pc),
             "family_history":  lambda: self._collect_family_history(pc),
             "lifestyle":       lambda: self._collect_lifestyle(pc),
             "cognitive":       lambda: self._collect_cognitive(pc),
@@ -125,18 +125,34 @@ class OrchestratorToolManager:
     # Module Collectors
     # -------------------------------------------------------------------------
 
-    def _collect_medical_records(self, state: Any) -> EvidenceSource:
+    def _collect_medical_records(self, state: Any, pc: Optional[Dict] = None) -> EvidenceSource:
         findings: List[EvidenceFinding] = []
+        patient_ctx = pc or {}
+
         raw_conditions = getattr(state, "conditions", None) or getattr(state, "current_conditions", None) or []
-        conditions = [getattr(c, "name", str(c)) for c in raw_conditions]
+        conditions = [getattr(c, "condition_name", getattr(c, "name", str(c))) for c in raw_conditions]
+        if not conditions and patient_ctx.get("conditions"):
+            ctx_conds = patient_ctx["conditions"]
+            if isinstance(ctx_conds, list):
+                conditions = [c.get("name", str(c)) if isinstance(c, dict) else str(c) for c in ctx_conds]
+            elif isinstance(ctx_conds, str) and ctx_conds.strip():
+                conditions = [c.strip() for c in ctx_conds.split(",") if c.strip()]
         
-        raw_allergies = getattr(state, "allergies", None) or []
+        allergies = []
         if hasattr(state, "get_allergy_names"):
             allergies = state.get_allergy_names()
-        elif hasattr(getattr(state, "profile", None), "allergies"):
+        elif hasattr(getattr(state, "profile", None), "allergies") and getattr(state.profile, "allergies", None):
             allergies = getattr(state.profile, "allergies", [])
         else:
+            raw_allergies = getattr(state, "allergies", None) or []
             allergies = [getattr(a, "substance", str(a)) for a in raw_allergies]
+
+        if not allergies and patient_ctx.get("allergies"):
+            ctx_algs = patient_ctx["allergies"]
+            if isinstance(ctx_algs, list):
+                allergies = [a.get("substance", str(a)) if isinstance(a, dict) else str(a) for a in ctx_algs]
+            elif isinstance(ctx_algs, str) and ctx_algs.strip():
+                allergies = [a.strip() for a in ctx_algs.split(",") if a.strip()]
 
         if conditions:
             for c_name in conditions:
@@ -401,8 +417,9 @@ class OrchestratorToolManager:
         )
 
 
-    def _collect_labs(self, state: Any) -> EvidenceSource:
+    def _collect_labs(self, state: Any, pc: Optional[Dict] = None) -> EvidenceSource:
         findings: List[EvidenceFinding] = []
+        patient_ctx = pc or {}
         labs_list = getattr(state, "recent_labs", None) or getattr(state, "lab_trends", None) or []
         for lab in labs_list:
             name = getattr(lab, "canonical_name", None) or getattr(lab, "biomarker_name", "Lab Test")
@@ -419,6 +436,22 @@ class OrchestratorToolManager:
                 confidence=ConfidenceLevel.high,
                 is_abnormal=is_abn,
             ))
+
+        if not findings and patient_ctx.get("uploaded_labs"):
+            up_labs = patient_ctx["uploaded_labs"]
+            if isinstance(up_labs, list):
+                for doc in up_labs:
+                    if isinstance(doc, dict):
+                        doc_name = doc.get("name", "Uploaded Lab Document")
+                        chunks = doc.get("chunkCount", 1)
+                        findings.append(EvidenceFinding(
+                            finding_id=_fid(), label="Uploaded Document",
+                            value=f"{doc_name} ({chunks} vector chunks indexed)",
+                            source_name="Uploaded Lab Reports",
+                            source_type="lab_reports",
+                            timestamp_label="Indexed",
+                            confidence=ConfidenceLevel.high,
+                        ))
 
         status = SourceStatus.available if findings else SourceStatus.missing
         return EvidenceSource(
@@ -443,6 +476,13 @@ class OrchestratorToolManager:
                         source_type="family_history", timestamp_label="On record",
                         confidence=ConfidenceLevel.medium,
                     ))
+        elif isinstance(fh, str) and fh.strip():
+            findings.append(EvidenceFinding(
+                finding_id=_fid(), label="Family History",
+                value=fh.strip(), source_name="Family Health Profile",
+                source_type="family_history", timestamp_label="On record",
+                confidence=ConfidenceLevel.medium,
+            ))
 
         status = SourceStatus.available if findings else SourceStatus.missing
         return EvidenceSource(
@@ -465,11 +505,16 @@ class OrchestratorToolManager:
                 ("stress_level", "Stress Level"),
             ]:
                 v = ls.get(key)
-                if v is not None:
-                    unit = " hrs/night" if key == "sleep_hours" else (" days/week" if key == "exercise_days_per_week" else "")
+                if v is not None and str(v).strip():
+                    v_str = str(v)
+                    unit = ""
+                    if key == "sleep_hours" and not any(u in v_str.lower() for u in ["hr", "hour"]):
+                        unit = " hrs/night"
+                    elif key == "exercise_days_per_week" and not any(u in v_str.lower() for u in ["day", "week", "active"]):
+                        unit = " days/week"
                     findings.append(EvidenceFinding(
                         finding_id=_fid(), label=label,
-                        value=f"{v}{unit}", source_name="Lifestyle Profile",
+                        value=f"{v_str}{unit}", source_name="Lifestyle Profile",
                         source_type="lifestyle", timestamp_label="Profile",
                         confidence=ConfidenceLevel.medium,
                     ))
@@ -566,7 +611,8 @@ class OrchestratorToolManager:
 
     def _detect_conflicts(self, findings: List[EvidenceFinding]) -> List[EvidenceConflict]:
         conflicts: List[EvidenceConflict] = []
-        # Compare glucose: lab vs. biogears
+
+        # 1. Compare glucose: Lab vs BioGears Twin
         lab_glucose = next((f for f in findings if f.source_type == "lab_reports" and "glucose" in f.label.lower()), None)
         twin_glucose = next((f for f in findings if f.source_type == "biogears_twin" and "glucose" in f.label.lower()), None)
         if lab_glucose and twin_glucose and lab_glucose.value and twin_glucose.value:
@@ -575,14 +621,90 @@ class OrchestratorToolManager:
                 tv = float("".join(c for c in twin_glucose.value if c.isdigit() or c == "."))
                 if abs(lv - tv) > 25:
                     conflicts.append(EvidenceConflict(
-                        metric="Blood Glucose",
-                        source_a="Lab Reports", value_a=lab_glucose.value,
-                        source_b="BioGears Twin", value_b=twin_glucose.value,
-                        possible_reasons=["Timing difference (fasting vs post-meal)", "Device calibration", "Medication effect"],
-                        recommendation="Confirm with a new fasting glucose test.",
+                        metric="Blood Glucose Discrepancy",
+                        source_a="Uploaded Lab Reports", value_a=lab_glucose.value,
+                        source_b="BioGears Digital Twin", value_b=twin_glucose.value,
+                        possible_reasons=["Fasting vs post-prandial timing delta", "Sensor calibration baseline", "Acute metabolic flux"],
+                        recommendation="Reconcile with a capillary fingerstick blood glucose measurement.",
                     ))
             except (ValueError, TypeError):
                 pass
+
+        # 2. Medication vs Known Allergies Contradiction
+        med_findings = [f for f in findings if f.source_type in ["medication_vault", "medications"]]
+        allergy_finding = next((f for f in findings if f.source_type == "medical_records" and "allerg" in f.label.lower()), None)
+        if med_findings and allergy_finding and allergy_finding.value:
+            allergen_text = str(allergy_finding.value).lower()
+            for med in med_findings:
+                med_name = f"{med.label} {med.value}".lower()
+                for allergen in [a.strip() for a in allergen_text.split(",") if a.strip()]:
+                    if allergen in med_name or (len(allergen) > 3 and allergen in med_name):
+                        conflicts.append(EvidenceConflict(
+                            metric=f"Allergy-Medication Risk ({allergen.title()})",
+                            source_a="Medication Vault", value_a=med.value or med.label,
+                            source_b="Medical Records", value_b=f"Allergic to {allergen.title()}",
+                            possible_reasons=["Active prescription matches documented allergen", "Unintended drug exposure"],
+                            recommendation=f"CRITICAL: Verify with prescribing physician before administering {med.value or med.label}.",
+                        ))
+
+        # 3. Heart Rate: Telemetry/Vitals vs BioGears Twin
+        vital_hr = next((f for f in findings if f.source_type in ["vital_logs", "vitals_history", "telemetry"] and "heart rate" in f.label.lower()), None)
+        twin_hr = next((f for f in findings if f.source_type == "biogears_twin" and "heart rate" in f.label.lower()), None)
+        if vital_hr and twin_hr and vital_hr.value and twin_hr.value:
+            try:
+                vh = float("".join(c for c in vital_hr.value if c.isdigit() or c == "."))
+                th = float("".join(c for c in twin_hr.value if c.isdigit() or c == "."))
+                if abs(vh - th) > 20:
+                    conflicts.append(EvidenceConflict(
+                        metric="Heart Rate Variance",
+                        source_a=vital_hr.source_name, value_a=vital_hr.value,
+                        source_b="BioGears Digital Twin", value_b=twin_hr.value,
+                        possible_reasons=["Acute physical activity / stress response", "Wearable PPG sensor artifact", "Simulation state drift"],
+                        recommendation="Re-measure resting pulse for 60 seconds at rest.",
+                    ))
+            except (ValueError, TypeError):
+                pass
+
+        # 4. Blood Pressure: Logged Vitals vs BioGears Twin
+        vital_bp = next((f for f in findings if f.source_type in ["vital_logs", "vitals_history", "telemetry"] and "blood pressure" in f.label.lower()), None)
+        twin_bp = next((f for f in findings if f.source_type == "biogears_twin" and "blood pressure" in f.label.lower()), None)
+        if vital_bp and twin_bp and vital_bp.value and twin_bp.value:
+            try:
+                v_sys = float(vital_bp.value.split("/")[0].strip()) if "/" in vital_bp.value else None
+                t_sys = float(twin_bp.value.split("/")[0].strip()) if "/" in twin_bp.value else None
+                if v_sys and t_sys and abs(v_sys - t_sys) > 20:
+                    conflicts.append(EvidenceConflict(
+                        metric="Systolic BP Discrepancy",
+                        source_a=vital_bp.source_name, value_a=vital_bp.value,
+                        source_b="BioGears Digital Twin", value_b=twin_bp.value,
+                        possible_reasons=["White-coat effect", "Cuff size discrepancy", "Simulation autonomic response"],
+                        recommendation="Take two blood pressure readings 5 minutes apart in a seated position.",
+                    ))
+            except (ValueError, TypeError):
+                pass
+
+        # 5. Biomarkers vs Organ Scores Discrepancy
+        organ_findings = [f for f in findings if f.source_type == "organ_scores"]
+        abnormal_labs = [f for f in findings if f.source_type == "lab_reports" and f.is_abnormal]
+        if organ_findings and abnormal_labs:
+            for lab in abnormal_labs:
+                lab_name = lab.label.lower()
+                if any(k in lab_name for k in ["creatinine", "bun", "gfr"]):
+                    renal_score = next((f for f in organ_findings if "renal" in f.label.lower()), None)
+                    if renal_score and renal_score.value:
+                        try:
+                            score_val = float("".join(c for c in renal_score.value if c.isdigit() or c == "."))
+                            if score_val > 80:
+                                conflicts.append(EvidenceConflict(
+                                    metric="Renal Biomarker vs Organ Score Discrepancy",
+                                    source_a="Uploaded Lab Reports", value_a=f"{lab.label}: {lab.value}",
+                                    source_b="BioGears Organ Scores", value_b=f"{renal_score.label}: {renal_score.value}",
+                                    possible_reasons=["Lab report shows abnormal renal marker but organ simulation score remains high"],
+                                    recommendation="Re-run renal panel and update BioGears physiological baseline.",
+                                ))
+                        except (ValueError, TypeError):
+                            pass
+
         return conflicts
 
     def _compute_confidence(self, sources: List[EvidenceSource]) -> float:

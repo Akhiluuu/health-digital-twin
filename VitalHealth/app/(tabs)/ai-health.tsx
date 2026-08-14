@@ -1561,6 +1561,26 @@ export default function AIHealthScreen() {
           note: "No cognitive assessments completed yet. Ask user to take a brain health test.",
         };
 
+    // Allergies & Conditions: extract from active profile or medical/history profile
+    const pAllergies = activeProfile?.allergies || (activeProfile as any)?.medical?.allergies || (profile as any)?.medical?.allergies || [];
+    const pConditions = (activeProfile as any)?.history?.diseases || (profile as any)?.history?.diseases || (activeProfile as any)?.medical?.conditions || [];
+    const pFamilyHistory = (activeProfile as any)?.history?.familyHistory || (profile as any)?.history?.familyHistory || null;
+
+    // Lifestyle: build structured lifestyle profile from profile habits & BioGears flags
+    const pHabits = (activeProfile as any)?.habits || (profile as any)?.habits || {};
+    const pLifestyle = {
+      sleep_hours: pHabits.sleep || null,
+      exercise_days_per_week: pHabits.activity || activeProfile?.biogears_fitness_level || null,
+      smoking: activeProfile?.biogears_is_smoker ? "Smoker" : "Non-Smoker",
+      alcohol: pHabits.alcohol || null,
+      stress_level: pHabits.stress || null,
+    };
+
+    // Uploaded Labs metadata from RAG docs
+    const uploadedLabsSummary = docs && docs.length > 0
+      ? docs.map(d => ({ name: d.name, type: d.type, chunkCount: d.chunkCount, uploadedAt: d.uploadedAt }))
+      : [];
+
     return {
       patient_name: profileName || "Patient (name not set)",
       isSwitched: isSwitched,
@@ -1598,6 +1618,11 @@ export default function AIHealthScreen() {
       medicines: medicines || [],
       activeSymptoms: activeSymptoms || [],
       historySymptoms: historySymptoms || [],
+      allergies: pAllergies,
+      conditions: pConditions,
+      family_history: pFamilyHistory,
+      lifestyle: pLifestyle,
+      uploaded_labs: uploadedLabsSummary,
       biogearsProfile: {
         resting_hr: activeProfile?.biogears_resting_hr || null,
         systolic_bp: activeProfile?.biogears_systolic_bp || null,
