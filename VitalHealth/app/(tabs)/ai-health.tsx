@@ -2150,7 +2150,7 @@ export default function AIHealthScreen() {
       <KeyboardAvoidingView
         style={styles.flex}
         behavior={Platform.OS === "ios" ? "padding" : "height"}
-        keyboardVerticalOffset={Platform.OS === "ios" ? headerH : headerH}
+        keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 0}
       >
         <View style={[styles.container, { backgroundColor: c.bg }]}>
           <FlatList
@@ -2444,6 +2444,7 @@ const styles = StyleSheet.create({
 
   // Messages List & Bubbles
   messagesList: {
+    flexGrow: 1,
     paddingHorizontal: 16,
     paddingBottom: 20,
     paddingTop: 16,
