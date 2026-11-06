@@ -38,7 +38,7 @@ export interface SystemDiagnostics {
 const APP_VERSION = "2.4.1";
 const DEFAULT_BUG_EMAIL = "vitalhealth1215@gmail.com";
 export const DEFAULT_DISCORD_WEBHOOK_URL =
-  "https://discord.com/api/webhooks/1534826624946540636/b6qdlYQv-6OToaT8PASQLSKbVRaKRadPTCcN_vxR1WNnPHCxZDiZiYiPj4q-HTNOou4K";
+  process.env.EXPO_PUBLIC_DISCORD_WEBHOOK_URL || "";
 const STORAGE_KEY_WEBHOOK = "VITAL_BUG_WEBHOOK_URL";
 const STORAGE_KEY_HISTORY = "VITAL_BUG_REPORTS_HISTORY";
 

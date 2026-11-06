@@ -827,13 +827,12 @@ class BugReportInput(BaseModel):
 
 _bug_reports_store: List[Dict[str, Any]] = []
 
-DISCORD_WEBHOOK_URL = os.getenv(
-    "DISCORD_WEBHOOK_URL",
-    "https://discord.com/api/webhooks/1534826624946540636/b6qdlYQv-6OToaT8PASQLSKbVRaKRadPTCcN_vxR1WNnPHCxZDiZiYiPj4q-HTNOou4K"
-)
+DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL", "")
 
 
 def _forward_bug_report_to_discord(report: BugReportInput, report_id: str):
+    if not DISCORD_WEBHOOK_URL or not DISCORD_WEBHOOK_URL.strip().startswith("http"):
+        return
     import urllib.request
     import json
 
